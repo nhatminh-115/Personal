@@ -3,6 +3,7 @@
 from typing import Dict, List, Optional
 from app.models.base import ToolDefinition
 from app.tools.base import Tool
+from app.sandbox.tools import SandboxPythonExecuteTool, SandboxShellExecuteTool
 from app.tools.workspace import (
     ListWorkspaceFilesTool,
     ReadWorkspaceFileTool,
@@ -15,10 +16,12 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: Dict[str, Tool] = {}
-        # Register standard Phase 1 tools
+        # Register standard tools
         self.register(ListWorkspaceFilesTool())
         self.register(ReadWorkspaceFileTool())
         self.register(WriteWorkspaceFileTool())
+        self.register(SandboxShellExecuteTool())
+        self.register(SandboxPythonExecuteTool())
 
     def register(self, tool: Tool) -> None:
         """Register a tool instance."""

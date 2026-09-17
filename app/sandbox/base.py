@@ -1,30 +1,24 @@
-"""Sandbox interfaces and contracts."""
+"""Abstract base class interface for execution sandbox runtimes."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from typing import Optional
+from app.sandbox.spec import ExecutionResult, SandboxConfig
 
 
-class SandboxExecutionResult(BaseModel):
-    """Result from an isolated sandbox execution."""
-
-    exit_code: int
-    stdout: str
-    stderr: str
-    duration_ms: int
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class SandboxExecutor(ABC):
-    """Abstract contract for future containerized or jailed execution environments."""
+class SandboxRuntime(ABC):
+    """Abstract interface for isolated execution environments."""
 
     @abstractmethod
-    async def execute_command(
-        self,
-        command: str,
-        arguments: Optional[List[str]] = None,
-        timeout_seconds: int = 30,
-        env_vars: Optional[Dict[str, str]] = None,
-    ) -> SandboxExecutionResult:
-        """Run a command inside an isolated container sandbox."""
+    def is_available(self) -> bool:
+        """Check whether the underlying runtime engine (e.g. Docker daemon) is accessible."""
+        pass
+
+    @abstractmethod
+    async def run_command(self, command: str, config: Optional[SandboxConfig] = None) -> ExecutionResult:
+        """Execute a raw shell command inside the sandbox."""
+        pass
+
+    @abstractmethod
+    async def run_python(self, code: str, config: Optional[SandboxConfig] = None) -> ExecutionResult:
+        """Execute Python source code inside the sandbox."""
         pass
