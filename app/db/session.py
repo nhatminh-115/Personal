@@ -54,3 +54,19 @@ async def init_db(database_url: str | None = None) -> None:
             await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_approvals_tool_call_id ON approvals (tool_call_id)")
         except Exception:
             pass
+
+        # Migrate memories table dynamically for Phase 2 columns
+        for col_def in [
+            "embedding_model VARCHAR(64)",
+            "embedding_dim INTEGER",
+            "project_name VARCHAR(128)",
+            "confidence FLOAT DEFAULT 1.0",
+            "is_active BOOLEAN DEFAULT 1",
+            "supersedes_id VARCHAR(36)",
+            "superseded_by_id VARCHAR(36)",
+        ]:
+            try:
+                await conn.exec_driver_sql(f"ALTER TABLE memories ADD COLUMN {col_def}")
+            except Exception:
+                pass
+

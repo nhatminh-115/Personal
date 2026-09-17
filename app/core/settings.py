@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     MODEL_TEMPERATURE: float = 0.0
     MODEL_MAX_TOKENS: int = 2048
 
+    # Embedding Provider Settings
+    EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
+    EMBEDDING_MODEL_NAME: str = "text-embedding-3-small"
+    EMBEDDING_DIMENSION: int = 1536
+
 
 # Singleton global settings instance
 settings = Settings()

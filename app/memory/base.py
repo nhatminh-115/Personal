@@ -79,6 +79,7 @@ class MemoryService(ABC):
         content: str,
         embedding: Optional[List[float]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        project_name: Optional[str] = None,
     ) -> MemoryModel:
         """Store durable knowledge for semantic vector retrieval."""
         pass
@@ -89,8 +90,22 @@ class MemoryService(ABC):
         query: str,
         embedding: Optional[List[float]] = None,
         limit: int = 5,
+        min_similarity: float = 0.0,
+        project_name: Optional[str] = None,
+        is_active_only: bool = True,
     ) -> List[MemoryModel]:
-        """Query semantic knowledge via keyword or vector similarity."""
+        """Query semantic knowledge via vector cosine similarity."""
+        pass
+
+    # --- Memory Lifecycle & Superseding ---
+    @abstractmethod
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        """Link an old memory as superseded by a newer memory."""
+        pass
+
+    @abstractmethod
+    async def archive_memory(self, memory_id: str) -> None:
+        """Archive a memory record (is_active = False)."""
         pass
 
     # --- Profile Memory (Interface) ---
@@ -117,11 +132,13 @@ class MemoryService(ABC):
         key: str,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
+        embedding: Optional[List[float]] = None,
     ) -> MemoryModel:
         """Record project-scoped knowledge."""
         pass
 
     @abstractmethod
-    async def get_project_memories(self, project_name: str) -> List[MemoryModel]:
+    async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
         """Retrieve all knowledge scoped to a specific project."""
         pass
+

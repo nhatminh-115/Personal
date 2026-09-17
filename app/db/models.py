@@ -3,8 +3,9 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from app.db.base import Base
 
@@ -126,9 +127,22 @@ class MemoryModel(Base):
     memory_type: Mapped[str] = mapped_column(String(32), index=True)  # "working", "episodic", "semantic", "profile", "project"
     key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[Optional[list[float]]] = mapped_column(JSON, nullable=True)
+
+    # Real pgvector embedding column & model tracking
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(1536), nullable=True)
+    embedding_model: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    embedding_dim: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Scoping & Lifecycle
+    project_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    supersedes_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("memories.id", ondelete="SET NULL"), nullable=True)
+    superseded_by_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("memories.id", ondelete="SET NULL"), nullable=True)
+
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     session: Mapped[Optional["SessionModel"]] = relationship("SessionModel", back_populates="memories")
+

@@ -7,13 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import logger
 from app.db.models import MemoryModel, MessageModel, SessionModel
 from app.memory.base import MemoryService, MemoryType
+from app.memory.embeddings.router import EmbeddingRouter, embedding_router
+from app.memory.stores.factory import get_semantic_store
 
 
 class SQLMemoryService(MemoryService):
-    """Production memory service persisting to database via SQLAlchemy."""
+    """Production memory service persisting to database via SQLAlchemy and vector store."""
 
-    def __init__(self, db: AsyncSession) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        router: Optional[EmbeddingRouter] = None,
+    ) -> None:
         self.db = db
+        self.embedding_router = router or embedding_router
+        self.store = get_semantic_store(db)
 
     # --- Working Memory ---
     async def get_or_create_session(self, session_id: str, title: Optional[str] = None) -> SessionModel:
@@ -97,35 +105,54 @@ class SQLMemoryService(MemoryService):
         content: str,
         embedding: Optional[List[float]] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        project_name: Optional[str] = None,
     ) -> MemoryModel:
+        vec = embedding
+        if vec is None:
+            vec = await self.embedding_router.embed_query(content)
+
         memory = MemoryModel(
             session_id=None,
             memory_type=MemoryType.SEMANTIC.value,
             content=content,
-            embedding=embedding,
+            embedding=vec,
+            embedding_model=self.embedding_router.current_model_name,
+            embedding_dim=len(vec),
+            project_name=project_name,
+            is_active=True,
             metadata_json=metadata or {},
         )
-        self.db.add(memory)
-        await self.db.commit()
-        await self.db.refresh(memory)
-        return memory
+        return await self.store.store(memory)
 
     async def search_semantic_memory(
         self,
         query: str,
         embedding: Optional[List[float]] = None,
         limit: int = 5,
+        min_similarity: float = 0.0,
+        project_name: Optional[str] = None,
+        is_active_only: bool = True,
     ) -> List[MemoryModel]:
-        # Keyword-based fallback or vector search preparation
-        stmt = (
-            select(MemoryModel)
-            .where(MemoryModel.memory_type == MemoryType.SEMANTIC.value)
-            .where(MemoryModel.content.ilike(f"%{query}%"))
-            .order_by(MemoryModel.created_at.desc())
-            .limit(limit)
+        query_vec = embedding
+        if query_vec is None:
+            query_vec = await self.embedding_router.embed_query(query)
+
+        matches = await self.store.search(
+            query_vector=query_vec,
+            limit=limit,
+            min_similarity=min_similarity,
+            project_name=project_name,
+            memory_types=[MemoryType.SEMANTIC.value],
+            is_active_only=is_active_only,
         )
-        result = await self.db.execute(stmt)
-        return list(result.scalars().all())
+        return [m[0] for m in matches]
+
+    # --- Memory Lifecycle & Superseding ---
+    async def supersede_memory(self, old_memory_id: str, new_memory_id: str) -> None:
+        await self.store.supersede(old_memory_id, new_memory_id)
+
+    async def archive_memory(self, memory_id: str) -> None:
+        await self.store.archive(memory_id)
 
     # --- Profile Memory ---
     async def set_profile_fact(self, key: str, value: str, metadata: Optional[Dict[str, Any]] = None) -> MemoryModel:
@@ -139,12 +166,14 @@ class SQLMemoryService(MemoryService):
         if memory:
             memory.content = value
             memory.metadata_json = metadata or memory.metadata_json
+            memory.is_active = True
         else:
             memory = MemoryModel(
                 session_id=None,
                 memory_type=MemoryType.PROFILE.value,
                 key=key,
                 content=value,
+                is_active=True,
                 metadata_json=metadata or {},
             )
             self.db.add(memory)
@@ -157,13 +186,17 @@ class SQLMemoryService(MemoryService):
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROFILE.value,
             MemoryModel.key == key,
+            MemoryModel.is_active.is_(True),
         )
         result = await self.db.execute(query)
         memory = result.scalar_one_or_none()
         return memory.content if memory else None
 
     async def get_all_profile_facts(self) -> Dict[str, str]:
-        query = select(MemoryModel).where(MemoryModel.memory_type == MemoryType.PROFILE.value)
+        query = select(MemoryModel).where(
+            MemoryModel.memory_type == MemoryType.PROFILE.value,
+            MemoryModel.is_active.is_(True),
+        )
         result = await self.db.execute(query)
         memories = result.scalars().all()
         return {m.key: m.content for m in memories if m.key}
@@ -175,9 +208,14 @@ class SQLMemoryService(MemoryService):
         key: str,
         content: str,
         metadata: Optional[Dict[str, Any]] = None,
+        embedding: Optional[List[float]] = None,
     ) -> MemoryModel:
         full_metadata = metadata or {}
         full_metadata["project_name"] = project_name
+
+        vec = embedding
+        if vec is None:
+            vec = await self.embedding_router.embed_query(content)
 
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
@@ -188,13 +226,23 @@ class SQLMemoryService(MemoryService):
 
         if memory:
             memory.content = content
+            memory.embedding = vec
+            memory.embedding_model = self.embedding_router.current_model_name
+            memory.embedding_dim = len(vec)
+            memory.project_name = project_name
             memory.metadata_json = full_metadata
+            memory.is_active = True
         else:
             memory = MemoryModel(
                 session_id=None,
                 memory_type=MemoryType.PROJECT.value,
                 key=f"{project_name}:{key}",
                 content=content,
+                embedding=vec,
+                embedding_model=self.embedding_router.current_model_name,
+                embedding_dim=len(vec),
+                project_name=project_name,
+                is_active=True,
                 metadata_json=full_metadata,
             )
             self.db.add(memory)
@@ -203,10 +251,13 @@ class SQLMemoryService(MemoryService):
         await self.db.refresh(memory)
         return memory
 
-    async def get_project_memories(self, project_name: str) -> List[MemoryModel]:
+    async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
             MemoryModel.key.like(f"{project_name}:%"),
         )
+        if is_active_only:
+            query = query.where(MemoryModel.is_active.is_(True))
         result = await self.db.execute(query)
         return list(result.scalars().all())
+

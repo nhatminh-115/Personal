@@ -10,6 +10,10 @@ class AuraError(Exception):
         self.details = details or {}
 
 
+AURAError = AuraError
+
+
+
 class ProviderError(AuraError):
     """Raised when an external model provider fails, times out, or errors."""
     pass
