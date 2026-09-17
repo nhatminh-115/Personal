@@ -12,13 +12,22 @@ from app.models.provider import ModelProvider
 class ModelRouter:
     """Routes model requests to appropriate provider adapters."""
 
-    def __init__(self, default_provider_name: str | None = None) -> None:
+    def __init__(
+        self,
+        default_provider_name: str | None = None,
+        default_provider: str | None = None,
+        providers: Dict[str, ModelProvider] | None = None,
+    ) -> None:
         self._providers: Dict[str, ModelProvider] = {}
-        self._default_provider_name = default_provider_name or settings.MODEL_PROVIDER
+        self._default_provider_name = default_provider_name or default_provider or settings.MODEL_PROVIDER
 
-        # Register standard providers
-        self.register_provider(MockModelProvider())
-        self.register_provider(OpenAICompatibleProvider())
+        if providers:
+            for p in providers.values():
+                self.register_provider(p)
+        else:
+            # Register standard providers
+            self.register_provider(MockModelProvider())
+            self.register_provider(OpenAICompatibleProvider())
 
     def register_provider(self, provider: ModelProvider) -> None:
         """Register a provider instance."""

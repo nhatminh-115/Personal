@@ -41,6 +41,9 @@ class Settings(BaseSettings):
         description="File path for durable LangGraph execution checkpoints",
     )
 
+    # Checkpoint Security
+    LANGGRAPH_STRICT_MSGPACK: bool = True
+
     # Model Provider Settings
     MODEL_PROVIDER: Literal["mock", "openai"] = "mock"
     OPENAI_API_KEY: str | None = None
@@ -52,3 +55,8 @@ class Settings(BaseSettings):
 
 # Singleton global settings instance
 settings = Settings()
+
+# Enforce LangGraph checkpoint security: restrict msgpack deserialization to SAFE_MSGPACK_TYPES
+import os
+if settings.LANGGRAPH_STRICT_MSGPACK:
+    os.environ["LANGGRAPH_STRICT_MSGPACK"] = "true"

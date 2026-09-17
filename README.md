@@ -176,21 +176,38 @@ Response (Agent halts execution and checkpoints state):
 curl -X GET http://localhost:8000/v1/approvals/pending
 ```
 
-### 4. Approve and Resume Execution
-Resumes the suspended LangGraph execution from the exact SQLite checkpoint:
+### 4. Approve, Reject, or Edit and Resume Execution
+Resumes the suspended LangGraph execution from the exact SQLite checkpoint via `POST /v1/approvals/{approval_id}/decision`:
+
+**Approve:**
 ```bash
-curl -X POST http://localhost:8000/v1/approvals/3ec064f4-.../approve \
+curl -X POST http://localhost:8000/v1/approvals/3ec064f4-.../decision \
   -H "Content-Type: application/json" \
-  -d '{"notes": "Approved by developer"}'
+  -d '{"decision": "approved", "decision_notes": "Approved by developer"}'
 ```
+
+**Reject:**
+```bash
+curl -X POST http://localhost:8000/v1/approvals/3ec064f4-.../decision \
+  -H "Content-Type: application/json" \
+  -d '{"decision": "rejected", "decision_notes": "Denied by user"}'
+```
+
+**Edit Input:**
+```bash
+curl -X POST http://localhost:8000/v1/approvals/3ec064f4-.../decision \
+  -H "Content-Type: application/json" \
+  -d '{"decision": "edited", "edited_input": {"path": "hello.txt", "content": "Edited Hello World"}}'
+```
+
 Response:
 ```json
 {
+  "approval_id": "3ec064f4-...",
+  "status": "approved",
   "run_id": "ef3b5bb3-...",
-  "session_id": "session-1",
-  "response": "Based on the tool output: Successfully wrote 11 characters to hello.txt.",
-  "status": "completed",
-  "approval_id": "3ec064f4-..."
+  "execution_status": "completed",
+  "final_response": "Based on the tool output: Successfully wrote 11 characters to hello.txt."
 }
 ```
 
@@ -198,6 +215,23 @@ Response:
 ```bash
 curl -X GET http://localhost:8000/v1/runs/ef3b5bb3-...
 ```
+
+---
+
+## Technical Details
+
+### Model Routing & `RoutingContext`
+All model invocations pass through `ModelRouter.route(ModelRequest)`. Each request carries an explicit, typed `RoutingContext`:
+- `session_id`: Optional UUID of the active conversation session.
+- `run_id`: Optional UUID of the current execution run.
+- `turn_index`: Zero-indexed turn counter within the session (`int`, default `0`).
+- `capability_flags`: List of active capability constraints (`List[str]`, default `[]`).
+
+### Checkpoint Security (`LANGGRAPH_STRICT_MSGPACK`)
+AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This restricts LangGraph msgpack deserialization strictly to `SAFE_MSGPACK_TYPES`, preventing remote code execution via untrusted callables stored in checkpoint databases.
+
+### Memory Architecture Note
+In Phase 1, conversational context is managed through **Working Memory** (recent session turns) and **Episodic Memory** (recorded summaries of past runs and tool decisions). The **Semantic Memory** table and `pgvector` extension provide the architectural schema foundation, while active vector embeddings and semantic search are scheduled for Phase 2.
 
 ---
 

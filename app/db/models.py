@@ -103,6 +103,7 @@ class ApprovalModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), index=True)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    tool_call_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     tool_name: Mapped[str] = mapped_column(String(128))
     tool_input: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     risk_level: Mapped[str] = mapped_column(String(32), default="HIGH")

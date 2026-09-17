@@ -18,6 +18,7 @@ class AgentState(TypedDict):
     tool_results: List[Dict[str, Any]]
     approval_id: Optional[str]
     approval_state: str  # "none", "pending", "approved", "rejected", "edited"
-    execution_status: str  # "running", "waiting_for_approval", "completed", "failed"
+    tool_approvals: Dict[str, Dict[str, Any]]  # tool_call_id -> {"status": ..., "arguments": ..., "approval_id": ...}
+    execution_status: str  # "running", "waiting_for_approval", "completed", "failed", "cancelled"
     errors: List[str]
     final_response: Optional[str]

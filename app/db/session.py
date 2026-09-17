@@ -48,3 +48,9 @@ async def init_db(database_url: str | None = None) -> None:
     target_engine = get_engine(database_url) if database_url else engine
     async with target_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate schema dynamically if tool_call_id column is missing in approvals table
+        try:
+            await conn.exec_driver_sql("ALTER TABLE approvals ADD COLUMN tool_call_id VARCHAR(64)")
+            await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_approvals_tool_call_id ON approvals (tool_call_id)")
+        except Exception:
+            pass

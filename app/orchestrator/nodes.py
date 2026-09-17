@@ -173,9 +173,9 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
 
 async def route_decision_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
     """
-    Check tool capabilities against permission policy.
-    If approval is required, suspend execution via LangGraph interrupt().
-    Upon resume, process user decision (approved, rejected, edited).
+    Check tool capabilities against permission policy on a strict per-tool basis.
+    For each tool requiring approval, pause via LangGraph interrupt().
+    Upon resume, record decision specifically for that tool_call_id.
     """
     services = _get_services(config)
     registry: ToolRegistry = services["tool_registry"]
@@ -186,140 +186,259 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
     if not tool_requests:
         return {"execution_status": RunStatus.COMPLETED.value}
 
-    # If already approved or edited in a prior state transition, proceed directly
-    if state.get("approval_state") in {"approved", "edited"}:
-        return {"execution_status": RunStatus.RUNNING.value}
+    tool_approvals = dict(state.get("tool_approvals", {}))
 
-    for idx, tc in enumerate(tool_requests):
-        tool = registry.get(tc["name"])
-        risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
-        capabilities = tool.required_capabilities if tool else []
+    # 1. Mark all AUTOMATIC tool calls as auto-authorized
+    for tc in tool_requests:
+        cid = tc.get("id", "")
+        if cid not in tool_approvals:
+            tool = registry.get(tc["name"])
+            risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
+            capabilities = tool.required_capabilities if tool else []
+            decision = permission_policy.evaluate(capabilities, risk_level)
+            if decision == PermissionDecision.AUTOMATIC:
+                tool_approvals[cid] = {"status": "auto", "arguments": tc["arguments"]}
 
-        decision = permission_policy.evaluate(capabilities, risk_level)
+    # 2. Find the next tool call that requires approval and has not been decided
+    target_tc = None
+    target_risk_level = RiskLevel.HIGH.value
+    for tc in tool_requests:
+        cid = tc.get("id", "")
+        if cid not in tool_approvals:
+            target_tc = tc
+            tool = registry.get(tc["name"])
+            target_risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
+            break
 
-        if decision == PermissionDecision.REQUIRES_APPROVAL:
-            existing_app = None
-            if approval_service:
-                existing_app = await approval_service.get_approval_by_run(state["run_id"])
+    # If all tool requests have been decided, proceed directly
+    if target_tc is None:
+        return {
+            "tool_approvals": tool_approvals,
+            "execution_status": RunStatus.RUNNING.value,
+        }
 
-            if existing_app:
-                approval_id = existing_app.id
-            else:
-                if approval_service:
-                    app_model = await approval_service.create_approval(
-                        run_id=state["run_id"],
-                        session_id=state["session_id"],
-                        tool_name=tc["name"],
-                        tool_input=tc["arguments"],
-                        risk_level=risk_level,
-                    )
-                    approval_id = app_model.id
+    cid = target_tc.get("id", "")
+    approval_id = None
+    existing_app = None
+    if approval_service:
+        existing_app = await approval_service.get_approval_by_tool_call(state["run_id"], cid)
 
-                if trace_service:
-                    await trace_service.record_event(
-                        run_id=state["run_id"],
-                        session_id=state["session_id"],
-                        event_type="approval_requested",
-                        payload={"tool_name": tc["name"], "approval_id": approval_id, "risk_level": risk_level},
-                    )
+    if existing_app:
+        approval_id = existing_app.id
+    else:
+        if approval_service:
+            app_model = await approval_service.create_approval(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                tool_call_id=cid,
+                tool_name=target_tc["name"],
+                tool_input=target_tc["arguments"],
+                risk_level=target_risk_level,
+            )
+            approval_id = app_model.id
 
-            # --- TRUE DURABLE LANGGRAPH INTERRUPTION ---
-            # Graph execution halts here and persists to checkpointer.
-            # When resumed via Command(resume=decision_dict), execution continues right here!
-            resume_data = interrupt({
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="approval_requested",
+                payload={"tool_name": target_tc["name"], "tool_call_id": cid, "approval_id": approval_id, "risk_level": target_risk_level},
+            )
+
+    # --- TRUE DURABLE LANGGRAPH INTERRUPTION FOR THIS SPECIFIC TOOL CALL ---
+    resume_data = interrupt({
+        "approval_id": approval_id,
+        "tool_call_id": cid,
+        "tool_name": target_tc["name"],
+        "tool_input": target_tc["arguments"],
+        "risk_level": target_risk_level,
+    })
+
+    # Process human decision upon resumption
+    user_decision = resume_data.get("decision", "approved")
+    decision_notes = resume_data.get("decision_notes")
+    edited_input = resume_data.get("edited_input")
+
+    if user_decision == "rejected":
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="approval_rejected",
+                payload={"approval_id": approval_id, "tool_call_id": cid, "notes": decision_notes},
+            )
+        tool_approvals[cid] = {
+            "status": "rejected",
+            "arguments": target_tc["arguments"],
+            "approval_id": approval_id,
+        }
+        all_rejected = all(
+            tool_approvals.get(t.get("id", ""), {}).get("status") == "rejected"
+            for t in tool_requests
+        )
+        if all_rejected and len(tool_approvals) == len(tool_requests):
+            return {
                 "approval_id": approval_id,
-                "tool_name": tc["name"],
-                "tool_input": tc["arguments"],
-                "risk_level": risk_level,
-            })
+                "approval_state": "rejected",
+                "tool_approvals": tool_approvals,
+                "execution_status": RunStatus.CANCELLED.value,
+                "final_response": "Action was rejected by the user. Tool execution cancelled.",
+            }
+        return {
+            "approval_id": approval_id,
+            "approval_state": "rejected",
+            "tool_approvals": tool_approvals,
+            "execution_status": RunStatus.RUNNING.value,
+        }
 
-            # Process human decision upon resumption
-            user_decision = resume_data.get("decision", "approved")
-            decision_notes = resume_data.get("decision_notes")
+    elif user_decision == "edited":
+        actual_args = edited_input if edited_input is not None else target_tc["arguments"]
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="approval_granted",
+                payload={"approval_id": approval_id, "tool_call_id": cid, "edited": True, "tool_name": target_tc["name"]},
+            )
+        tool_approvals[cid] = {
+            "status": "edited",
+            "arguments": actual_args,
+            "approval_id": approval_id,
+        }
+        return {
+            "approval_id": approval_id,
+            "approval_state": "edited",
+            "tool_approvals": tool_approvals,
+            "execution_status": RunStatus.RUNNING.value,
+        }
 
-            if user_decision == "rejected":
-                if trace_service:
-                    await trace_service.record_event(
-                        run_id=state["run_id"],
-                        session_id=state["session_id"],
-                        event_type="approval_rejected",
-                        payload={"approval_id": approval_id, "notes": decision_notes},
-                    )
-                return {
-                    "approval_id": approval_id,
-                    "approval_state": "rejected",
-                    "execution_status": RunStatus.CANCELLED.value,
-                    "final_response": "Action was rejected by the user. Tool execution cancelled.",
-                }
-
-            elif user_decision == "edited":
-                edited_input = resume_data.get("edited_input", tc["arguments"])
-                tool_requests[idx]["arguments"] = edited_input
-                if trace_service:
-                    await trace_service.record_event(
-                        run_id=state["run_id"],
-                        session_id=state["session_id"],
-                        event_type="approval_granted",
-                        payload={"approval_id": approval_id, "edited": True, "tool_name": tc["name"]},
-                    )
-                return {
-                    "approval_id": approval_id,
-                    "approval_state": "edited",
-                    "execution_status": RunStatus.RUNNING.value,
-                    "tool_requests": tool_requests,
-                }
-
-            else:  # "approved"
-                if trace_service:
-                    await trace_service.record_event(
-                        run_id=state["run_id"],
-                        session_id=state["session_id"],
-                        event_type="approval_granted",
-                        payload={"approval_id": approval_id, "tool_name": tc["name"]},
-                    )
-                return {
-                    "approval_id": approval_id,
-                    "approval_state": "approved",
-                    "execution_status": RunStatus.RUNNING.value,
-                }
-
-    return {"execution_status": RunStatus.RUNNING.value}
+    else:  # "approved"
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="approval_granted",
+                payload={"approval_id": approval_id, "tool_call_id": cid, "tool_name": target_tc["name"]},
+            )
+        tool_approvals[cid] = {
+            "status": "approved",
+            "arguments": target_tc["arguments"],
+            "approval_id": approval_id,
+        }
+        return {
+            "approval_id": approval_id,
+            "approval_state": "approved",
+            "tool_approvals": tool_approvals,
+            "execution_status": RunStatus.RUNNING.value,
+        }
 
 
 def determine_next_route(state: AgentState) -> str:
     """Conditional routing edge logic."""
     if state.get("execution_status") == RunStatus.CANCELLED.value:
         return "direct_response"
-    if state.get("tool_requests") and not state.get("tool_results"):
-        return "execute_tool"
-    return "direct_response"
+
+    tool_requests = state.get("tool_requests", [])
+    if not tool_requests:
+        return "direct_response"
+
+    tool_approvals = state.get("tool_approvals", {})
+    # If any tool request has not yet been resolved in tool_approvals, loop back to route_decision
+    for tc in tool_requests:
+        cid = tc.get("id", "")
+        if cid not in tool_approvals:
+            return "route_decision"
+
+    # If all tool results are already executed, proceed to update_memory / direct response
+    if state.get("tool_results"):
+        return "direct_response"
+
+    return "execute_tool"
 
 
 async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
-    """Execute requested tools within sandbox and collect results with canonical structure."""
+    """Execute requested tools within sandbox with strict per-tool authorization defense."""
     services = _get_services(config)
     registry: ToolRegistry = services["tool_registry"]
     trace_service: Optional[TraceService] = services["trace_service"]
 
     tool_requests = state.get("tool_requests", [])
+    tool_approvals = state.get("tool_approvals", {})
     tool_results = []
     errors = list(state.get("errors", []))
     messages = list(state.get("messages", []))
 
     for tc in tool_requests:
         tool_name = tc["name"]
-        tool_input = tc["arguments"]
         tool_call_id = tc.get("id", "")
+        approval_info = tool_approvals.get(tool_call_id, {})
+        approval_status = approval_info.get("status")
+
+        tool = registry.get(tool_name)
+        risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
+        capabilities = tool.required_capabilities if tool else []
+        decision = permission_policy.evaluate(capabilities, risk_level)
+
+        # Defense-in-depth: If tool requires approval, check its explicit approval status
+        if decision == PermissionDecision.REQUIRES_APPROVAL:
+            if approval_status == "rejected":
+                error_msg = f"Action for tool '{tool_name}' (call_id: {tool_call_id}) was rejected by user. Tool execution cancelled."
+                result_payload = {
+                    "success": False,
+                    "output": "",
+                    "error": error_msg,
+                    "error_category": "approval_rejection",
+                    "metadata": {},
+                }
+                tool_results.append({
+                    "tool_call_id": tool_call_id,
+                    "name": tool_name,
+                    "result": result_payload,
+                })
+                messages.append({
+                    "role": "tool",
+                    "name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "content": f"Error (approval_rejection): {error_msg}",
+                })
+                continue
+
+            elif approval_status not in {"approved", "edited"}:
+                error_msg = f"Action for tool '{tool_name}' (call_id: {tool_call_id}) blocked: high-risk tool call was not approved."
+                result_payload = {
+                    "success": False,
+                    "output": "",
+                    "error": error_msg,
+                    "error_category": "permission_failure",
+                    "metadata": {},
+                }
+                tool_results.append({
+                    "tool_call_id": tool_call_id,
+                    "name": tool_name,
+                    "result": result_payload,
+                })
+                messages.append({
+                    "role": "tool",
+                    "name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "content": f"Error (permission_failure): {error_msg}",
+                })
+                continue
+
+            # Tool is authorized: if edited, use the edited arguments!
+            tool_input = approval_info.get("arguments", tc["arguments"])
+        else:
+            # Auto-permitted tool
+            tool_input = tc["arguments"]
 
         if trace_service:
             await trace_service.record_event(
                 run_id=state["run_id"],
                 session_id=state["session_id"],
                 event_type="tool_requested",
-                payload={"tool": tool_name, "arguments": tool_input},
+                payload={"tool": tool_name, "arguments": tool_input, "tool_call_id": tool_call_id},
             )
 
-        tool = registry.get(tool_name)
         if not tool:
             error_category = "tool_failure"
             error_msg = f"Tool '{tool_name}' not found."
@@ -372,7 +491,7 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 run_id=state["run_id"],
                 session_id=state["session_id"],
                 event_type="tool_executed",
-                payload={"tool": tool_name, "result": result_payload},
+                payload={"tool": tool_name, "tool_call_id": tool_call_id, "result": result_payload},
             )
 
     return {

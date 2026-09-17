@@ -14,7 +14,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     run_id: str
     session_id: str
-    status: Literal["completed", "waiting_for_approval", "failed"]
+    status: Literal["completed", "waiting_for_approval", "failed", "cancelled"]
     response: Optional[str] = None
     approval_id: Optional[str] = None
     tool_results: List[Dict[str, Any]] = Field(default_factory=list)
@@ -25,6 +25,7 @@ class ApprovalResponse(BaseModel):
     id: str
     run_id: str
     session_id: str
+    tool_call_id: Optional[str] = None
     tool_name: str
     tool_input: Dict[str, Any]
     risk_level: str

@@ -196,6 +196,7 @@ class AgentState(TypedDict):
     tool_results: list[dict]         # Executed tool results (with tool_call_id, name, result payload)
     approval_id: str | None          # Associated approval ID if paused
     approval_state: str              # "none" | "pending" | "approved" | "rejected" | "edited"
+    tool_approvals: dict[str, dict]  # Per-tool approval decisions keyed by tool_call_id
     execution_status: str            # RunStatus value: "running" | "waiting_for_approval" | "completed" | "cancelled" | "failed"
     errors: list[str]                # Trace of non-fatal and fatal categorized errors
     final_response: str | None       # Final markdown answer intended for the user
@@ -228,7 +229,7 @@ Multi-turn context preserves genuine role structures rather than squashing tool 
 Memory is partitioned into five distinct cognitive tiers:
 1. **Working Memory:** Current turn execution state and active session conversation buffer.
 2. **Episodic Memory:** Chronological narrative records of significant past runs, decisions, and tool executions.
-3. **Semantic Memory:** Extracted declarative facts, indexed with vector embeddings (`pgvector`) for cosine similarity retrieval.
+3. **Semantic Memory:** Extracted declarative facts, indexed with vector embeddings (`pgvector`) for cosine similarity retrieval. *(Note: Phase 1 provides schema-only foundations; active vector search is scheduled for Phase 2).*
 4. **Profile Memory:** Key-value store of persistent user preferences, system constraints, and identity details.
 5. **Project Memory:** Contextual facts, workspace paths, and domain knowledge scoped to a specific project.
 
@@ -245,11 +246,13 @@ Memory is partitioned into five distinct cognitive tiers:
 - In Phase 1, the sandbox boundary is enforced at the filesystem level: directory jailing to `AURA_WORKSPACE_ROOT`.
 - In Phase 2, shell and code execution tools will run exclusively inside ephemeral container sandboxes (e.g., rootless Docker or gVisor) with network egress isolation and strict resource quotas.
 
-### 5.6 Approval Boundary
-- The approval layer enforces Human-in-the-loop control.
-- Any action flagged with risk level `HIGH` or `CRITICAL`, or requiring capabilities categorized as `requires_approval` (such as `filesystem.write`), stops graph execution.
-- The approval object records: `approval_id`, `run_id`, `session_id`, `tool_name`, `tool_input`, `risk_level`, `status`, and timestamps.
-- Execution cannot resume until a valid decision (`approved`, `rejected`, or `edited`) is committed to the database.
+### 5.6 Approval & Checkpoint Security Boundary
+- The approval layer enforces Human-in-the-loop control with per-tool granularity:
+  - Approvals are explicitly bound to a specific `tool_call_id`. Approving one tool call never authorizes another unapproved call.
+  - In multi-tool runs, permissions are evaluated independently; safe calls auto-execute, and dangerous calls trigger sequential LangGraph interruptions.
+  - In `execute_tool_node`, defense-in-depth ensures that any call without an explicit `approved` or `edited` status in `tool_approvals` is blocked and never executed.
+  - Checkpoint persistence uses `AsyncSqliteSaver` with `LANGGRAPH_STRICT_MSGPACK=true` to enforce strict MessagePack serialization and prevent untrusted Python object deserialization vulnerabilities.
+  - Resumption via `/v1/approvals/{approval_id}/decision` reconciles DB records against graph thread snapshots, guaranteeing crash recovery and idempotency upon duplicate requests or client retries.
 
 ---
 

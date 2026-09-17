@@ -49,6 +49,7 @@ def build_orchestrator_graph() -> StateGraph:
         "route_decision",
         determine_next_route,
         {
+            "route_decision": "route_decision",
             "execute_tool": "execute_tool",
             "direct_response": "update_memory",
         },

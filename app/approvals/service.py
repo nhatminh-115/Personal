@@ -23,11 +23,13 @@ class ApprovalService:
         tool_name: str,
         tool_input: Dict[str, Any],
         risk_level: str = "HIGH",
+        tool_call_id: Optional[str] = None,
     ) -> ApprovalModel:
         """Create a new pending approval record."""
         approval = ApprovalModel(
             run_id=run_id,
             session_id=session_id,
+            tool_call_id=tool_call_id,
             tool_name=tool_name,
             tool_input=tool_input,
             risk_level=risk_level,
@@ -37,8 +39,8 @@ class ApprovalService:
         await self.db.commit()
         await self.db.refresh(approval)
         logger.info(
-            f"Created pending approval '{approval.id}' for tool '{tool_name}'",
-            extra={"run_id": run_id, "session_id": session_id, "approval_id": approval.id},
+            f"Created pending approval '{approval.id}' for tool '{tool_name}' (call_id: {tool_call_id})",
+            extra={"run_id": run_id, "session_id": session_id, "approval_id": approval.id, "tool_call_id": tool_call_id},
         )
         return approval
 
@@ -53,14 +55,34 @@ class ApprovalService:
         return list(result.scalars().all())
 
     async def get_approval_by_run(self, run_id: str) -> Optional[ApprovalModel]:
-        """Fetch approval associated with a run ID."""
+        """Fetch latest approval associated with a run ID."""
         query = (
             select(ApprovalModel)
             .where(ApprovalModel.run_id == run_id)
             .order_by(ApprovalModel.created_at.desc())
         )
         result = await self.db.execute(query)
-        return result.scalar_one_or_none()
+        return result.scalars().first()
+
+    async def get_approval_by_tool_call(self, run_id: str, tool_call_id: str) -> Optional[ApprovalModel]:
+        """Fetch approval record associated with a specific run ID and tool_call_id."""
+        query = (
+            select(ApprovalModel)
+            .where(ApprovalModel.run_id == run_id, ApprovalModel.tool_call_id == tool_call_id)
+            .order_by(ApprovalModel.created_at.desc())
+        )
+        result = await self.db.execute(query)
+        return result.scalars().first()
+
+    async def get_approvals_by_run(self, run_id: str) -> List[ApprovalModel]:
+        """Fetch all approvals associated with a run ID."""
+        query = (
+            select(ApprovalModel)
+            .where(ApprovalModel.run_id == run_id)
+            .order_by(ApprovalModel.created_at.asc())
+        )
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
 
     async def get_approval(self, approval_id: str) -> ApprovalModel:
         """Fetch an approval by ID."""
