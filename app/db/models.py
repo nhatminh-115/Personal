@@ -9,6 +9,19 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base
 
 
+from enum import Enum
+
+
+class RunStatus(str, Enum):
+    """Explicit run lifecycle states."""
+    CREATED = "created"
+    RUNNING = "running"
+    WAITING_FOR_APPROVAL = "waiting_for_approval"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
 

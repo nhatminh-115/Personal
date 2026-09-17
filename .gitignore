@@ -219,9 +219,12 @@ __marimo__/
 
 # Databases & Local State
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 aura.db
+aura_checkpoints.db*
 
 # Workspace content
 workspace/*

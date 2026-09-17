@@ -17,6 +17,18 @@ from app.models.mock_provider import MockModelProvider
 from app.models.router import model_router
 
 
+from langgraph.checkpoint.memory import MemorySaver
+from app.orchestrator.graph import set_global_checkpointer
+
+
+@pytest.fixture(autouse=True)
+def setup_test_checkpointer():
+    """Ensure a fresh, isolated MemorySaver checkpointer for every test."""
+    cp = MemorySaver()
+    set_global_checkpointer(cp)
+    yield cp
+
+
 @pytest.fixture(autouse=True)
 def setup_test_workspace(tmp_path: Path):
     """Ensure a clean, isolated temporary workspace for every test."""

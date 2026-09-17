@@ -35,6 +35,12 @@ class Settings(BaseSettings):
         description="Root directory for isolated agent workspace operations",
     )
 
+    # LangGraph Checkpointing Database
+    CHECKPOINT_DB_PATH: Path = Field(
+        default=Path("./aura_checkpoints.db").resolve(),
+        description="File path for durable LangGraph execution checkpoints",
+    )
+
     # Model Provider Settings
     MODEL_PROVIDER: Literal["mock", "openai"] = "mock"
     OPENAI_API_KEY: str | None = None

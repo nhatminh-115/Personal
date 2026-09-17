@@ -52,6 +52,16 @@ class ApprovalService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def get_approval_by_run(self, run_id: str) -> Optional[ApprovalModel]:
+        """Fetch approval associated with a run ID."""
+        query = (
+            select(ApprovalModel)
+            .where(ApprovalModel.run_id == run_id)
+            .order_by(ApprovalModel.created_at.desc())
+        )
+        result = await self.db.execute(query)
+        return result.scalar_one_or_none()
+
     async def get_approval(self, approval_id: str) -> ApprovalModel:
         """Fetch an approval by ID."""
         query = select(ApprovalModel).where(ApprovalModel.id == approval_id)

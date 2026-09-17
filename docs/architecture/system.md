@@ -129,47 +129,85 @@ sequenceDiagram
             API-->>Client: 200 OK {response, run_id, status: "completed"}
         else Requires Approval (e.g., filesystem.write)
             Policy-->>Orch: Approval Required
-            Orch->>Appr: Create Pending Approval Record
-            Orch->>Trace: Emit 'approval_requested'
-            Orch-->>API: State Paused (execution_status: "waiting_for_approval")
+            Orch->>Appr: Create Pending Approval Record (if not exists)
+            Orch->>Trace: Emit 'approval_requested' (exactly once)
+            Note over Orch: True Durable Pause: LangGraph interrupt(payload)
+            Orch-->>API: Graph Suspended at Checkpoint (status: "waiting_for_approval")
             API-->>Client: 200 OK {status: "waiting_for_approval", approval_id, run_id}
             
-            Note over Client,Appr: Out-of-band user decision
-            Client->>API: POST /v1/approvals/{id}/decision {decision: "approved"}
+            Note over Client,Appr: Human decision submitted via API
+            Client->>API: POST /v1/approvals/{id}/approve (or /reject, /edit)
             API->>Appr: Record Decision
-            API->>Orch: Resume Run (run_id, approval_id)
-            Orch->>Tool: Execute Approved Tool in Sandbox
-            Tool-->>Orch: ToolResult
-            Orch->>Router: Generate Final Response
-            Orch->>Mem: Update Memory
-            Orch-->>API: Completed AgentState
-            API-->>Client: 200 OK {response, status: "completed"}
+            API->>Trace: Emit 'approval_granted' (or 'approval_rejected')
+            API->>Orch: Resume Graph via Command(resume=decision) with thread_id=run_id
+            Note over Orch: Execution resumes inside route_decision_node at interrupt()
+            alt Decision == Approved / Edited
+                Orch->>Tool: Execute Tool in Sandbox
+                Tool-->>Orch: ToolResult
+                Orch->>Trace: Emit 'tool_executed'
+                Orch->>Router: Synthesize Final Response (Canonical Messages)
+                Router-->>Orch: ModelResponse
+                Orch->>Mem: Update Memory
+                Orch->>Trace: Emit 'run_completed' (exactly once)
+                Orch-->>API: Completed AgentState
+                API-->>Client: 200 OK {response, status: "completed"}
+            else Decision == Rejected
+                Orch->>Trace: Emit 'run_completed' with status: "cancelled"
+                Orch-->>API: Cancelled AgentState
+                API-->>Client: 200 OK {response, status: "cancelled"}
+            end
         end
     end
 ```
 
 ---
 
-## 4. Agent State Model (`AgentState`)
+## 4. Agent State & Lifecycle Model
 
-Agent state in AURA is explicitly typed, immutable per step, and serialized cleanly across transitions:
+### 4.1 `RunStatus` Lifecycle Enum
+Every run in AURA progresses through an explicit, auditable lifecycle:
+- `created`: Initial state upon API ingestion.
+- `running`: Actively executing reasoning, context retrieval, or tool invocation.
+- `waiting_for_approval`: Suspended at an interruption checkpoint pending human authorization.
+- `completed`: Successfully finalized with answer synthesized and episodic memory committed (terminal).
+- `failed`: Terminated abnormally due to an unrecoverable system or provider error (terminal).
+- `cancelled`: Terminated cleanly due to human rejection or explicit cancellation (terminal).
 
+**Single-Terminal-Event Invariant:** A run records exactly one terminal event (`run_completed` or `run_failed`) upon reaching a terminal state. Resuming from an interruption does not duplicate `approval_requested` or produce premature completions.
+
+### 4.2 Failure Taxonomy
+Failures are explicitly categorized in runtime events, tool outputs, and audit traces:
+- `tool_failure`: A tool raised an unhandled exception or failed during execution.
+- `provider_failure`: An external LLM provider returned a network error, rate limit, or invalid response.
+- `permission_failure`: An operation violated permission policies or attempted an unauthorized capability / path traversal escape.
+- `approval_rejection`: A user explicitly denied authorization for a requested tool invocation.
+- `graph_failure`: Orchestration state error, cyclic execution timeout, or serialization failure.
+
+### 4.3 `AgentState` Definition
 ```python
 class AgentState(TypedDict):
     run_id: str                      # Unique UUID for the current execution run
     session_id: str                  # Session UUID representing conversation thread
     user_message: str                # Current user input message
-    messages: list[dict[str, Any]]   # Standardized message history (role, content, etc.)
+    messages: list[dict[str, Any]]   # Canonical conversation turns: system, user, assistant, tool
     retrieved_context: list[str]     # Injected memory context items
     current_plan: str | None         # High-level plan or reasoning scratchpad
-    tool_requests: list[dict]        # Pending or active tool calls from model
-    tool_results: list[dict]         # Executed tool results
+    tool_requests: list[dict]        # Pending or active tool calls from model (with id, name, arguments)
+    tool_results: list[dict]         # Executed tool results (with tool_call_id, name, result payload)
     approval_id: str | None          # Associated approval ID if paused
     approval_state: str              # "none" | "pending" | "approved" | "rejected" | "edited"
-    execution_status: str            # "running" | "waiting_for_approval" | "completed" | "failed"
-    errors: list[str]                # Trace of non-fatal and fatal errors
+    execution_status: str            # RunStatus value: "running" | "waiting_for_approval" | "completed" | "cancelled" | "failed"
+    errors: list[str]                # Trace of non-fatal and fatal categorized errors
     final_response: str | None       # Final markdown answer intended for the user
 ```
+
+### 4.4 Canonical Conversation Schema
+Multi-turn context preserves genuine role structures rather than squashing tool calls into assistant text:
+1. `system`: Injected system instructions and retrieved episodic memory grounding.
+2. `user`: Explicit user turn content.
+3. `assistant`: Model response optionally containing structured `tool_calls` (`id`, `name`, `arguments`).
+4. `tool`: Tool execution outputs explicitly correlated via `tool_call_id` and `name`.
+5. `assistant`: Final synthesis grounding response in tool results.
 
 ---
 
@@ -182,7 +220,7 @@ class AgentState(TypedDict):
 
 ### 5.2 Model-Provider Boundary
 - Orchestrator components interact exclusively with `ModelRouter`.
-- `ModelRouter` accepts typed `ModelRequest` and returns typed `ModelResponse`.
+- `ModelRouter` accepts typed `ModelRequest` with an explicit `RoutingContext` (`session_id`, `run_id`, `turn_index`, `capability_flags`) and returns typed `ModelResponse`.
 - Provider implementations (`OpenAIProvider`, `MockProvider`, etc.) adapt vendor APIs to AURA internal domain schemas.
 - Provider secrets are read strictly from application settings; they are never passed through conversation state or logged.
 
@@ -194,10 +232,14 @@ Memory is partitioned into five distinct cognitive tiers:
 4. **Profile Memory:** Key-value store of persistent user preferences, system constraints, and identity details.
 5. **Project Memory:** Contextual facts, workspace paths, and domain knowledge scoped to a specific project.
 
-### 5.4 Tool & Capability Boundary
+### 5.4 Hardened Tool Sandbox Boundary
 - Every tool declares explicit required capabilities (`filesystem.read`, `filesystem.write`, `shell.execute`, `network.access`).
 - Tools never perform self-authorization. Authorization is strictly performed by `PermissionPolicy`.
-- Path traversal protection: All filesystem tools must resolve candidate paths against `AURA_WORKSPACE_ROOT` using strict canonical path resolution (`Path.resolve()`). If the resolved path does not start with the workspace root, access is denied immediately.
+- **Hardened Path Security:** All filesystem tools resolve candidate paths via `resolve_workspace_path()`:
+  - **Null byte rejection:** Rejects embedded `\0` null bytes immediately.
+  - **Absolute path confinement:** If an absolute path is supplied, it must resolve strictly inside `AURA_WORKSPACE_ROOT`.
+  - **Nested traversal prevention:** Paths with deep relative traversals (`../../`) are evaluated against the canonical root.
+  - **Symlink & Junction escape defense:** Path resolution resolves all symbolic links, junctions, and relative segments (`Path.resolve()`). If the resolved target path is not relative to `workspace_root.resolve()`, access is rejected with `ACCESS DENIED` and classified as `permission_failure`.
 
 ### 5.5 Sandbox Boundary
 - In Phase 1, the sandbox boundary is enforced at the filesystem level: directory jailing to `AURA_WORKSPACE_ROOT`.

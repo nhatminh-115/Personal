@@ -14,12 +14,12 @@ from app.api.dependencies import (
 from app.api.schemas import ChatRequest, ChatResponse
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel
+from app.db.models import RunModel, RunStatus
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
 from app.observability.tracer import TraceService
-from app.orchestrator.graph import orchestrator_graph
+from app.orchestrator.graph import get_compiled_graph
 from app.orchestrator.state import AgentState
 from app.tools.registry import ToolRegistry
 
@@ -48,7 +48,7 @@ async def chat_endpoint(
     run_record = RunModel(
         id=run_id,
         session_id=req.session_id,
-        status="running",
+        status=RunStatus.RUNNING.value,
         user_message=req.message,
     )
     db.add(run_record)
@@ -74,13 +74,14 @@ async def chat_endpoint(
         "tool_results": [],
         "approval_id": None,
         "approval_state": "none",
-        "execution_status": "running",
+        "execution_status": RunStatus.RUNNING.value,
         "errors": [],
         "final_response": None,
     }
 
     config = {
         "configurable": {
+            "thread_id": run_id,
             "memory_service": mem_service,
             "approval_service": approval_service,
             "trace_service": trace_service,
@@ -90,33 +91,54 @@ async def chat_endpoint(
     }
 
     try:
-        # 5. Invoke LangGraph orchestrator
-        final_state: AgentState = await orchestrator_graph.ainvoke(initial_state, config=config)
+        # 5. Invoke LangGraph orchestrator with durable checkpointer
+        graph = await get_compiled_graph()
+        result_state = await graph.ainvoke(initial_state, config=config)
 
-        # 6. Update Run record
-        run_record.status = final_state.get("execution_status", "completed")
-        run_record.final_response = final_state.get("final_response")
+        # 6. Check if execution was suspended via interrupt()
+        if "__interrupt__" in result_state and len(result_state["__interrupt__"]) > 0:
+            interrupt_val = result_state["__interrupt__"][0].value
+            approval_id = interrupt_val.get("approval_id")
+            tool_name = interrupt_val.get("tool_name")
+            risk_level = interrupt_val.get("risk_level")
+
+            run_record.status = RunStatus.WAITING_FOR_APPROVAL.value
+            run_record.final_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
+            await db.commit()
+
+            return ChatResponse(
+                run_id=run_id,
+                session_id=req.session_id,
+                status=RunStatus.WAITING_FOR_APPROVAL.value,
+                response=run_record.final_response,
+                approval_id=approval_id,
+                tool_results=[],
+            )
+
+        # 7. Normal completion
+        run_record.status = result_state.get("execution_status", RunStatus.COMPLETED.value)
+        run_record.final_response = result_state.get("final_response")
         await db.commit()
 
         return ChatResponse(
             run_id=run_id,
             session_id=req.session_id,
-            status=final_state.get("execution_status", "completed"),
-            response=final_state.get("final_response"),
-            approval_id=final_state.get("approval_id"),
-            tool_results=final_state.get("tool_results", []),
+            status=run_record.status,
+            response=result_state.get("final_response"),
+            approval_id=None,
+            tool_results=result_state.get("tool_results", []),
         )
 
     except Exception as e:
         logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
-        run_record.status = "failed"
+        run_record.status = RunStatus.FAILED.value
         run_record.error_message = str(e)
         await db.commit()
         await trace_service.record_event(
             run_id=run_id,
             session_id=req.session_id,
             event_type="run_failed",
-            payload={"error": str(e)},
+            payload={"error": str(e), "error_category": "graph_failure"},
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

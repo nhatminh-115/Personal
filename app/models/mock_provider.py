@@ -55,15 +55,17 @@ class MockModelProvider(ModelProvider):
 
         latest_msg = request.messages[-1]
 
-        # If previous message is a TOOL result, summarize it
-        if latest_msg.role == ModelRole.TOOL:
+        # If latest message is a TOOL result or contains recent tool outputs, summarize it
+        tool_msgs = [m for m in request.messages if m.role == ModelRole.TOOL]
+        if tool_msgs and latest_msg.role == ModelRole.TOOL:
+            combined_tool_output = " | ".join(m.content for m in tool_msgs)
             return ModelResponse(
-                content=f"Based on the tool output: {latest_msg.content}",
+                content=f"Based on the tool output: {combined_tool_output}",
                 usage=ModelUsage(prompt_tokens=25, completion_tokens=15, total_tokens=40),
                 finish_reason="stop",
             )
-
-        content = latest_msg.content.strip()
+        user_msgs = [m for m in request.messages if m.role == ModelRole.USER]
+        content = (user_msgs[-1].content if user_msgs else latest_msg.content).strip()
 
         # Check for tool invocations requested by user query
         # 1. "Read <path>" or "Read file <path>"

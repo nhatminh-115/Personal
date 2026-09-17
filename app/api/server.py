@@ -12,14 +12,20 @@ from app.core.settings import settings
 from app.db.session import init_db
 
 
+from app.orchestrator.graph import close_checkpointer, init_checkpointer
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown lifecycle."""
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     # Ensure database schema is initialized
     await init_db()
+    # Ensure persistent checkpointer is initialized
+    await init_checkpointer()
     yield
     logger.info(f"Shutting down {settings.APP_NAME}")
+    await close_checkpointer()
 
 
 def create_app() -> FastAPI:

@@ -12,15 +12,6 @@ class ModelRole(str, Enum):
     TOOL = "tool"
 
 
-class ChatMessage(BaseModel):
-    """Normalized chat message."""
-
-    role: ModelRole
-    content: str
-    name: str | None = None
-    tool_call_id: str | None = None
-
-
 class ToolCallRequest(BaseModel):
     """Normalized tool call request from an LLM."""
 
@@ -29,12 +20,33 @@ class ToolCallRequest(BaseModel):
     arguments: dict[str, Any] = Field(default_factory=dict)
 
 
+class ChatMessage(BaseModel):
+    """Normalized canonical chat message."""
+
+    role: ModelRole
+    content: str = ""
+    name: str | None = None
+    tool_call_id: str | None = None
+    tool_calls: list[ToolCallRequest] | None = None
+
+
 class ToolDefinition(BaseModel):
     """Normalized tool specification exposed to models."""
 
     name: str
     description: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+
+
+class RoutingContext(BaseModel):
+    """Contextual metadata informing future model selection and routing."""
+
+    task_type: str | None = None
+    complexity: Literal["simple", "medium", "complex"] | None = None
+    privacy_requirement: Literal["public", "internal", "confidential"] | None = None
+    latency_preference: Literal["low", "normal"] | None = None
+    cost_preference: Literal["low", "normal", "high_quality"] | None = None
+    required_capabilities: list[str] = Field(default_factory=list)
 
 
 class ModelUsage(BaseModel):
@@ -53,6 +65,7 @@ class ModelRequest(BaseModel):
     temperature: float = 0.0
     max_tokens: int = 2048
     metadata: dict[str, Any] = Field(default_factory=dict)
+    routing_context: RoutingContext | None = None
 
 
 class ModelResponse(BaseModel):

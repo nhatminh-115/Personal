@@ -39,11 +39,23 @@ class OpenAICompatibleProvider(ModelProvider):
     def _convert_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         converted = []
         for msg in messages:
-            item: dict[str, Any] = {"role": msg.role.value, "content": msg.content}
+            item: dict[str, Any] = {"role": msg.role.value, "content": msg.content or ""}
             if msg.name:
                 item["name"] = msg.name
             if msg.tool_call_id:
                 item["tool_call_id"] = msg.tool_call_id
+            if msg.tool_calls:
+                item["tool_calls"] = [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.name,
+                            "arguments": json.dumps(tc.arguments) if isinstance(tc.arguments, dict) else str(tc.arguments),
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ]
             converted.append(item)
         return converted
 

@@ -3,7 +3,7 @@
 from typing import Dict
 from app.core.errors import ProviderError
 from app.core.settings import settings
-from app.models.base import ModelRequest, ModelResponse
+from app.models.base import ModelRequest, ModelResponse, RoutingContext
 from app.models.mock_provider import MockModelProvider
 from app.models.openai_provider import OpenAICompatibleProvider
 from app.models.provider import ModelProvider
@@ -31,8 +31,16 @@ class ModelRouter:
             raise ProviderError(f"Model provider '{target_name}' is not registered.")
         return self._providers[target_name]
 
-    async def route(self, request: ModelRequest, provider_name: str | None = None) -> ModelResponse:
-        """Route request to the target provider."""
+    async def route(
+        self,
+        request: ModelRequest,
+        provider_name: str | None = None,
+        routing_context: RoutingContext | None = None,
+    ) -> ModelResponse:
+        """Route request to the target provider with optional routing context."""
+        if routing_context and not request.routing_context:
+            request.routing_context = routing_context
+
         provider = self.get_provider(provider_name)
         return await provider.generate(request)
 

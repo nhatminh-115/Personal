@@ -2,17 +2,24 @@
 
 import asyncio
 import os
+import uuid
 from pathlib import Path
 from httpx import ASGITransport, AsyncClient
 
 from app.api.server import app
 from app.core.settings import settings
+from app.db.session import init_db
+from app.orchestrator.graph import close_checkpointer, init_checkpointer
 
 
 async def main():
     print("=" * 60)
     print("AURA LIVE VERTICAL SLICE VERIFICATION")
     print("=" * 60)
+
+    # Initialize tables and checkpointer for standalone script run
+    await init_db()
+    await init_checkpointer()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -27,10 +34,12 @@ async def main():
         workspace.mkdir(parents=True, exist_ok=True)
         sample_file = workspace / "demo_doc.txt"
         sample_file.write_text("AURA: Adaptive User Runtime Agent verified in production mode!", encoding="utf-8")
+        output_file = workspace / "live_output.txt"
+        output_file.unlink(missing_ok=True)
         print(f"\n[Step 2] Created sample file at {sample_file}")
 
         # 3. Request agent to read file (Automatic tool flow)
-        session_id = "live-demo-session"
+        session_id = f"live-demo-{uuid.uuid4().hex[:6]}"
         print(f"\n[Step 3] Sending chat query: 'Read demo_doc.txt' (Session: {session_id})...")
         chat_res = await client.post("/v1/chat", json={"session_id": session_id, "message": "Read demo_doc.txt"})
         print(f"Status: {chat_res.status_code}")
@@ -98,6 +107,7 @@ async def main():
     print("\n" + "=" * 60)
     print("ALL LIVE VERIFICATION STEPS COMPLETED SUCCESSFULLY!")
     print("=" * 60)
+    await close_checkpointer()
 
 
 if __name__ == "__main__":

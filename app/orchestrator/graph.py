@@ -1,10 +1,16 @@
-"""LangGraph StateGraph assembly and execution engine."""
+"""LangGraph StateGraph assembly and durable checkpointer management."""
 
-from typing import Any, Dict
+from pathlib import Path
+from typing import Optional
+import aiosqlite
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, START, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
+from app.core.logging import logger
+from app.core.settings import settings
 from app.orchestrator.nodes import (
-    approval_pause_node,
     determine_next_route,
     execute_tool_node,
     load_context_node,
@@ -15,9 +21,14 @@ from app.orchestrator.nodes import (
 )
 from app.orchestrator.state import AgentState
 
+# Global checkpointer and compiled graph cache
+_global_checkpointer: Optional[BaseCheckpointSaver] = None
+_checkpointer_connection: Optional[aiosqlite.Connection] = None
+_compiled_graph: Optional[CompiledStateGraph] = None
 
-def build_orchestrator_graph():
-    """Build and compile the LangGraph StateGraph orchestrator."""
+
+def build_orchestrator_graph() -> StateGraph:
+    """Build the LangGraph StateGraph topology."""
     workflow = StateGraph(AgentState)
 
     # 1. Register graph nodes
@@ -26,7 +37,6 @@ def build_orchestrator_graph():
     workflow.add_node("route_decision", route_decision_node)
     workflow.add_node("execute_tool", execute_tool_node)
     workflow.add_node("verify_result", verify_result_node)
-    workflow.add_node("approval_pause", approval_pause_node)
     workflow.add_node("update_memory", update_memory_node)
 
     # 2. Wire edges
@@ -39,40 +49,65 @@ def build_orchestrator_graph():
         "route_decision",
         determine_next_route,
         {
-            "approval_pause": "approval_pause",
             "execute_tool": "execute_tool",
             "direct_response": "update_memory",
         },
     )
 
-    workflow.add_edge("approval_pause", "update_memory")
     workflow.add_edge("execute_tool", "verify_result")
     workflow.add_edge("verify_result", "update_memory")
     workflow.add_edge("update_memory", END)
 
-    return workflow.compile()
+    return workflow
 
 
-# Compiled singleton graph
-orchestrator_graph = build_orchestrator_graph()
+async def init_checkpointer(db_path: Optional[Path] = None) -> BaseCheckpointSaver:
+    """Initialize persistent SQLite checkpointer for durable execution state."""
+    global _global_checkpointer, _checkpointer_connection, _compiled_graph
+    target_path = str(db_path or settings.CHECKPOINT_DB_PATH)
+    
+    if _checkpointer_connection is not None:
+        await _checkpointer_connection.close()
+
+    _checkpointer_connection = await aiosqlite.connect(target_path)
+    _global_checkpointer = AsyncSqliteSaver(_checkpointer_connection)
+    await _global_checkpointer.setup()
+    
+    # Invalidate cached graph so it recompiles with new checkpointer
+    _compiled_graph = None
+    logger.info(f"Initialized LangGraph AsyncSqliteSaver checkpoint storage at '{target_path}'")
+    return _global_checkpointer
 
 
-async def resume_execution(
-    initial_state: AgentState,
-    config: Dict[str, Any],
-) -> AgentState:
-    """
-    Resume an agent run that was paused awaiting approval.
-    Executes tool directly with approved state, verifies result, and updates memory.
-    """
-    # 1. Execute the approved tool
-    tool_update = await execute_tool_node(initial_state, config)
-    current_state = {**initial_state, **tool_update}
+def set_global_checkpointer(checkpointer: BaseCheckpointSaver) -> None:
+    """Explicitly set a checkpointer (useful for in-memory testing)."""
+    global _global_checkpointer, _compiled_graph
+    _global_checkpointer = checkpointer
+    _compiled_graph = None
 
-    # 2. Verify result and generate final response
-    verify_update = await verify_result_node(current_state, config)
-    current_state = {**current_state, **verify_update}
 
-    # 3. Commit to memory and trace completion
-    mem_update = await update_memory_node(current_state, config)
-    return {**current_state, **mem_update}
+async def close_checkpointer() -> None:
+    """Gracefully close checkpointer connection upon application shutdown."""
+    global _checkpointer_connection, _global_checkpointer, _compiled_graph
+    if _checkpointer_connection:
+        await _checkpointer_connection.close()
+        _checkpointer_connection = None
+    _global_checkpointer = None
+    _compiled_graph = None
+
+
+async def get_compiled_graph(checkpointer: Optional[BaseCheckpointSaver] = None) -> CompiledStateGraph:
+    """Retrieve or build the compiled LangGraph with durable checkpointer."""
+    global _compiled_graph
+    if checkpointer is not None:
+        workflow = build_orchestrator_graph()
+        return workflow.compile(checkpointer=checkpointer)
+
+    if _compiled_graph is None:
+        cp = _global_checkpointer
+        if cp is None:
+            cp = await init_checkpointer()
+        workflow = build_orchestrator_graph()
+        _compiled_graph = workflow.compile(checkpointer=cp)
+
+    return _compiled_graph
