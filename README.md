@@ -125,10 +125,16 @@ pytest tests/integration/ -v
 pytest tests/e2e/ -v
 ```
 
-Run live vertical slice verification:
+Run live vertical slice verification (Phase 1):
 ```powershell
 $env:PYTHONPATH="."
 python scripts/verify_live.py
+```
+
+Run Phase 2 capability verification (Memory, MCP, Docker Sandbox, Event Scheduler):
+```powershell
+$env:PYTHONPATH="."
+python scripts/verify_phase2.py
 ```
 
 ---
@@ -233,8 +239,28 @@ All model invocations pass through `ModelRouter.route(ModelRequest)`. Each reque
 ### Checkpoint Security (`LANGGRAPH_STRICT_MSGPACK`)
 AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This restricts LangGraph msgpack deserialization strictly to `SAFE_MSGPACK_TYPES`, preventing remote code execution via untrusted callables stored in checkpoint databases.
 
-### Memory Architecture Note
-In Phase 1, conversational context is managed through **Working Memory** (recent session turns) and **Episodic Memory** (recorded summaries of past runs and tool decisions). The **Semantic Memory** table and `pgvector` extension provide the architectural schema foundation, while active vector embeddings and semantic search are scheduled for Phase 2.
+### Phase 2 Platform Capabilities
+1. **Production Long-Term Memory & Vector Persistence:**
+   - Multi-tier memory synthesis: Working, Episodic, Semantic, Profile, Project.
+   - Dual-engine vector store: `pgvector` (PostgreSQL cosine distance `<=>` with HNSW index) and deterministic in-memory cosine fallback for SQLite testing.
+   - Provider-neutral embeddings (`MockEmbeddingProvider`, `OpenAIEmbeddingProvider`, `EmbeddingRouter`).
+   - Conservative candidate extraction pipeline with strict fact superseding and audit lineage (`is_active`, `supersedes_id`, `superseded_by_id`).
+
+2. **Model Context Protocol (MCP) Tool Bus:**
+   - Official Python MCP SDK v2 (`mcp>=2.0.0`) integration supporting `stdio` and `sse` transports.
+   - Dynamic tool discovery via `tools/list` and dispatch via `tools/call`.
+   - AURA local security policy overlay: external MCP tools require explicit approval by default; input validation via JSON schema.
+   - Server-level crash and fault isolation: external server failures produce structured error results without crashing the orchestrator.
+
+3. **Isolated Docker Execution Sandbox:**
+   - Ephemeral container sandbox (`sandbox_shell_execute`, `sandbox_python_execute`).
+   - Hardened security defaults: non-root (`user: "1000:1000"`), read-only rootfs (`read_only=True`), network disabled (`network_mode="none"`), memory quota (512MB), CPU quota (1.0 core), PID limit (64), workspace mount only.
+   - Governed by human-in-the-loop approval (`RiskLevel.HIGH`).
+
+4. **Event Infrastructure & Persistent Scheduler:**
+   - Transactional Event Outbox (`events` table) with structured `AURAEvent` taxonomy (`timer.fired`, `cron.tick`, `webhook.received`).
+   - Persistent Scheduler (`scheduled_jobs` table) supporting durable one-shot timers and recurring schedules that survive system restarts.
+   - `EventToAgentBridge`: Deterministic triggering bridge connecting scheduled events to Personal Orchestrator runs.
 
 ---
 
@@ -245,3 +271,4 @@ In Phase 1, conversational context is managed through **Working Memory** (recent
 - [ADR-004: Capability-Based Tool Permissions](docs/architecture/adr/ADR-004-capability-tool-permissions.md)
 - [ADR-005: Workspace Sandbox Isolation](docs/architecture/adr/ADR-005-isolated-execution-sandbox.md)
 - [ADR-006: LangGraph Durable Interruption & Checkpointing](docs/architecture/adr/ADR-006-langgraph-interrupt-checkpointing.md)
+- [ADR-007: pgvector Vector Persistence and Embedding Abstraction](docs/architecture/adr/ADR-007-pgvector-and-embedding-abstraction.md)
