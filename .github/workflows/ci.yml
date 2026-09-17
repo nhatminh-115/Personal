@@ -75,13 +75,8 @@ jobs:
         env:
           DATABASE_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aura_test"
         run: |
-          python -m alembic --raiseerr upgrade head 2>&1 | tee alembic.log || {
-            echo "### Alembic Failure Log" >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            cat alembic.log >> $GITHUB_STEP_SUMMARY
-            echo '```' >> $GITHUB_STEP_SUMMARY
-            exit 1
-          }
+          set -e
+          python -m alembic --raiseerr upgrade head
 
       - name: Run test suite with strict msgpack
         run: |

@@ -1,7 +1,7 @@
 """003_pgvector_and_long_term_memory
 
-Revision ID: 003_pgvector_and_long_term_memory
-Revises: 002_add_tool_call_id_to_approvals
+Revision ID: 003_pgvector_memory
+Revises: 002_add_tool_call_id
 Create Date: 2026-09-17 17:00:00.000000
 
 """
@@ -10,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 from pgvector.sqlalchemy import Vector
 
-revision: str = "003_pgvector_and_long_term_memory"
-down_revision: Union[str, None] = "002_add_tool_call_id_to_approvals"
+revision: str = "003_pgvector_memory"
+down_revision: Union[str, None] = "002_add_tool_call_id"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

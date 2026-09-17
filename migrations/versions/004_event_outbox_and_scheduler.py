@@ -1,7 +1,7 @@
 """004_event_outbox_and_scheduler
 
 Revision ID: 004_event_outbox_and_scheduler
-Revises: 003_pgvector_and_long_term_memory
+Revises: 003_pgvector_memory
 Create Date: 2026-09-17 18:00:00.000000
 
 """
@@ -10,7 +10,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision: str = "004_event_outbox_and_scheduler"
-down_revision: Union[str, None] = "003_pgvector_and_long_term_memory"
+down_revision: Union[str, None] = "003_pgvector_memory"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
