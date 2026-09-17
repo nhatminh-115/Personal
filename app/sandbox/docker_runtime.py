@@ -67,6 +67,16 @@ class DockerSandboxRuntime(SandboxRuntime):
         timed_out = False
 
         try:
+            # Ensure image is present locally, pull if necessary
+            try:
+                client.images.get(cfg.image)
+            except Exception:
+                logger.info(f"Pulling Docker image '{cfg.image}'...")
+                try:
+                    client.images.pull(cfg.image)
+                except Exception as pull_err:
+                    logger.warning(f"Could not pull Docker image '{cfg.image}': {pull_err}")
+
             container = client.containers.create(
                 image=cfg.image,
                 command=command_args,
