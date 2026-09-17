@@ -20,6 +20,7 @@ class PermissionPolicy:
         # Capabilities that are pre-cleared for autonomous execution without human interruption
         self._automatic_capabilities: Set[str] = {
             Capability.FILESYSTEM_READ.value,
+            Capability.MCP_READ.value,
         }
 
         # Capabilities that explicitly demand human verification before execution
@@ -29,6 +30,8 @@ class PermissionPolicy:
             Capability.NETWORK_ACCESS.value,
             Capability.EMAIL_SEND.value,
             Capability.GIT_WRITE.value,
+            Capability.MCP_EXECUTE.value,
+            Capability.SANDBOX_EXECUTE.value,
         }
 
     def evaluate(self, required_capabilities: List[str], risk_level: str = "LOW") -> PermissionDecision:

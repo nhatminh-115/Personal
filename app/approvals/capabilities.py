@@ -14,3 +14,7 @@ class Capability(str, Enum):
     EMAIL_SEND = "email.send"
     GIT_READ = "git.read"
     GIT_WRITE = "git.write"
+    MCP_READ = "mcp.read"
+    MCP_EXECUTE = "mcp.execute"
+    SANDBOX_EXECUTE = "sandbox.execute"
+
