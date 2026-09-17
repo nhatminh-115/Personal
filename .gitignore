@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Databases & Local State
+*.db
+*.sqlite
+*.sqlite3
+aura.db
+
+# Workspace content
+workspace/*
+!workspace/.gitkeep
+
