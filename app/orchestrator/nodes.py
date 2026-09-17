@@ -10,10 +10,13 @@ from app.core.errors import WorkspaceEscapeError
 from app.core.logging import logger
 from app.db.models import RunStatus
 from app.memory.base import MemoryService
+from app.memory.context import ContextAssembler
+from app.memory.pipeline import MemoryCandidatePipeline
 from app.models.base import ChatMessage, ModelRequest, ModelRole, ToolCallRequest
 from app.models.router import ModelRouter, model_router
 from app.observability.tracer import TraceService
 from app.orchestrator.state import AgentState
+
 from app.tools.base import RiskLevel
 from app.tools.registry import ToolRegistry, tool_registry
 
@@ -31,7 +34,7 @@ def _get_services(config: Optional[RunnableConfig]) -> Dict[str, Any]:
 
 
 async def load_context_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
-    """Load session conversation history and episodic memory context."""
+    """Load session conversation history and multi-tier memory context using ContextAssembler."""
     services = _get_services(config)
     mem_service: Optional[MemoryService] = services["memory_service"]
     trace_service: Optional[TraceService] = services["trace_service"]
@@ -40,16 +43,26 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     messages = list(state.get("messages", []))
 
     if mem_service:
-        # Load recent session messages from database if state messages are empty
-        if not messages:
-            db_msgs = await mem_service.get_session_messages(state["session_id"], limit=20)
-            for m in db_msgs:
-                messages.append({"role": m.role, "content": m.content})
+        project_name = None
+        if state.get("metadata") and isinstance(state["metadata"], dict):
+            project_name = state["metadata"].get("project_name")
 
-        # Load recent episodic memories for contextual grounding
-        episodes = await mem_service.get_recent_episodes(state["session_id"], limit=3)
-        for ep in episodes:
-            context_items.append(f"[Past interaction]: {ep.content}")
+        assembler = ContextAssembler(mem_service)
+        assembled = await assembler.assemble_context(
+            session_id=state["session_id"],
+            user_message=state.get("user_message", ""),
+            project_name=project_name,
+        )
+
+        if not messages and assembled.working_messages:
+            messages.extend(assembled.working_messages)
+
+        formatted = assembled.format_for_system_prompt()
+        if formatted:
+            context_items.append(formatted)
+        elif assembled.episodes:
+            for ep in assembled.episodes:
+                context_items.append(f"[Past interaction]: {ep}")
 
     # Add current user message to message buffer if it is not already the latest message
     if not messages or messages[-1].get("content") != state["user_message"] or messages[-1].get("role") != "user":
@@ -577,6 +590,25 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
                     session_id=state["session_id"],
                     summary=f"User requested: '{state['user_message']}'. Executed tools: [{tool_summary}]. Result: {final_resp[:150]}...",
                     metadata={"run_id": state["run_id"]},
+                )
+
+            # Extract and commit conservative memory candidates
+            pipeline = MemoryCandidatePipeline()
+            project_name = None
+            if state.get("metadata") and isinstance(state["metadata"], dict):
+                project_name = state["metadata"].get("project_name")
+
+            candidates = pipeline.extract_candidates(
+                user_message=state["user_message"],
+                assistant_response=final_resp,
+                active_project=project_name,
+            )
+            if candidates:
+                await pipeline.process_and_commit(
+                    candidates=candidates,
+                    session_id=state["session_id"],
+                    run_id=state["run_id"],
+                    memory_service=mem_service,
                 )
 
         if trace_service:

@@ -159,28 +159,30 @@ class SQLMemoryService(MemoryService):
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROFILE.value,
             MemoryModel.key == key,
+            MemoryModel.is_active.is_(True),
         )
         result = await self.db.execute(query)
-        memory = result.scalar_one_or_none()
+        existing_active = result.scalar_one_or_none()
 
-        if memory:
-            memory.content = value
-            memory.metadata_json = metadata or memory.metadata_json
-            memory.is_active = True
-        else:
-            memory = MemoryModel(
-                session_id=None,
-                memory_type=MemoryType.PROFILE.value,
-                key=key,
-                content=value,
-                is_active=True,
-                metadata_json=metadata or {},
-            )
-            self.db.add(memory)
+        new_memory = MemoryModel(
+            session_id=None,
+            memory_type=MemoryType.PROFILE.value,
+            key=key,
+            content=value,
+            is_active=True,
+            metadata_json=metadata or {},
+            supersedes_id=existing_active.id if existing_active else None,
+        )
+        self.db.add(new_memory)
+        await self.db.flush()
+
+        if existing_active:
+            existing_active.is_active = False
+            existing_active.superseded_by_id = new_memory.id
 
         await self.db.commit()
-        await self.db.refresh(memory)
-        return memory
+        await self.db.refresh(new_memory)
+        return new_memory
 
     async def get_profile_fact(self, key: str) -> Optional[str]:
         query = select(MemoryModel).where(
@@ -220,36 +222,34 @@ class SQLMemoryService(MemoryService):
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
             MemoryModel.key == f"{project_name}:{key}",
+            MemoryModel.is_active.is_(True),
         )
         result = await self.db.execute(query)
-        memory = result.scalar_one_or_none()
+        existing_active = result.scalar_one_or_none()
 
-        if memory:
-            memory.content = content
-            memory.embedding = vec
-            memory.embedding_model = self.embedding_router.current_model_name
-            memory.embedding_dim = len(vec)
-            memory.project_name = project_name
-            memory.metadata_json = full_metadata
-            memory.is_active = True
-        else:
-            memory = MemoryModel(
-                session_id=None,
-                memory_type=MemoryType.PROJECT.value,
-                key=f"{project_name}:{key}",
-                content=content,
-                embedding=vec,
-                embedding_model=self.embedding_router.current_model_name,
-                embedding_dim=len(vec),
-                project_name=project_name,
-                is_active=True,
-                metadata_json=full_metadata,
-            )
-            self.db.add(memory)
+        new_memory = MemoryModel(
+            session_id=None,
+            memory_type=MemoryType.PROJECT.value,
+            key=f"{project_name}:{key}",
+            content=content,
+            embedding=vec,
+            embedding_model=self.embedding_router.current_model_name,
+            embedding_dim=len(vec),
+            project_name=project_name,
+            is_active=True,
+            metadata_json=full_metadata,
+            supersedes_id=existing_active.id if existing_active else None,
+        )
+        self.db.add(new_memory)
+        await self.db.flush()
+
+        if existing_active:
+            existing_active.is_active = False
+            existing_active.superseded_by_id = new_memory.id
 
         await self.db.commit()
-        await self.db.refresh(memory)
-        return memory
+        await self.db.refresh(new_memory)
+        return new_memory
 
     async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
         query = select(MemoryModel).where(

@@ -15,3 +15,7 @@ def get_semantic_store(db: AsyncSession) -> SemanticMemoryStore:
     if dialect_name == "postgresql":
         return PgVectorSemanticStore(db)
     return SqliteSemanticStore(db)
+
+
+create_semantic_store = get_semantic_store
+
