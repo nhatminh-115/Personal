@@ -20,14 +20,14 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -U postgres -d aura_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
 
     env:
-      POSTGRES_TEST_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/aura_test"
-      AURA_POSTGRES_TEST_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/aura_test"
+      POSTGRES_TEST_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aura_test"
+      AURA_POSTGRES_TEST_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aura_test"
       LANGGRAPH_STRICT_MSGPACK: "true"
       PYTHONPATH: "."
 
@@ -52,15 +52,31 @@ jobs:
         run: |
           docker pull python:3.12-slim
 
+      - name: Wait for PostgreSQL socket ready
+        run: |
+          python -c "
+          import socket, time
+          for attempt in range(30):
+              try:
+                  s = socket.socket()
+                  s.connect(('127.0.0.1', 5432))
+                  s.close()
+                  print('PostgreSQL is listening on 127.0.0.1:5432')
+                  break
+              except Exception as e:
+                  print(f'Waiting for Postgres ({attempt+1}/30)...')
+                  time.sleep(1)
+          "
+
       - name: Run Alembic migration upgrade to head
         env:
-          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@localhost:5432/aura_test"
+          DATABASE_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aura_test"
         run: |
-          alembic upgrade head
+          python -m alembic upgrade head
 
       - name: Run test suite with strict msgpack
         run: |
-          pytest -v
+          python -m pytest -v
 
       - name: Run live Phase 1 verification
         run: |
