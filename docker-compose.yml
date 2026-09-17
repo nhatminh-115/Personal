@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aura-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: aura
+      POSTGRES_DB: aura
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura -d aura"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  aura-app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: aura-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura
+      AURA_WORKSPACE_ROOT: /app/workspace
+      MODEL_PROVIDER: mock
+      LOG_LEVEL: INFO
+    ports:
+      - "8000:8000"
+    volumes:
+      - workspace_data:/app/workspace
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  workspace_data:
