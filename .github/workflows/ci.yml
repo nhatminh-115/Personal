@@ -72,7 +72,7 @@ jobs:
         env:
           DATABASE_URL: "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/aura_test"
         run: |
-          python -m alembic upgrade head
+          python -m alembic --raiseerr upgrade head
 
       - name: Run test suite with strict msgpack
         run: |

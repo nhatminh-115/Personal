@@ -28,7 +28,7 @@ def upgrade() -> None:
     op.add_column("memories", sa.Column("embedding_dim", sa.Integer(), nullable=True))
     op.add_column("memories", sa.Column("project_name", sa.String(length=128), nullable=True))
     op.add_column("memories", sa.Column("confidence", sa.Float(), nullable=False, server_default="1.0"))
-    op.add_column("memories", sa.Column("is_active", sa.Boolean(), nullable=False, server_default="1"))
+    op.add_column("memories", sa.Column("is_active", sa.Boolean(), nullable=False, server_default=sa.true()))
     op.add_column("memories", sa.Column("supersedes_id", sa.String(length=36), nullable=True))
     op.add_column("memories", sa.Column("superseded_by_id", sa.String(length=36), nullable=True))
 
@@ -37,8 +37,9 @@ def upgrade() -> None:
     op.create_index("ix_memories_is_active", "memories", ["is_active"])
 
     if is_postgres:
-        # Alter embedding column to native pgvector type and create HNSW cosine index
-        op.execute("ALTER TABLE memories ALTER COLUMN embedding TYPE vector(1536) USING embedding::text::vector")
+        # Recreate embedding column as native vector(1536) type and create HNSW cosine index
+        op.execute("ALTER TABLE memories DROP COLUMN IF EXISTS embedding")
+        op.execute("ALTER TABLE memories ADD COLUMN embedding vector(1536)")
         op.execute("CREATE INDEX IF NOT EXISTS ix_memories_embedding_hnsw ON memories USING hnsw (embedding vector_cosine_ops)")
 
 
@@ -49,6 +50,8 @@ def downgrade() -> None:
 
     if is_postgres:
         op.execute("DROP INDEX IF EXISTS ix_memories_embedding_hnsw")
+        op.execute("ALTER TABLE memories DROP COLUMN IF EXISTS embedding")
+        op.execute("ALTER TABLE memories ADD COLUMN embedding json")
 
     op.drop_index("ix_memories_is_active", table_name="memories")
     op.drop_index("ix_memories_project_name", table_name="memories")
