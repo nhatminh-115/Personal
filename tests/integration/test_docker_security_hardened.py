@@ -19,6 +19,10 @@ def docker_runtime():
 @pytest.fixture
 def temp_workspace():
     with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            os.chmod(tmpdir, 0o777)
+        except OSError:
+            pass
         yield tmpdir
 
 

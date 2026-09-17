@@ -91,8 +91,11 @@ async def test_postgres_pgvector_insert_and_cosine_search(pg_session):
     vec_b = [0.0] * 1536
     vec_b[1] = 1.0  # Vector B along dim 1 (orthogonal)
 
+    from app.db.models import generate_uuid, utc_now
+
     # Store memory for Project Atlas
     mem_atlas = MemoryModel(
+        id=generate_uuid(),
         memory_type=MemoryType.PROJECT.value,
         key="Atlas:python",
         content="Project Atlas runs Python 3.12",
@@ -101,11 +104,15 @@ async def test_postgres_pgvector_insert_and_cosine_search(pg_session):
         embedding_dim=1536,
         project_name="Atlas",
         is_active=True,
+        metadata_json={},
+        created_at=utc_now(),
+        updated_at=utc_now(),
     )
     await store.store(mem_atlas)
 
     # Store memory for Project Titan
     mem_titan = MemoryModel(
+        id=generate_uuid(),
         memory_type=MemoryType.PROJECT.value,
         key="Titan:python",
         content="Project Titan runs Python 3.11",
@@ -114,6 +121,9 @@ async def test_postgres_pgvector_insert_and_cosine_search(pg_session):
         embedding_dim=1536,
         project_name="Titan",
         is_active=True,
+        metadata_json={},
+        created_at=utc_now(),
+        updated_at=utc_now(),
     )
     await store.store(mem_titan)
 

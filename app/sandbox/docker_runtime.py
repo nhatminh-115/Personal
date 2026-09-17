@@ -51,6 +51,10 @@ class DockerSandboxRuntime(SandboxRuntime):
         """Execute container synchronously in dedicated thread worker."""
         client = self._get_client()
         os.makedirs(cfg.workspace_dir, exist_ok=True)
+        try:
+            os.chmod(cfg.workspace_dir, 0o777)
+        except OSError:
+            pass
 
         volumes = {
             os.path.abspath(cfg.workspace_dir): {
