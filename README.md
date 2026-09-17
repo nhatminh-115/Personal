@@ -221,11 +221,14 @@ curl -X GET http://localhost:8000/v1/runs/ef3b5bb3-...
 ## Technical Details
 
 ### Model Routing & `RoutingContext`
-All model invocations pass through `ModelRouter.route(ModelRequest)`. Each request carries an explicit, typed `RoutingContext`:
-- `session_id`: Optional UUID of the active conversation session.
-- `run_id`: Optional UUID of the current execution run.
-- `turn_index`: Zero-indexed turn counter within the session (`int`, default `0`).
-- `capability_flags`: List of active capability constraints (`List[str]`, default `[]`).
+All model invocations pass through `ModelRouter.route(ModelRequest)`. Each request carries an explicit, typed `RoutingContext` (`app.models.base.RoutingContext`):
+- `task_type`: Optional category or classification of task being routed (`str | None`).
+- `complexity`: Problem complexity rating (`"simple" | "medium" | "complex" | None`).
+- `privacy_requirement`: Privacy constraint (`"public" | "internal" | "confidential" | None`).
+- `latency_preference`: Latency sensitivity (`"low" | "normal" | None`).
+- `cost_preference`: Cost budget preference (`"low" | "normal" | "high_quality" | None`).
+- `required_capabilities`: List of required tool capabilities (`List[str]`, default `[]`).
+
 
 ### Checkpoint Security (`LANGGRAPH_STRICT_MSGPACK`)
 AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This restricts LangGraph msgpack deserialization strictly to `SAFE_MSGPACK_TYPES`, preventing remote code execution via untrusted callables stored in checkpoint databases.

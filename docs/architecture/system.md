@@ -221,7 +221,7 @@ Multi-turn context preserves genuine role structures rather than squashing tool 
 
 ### 5.2 Model-Provider Boundary
 - Orchestrator components interact exclusively with `ModelRouter`.
-- `ModelRouter` accepts typed `ModelRequest` with an explicit `RoutingContext` (`session_id`, `run_id`, `turn_index`, `capability_flags`) and returns typed `ModelResponse`.
+- `ModelRouter` accepts typed `ModelRequest` with an explicit `RoutingContext` (`task_type`, `complexity`, `privacy_requirement`, `latency_preference`, `cost_preference`, `required_capabilities`) and returns typed `ModelResponse`.
 - Provider implementations (`OpenAIProvider`, `MockProvider`, etc.) adapt vendor APIs to AURA internal domain schemas.
 - Provider secrets are read strictly from application settings; they are never passed through conversation state or logged.
 
