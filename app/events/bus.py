@@ -33,8 +33,17 @@ class EventBus:
         if event_type in self._handlers and handler in self._handlers[event_type]:
             self._handlers[event_type].remove(handler)
 
-    async def publish(self, event: AURAEvent, db: Optional[AsyncSession] = None) -> AURAEvent:
-        """Persist event to transactional outbox and dispatch to active subscribers."""
+    async def publish(
+        self,
+        event: AURAEvent,
+        db: Optional[AsyncSession] = None,
+        dispatch_immediate: bool = False,
+    ) -> AURAEvent:
+        """
+        Persist event to transactional outbox and optionally dispatch immediately.
+        In production with a database session, it guarantees commit-before-dispatch
+        by persisting with status='pending'.
+        """
         logger.info(
             f"EventBus publishing event '{event.event_type}' [{event.id}]",
             extra={"event_id": event.id, "event_type": event.event_type, "correlation_id": event.correlation_id},
@@ -43,21 +52,39 @@ class EventBus:
         db_record: Optional[EventRecordModel] = None
 
         if db is not None:
+            # Check idempotency key if provided
+            if event.idempotency_key:
+                stmt = select(EventRecordModel).where(EventRecordModel.idempotency_key == event.idempotency_key)
+                res = await db.execute(stmt)
+                existing = res.scalar_one_or_none()
+                if existing:
+                    logger.info(f"Duplicate event ignored with idempotency_key '{event.idempotency_key}'.")
+                    event.id = existing.id
+                    event.status = EventStatus(existing.status)
+                    return event
+
             db_record = EventRecordModel(
                 id=event.id,
                 event_type=event.event_type,
                 source=event.source,
                 payload_json=event.payload,
-                status=EventStatus.PROCESSING.value,
+                status=EventStatus.PENDING.value if not dispatch_immediate else EventStatus.PROCESSING.value,
                 occurred_at=event.occurred_at,
                 correlation_id=event.correlation_id,
+                idempotency_key=event.idempotency_key,
+                max_attempts=event.max_attempts,
+                next_attempt_at=event.next_attempt_at or utc_now(),
             )
             db.add(db_record)
-            await db.flush()
+            await db.commit()
+            await db.refresh(db_record)
 
-        # Find matching handlers (exact match + wildcard)
+            if not dispatch_immediate:
+                event.status = EventStatus.PENDING
+                return event
+
+        # Dispatch to active subscribers (in-memory mode or when dispatch_immediate=True)
         matched_handlers = list(self._handlers.get(event.event_type, [])) + list(self._handlers.get("*", []))
-
         dispatch_error: Optional[Exception] = None
 
         for handler in matched_handlers:

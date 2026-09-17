@@ -1,201 +1,236 @@
-"""Phase 2 End-to-End Vertical Slice Verification Script.
+"""Phase 2 End-to-End Vertical Slice Live Verification Script.
 
-Demonstrates all 4 Phase 2 capability layers:
-1. Multi-tier long-term memory with vector embeddings, project scoping, and restart durability.
-2. Memory fact superseding with audit lineage.
-3. Dynamic MCP tool discovery and failure-isolated execution.
-4. Isolated container sandbox execution governed by human approval.
-5. Persistent scheduler timer surviving simulated restart and triggering agent via EventToAgentBridge.
+Exercises real FastAPI HTTP endpoints (/v1/chat, /v1/approvals) and core Phase 2 capabilities:
+1. Multi-tier long-term memory with project scoping & isolation through /v1/chat.
+2. Live MCP read tool auto-execution through /v1/chat without human pause.
+3. Live MCP mutating tool triggering LangGraph interrupt, approving via /v1/approvals/{id}/decision, and resuming.
+4. Sandbox execution with bounded output limits.
+5. Durable transactional outbox publication, atomic claiming, and OutboxWorker processing.
 """
 
 import asyncio
 import os
 import sys
-from datetime import timedelta
+import httpx
 
 # Ensure project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath("."))
 
+# Configure isolated verification database
+os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///aura_verify.db"
+os.environ["CHECKPOINT_DB_PATH"] = "./aura_verify_checkpoints.db"
+
+# Remove any previous verification artifacts
+for p in ["aura_verify.db", "aura_verify_checkpoints.db"]:
+    if os.path.exists(p):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
+
+from app.api.server import create_app, lifespan
+from app.db.models import EventRecordModel
 from app.db.session import async_session_factory, init_db
-from app.db.models import MemoryModel, ScheduledJobModel, utc_now
 from app.events.bus import EventBus
-from app.events.dispatcher import EventToAgentBridge
-from app.events.scheduler import PersistentScheduler
 from app.events.types import AURAEvent, EventType
+from app.events.worker import OutboxWorker
 from app.mcp.config import MCPServerConfig, MCPTransportType
-from app.mcp.manager import MCPClientManager
-from app.mcp.policy import MCPSecurityPolicy
-from app.memory.context import ContextAssembler
-from app.memory.embeddings.mock_provider import MockEmbeddingProvider
-from app.memory.embeddings.router import EmbeddingRouter
-from app.memory.pipeline import MemoryCandidatePipeline
-from app.memory.service import SQLMemoryService
+from app.mcp.manager import mcp_manager
 from app.sandbox.mock_runtime import MockSandboxRuntime
+from app.sandbox.spec import SandboxConfig
 from app.sandbox.tools import SandboxPythonExecuteTool
-from app.tools.registry import ToolRegistry
 
 
 async def run_phase2_verification():
-    print("=" * 70)
-    print("AURA PHASE 2 CAPABILITY VERIFICATION: END-TO-END VERTICAL SLICE")
-    print("=" * 70)
+    print("=" * 75)
+    print("AURA PHASE 2.1 VERIFICATION: END-TO-END VERTICAL SLICE THROUGH REAL API")
+    print("=" * 75)
 
-    # 0. Initialize DB schema
-    await init_db()
-    router = EmbeddingRouter(
-        providers={"mock": MockEmbeddingProvider(dimension=1536)},
-        default_provider="mock",
-    )
+    app = create_app()
+
+    async with lifespan(app):
+        # Register sample MCP server
+        mcp_config = MCPServerConfig(
+            id="sample-mcp",
+            name="Sample MCP Server",
+            transport=MCPTransportType.STDIO,
+            command=sys.executable,
+            args=["tests/fixtures/sample_mcp_server.py"],
+            auto_approve_tools=["read_metric", "system_echo"],
+            timeout_seconds=10.0,
+        )
+        mcp_manager.register_server(mcp_config)
+        discovered = await mcp_manager.discover_tools("sample-mcp")
+        print(f"\n[MCP Setup] Discovered {len(discovered)} tools from MCP server:")
+        for t in discovered:
+            print(f"  - {t.name} (Risk: {t.risk_level.value}, Caps: {t.required_capabilities})")
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+
+            # -------------------------------------------------------------
+            # STEP 1: Project Memory Isolation through /v1/chat
+            # -------------------------------------------------------------
+            print("\n[Step 1] Project-isolated memory write and retrieval via /v1/chat...")
+            # 1a. Store memory directive under Atlas
+            write_resp = await client.post(
+                "/v1/chat",
+                json={
+                    "session_id": "sess-atlas-1",
+                    "project_name": "Atlas",
+                    "message": "Please remember that Project Atlas uses Python 3.12",
+                },
+            )
+            assert write_resp.status_code == 200, f"Write failed: {write_resp.text}"
+            write_data = write_resp.json()
+            assert write_data["status"] == "completed"
+            print(" -> Stored fact for 'Atlas' successfully.")
+
+            # 1b. Retrieve under Atlas in a new session
+            query_atlas = await client.post(
+                "/v1/chat",
+                json={
+                    "session_id": "sess-atlas-2",
+                    "project_name": "Atlas",
+                    "message": "What version of Python does the project use?",
+                },
+            )
+            assert query_atlas.status_code == 200
+            atlas_data = query_atlas.json()
+            assert "Python 3.12" in atlas_data["response"], f"Expected Python 3.12 in response: {atlas_data['response']}"
+            print(f" -> Atlas Query Response: '{atlas_data['response']}' (Memory successfully injected)")
+
+            # 1c. Verify isolation: Boreas must NOT see Atlas memory
+            query_boreas = await client.post(
+                "/v1/chat",
+                json={
+                    "session_id": "sess-boreas-1",
+                    "project_name": "Boreas",
+                    "message": "What version of Python does the project use?",
+                },
+            )
+            assert query_boreas.status_code == 200
+            boreas_data = query_boreas.json()
+            assert "Python 3.12" not in boreas_data["response"], "Leak detected: Boreas accessed Atlas memory!"
+            print(f" -> Boreas Query Response: '{boreas_data['response']}' (Isolation verified: Atlas memory withheld)")
+
+            # -------------------------------------------------------------
+            # STEP 2: Live MCP Read Tool Auto-Execution via /v1/chat
+            # -------------------------------------------------------------
+            print("\n[Step 2] Live MCP Read Tool execution (auto-approved) via /v1/chat...")
+            mcp_read_resp = await client.post(
+                "/v1/chat",
+                json={
+                    "session_id": "sess-mcp-read",
+                    "message": "Read metric system_health_ratio",
+                },
+            )
+            assert mcp_read_resp.status_code == 200
+            mcp_read_data = mcp_read_resp.json()
+            assert mcp_read_data["status"] == "completed"
+            assert mcp_read_data["approval_id"] is None
+            assert "system_health_ratio" in mcp_read_data["response"]
+            assert "99.9%" in mcp_read_data["response"]
+            print(f" -> MCP Read Tool Response: '{mcp_read_data['response']}' (Executed automatically)")
+
+            # -------------------------------------------------------------
+            # STEP 3: Live MCP Mutation Tool Interrupt & Approval Resume
+            # -------------------------------------------------------------
+            print("\n[Step 3] Live MCP Mutation Tool pausing for approval and resuming via API...")
+            mutate_resp = await client.post(
+                "/v1/chat",
+                json={
+                    "session_id": "sess-mcp-mutate",
+                    "message": "Mutate record user_rec_100 to tier_premium",
+                },
+            )
+            assert mutate_resp.status_code == 200
+            mutate_data = mutate_resp.json()
+            assert mutate_data["status"] == "waiting_for_approval"
+            approval_id = mutate_data["approval_id"]
+            assert approval_id is not None
+            print(f" -> Execution Suspended. Approval ID: {approval_id}")
+
+            # Inspect pending approval
+            get_appr = await client.get(f"/v1/approvals/{approval_id}")
+            assert get_appr.status_code == 200
+            appr_info = get_appr.json()
+            assert appr_info["tool_name"] == "mcp_sample-mcp_mutate_record"
+            assert appr_info["risk_level"].lower() == "high"
+            assert appr_info["status"] == "pending"
+            print(f" -> Pending Approval details verified: tool={appr_info['tool_name']}, risk={appr_info['risk_level']}")
+
+            # Submit approval decision
+            dec_resp = await client.post(
+                f"/v1/approvals/{approval_id}/decision",
+                json={"decision": "approved", "decision_notes": "Approved by SecOps"},
+            )
+            assert dec_resp.status_code == 200
+            dec_data = dec_resp.json()
+            assert dec_data["status"] == "approved"
+            assert dec_data["execution_status"] == "completed"
+            assert "Record user_rec_100 updated to tier_premium" in dec_data["final_response"]
+            print(f" -> Resume Completed! Final Response: '{dec_data['final_response']}'")
 
     # -------------------------------------------------------------
-    # STEP 1: Long-Term Project Memory & Retrieval Across Restart
+    # STEP 4: Sandbox Execution with Bounded Output Limits
     # -------------------------------------------------------------
-    print("\n[Step 1] Storing project memory directive in database...")
+    print("\n[Step 4] Sandbox execution with bounded output enforcement...")
+    cfg = SandboxConfig(max_output_bytes=1024)
+    mock_runtime = MockSandboxRuntime(available=True, config=cfg)
+    sandbox_tool = SandboxPythonExecuteTool(runtime=mock_runtime)
+
+    large_code = "# " + ("A" * 2000)
+    res = await sandbox_tool.execute({"code": large_code})
+    assert res.success is True
+    assert "exceeded max_output_bytes limit" in res.output
+    print(f" -> Bounded output test verified. Output length: {len(res.output)} bytes")
+
+    # -------------------------------------------------------------
+    # STEP 5: Durable Outbox & OutboxWorker Processing
+    # -------------------------------------------------------------
+    print("\n[Step 5] Durable Outbox publication, atomic claim, and worker delivery...")
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="verify-worker-1")
+
+    delivered_events = []
+    bus.subscribe(EventType.TIMER_FIRED.value, lambda evt: delivered_events.append(evt))
+
     async with async_session_factory() as db:
-        mem_service = SQLMemoryService(db=db, router=router)
-        pipeline = MemoryCandidatePipeline()
-
-        # Extract directive
-        cands = pipeline.extract_candidates(
-            user_message="Please remember that Project Atlas uses Python 3.12",
-            active_project="Atlas",
+        test_event = AURAEvent(
+            event_type=EventType.TIMER_FIRED.value,
+            payload={"task": "hourly_maintenance", "code": 200},
+            source="scheduler_verify",
+            correlation_id="corr-outbox-verify-01",
+            idempotency_key="idemp-verify-001",
         )
-        assert len(cands) == 1, "Failed to extract project candidate"
-        print(f" -> Extracted Candidate: type={cands[0].memory_type.value}, project={cands[0].project_name}, key={cands[0].key}")
+        published_event = await bus.publish(test_event, db=db)
+        print(f" -> Outbox Event committed to DB: ID={published_event.id}, status={published_event.status.value}")
+        assert published_event.status.value == "pending"
 
-        saved = await pipeline.process_and_commit(
-            candidates=cands,
-            session_id="phase2-demo-sess-1",
-            run_id="run-step-1",
-            memory_service=mem_service,
-        )
-        mem1_id = saved[0].id
-        print(f" -> Saved Memory row: ID={mem1_id}, content='{saved[0].content}'")
+        # Worker processes the outbox batch
+        processed_count = await worker.process_outbox_batch(db=db, batch_size=5)
+        assert processed_count == 1
+        print(f" -> OutboxWorker processed {processed_count} event(s)")
 
-    print("\n[Step 2] Simulating process restart & retrieving memory via ContextAssembler...")
-    async with async_session_factory() as db_after_restart:
-        restarted_service = SQLMemoryService(db=db_after_restart, router=router)
-        assembler = ContextAssembler(memory_service=restarted_service)
+        # Verify DB status updated to processed
+        updated_rec = await db.get(EventRecordModel, test_event.id)
+        assert updated_rec.status == "processed"
+        assert len(delivered_events) == 1
+        assert delivered_events[0].payload["task"] == "hourly_maintenance"
+        print(f" -> Outbox Event ID {test_event.id} successfully transitioned to '{updated_rec.status}'")
 
-        ctx = await assembler.assemble_context(
-            session_id="phase2-demo-sess-2",
-            user_message="How do I configure tests for Atlas?",
-            project_name="Atlas",
-        )
-        formatted = ctx.format_for_system_prompt()
-        print(f" -> Formatted Context for LLM Reasoning:\n{formatted}")
-        assert "Project Atlas uses Python 3.12" in formatted, "Context missing stored project memory"
+    print("\n" + "=" * 75)
+    print("ALL PHASE 2.1 VERTICAL SLICE VERIFICATIONS COMPLETED SUCCESSFULLY!")
+    print("=" * 75)
 
-    # -------------------------------------------------------------
-    # STEP 2: Memory Fact Superseding & Lineage Audit
-    # -------------------------------------------------------------
-    print("\n[Step 3] Updating project memory & verifying superseding audit trail...")
-    async with async_session_factory() as db:
-        mem_service = SQLMemoryService(db=db, router=router)
-        pipeline = MemoryCandidatePipeline()
-
-        cands_update = pipeline.extract_candidates(
-            user_message="Project Atlas upgraded to Python 3.13",
-            active_project="Atlas",
-        )
-        saved_update = await pipeline.process_and_commit(
-            candidates=cands_update,
-            session_id="phase2-demo-sess-1",
-            run_id="run-step-2",
-            memory_service=mem_service,
-        )
-        mem2_id = saved_update[0].id
-        print(f" -> New Active Memory row: ID={mem2_id}, supersedes_id={saved_update[0].supersedes_id}")
-
-        old_row = await db.get(MemoryModel, mem1_id)
-        assert old_row.is_active is False, "Old memory was not marked is_active=False"
-        assert old_row.superseded_by_id == mem2_id, "Old memory was not linked to new memory"
-        print(f" -> Old Memory row {mem1_id}: is_active={old_row.is_active}, superseded_by={old_row.superseded_by_id}")
-
-    # -------------------------------------------------------------
-    # STEP 3: Dynamic MCP Tool Bus & Failure Isolation
-    # -------------------------------------------------------------
-    print("\n[Step 4] Dynamically discovering and executing tools from external MCP server...")
-    mcp_registry = ToolRegistry()
-    mcp_policy = MCPSecurityPolicy()
-    mcp_manager = MCPClientManager(registry=mcp_registry, policy=mcp_policy)
-
-    mcp_config = MCPServerConfig(
-        id="demo_fixture",
-        name="Demo Fixture MCP Server",
-        transport=MCPTransportType.STDIO,
-        command=sys.executable,
-        args=["tests/fixtures/sample_mcp_server.py"],
-        timeout_seconds=15.0,
-        auto_approve_tools=["read_metric"],
-    )
-    mcp_manager.register_server(mcp_config)
-
-    discovered = await mcp_manager.discover_tools("demo_fixture")
-    print(f" -> Discovered {len(discovered)} MCP tools:")
-    for t in discovered:
-        print(f"    - {t.name} (Risk: {t.risk_level.value}, Caps: {t.required_capabilities})")
-
-    # Execute read_metric via MCP bus
-    read_tool = mcp_registry.get("mcp_demo_fixture_read_metric")
-    assert read_tool is not None
-    mcp_res = await read_tool.execute({"metric_name": "agent_uptime"})
-    print(f" -> MCP Tool Execution Output: '{mcp_res.output}' (success={mcp_res.success})")
-    assert mcp_res.success is True
-
-    # -------------------------------------------------------------
-    # STEP 4: Isolated Container Sandbox Tool Execution
-    # -------------------------------------------------------------
-    print("\n[Step 5] Executing Python code inside isolated sandbox runtime...")
-    mock_sandbox = MockSandboxRuntime(available=True)
-    sandbox_py_tool = SandboxPythonExecuteTool(runtime=mock_sandbox)
-    print(f" -> Tool '{sandbox_py_tool.name}': Risk={sandbox_py_tool.risk_level.value}, Caps={sandbox_py_tool.required_capabilities}")
-
-    sandbox_res = await sandbox_py_tool.execute({"code": "print('Sandbox Isolation Test OK')"})
-    print(f" -> Sandbox Execution Output:\n{sandbox_py_tool.name} result: {sandbox_res.output}")
-    assert sandbox_res.success is True
-
-    # -------------------------------------------------------------
-    # STEP 5: Persistent Scheduler Timer Surviving Restart
-    # -------------------------------------------------------------
-    print("\n[Step 6] Scheduling persistent timer, simulating restart, and triggering agent...")
-    job_id = None
-    async with async_session_factory() as db:
-        scheduler = PersistentScheduler()
-        job = await scheduler.schedule_one_shot(
-            name="demo_restart_timer",
-            delay_seconds=-1.0,  # Due immediately
-            payload={
-                "session_id": "phase2-proactive-session",
-                "message": "Scheduler trigger: perform automated system healthcheck",
-            },
-            db=db,
-        )
-        job_id = job.id
-        print(f" -> Scheduled Job ID: {job_id} in database.")
-
-    # Simulate restart and tick with EventToAgentBridge
-    print(" -> Simulating restart & ticking scheduler...")
-    async with async_session_factory() as db_restart:
-        restarted_bus = EventBus()
-        restarted_scheduler = PersistentScheduler(bus=restarted_bus)
-
-        # Connect EventToAgentBridge to the bus
-        bridge = EventToAgentBridge(session_factory=async_session_factory)
-        restarted_bus.subscribe(EventType.TIMER_FIRED.value, bridge.handle_event)
-
-        emitted = await restarted_scheduler.tick(db=db_restart)
-        assert len(emitted) == 1, "Scheduler failed to fire due timer"
-        print(f" -> Scheduler emitted event: {emitted[0].event_type} [correlation_id: {emitted[0].correlation_id}]")
-
-        # Verify job is marked inactive in DB
-        refreshed_job = await db_restart.get(ScheduledJobModel, job_id)
-        assert refreshed_job.is_active is False
-        print(f" -> Job {job_id} status after tick: is_active={refreshed_job.is_active}")
-
-    print("\n" + "=" * 70)
-    print("ALL PHASE 2 VERTICAL SLICE VERIFICATIONS COMPLETED SUCCESSFULLY!")
-    print("=" * 70)
+    # Cleanup verification database files
+    for p in ["aura_verify.db", "aura_verify_checkpoints.db"]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
 
 if __name__ == "__main__":

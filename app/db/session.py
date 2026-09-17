@@ -1,6 +1,7 @@
 """Async SQLAlchemy database engine and session factory."""
 
 from collections.abc import AsyncGenerator
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -44,29 +45,19 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db(database_url: str | None = None) -> None:
-    """Initialize database tables directly (for SQLite test environments or quickstart)."""
+    """
+    Initialize database connection and verify/create schema.
+    - SQLite (development / local test): creates metadata tables directly via create_all.
+    - PostgreSQL (production): verifies connectivity; schema migrations are strictly managed via Alembic.
+    """
     target_engine = get_engine(database_url) if database_url else engine
-    async with target_engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-        # Migrate schema dynamically if tool_call_id column is missing in approvals table
-        try:
-            await conn.exec_driver_sql("ALTER TABLE approvals ADD COLUMN tool_call_id VARCHAR(64)")
-            await conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_approvals_tool_call_id ON approvals (tool_call_id)")
-        except Exception:
-            pass
+    is_sqlite = target_engine.dialect.name == "sqlite"
 
-        # Migrate memories table dynamically for Phase 2 columns
-        for col_def in [
-            "embedding_model VARCHAR(64)",
-            "embedding_dim INTEGER",
-            "project_name VARCHAR(128)",
-            "confidence FLOAT DEFAULT 1.0",
-            "is_active BOOLEAN DEFAULT 1",
-            "supersedes_id VARCHAR(36)",
-            "superseded_by_id VARCHAR(36)",
-        ]:
-            try:
-                await conn.exec_driver_sql(f"ALTER TABLE memories ADD COLUMN {col_def}")
-            except Exception:
-                pass
+    async with target_engine.begin() as conn:
+        if is_sqlite:
+            # For SQLite dev/test environments, create tables from Base metadata
+            await conn.run_sync(Base.metadata.create_all)
+        else:
+            # For production (PostgreSQL), verify connectivity without ad-hoc DDL
+            await conn.execute(text("SELECT 1"))
 

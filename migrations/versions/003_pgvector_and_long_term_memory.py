@@ -38,11 +38,9 @@ def upgrade() -> None:
 
     if is_postgres:
         # Alter embedding column to native pgvector type and create HNSW cosine index
-        try:
-            op.execute("ALTER TABLE memories ALTER COLUMN embedding TYPE vector(1536) USING embedding::text::vector")
-            op.execute("CREATE INDEX IF NOT EXISTS ix_memories_embedding_hnsw ON memories USING hnsw (embedding vector_cosine_ops)")
-        except Exception:
-            pass
+        op.execute("ALTER TABLE memories ALTER COLUMN embedding TYPE vector(1536) USING embedding::text::vector")
+        op.execute("CREATE INDEX IF NOT EXISTS ix_memories_embedding_hnsw ON memories USING hnsw (embedding vector_cosine_ops)")
+
 
 
 def downgrade() -> None:

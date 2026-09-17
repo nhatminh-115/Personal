@@ -176,6 +176,11 @@ class EventRecordModel(Base):
     processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     correlation_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, default=utc_now, index=True)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
 
@@ -192,6 +197,8 @@ class ScheduledJobModel(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)

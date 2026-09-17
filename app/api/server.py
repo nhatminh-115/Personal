@@ -23,8 +23,25 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Ensure persistent checkpointer is initialized
     await init_checkpointer()
+
+    # Discover tools from registered MCP servers
+    try:
+        from app.mcp.manager import mcp_manager
+        for srv in mcp_manager.list_servers():
+            if srv.enabled:
+                await mcp_manager.discover_tools(srv.id)
+    except Exception as e:
+        logger.warning(f"Non-fatal error during startup MCP tool discovery: {e}")
+
     yield
+
     logger.info(f"Shutting down {settings.APP_NAME}")
+    try:
+        from app.mcp.manager import mcp_manager
+        await mcp_manager.disconnect_all()
+    except Exception as e:
+        logger.warning(f"Error disconnecting MCP servers on shutdown: {e}")
+
     await close_checkpointer()
 
 

@@ -22,10 +22,15 @@ class SemanticMemoryStore(ABC):
         project_name: Optional[str] = None,
         memory_types: Optional[List[str]] = None,
         is_active_only: bool = True,
+        embedding_model: Optional[str] = None,
+        embedding_dim: Optional[int] = None,
+        exact_project_only: bool = False,
+        allow_any_project: bool = False,
     ) -> List[Tuple[MemoryModel, float]]:
         """
         Execute nearest-neighbor vector similarity search.
         Returns a list of tuples: (MemoryModel, cosine_similarity_score).
+        Filters strictly on embedding_model and embedding_dim to prevent vector space mixing.
         """
         pass
 

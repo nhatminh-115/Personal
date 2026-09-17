@@ -26,6 +26,13 @@ def mutate_record(record_id: str, new_value: str) -> str:
 
 
 @server.tool()
+def inspect_env(var_name: str) -> str:
+    """Read an environment variable value from the MCP server process."""
+    import os
+    return os.environ.get(var_name, "__NOT_SET__")
+
+
+@server.tool()
 def failing_tool() -> str:
     """Simulate an internal server crash/exception."""
     raise RuntimeError("Internal simulated MCP failure!")

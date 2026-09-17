@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
+from mcp.client.streamable_http import streamable_http_client
 
 from app.core.errors import AURAError
 from app.core.logging import logger
@@ -69,12 +70,33 @@ class MCPClientManager:
         """List all configured MCP servers."""
         return list(self._servers.values())
 
+    SAFE_ENV_VARS = {
+        "PATH",
+        "Path",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "SystemRoot",
+        "WINDIR",
+        "TEMP",
+        "TMP",
+        "PYTHONPATH",
+        "PYTHONHOME",
+        "VIRTUAL_ENV",
+        "LANG",
+        "LC_ALL",
+        "HOME",
+        "USERPROFILE",
+    }
+
     async def _create_stdio_params(self, config: MCPServerConfig) -> StdioServerParameters:
-        """Construct StdioServerParameters with environment and path isolation."""
-        env = dict(os.environ)
+        """Construct StdioServerParameters with strict environment variable isolation."""
+        # Whitelist safe system variables to prevent leaking ambient secrets/keys
+        env = {k: v for k, v in os.environ.items() if k in self.SAFE_ENV_VARS}
+        # Apply explicitly configured environment variables
         env.update(config.env)
-        # Ensure PYTHONPATH includes workspace root so local fixture servers can import project modules
-        env["PYTHONPATH"] = os.path.abspath(".")
+        # Ensure PYTHONPATH includes workspace root so local fixture servers can import project modules if not set
+        if "PYTHONPATH" not in env:
+            env["PYTHONPATH"] = os.path.abspath(".")
 
         command = config.command or sys.executable
         return StdioServerParameters(
@@ -107,9 +129,17 @@ class MCPClientManager:
                         await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
                         tools_result = await asyncio.wait_for(session.list_tools(), timeout=config.timeout_seconds)
                         raw_tools = tools_result.tools
-            elif config.transport in {MCPTransportType.SSE, MCPTransportType.HTTP}:
+            elif config.transport in {MCPTransportType.STREAMABLE_HTTP, MCPTransportType.HTTP}:
                 if not config.url:
-                    raise MCPServerError(f"MCP server '{server_id}' requires a valid URL for SSE/HTTP transport.")
+                    raise MCPServerError(f"MCP server '{server_id}' requires a valid URL for Streamable HTTP transport.")
+                async with streamable_http_client(config.url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
+                        tools_result = await asyncio.wait_for(session.list_tools(), timeout=config.timeout_seconds)
+                        raw_tools = tools_result.tools
+            elif config.transport == MCPTransportType.SSE:
+                if not config.url:
+                    raise MCPServerError(f"MCP server '{server_id}' requires a valid URL for legacy SSE transport.")
                 async with sse_client(config.url, headers=config.headers) as (read, write):
                     async with ClientSession(read, write) as session:
                         await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
@@ -201,7 +231,22 @@ class MCPClientManager:
                             session.call_tool(tool_name, arguments or {}),
                             timeout=config.timeout_seconds,
                         )
-            elif config.transport in {MCPTransportType.SSE, MCPTransportType.HTTP}:
+            elif config.transport in {MCPTransportType.STREAMABLE_HTTP, MCPTransportType.HTTP}:
+                if not config.url:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"Missing URL for MCP server '{server_id}'.",
+                        metadata={"error_category": "invalid_configuration", "server_id": server_id},
+                    )
+                async with streamable_http_client(config.url) as (read, write):
+                    async with ClientSession(read, write) as session:
+                        await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
+                        res = await asyncio.wait_for(
+                            session.call_tool(tool_name, arguments or {}),
+                            timeout=config.timeout_seconds,
+                        )
+            elif config.transport == MCPTransportType.SSE:
                 if not config.url:
                     return ToolResult(
                         success=False,
@@ -269,6 +314,12 @@ class MCPClientManager:
                 error=err_msg,
                 metadata={"error_category": "mcp_server_error", "server_id": server_id},
             )
+
+    async def disconnect_all(self) -> None:
+        """Clean up and unregister all discovered tools and server sessions."""
+        for server_id in list(self._servers.keys()):
+            self.unregister_server(server_id)
+        logger.info("All MCP servers disconnected and unregistered.")
 
 
 # Global singleton instance

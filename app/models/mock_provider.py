@@ -68,8 +68,26 @@ class MockModelProvider(ModelProvider):
         content = (user_msgs[-1].content if user_msgs else latest_msg.content).strip()
 
         # Check for tool invocations requested by user query
-        # 1. "Read <path>" or "Read file <path>"
-        read_match = re.search(r"read\s+(?:file\s+)?([^\s]+)", content, re.IGNORECASE)
+        # 1. MCP Read Tool: "Read/query metric <name>"
+        metric_match = re.search(r"(?:read|query|get)\s+metric\s+([^\s]+)", content, re.IGNORECASE)
+        if metric_match and request.tools:
+            metric_tool = next((t for t in request.tools if "read_metric" in t.name), None)
+            if metric_tool:
+                return ModelResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name=metric_tool.name,
+                            arguments={"metric_name": metric_match.group(1).strip("\"'")},
+                        )
+                    ],
+                    usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
+                    finish_reason="tool_calls",
+                )
+
+        # 2. "Read <path>" or "Read file <path>"
+        read_match = re.search(r"read\s+(?:file\s+)?(?!metric\b)([^\s]+)", content, re.IGNORECASE)
         if read_match and request.tools and any(t.name == "read_workspace_file" for t in request.tools):
             path = read_match.group(1).strip("\"'")
             return ModelResponse(
@@ -85,7 +103,7 @@ class MockModelProvider(ModelProvider):
                 finish_reason="tool_calls",
             )
 
-        # 2. "Write <content> to <path>"
+        # 3. "Write <content> to <path>"
         write_match = re.search(r"write\s+(.*?)\s+to\s+([^\s]+)", content, re.IGNORECASE)
         if write_match and request.tools and any(t.name == "write_workspace_file" for t in request.tools):
             text_to_write = write_match.group(1).strip("\"'")
@@ -103,7 +121,7 @@ class MockModelProvider(ModelProvider):
                 finish_reason="tool_calls",
             )
 
-        # 3. "List files" or "List directory"
+        # 4. "List files" or "List directory"
         if re.search(r"list\s+(?:workspace\s+)?files", content, re.IGNORECASE) and request.tools and any(t.name == "list_workspace_files" for t in request.tools):
             return ModelResponse(
                 content=None,
@@ -117,6 +135,67 @@ class MockModelProvider(ModelProvider):
                 usage=ModelUsage(prompt_tokens=15, completion_tokens=8, total_tokens=23),
                 finish_reason="tool_calls",
             )
+
+        # 5. MCP Mutate Tool: "Mutate/update record <id> to <val>"
+        mutate_match = re.search(r"(?:mutate|update)\s+record\s+([^\s]+)\s+to\s+([^\s]+)", content, re.IGNORECASE)
+        if mutate_match and request.tools:
+            mutate_tool = next((t for t in request.tools if "mutate_record" in t.name), None)
+            if mutate_tool:
+                return ModelResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name=mutate_tool.name,
+                            arguments={
+                                "record_id": mutate_match.group(1).strip("\"'"),
+                                "new_value": mutate_match.group(2).strip("\"'"),
+                            },
+                        )
+                    ],
+                    usage=ModelUsage(prompt_tokens=25, completion_tokens=12, total_tokens=37),
+                    finish_reason="tool_calls",
+                )
+
+        # 6. Sandbox Execution: "Run code: <code>" or "Execute python: <code>"
+        sandbox_match = re.search(r"(?:run|execute)\s+(?:code|python)(?:\s+in\s+sandbox|\s+in\s+docker)?:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
+        if sandbox_match and request.tools and any(t.name == "sandbox_run_code" for t in request.tools):
+            code_str = sandbox_match.group(1).strip().strip("`")
+            return ModelResponse(
+                content=None,
+                tool_calls=[
+                    ToolCallRequest(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="sandbox_run_code",
+                        arguments={"code": code_str},
+                    )
+                ],
+                usage=ModelUsage(prompt_tokens=30, completion_tokens=15, total_tokens=45),
+                finish_reason="tool_calls",
+            )
+
+        # If query asks about version/stack and system context contains it, reflect it in response
+        if "what" in content.lower() and any(k in content.lower() for k in ["version", "stack", "language"]):
+            sys_msgs = [m for m in request.messages if m.role == ModelRole.SYSTEM]
+            for sm in sys_msgs:
+                if "Python 3.12" in sm.content:
+                    return ModelResponse(
+                        content="AURA Response: Project uses Python 3.12.",
+                        usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
+                        finish_reason="stop",
+                    )
+                if "Python 3.11" in sm.content:
+                    return ModelResponse(
+                        content="AURA Response: Project uses Python 3.11.",
+                        usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
+                        finish_reason="stop",
+                    )
+                if "Go 1.22" in sm.content:
+                    return ModelResponse(
+                        content="AURA Response: Project uses Go 1.22.",
+                        usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
+                        finish_reason="stop",
+                    )
 
         # Direct conversational response
         return ModelResponse(

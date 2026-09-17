@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
@@ -17,6 +17,7 @@ class PersistentScheduler:
     - One-shot timers survive server restarts and execute once due.
     - Recurring jobs compute next_run_at deterministically.
     - Emits structured AURAEvent messages to the EventBus.
+    - Uses atomic leasing to prevent concurrent double-firing.
     """
 
     def __init__(self, bus: Optional[EventBus] = None) -> None:
@@ -97,47 +98,90 @@ class PersistentScheduler:
         result = await db.execute(query)
         return list(result.scalars().all())
 
-    async def tick(self, db: AsyncSession) -> List[AURAEvent]:
+    async def tick(
+        self,
+        db: AsyncSession,
+        worker_id: Optional[str] = None,
+        dispatch_immediate: bool = True,
+    ) -> List[AURAEvent]:
         """
-        Evaluate due jobs, emit corresponding events to EventBus,
-        and update database states atomically.
+        Evaluate due jobs with concurrency-safe atomic leasing,
+        emit corresponding events with idempotency keys, and update database states atomically.
         """
+        import uuid
+        worker_tag = worker_id or f"sched-{uuid.uuid4().hex[:6]}"
         now = utc_now()
+        stale_lock_cutoff = now - timedelta(seconds=60)
+
         query = select(ScheduledJobModel).where(
-            ScheduledJobModel.is_active.is_(True),
-            ScheduledJobModel.next_run_at <= now,
+            and_(
+                ScheduledJobModel.is_active.is_(True),
+                ScheduledJobModel.next_run_at <= now,
+                or_(
+                    ScheduledJobModel.locked_at.is_(None),
+                    ScheduledJobModel.locked_at < stale_lock_cutoff,
+                ),
+            )
         )
         result = await db.execute(query)
-        due_jobs = list(result.scalars().all())
+        candidates = list(result.scalars().all())
 
         emitted_events: List[AURAEvent] = []
 
-        for job in due_jobs:
+        for candidate in candidates:
+            # Attempt atomic claim on this job
+            claim_stmt = (
+                update(ScheduledJobModel)
+                .where(
+                    and_(
+                        ScheduledJobModel.id == candidate.id,
+                        ScheduledJobModel.is_active.is_(True),
+                        ScheduledJobModel.next_run_at <= now,
+                        or_(
+                            ScheduledJobModel.locked_at.is_(None),
+                            ScheduledJobModel.locked_at < stale_lock_cutoff,
+                        ),
+                    )
+                )
+                .values(locked_at=now, locked_by=worker_tag)
+                .execution_options(synchronize_session=False)
+            )
+            claim_res = await db.execute(claim_stmt)
+            await db.commit()
+
+            if claim_res.rowcount == 0:
+                # Concurrent worker already claimed this job; skip to prevent duplicate trigger
+                continue
+
+            job = await db.get(ScheduledJobModel, candidate.id)
+            if not job:
+                continue
+
             evt_type = EventType.TIMER_FIRED.value if job.job_type == JobType.ONE_SHOT.value else EventType.CRON_TICK.value
+            idemp_key = f"job-{job.id}-{int(job.next_run_at.timestamp())}"
 
             event = AURAEvent(
                 event_type=evt_type,
                 source="scheduler",
                 payload=job.payload_json,
                 correlation_id=job.id,
+                idempotency_key=idemp_key,
             )
 
-            # Publish event through EventBus with outbox persistence
-            published = await self.bus.publish(event, db=db)
+            published = await self.bus.publish(event, db=db, dispatch_immediate=dispatch_immediate)
             emitted_events.append(published)
 
             job.last_run_at = now
+            job.locked_at = None
+            job.locked_by = None
 
             if job.job_type == JobType.ONE_SHOT.value:
-                # Deactivate one-shot job upon execution
                 job.is_active = False
             else:
-                # Advance recurring job to next execution window
                 try:
                     interval = float(job.schedule_expression)
                     job.next_run_at = now + timedelta(seconds=interval)
                 except ValueError:
-                    # Default fallback 60 seconds if invalid expression
                     job.next_run_at = now + timedelta(seconds=60.0)
 
             await db.commit()

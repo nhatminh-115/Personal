@@ -20,7 +20,7 @@ from app.memory.base import MemoryService
 from app.models.router import ModelRouter
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
-from app.orchestrator.state import AgentState
+from app.orchestrator.state import AgentState, create_initial_agent_state
 from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1", tags=["Chat"])
@@ -63,21 +63,12 @@ async def chat_endpoint(
     )
 
     # 4. Construct initial state for LangGraph
-    initial_state: AgentState = {
-        "run_id": run_id,
-        "session_id": req.session_id,
-        "user_message": req.message,
-        "messages": [],
-        "retrieved_context": [],
-        "current_plan": None,
-        "tool_requests": [],
-        "tool_results": [],
-        "approval_id": None,
-        "approval_state": "none",
-        "execution_status": RunStatus.RUNNING.value,
-        "errors": [],
-        "final_response": None,
-    }
+    initial_state = create_initial_agent_state(
+        run_id=run_id,
+        session_id=req.session_id,
+        user_message=req.message,
+        project_name=req.project_name,
+    )
 
     config = {
         "configurable": {

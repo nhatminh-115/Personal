@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     session_id: str = Field(..., description="Unique UUID of the conversation session")
     message: str = Field(..., min_length=1, description="User query or instruction")
+    project_name: Optional[str] = Field(default=None, description="Optional project context scope")
 
 
 class ChatResponse(BaseModel):

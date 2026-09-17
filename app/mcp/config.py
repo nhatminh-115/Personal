@@ -8,8 +8,9 @@ from pydantic import BaseModel, Field
 class MCPTransportType(str, Enum):
     """Supported transport protocols for MCP servers."""
     STDIO = "stdio"
-    SSE = "sse"
-    HTTP = "http"
+    STREAMABLE_HTTP = "streamable-http"
+    HTTP = "http"  # Alias for streamable-http
+    SSE = "sse"  # Legacy Server-Sent Events compatibility transport
 
 
 class MCPServerConfig(BaseModel):

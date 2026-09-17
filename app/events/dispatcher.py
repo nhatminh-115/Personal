@@ -13,7 +13,7 @@ from app.memory.service import SQLMemoryService
 from app.models.router import model_router
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
-from app.orchestrator.state import AgentState
+from app.orchestrator.state import AgentState, create_initial_agent_state
 from app.tools.registry import tool_registry
 
 
@@ -37,6 +37,7 @@ class EventToAgentBridge:
 
         session_id = payload.get("session_id") or f"proactive-{event.event_type.replace('.', '-')}"
         run_id = str(uuid.uuid4())
+        project_name = payload.get("project_name")
 
         logger.info(
             f"EventToAgentBridge triggering run '{run_id}' from event '{event.event_type}'",
@@ -67,26 +68,20 @@ class EventToAgentBridge:
             )
 
             compiled_graph = await get_compiled_graph()
-            initial_state: AgentState = {
-                "run_id": run_id,
-                "session_id": session_id,
-                "user_message": message,
-                "messages": [],
-                "retrieved_context": [f"[Proactive Event Trigger]: {event.event_type} (source: {event.source})"],
-                "current_plan": None,
-                "tool_requests": [],
-                "tool_results": [],
-                "pending_approval": None,
-                "approval_state": None,
-                "final_response": None,
-                "error": None,
-                "execution_status": RunStatus.RUNNING.value,
-                "metadata": payload.get("metadata", {}),
-            }
+            initial_state = create_initial_agent_state(
+                run_id=run_id,
+                session_id=session_id,
+                user_message=message,
+                project_name=project_name,
+                metadata=payload.get("metadata", {}),
+            )
+            initial_state["retrieved_context"] = [
+                f"[Proactive Event Trigger]: {event.event_type} (source: {event.source})"
+            ]
 
             config = {
                 "configurable": {
-                    "thread_id": session_id,
+                    "thread_id": run_id,
                     "memory_service": mem_service,
                     "approval_service": approval_service,
                     "trace_service": trace_service,
@@ -100,8 +95,16 @@ class EventToAgentBridge:
             # Update run record in DB
             db_run = await db.get(RunModel, run_id)
             if db_run:
-                db_run.status = final_state.get("execution_status", RunStatus.COMPLETED.value)
-                db_run.final_response = final_state.get("final_response")
+                if "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
+                    interrupt_val = final_state["__interrupt__"][0].value
+                    approval_id = interrupt_val.get("approval_id")
+                    tool_name = interrupt_val.get("tool_name")
+                    risk_level = interrupt_val.get("risk_level")
+                    db_run.status = RunStatus.WAITING_FOR_APPROVAL.value
+                    db_run.final_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
+                else:
+                    db_run.status = final_state.get("execution_status", RunStatus.COMPLETED.value)
+                    db_run.final_response = final_state.get("final_response")
                 await db.commit()
 
             return final_state

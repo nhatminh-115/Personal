@@ -144,6 +144,8 @@ class SQLMemoryService(MemoryService):
             project_name=project_name,
             memory_types=[MemoryType.SEMANTIC.value],
             is_active_only=is_active_only,
+            embedding_model=self.embedding_router.current_model_name,
+            embedding_dim=self.embedding_router.current_dimension,
         )
         return [m[0] for m in matches]
 

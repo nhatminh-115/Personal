@@ -22,6 +22,7 @@ class SandboxConfig(BaseModel):
     cpu_quota: float = Field(default=1.0, ge=0.1, le=4.0, description="CPU core quota allocated to container.")
     pids_limit: int = Field(default=64, ge=8, le=256, description="Maximum number of simultaneous processes/threads.")
     timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0, description="Execution timeout in seconds.")
+    max_output_bytes: int = Field(default=100_000, ge=1024, le=10_000_000, description="Maximum byte length of captured stdout/stderr before truncation.")
     env: Dict[str, str] = Field(default_factory=dict, description="Environment variables passed to container.")
 
 

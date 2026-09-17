@@ -42,7 +42,7 @@ async def test_event_bus_subscribe_and_dispatch():
 
 @pytest.mark.asyncio
 async def test_event_bus_transactional_outbox_persistence(test_db_session):
-    """Verify published events are durably recorded in the database outbox table."""
+    """Verify published events are durably recorded in the database outbox table as PENDING."""
     bus = EventBus()
 
     test_event = AURAEvent(
@@ -53,22 +53,21 @@ async def test_event_bus_transactional_outbox_persistence(test_db_session):
     )
 
     published = await bus.publish(test_event, db=test_db_session)
-    assert published.status == EventStatus.PROCESSED
+    assert published.status == EventStatus.PENDING
 
-    # Verify database row
+    # Verify database row is pending for OutboxWorker pickup
     db_record = await test_db_session.get(EventRecordModel, test_event.id)
     assert db_record is not None
     assert db_record.event_type == EventType.WEBHOOK_RECEIVED.value
     assert db_record.source == "github_webhook"
     assert db_record.payload_json["action"] == "push"
-    assert db_record.status == EventStatus.PROCESSED.value
-    assert db_record.processed_at is not None
+    assert db_record.status == EventStatus.PENDING.value
     assert db_record.correlation_id == "corr-12345"
 
 
 @pytest.mark.asyncio
 async def test_event_bus_handler_failure_isolation(test_db_session):
-    """Verify handler exceptions are recorded as failures in DB outbox without crashing the bus."""
+    """Verify handler exceptions are recorded as failures in DB outbox when dispatch_immediate is enabled."""
     bus = EventBus()
 
     async def exploding_handler(evt: AURAEvent):
@@ -81,7 +80,7 @@ async def test_event_bus_handler_failure_isolation(test_db_session):
         payload={"data": "test"},
     )
 
-    published = await bus.publish(failing_event, db=test_db_session)
+    published = await bus.publish(failing_event, db=test_db_session, dispatch_immediate=True)
     assert published.status == EventStatus.FAILED
 
     db_record = await test_db_session.get(EventRecordModel, failing_event.id)

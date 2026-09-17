@@ -92,13 +92,20 @@ class ContextAssembler:
 
             if store and embedding_router:
                 query_vec = await embedding_router.embed_query(user_message)
+                search_types = (
+                    [MemoryType.SEMANTIC.value, MemoryType.PROJECT.value]
+                    if project_name
+                    else [MemoryType.SEMANTIC.value]
+                )
                 matches = await store.search(
                     query_vector=query_vec,
                     limit=semantic_top_k,
                     min_similarity=semantic_threshold,
                     project_name=project_name,
-                    memory_types=[MemoryType.SEMANTIC.value, MemoryType.PROJECT.value],
+                    memory_types=search_types,
                     is_active_only=True,
+                    embedding_model=embedding_router.current_model_name,
+                    embedding_dim=embedding_router.current_dimension,
                 )
                 seen_semantic = set()
                 for mem, sim in matches:
@@ -114,6 +121,7 @@ class ContextAssembler:
                     is_active_only=True,
                 )
                 for mem in raw_memories:
-                    context.semantic_items.append((mem.content, 1.0))
+                    if mem.content not in context.project_facts:
+                        context.semantic_items.append((mem.content, 1.0))
 
         return context

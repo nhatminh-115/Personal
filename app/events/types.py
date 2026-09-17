@@ -29,6 +29,9 @@ class AURAEvent(BaseModel):
     payload: Dict[str, Any] = Field(default_factory=dict, description="Typed arbitrary event data.")
     occurred_at: datetime = Field(default_factory=utc_now, description="UTC timestamp when event occurred.")
     correlation_id: Optional[str] = Field(None, description="Identifier correlating this event to a run/job/session.")
+    idempotency_key: Optional[str] = Field(None, description="Unique key for deduplication.")
     status: EventStatus = Field(default=EventStatus.PENDING, description="Outbox processing state.")
     retry_count: int = Field(default=0)
+    max_attempts: int = Field(default=3, description="Maximum retry attempts before dead-letter.")
+    next_attempt_at: Optional[datetime] = Field(None, description="Earliest execution time for next attempt.")
     error_message: Optional[str] = None

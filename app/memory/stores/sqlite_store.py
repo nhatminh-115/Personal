@@ -2,7 +2,7 @@
 
 import math
 from typing import List, Optional, Tuple
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import MemoryModel
 from app.memory.stores.base import SemanticMemoryStore
@@ -44,17 +44,35 @@ class SqliteSemanticStore(SemanticMemoryStore):
         project_name: Optional[str] = None,
         memory_types: Optional[List[str]] = None,
         is_active_only: bool = True,
+        embedding_model: Optional[str] = None,
+        embedding_dim: Optional[int] = None,
+        exact_project_only: bool = False,
+        allow_any_project: bool = False,
     ) -> List[Tuple[MemoryModel, float]]:
         conditions = [MemoryModel.embedding.isnot(None)]
 
         if is_active_only:
             conditions.append(MemoryModel.is_active.is_(True))
 
-        if project_name is not None:
-            conditions.append(MemoryModel.project_name == project_name)
+        if not allow_any_project:
+            if project_name is not None:
+                if exact_project_only:
+                    conditions.append(MemoryModel.project_name == project_name)
+                else:
+                    conditions.append(
+                        or_(MemoryModel.project_name == project_name, MemoryModel.project_name.is_(None))
+                    )
+            else:
+                conditions.append(MemoryModel.project_name.is_(None))
 
         if memory_types:
             conditions.append(MemoryModel.memory_type.in_(memory_types))
+
+        if embedding_model is not None:
+            conditions.append(MemoryModel.embedding_model == embedding_model)
+
+        if embedding_dim is not None:
+            conditions.append(MemoryModel.embedding_dim == embedding_dim)
 
         stmt = select(MemoryModel).where(and_(*conditions))
         result = await self.db.execute(stmt)
@@ -63,6 +81,10 @@ class SqliteSemanticStore(SemanticMemoryStore):
         scored_matches: List[Tuple[MemoryModel, float]] = []
         for mem in memories:
             if mem.embedding is not None:
+                if embedding_model is not None and mem.embedding_model != embedding_model:
+                    continue
+                if embedding_dim is not None and mem.embedding_dim != embedding_dim:
+                    continue
                 sim = _cosine_similarity(query_vector, list(mem.embedding))
                 if sim >= min_similarity:
                     scored_matches.append((mem, round(sim, 6)))

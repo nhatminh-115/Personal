@@ -43,8 +43,8 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     messages = list(state.get("messages", []))
 
     if mem_service:
-        project_name = None
-        if state.get("metadata") and isinstance(state["metadata"], dict):
+        project_name = state.get("project_name")
+        if not project_name and state.get("metadata") and isinstance(state["metadata"], dict):
             project_name = state["metadata"].get("project_name")
 
         assembler = ContextAssembler(mem_service)
@@ -594,8 +594,8 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
 
             # Extract and commit conservative memory candidates
             pipeline = MemoryCandidatePipeline()
-            project_name = None
-            if state.get("metadata") and isinstance(state["metadata"], dict):
+            project_name = state.get("project_name")
+            if not project_name and state.get("metadata") and isinstance(state["metadata"], dict):
                 project_name = state["metadata"].get("project_name")
 
             candidates = pipeline.extract_candidates(

@@ -72,7 +72,7 @@ class MemoryCandidatePipeline:
         for pat in self.PROJECT_PATTERNS:
             pm = re.search(pat, target_text, re.IGNORECASE)
             if pm:
-                p_name = pm.group(1).strip()
+                p_name = active_project or pm.group(1).strip()
                 p_fact = pm.group(0).strip()
                 # Derive candidate key
                 p_key = "general"

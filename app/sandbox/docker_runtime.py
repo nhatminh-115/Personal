@@ -110,12 +110,28 @@ class DockerSandboxRuntime(SandboxRuntime):
 
             duration_ms = (time.perf_counter() - start_time) * 1000.0
 
-            # Collect stdout and stderr
+            # Collect stdout and stderr with strict length bounds
             try:
-                stdout = container.logs(stdout=True, stderr=False).decode("utf-8", errors="replace")
-                stderr = container.logs(stdout=False, stderr=True).decode("utf-8", errors="replace")
+                raw_stdout = container.logs(stdout=True, stderr=False)
+                raw_stderr = container.logs(stdout=False, stderr=True)
             except Exception:
-                stdout, stderr = "", ""
+                raw_stdout, raw_stderr = b"", b""
+
+            truncated = False
+            if len(raw_stdout) > cfg.max_output_bytes:
+                raw_stdout = raw_stdout[:cfg.max_output_bytes]
+                truncated = True
+            if len(raw_stderr) > cfg.max_output_bytes:
+                raw_stderr = raw_stderr[:cfg.max_output_bytes]
+                truncated = True
+
+            stdout = raw_stdout.decode("utf-8", errors="replace")
+            stderr = raw_stderr.decode("utf-8", errors="replace")
+
+            meta: Dict[str, Any] = {"image": cfg.image, "container_id": container.id[:12]}
+            if truncated:
+                meta["truncated"] = True
+                stdout += "\n... [Output truncated: exceeded max_output_bytes limit]"
 
             return ExecutionResult(
                 exit_code=exit_code,
@@ -123,7 +139,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 stderr=stderr,
                 timed_out=timed_out,
                 duration_ms=round(duration_ms, 2),
-                metadata={"image": cfg.image, "container_id": container.id[:12]},
+                metadata=meta,
             )
 
         finally:
