@@ -13,7 +13,11 @@ class SandboxConfig(BaseModel):
         description="Base container image.",
     )
     workspace_dir: str = Field(
-        default_factory=lambda: os.path.abspath("./workspace"),
+        default_factory=lambda: str(
+            os.getenv("AURA_WORKSPACE_ROOT")
+            or getattr(__import__("app.core.settings", fromlist=["settings"]).settings, "AURA_WORKSPACE_ROOT", None)
+            or os.path.abspath("./workspace")
+        ),
         description="Host directory mounted into container.",
     )
     container_workspace_mount: str = Field(default="/workspace", description="Mount path inside container.")

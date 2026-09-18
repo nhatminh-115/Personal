@@ -49,8 +49,13 @@ def setup_test_workspace(tmp_path: Path):
     test_workspace.mkdir(parents=True, exist_ok=True)
     original_root = settings.AURA_WORKSPACE_ROOT
     settings.AURA_WORKSPACE_ROOT = test_workspace
+    os.environ["AURA_WORKSPACE_ROOT"] = str(test_workspace)
     yield test_workspace
     settings.AURA_WORKSPACE_ROOT = original_root
+    if original_root:
+        os.environ["AURA_WORKSPACE_ROOT"] = str(original_root)
+    else:
+        os.environ.pop("AURA_WORKSPACE_ROOT", None)
 
 
 @pytest_asyncio.fixture

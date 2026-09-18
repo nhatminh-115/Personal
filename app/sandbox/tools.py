@@ -78,15 +78,17 @@ class SandboxShellExecuteTool(Tool):
             )
 
         try:
-            res = await self._runtime.run_command(command)
+            from app.core.settings import settings
+            cfg = SandboxConfig(workspace_dir=str(settings.AURA_WORKSPACE_ROOT))
+            res = await self._runtime.run_command(command, config=cfg)
             success = res.exit_code == 0 and not res.timed_out
-            err_msg = res.stderr if not success else None
+            err_msg = res.stderr if res.stderr else (res.stdout if not success else None)
             if res.timed_out:
                 err_msg = f"Execution timed out. {res.stderr}"
 
             return ToolResult(
                 success=success,
-                output=res.stdout or res.stderr,
+                output=res.stdout or res.stderr or f"Exit code: {res.exit_code}",
                 error=err_msg,
                 metadata={
                     "exit_code": res.exit_code,
@@ -161,15 +163,17 @@ class SandboxPythonExecuteTool(Tool):
             )
 
         try:
-            res = await self._runtime.run_python(code)
+            from app.core.settings import settings
+            cfg = SandboxConfig(workspace_dir=str(settings.AURA_WORKSPACE_ROOT))
+            res = await self._runtime.run_python(code, config=cfg)
             success = res.exit_code == 0 and not res.timed_out
-            err_msg = res.stderr if not success else None
+            err_msg = res.stderr if res.stderr else (res.stdout if not success else None)
             if res.timed_out:
                 err_msg = f"Execution timed out. {res.stderr}"
 
             return ToolResult(
                 success=success,
-                output=res.stdout or res.stderr,
+                output=res.stdout or res.stderr or f"Exit code: {res.exit_code}",
                 error=err_msg,
                 metadata={
                     "exit_code": res.exit_code,
