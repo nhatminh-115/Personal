@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelRole(str, Enum):
@@ -22,6 +22,8 @@ class ToolCallRequest(BaseModel):
 
 class ChatMessage(BaseModel):
     """Normalized canonical chat message."""
+
+    model_config = ConfigDict(use_enum_values=True)
 
     role: ModelRole
     content: str = ""
@@ -45,8 +47,10 @@ class RoutingContext(BaseModel):
     complexity: Literal["simple", "medium", "complex"] | None = None
     privacy_requirement: Literal["public", "internal", "confidential"] | None = None
     latency_preference: Literal["low", "normal"] | None = None
-    cost_preference: Literal["low", "normal", "high_quality"] | None = None
     required_capabilities: list[str] = Field(default_factory=list)
+    explicit_model_override: str | None = None
+    session_id: str | None = None
+    run_id: str | None = None
 
 
 class ModelUsage(BaseModel):

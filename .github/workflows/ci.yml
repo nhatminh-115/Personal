@@ -89,3 +89,7 @@ jobs:
       - name: Run live Phase 2.1 verification
         run: |
           python scripts/verify_phase2.py
+
+      - name: Run live Phase 3 verification
+        run: |
+          python scripts/verify_phase3.py

@@ -55,8 +55,85 @@ class MockModelProvider(ModelProvider):
 
         latest_msg = request.messages[-1]
 
-        # If latest message is a TOOL result or contains recent tool outputs, summarize it
+        # Check if this request is inside the Coding Specialist sub-agent
+        is_coding_specialist = any("Coding Specialist" in m.content for m in request.messages if m.role == ModelRole.SYSTEM)
+        if not is_coding_specialist and request.routing_context and request.routing_context.task_type == "coding":
+            is_coding_specialist = True
+
         tool_msgs = [m for m in request.messages if m.role == ModelRole.TOOL]
+        user_msgs = [m for m in request.messages if m.role == ModelRole.USER]
+        content = (user_msgs[-1].content if user_msgs else latest_msg.content).strip()
+
+        # Multi-step loop for Coding Specialist
+        if is_coding_specialist and request.tools:
+            tool_names = {t.name for t in request.tools}
+            # Step 1: Run tests first to inspect/reproduce failure
+            if len(tool_msgs) == 0:
+                target_tool = "sandbox_shell_execute" if "sandbox_shell_execute" in tool_names else "sandbox_python_execute"
+                arg = {"command": "pytest"} if target_tool == "sandbox_shell_execute" else {"code": "assert 1 == 1"}
+                return ModelResponse(
+                    content="Running test suite in isolated sandbox to diagnose issues...",
+                    tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name=target_tool, arguments=arg)],
+                    finish_reason="tool_calls",
+                )
+            # Step 2: Read source file after observing test failure
+            elif len(tool_msgs) == 1 and "read_workspace_file" in tool_names:
+                return ModelResponse(
+                    content="Diagnosing test failure: inspecting source code...",
+                    tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name="read_workspace_file", arguments={"path": "calculator.py"})],
+                    finish_reason="tool_calls",
+                )
+            # Step 3: Write fix after reading buggy code
+            elif len(tool_msgs) == 2 and "write_workspace_file" in tool_names:
+                return ModelResponse(
+                    content="Identified bug in calculator.py: applying code patch...",
+                    tool_calls=[ToolCallRequest(
+                        id=f"call_{uuid.uuid4().hex[:8]}",
+                        name="write_workspace_file",
+                        arguments={"path": "calculator.py", "content": "def add(a, b):\n    return a + b\n"},
+                    )],
+                    finish_reason="tool_calls",
+                )
+            # Step 4: Re-run tests to verify fix
+            elif len(tool_msgs) == 3 and "sandbox_shell_execute" in tool_names:
+                return ModelResponse(
+                    content="Verifying fix by re-running test suite in sandbox...",
+                    tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name="sandbox_shell_execute", arguments={"command": "pytest"})],
+                    finish_reason="tool_calls",
+                )
+            # Step 5: Finalize and return clear summary to root
+            else:
+                return ModelResponse(
+                    content="Specialist successfully diagnosed and fixed bug in calculator.py. Test suite is now green (1 passed).",
+                    finish_reason="stop",
+                )
+
+        # Personal Orchestrator Root Delegation
+        if any(t.name == "delegate_task" for t in (request.tools or [])):
+            if ("fix" in content.lower() and ("test" in content.lower() or "atlas" in content.lower())) or "delegate to coding" in content.lower():
+                if not tool_msgs:
+                    return ModelResponse(
+                        content="Delegating software diagnosis and repair to Coding Specialist...",
+                        tool_calls=[
+                            ToolCallRequest(
+                                id=f"call_{uuid.uuid4().hex[:8]}",
+                                name="delegate_task",
+                                arguments={
+                                    "specialist_name": "coding",
+                                    "task_description": content,
+                                    "context": {"project_name": "Atlas"},
+                                },
+                            )
+                        ],
+                        finish_reason="tool_calls",
+                    )
+                else:
+                    return ModelResponse(
+                        content=f"Personal Orchestrator: {tool_msgs[-1].content}",
+                        finish_reason="stop",
+                    )
+
+        # If latest message is a TOOL result or contains recent tool outputs, summarize it
         if tool_msgs and latest_msg.role == ModelRole.TOOL:
             combined_tool_output = " | ".join(m.content for m in tool_msgs)
             return ModelResponse(
@@ -64,8 +141,6 @@ class MockModelProvider(ModelProvider):
                 usage=ModelUsage(prompt_tokens=25, completion_tokens=15, total_tokens=40),
                 finish_reason="stop",
             )
-        user_msgs = [m for m in request.messages if m.role == ModelRole.USER]
-        content = (user_msgs[-1].content if user_msgs else latest_msg.content).strip()
 
         # Check for tool invocations requested by user query
         # 1. MCP Read Tool: "Read/query metric <name>"

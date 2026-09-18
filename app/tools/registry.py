@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from app.models.base import ToolDefinition
 from app.tools.base import Tool
 from app.sandbox.tools import SandboxPythonExecuteTool, SandboxShellExecuteTool
+from app.tools.delegation import DelegateTaskTool
 from app.tools.workspace import (
     ListWorkspaceFilesTool,
     ReadWorkspaceFileTool,
@@ -22,6 +23,7 @@ class ToolRegistry:
         self.register(WriteWorkspaceFileTool())
         self.register(SandboxShellExecuteTool())
         self.register(SandboxPythonExecuteTool())
+        self.register(DelegateTaskTool())
 
     def register(self, tool: Tool) -> None:
         """Register a tool instance."""

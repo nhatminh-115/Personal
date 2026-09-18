@@ -21,6 +21,7 @@ class PermissionPolicy:
         self._automatic_capabilities: Set[str] = {
             Capability.FILESYSTEM_READ.value,
             Capability.MCP_READ.value,
+            Capability.AGENT_DELEGATE.value,
         }
 
         # Capabilities that explicitly demand human verification before execution

@@ -62,3 +62,8 @@ class ApprovalNotFoundError(AuraError):
 class InternalExecutionError(AuraError):
     """Raised when the agent runtime encounters an unrecoverable internal error."""
     pass
+
+
+# Convenience aliases
+PermissionError = PermissionDeniedError
+ToolError = ToolExecutionError

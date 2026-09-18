@@ -17,4 +17,5 @@ class Capability(str, Enum):
     MCP_READ = "mcp.read"
     MCP_EXECUTE = "mcp.execute"
     SANDBOX_EXECUTE = "sandbox.execute"
+    AGENT_DELEGATE = "agent.delegate"
 

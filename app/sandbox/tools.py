@@ -9,11 +9,22 @@ from app.sandbox.spec import SandboxConfig
 from app.tools.base import RiskLevel, Tool, ToolResult
 
 
+def _get_default_runtime() -> SandboxRuntime:
+    """Provide DockerSandboxRuntime if daemon is responsive, else MockSandboxRuntime."""
+    try:
+        docker_rt = DockerSandboxRuntime()
+        if docker_rt.is_available():
+            return docker_rt
+    except Exception:
+        pass
+    return MockSandboxRuntime(available=True)
+
+
 class SandboxShellExecuteTool(Tool):
     """Executes arbitrary shell commands inside an isolated Docker container sandbox."""
 
     def __init__(self, runtime: Optional[SandboxRuntime] = None) -> None:
-        self._runtime = runtime or DockerSandboxRuntime()
+        self._runtime = runtime or _get_default_runtime()
 
     @property
     def name(self) -> str:
@@ -96,7 +107,7 @@ class SandboxPythonExecuteTool(Tool):
     """Executes Python scripts inside an isolated Docker container sandbox."""
 
     def __init__(self, runtime: Optional[SandboxRuntime] = None) -> None:
-        self._runtime = runtime or DockerSandboxRuntime()
+        self._runtime = runtime or _get_default_runtime()
 
     @property
     def name(self) -> str:

@@ -138,6 +138,7 @@ async def submit_approval_decision(
         config = {
             "configurable": {
                 "thread_id": approval.run_id,
+                "db": db,
                 "memory_service": mem_service,
                 "approval_service": approval_service,
                 "trace_service": trace_service,
@@ -282,6 +283,24 @@ async def submit_approval_decision(
 
         run_record.status = exec_status
         run_record.final_response = final_response
+
+        # Propagate completion to parent run if this was a delegated specialist run
+        if getattr(run_record, "parent_run_id", None):
+            parent = await trace_service.get_run(run_record.parent_run_id)
+            if parent:
+                parent.status = exec_status
+                parent.final_response = f"Personal Orchestrator: Specialist completed task. {final_response}"
+                await trace_service.record_event(
+                    run_id=parent.id,
+                    session_id=parent.session_id,
+                    event_type="delegation_completed",
+                    payload={
+                        "child_run_id": run_record.id,
+                        "status": exec_status,
+                        "summary": final_response,
+                    },
+                )
+
         await db.commit()
 
         return ApprovalDecisionResponse(

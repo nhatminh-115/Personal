@@ -68,11 +68,13 @@ async def chat_endpoint(
         session_id=req.session_id,
         user_message=req.message,
         project_name=req.project_name,
+        metadata=req.metadata,
     )
 
     config = {
         "configurable": {
             "thread_id": run_id,
+            "db": db,
             "memory_service": mem_service,
             "approval_service": approval_service,
             "trace_service": trace_service,

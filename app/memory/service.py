@@ -256,7 +256,7 @@ class SQLMemoryService(MemoryService):
     async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
-            MemoryModel.key.like(f"{project_name}:%"),
+            MemoryModel.project_name == project_name,
         )
         if is_active_only:
             query = query.where(MemoryModel.is_active.is_(True))

@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 from langchain_core.runnables import RunnableConfig
+from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
 
 from app.approvals.policy import PermissionDecision, permission_policy
@@ -12,7 +13,7 @@ from app.db.models import RunStatus
 from app.memory.base import MemoryService
 from app.memory.context import ContextAssembler
 from app.memory.pipeline import MemoryCandidatePipeline
-from app.models.base import ChatMessage, ModelRequest, ModelRole, ToolCallRequest
+from app.models.base import ChatMessage, ModelRequest, ModelRole, RoutingContext, ToolCallRequest
 from app.models.router import ModelRouter, model_router
 from app.observability.tracer import TraceService
 from app.orchestrator.state import AgentState
@@ -25,6 +26,7 @@ def _get_services(config: Optional[RunnableConfig]) -> Dict[str, Any]:
     """Extract injected runtime services from LangGraph config."""
     configurable = config.get("configurable", {}) if config else {}
     return {
+        "db": configurable.get("db"),
         "memory_service": configurable.get("memory_service"),
         "approval_service": configurable.get("approval_service"),
         "trace_service": configurable.get("trace_service"),
@@ -137,18 +139,40 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
 
     tool_defs = registry.get_tool_definitions()
 
+    meta = state.get("metadata", {}) or {}
+    delegation = state.get("delegation_context", {}) or {}
+    routing_ctx = RoutingContext(
+        task_type=delegation.get("task_type") or meta.get("task_type"),
+        complexity=meta.get("complexity"),
+        privacy_requirement=meta.get("privacy_requirement"),
+        explicit_model_override=meta.get("model_override"),
+        session_id=state["session_id"],
+        run_id=state["run_id"],
+    )
+
     model_req = ModelRequest(
         messages=chat_messages,
         tools=tool_defs,
         temperature=0.0,
+        routing_context=routing_ctx,
     )
+
+    provider, selection = router.select_model_for_task(routing_ctx)
 
     if trace_service:
         await trace_service.record_event(
             run_id=state["run_id"],
             session_id=state["session_id"],
             event_type="model_called",
-            payload={"messages_count": len(chat_messages), "tools_count": len(tool_defs)},
+            payload={
+                "messages_count": len(chat_messages),
+                "tools_count": len(tool_defs),
+                "routing_decision": {
+                    "provider": selection.provider_name,
+                    "model": selection.model_name,
+                    "reason": selection.reason,
+                },
+            },
         )
 
     response = await router.route(model_req)
@@ -172,11 +196,20 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             "current_plan": f"Plan to invoke tools: {[tc['name'] for tc in formatted_calls]}",
         }
 
-    # Direct response
+    # Direct / Final response
     messages.append({
         "role": "assistant",
         "content": response.content or "",
     })
+
+    if trace_service:
+        await trace_service.record_event(
+            run_id=state["run_id"],
+            session_id=state["session_id"],
+            event_type="response_generated",
+            payload={"response_length": len(response.content or ""), "step": state.get("step_number", 1)},
+        )
+
     return {
         "messages": messages,
         "final_response": response.content,
@@ -202,9 +235,15 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
     tool_approvals = dict(state.get("tool_approvals", {}))
 
     # 1. Mark all AUTOMATIC tool calls as auto-authorized
+    delegation_ctx = state.get("delegation_context", {}) or {}
+    auto_approve_tools = set(delegation_ctx.get("auto_approve_tools", []))
+
     for tc in tool_requests:
         cid = tc.get("id", "")
         if cid not in tool_approvals:
+            if tc["name"] in auto_approve_tools:
+                tool_approvals[cid] = {"status": "auto", "arguments": tc["arguments"]}
+                continue
             tool = registry.get(tc["name"])
             risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
             capabilities = tool.required_capabilities if tool else []
@@ -348,7 +387,11 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
 
 def determine_next_route(state: AgentState) -> str:
     """Conditional routing edge logic."""
-    if state.get("execution_status") == RunStatus.CANCELLED.value:
+    if state.get("execution_status") in {
+        RunStatus.CANCELLED.value,
+        RunStatus.COMPLETED.value,
+        RunStatus.FAILED.value,
+    }:
         return "direct_response"
 
     tool_requests = state.get("tool_requests", [])
@@ -361,10 +404,6 @@ def determine_next_route(state: AgentState) -> str:
         cid = tc.get("id", "")
         if cid not in tool_approvals:
             return "route_decision"
-
-    # If all tool results are already executed, proceed to update_memory / direct response
-    if state.get("tool_results"):
-        return "direct_response"
 
     return "execute_tool"
 
@@ -387,10 +426,16 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
         approval_info = tool_approvals.get(tool_call_id, {})
         approval_status = approval_info.get("status")
 
+        delegation_ctx = state.get("delegation_context", {}) or {}
+        auto_approve_tools = set(delegation_ctx.get("auto_approve_tools", []))
+
         tool = registry.get(tool_name)
         risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
         capabilities = tool.required_capabilities if tool else []
-        decision = permission_policy.evaluate(capabilities, risk_level)
+        if tool_name in auto_approve_tools:
+            decision = PermissionDecision.AUTOMATIC
+        else:
+            decision = permission_policy.evaluate(capabilities, risk_level)
 
         # Defense-in-depth: If tool requires approval, check its explicit approval status
         if decision == PermissionDecision.REQUIRES_APPROVAL:
@@ -459,7 +504,13 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
             errors.append(error_msg)
         else:
             try:
-                result = await tool.execute(tool_input, context={"run_id": state["run_id"], "session_id": state["session_id"]})
+                tool_context = {
+                    "run_id": state["run_id"],
+                    "session_id": state["session_id"],
+                    "db": services.get("db"),
+                    "services": services,
+                }
+                result = await tool.execute(tool_input, context=tool_context)
                 error_cat = None
                 if not result.success:
                     if "ACCESS DENIED" in (result.error or ""):
@@ -479,6 +530,8 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 error_cat = "permission_failure"
                 errors.append(f"permission_failure: {e}")
                 result_payload = {"success": False, "output": "", "error": str(e), "error_category": error_cat}
+            except GraphInterrupt:
+                raise
             except Exception as e:
                 error_cat = "tool_failure"
                 errors.append(f"tool_failure: {e}")
@@ -504,67 +557,109 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 run_id=state["run_id"],
                 session_id=state["session_id"],
                 event_type="tool_executed",
-                payload={"tool": tool_name, "tool_call_id": tool_call_id, "result": result_payload},
+                payload={"tool": tool_name, "tool_call_id": tool_call_id, "result": result_payload, "step": state.get("step_number", 1)},
             )
+
+    total_tool_calls = state.get("total_tool_calls", 0) + len(tool_requests)
+    has_failed = bool(tool_results) and all(not tr.get("result", {}).get("success", False) for tr in tool_results)
+    consecutive_failures = (state.get("consecutive_failures", 0) + 1) if has_failed else 0
 
     return {
         "messages": messages,
         "tool_results": tool_results,
         "errors": errors,
+        "total_tool_calls": total_tool_calls,
+        "consecutive_failures": consecutive_failures,
     }
 
 
-async def verify_result_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
-    """Synthesize final response combining user request and tool outputs using canonical messages."""
+async def observe_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
+    """
+    Observe results of executed tools, record step audit trace,
+    enforce bounded execution limits, and cycle state for next reasoning turn.
+    """
+    import time
     services = _get_services(config)
-    router: ModelRouter = services["model_router"]
     trace_service: Optional[TraceService] = services["trace_service"]
 
-    # Reconstruct canonical ChatMessage objects for the model
-    chat_messages: List[ChatMessage] = []
-    for m in state.get("messages", []):
-        role_str = m.get("role", "user")
-        if role_str == "system":
-            chat_messages.append(ChatMessage(role=ModelRole.SYSTEM, content=m.get("content", "")))
-        elif role_str == "user":
-            chat_messages.append(ChatMessage(role=ModelRole.USER, content=m.get("content", "")))
-        elif role_str == "assistant":
-            tc_objs = None
-            if m.get("tool_calls"):
-                tc_objs = [ToolCallRequest(**tc) for tc in m["tool_calls"]]
-            chat_messages.append(ChatMessage(role=ModelRole.ASSISTANT, content=m.get("content", ""), tool_calls=tc_objs))
-        elif role_str == "tool":
-            chat_messages.append(
-                ChatMessage(
-                    role=ModelRole.TOOL,
-                    content=m.get("content", ""),
-                    name=m.get("name"),
-                    tool_call_id=m.get("tool_call_id"),
-                )
-            )
-
-    model_req = ModelRequest(messages=chat_messages, temperature=0.0)
-    response = await router.route(model_req)
-
-    messages = list(state.get("messages", []))
-    messages.append({
-        "role": "assistant",
-        "content": response.content or "",
-    })
+    step_num = state.get("step_number", 1)
+    run_id = state["run_id"]
+    session_id = state["session_id"]
+    now = time.time()
 
     if trace_service:
         await trace_service.record_event(
-            run_id=state["run_id"],
-            session_id=state["session_id"],
-            event_type="response_generated",
-            payload={"response_length": len(response.content or "")},
+            run_id=run_id,
+            session_id=session_id,
+            event_type="step_completed",
+            payload={
+                "step": step_num,
+                "total_tool_calls": state.get("total_tool_calls", 0),
+                "consecutive_failures": state.get("consecutive_failures", 0),
+                "tool_results_count": len(state.get("tool_results", [])),
+            },
         )
 
+    # 1. Wall-clock deadline enforcement
+    if state.get("deadline_seconds") and now >= state["deadline_seconds"]:
+        term_reason = "deadline_exceeded"
+        resp = "Agent execution terminated: Wall-clock deadline exceeded."
+        return {
+            "execution_status": RunStatus.FAILED.value,
+            "termination_reason": term_reason,
+            "final_response": resp,
+        }
+
+    # 2. Maximum consecutive failures enforcement
+    if state.get("consecutive_failures", 0) >= state.get("max_consecutive_failures", 3):
+        term_reason = "consecutive_failures_exceeded"
+        resp = f"Agent execution terminated: Exceeded maximum consecutive tool failures ({state.get('max_consecutive_failures', 3)})."
+        return {
+            "execution_status": RunStatus.FAILED.value,
+            "termination_reason": term_reason,
+            "final_response": resp,
+        }
+
+    # 3. Total tool calls budget enforcement
+    if state.get("total_tool_calls", 0) >= state.get("max_tool_calls", 25):
+        term_reason = "max_tool_calls_exceeded"
+        resp = f"Agent execution terminated: Maximum tool calls budget reached ({state.get('max_tool_calls', 25)} calls)."
+        return {
+            "execution_status": RunStatus.COMPLETED.value,
+            "termination_reason": term_reason,
+            "final_response": resp,
+        }
+
+    # 4. Maximum agent reasoning steps enforcement
+    if step_num >= state.get("max_steps", 10):
+        term_reason = "max_steps_exceeded"
+        resp = f"Agent execution terminated: Maximum agent steps limit reached ({state.get('max_steps', 10)} steps)."
+        return {
+            "execution_status": RunStatus.COMPLETED.value,
+            "termination_reason": term_reason,
+            "final_response": resp,
+        }
+
+    # Prepare state for next iterative reasoning turn
     return {
-        "messages": messages,
-        "final_response": response.content,
-        "execution_status": RunStatus.COMPLETED.value,
+        "step_number": step_num + 1,
+        "tool_requests": [],
+        "tool_approvals": {},
+        "approval_state": "none",
+        "approval_id": None,
+        "current_plan": None,
     }
+
+
+def determine_post_observe_route(state: AgentState) -> str:
+    """Determine whether to continue agent loop or finalize and persist memory."""
+    if state.get("final_response") is not None or state.get("execution_status") in {
+        RunStatus.COMPLETED.value,
+        RunStatus.FAILED.value,
+        RunStatus.CANCELLED.value,
+    }:
+        return "update_memory"
+    return "reason"
 
 
 async def update_memory_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:

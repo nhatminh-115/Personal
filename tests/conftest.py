@@ -30,6 +30,19 @@ def setup_test_checkpointer():
 
 
 @pytest.fixture(autouse=True)
+def reset_mock_model_provider():
+    """Ensure the mock model provider queue and call history are cleared for every test."""
+    mock = model_router.get_provider("mock")
+    if isinstance(mock, MockModelProvider):
+        mock.clear_queue()
+        mock.call_history.clear()
+    yield
+    if isinstance(mock, MockModelProvider):
+        mock.clear_queue()
+        mock.call_history.clear()
+
+
+@pytest.fixture(autouse=True)
 def setup_test_workspace(tmp_path: Path):
     """Ensure a clean, isolated temporary workspace for every test."""
     test_workspace = tmp_path / "workspace"

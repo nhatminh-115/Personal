@@ -24,6 +24,16 @@ class AgentState(TypedDict, total=False):
     final_response: Optional[str]
     project_name: Optional[str]
     metadata: Optional[Dict[str, Any]]
+    step_number: int
+    max_steps: int
+    total_tool_calls: int
+    max_tool_calls: int
+    consecutive_failures: int
+    max_consecutive_failures: int
+    deadline_seconds: Optional[float]
+    start_time: Optional[float]
+    termination_reason: Optional[str]
+    delegation_context: Optional[Dict[str, Any]]
 
 
 def create_initial_agent_state(
@@ -34,9 +44,17 @@ def create_initial_agent_state(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> AgentState:
     """Canonical factory to produce an initialized AgentState for LangGraph runs."""
+    import time
     meta = dict(metadata) if metadata else {}
     if project_name and "project_name" not in meta:
         meta["project_name"] = project_name
+
+    max_steps = int(meta.get("max_steps", 10))
+    max_tool_calls = int(meta.get("max_tool_calls", 25))
+    max_consecutive_failures = int(meta.get("max_consecutive_failures", 3))
+    timeout_budget = meta.get("timeout_seconds")
+    start_ts = time.time()
+    deadline = start_ts + float(timeout_budget) if timeout_budget else None
 
     return {
         "run_id": run_id,
@@ -55,4 +73,14 @@ def create_initial_agent_state(
         "final_response": None,
         "project_name": project_name,
         "metadata": meta,
+        "step_number": 1,
+        "max_steps": max_steps,
+        "total_tool_calls": 0,
+        "max_tool_calls": max_tool_calls,
+        "consecutive_failures": 0,
+        "max_consecutive_failures": max_consecutive_failures,
+        "deadline_seconds": deadline,
+        "start_time": start_ts,
+        "termination_reason": None,
+        "delegation_context": meta.get("delegation_context"),
     }

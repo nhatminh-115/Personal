@@ -12,12 +12,13 @@ from app.core.logging import logger
 from app.core.settings import settings
 from app.orchestrator.nodes import (
     determine_next_route,
+    determine_post_observe_route,
     execute_tool_node,
     load_context_node,
+    observe_node,
     reason_node,
     route_decision_node,
     update_memory_node,
-    verify_result_node,
 )
 from app.orchestrator.state import AgentState
 
@@ -36,7 +37,7 @@ def build_orchestrator_graph() -> StateGraph:
     workflow.add_node("reason", reason_node)
     workflow.add_node("route_decision", route_decision_node)
     workflow.add_node("execute_tool", execute_tool_node)
-    workflow.add_node("verify_result", verify_result_node)
+    workflow.add_node("observe", observe_node)
     workflow.add_node("update_memory", update_memory_node)
 
     # 2. Wire edges
@@ -55,8 +56,16 @@ def build_orchestrator_graph() -> StateGraph:
         },
     )
 
-    workflow.add_edge("execute_tool", "verify_result")
-    workflow.add_edge("verify_result", "update_memory")
+    # 4. Iterative loop: execute_tool -> observe -> conditional(reason | update_memory)
+    workflow.add_edge("execute_tool", "observe")
+    workflow.add_conditional_edges(
+        "observe",
+        determine_post_observe_route,
+        {
+            "reason": "reason",
+            "update_memory": "update_memory",
+        },
+    )
     workflow.add_edge("update_memory", END)
 
     return workflow

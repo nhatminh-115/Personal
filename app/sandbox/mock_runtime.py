@@ -49,6 +49,30 @@ class MockSandboxRuntime(SandboxRuntime):
             if re.search(pat, command):
                 return res
 
+        if "pytest" in command:
+            from pathlib import Path
+            from app.core.settings import settings
+            ws = Path(settings.AURA_WORKSPACE_ROOT) if settings.AURA_WORKSPACE_ROOT else None
+            calc_file = (ws / "calculator.py") if ws else None
+            if calc_file and calc_file.exists():
+                text = calc_file.read_text(encoding="utf-8")
+                if "+ 1" in text:
+                    return ExecutionResult(
+                        exit_code=1,
+                        stdout="FAILED test_calculator.py::test_add - AssertionError: 3 != 4\n1 failed in 0.05s",
+                        stderr="AssertionError: 3 != 4",
+                        duration_ms=20.0,
+                        metadata={"mock": True, "failed": True},
+                    )
+                else:
+                    return ExecutionResult(
+                        exit_code=0,
+                        stdout="test_calculator.py . [100%]\n1 passed in 0.02s",
+                        stderr="",
+                        duration_ms=15.0,
+                        metadata={"mock": True, "passed": True},
+                    )
+
         cfg = config or self._config
         stdout_raw = f"[MockSandbox stdout]: {command}\nDone."
         stdout, truncated = self._truncate_output(stdout_raw, cfg.max_output_bytes)

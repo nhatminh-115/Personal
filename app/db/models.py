@@ -74,12 +74,15 @@ class RunModel(Base):
     user_message: Mapped[str] = mapped_column(Text)
     final_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    parent_run_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     session: Mapped["SessionModel"] = relationship("SessionModel", back_populates="runs")
     events: Mapped[List["RunEventModel"]] = relationship("RunEventModel", back_populates="run", cascade="all, delete-orphan")
     approvals: Mapped[List["ApprovalModel"]] = relationship("ApprovalModel", back_populates="run", cascade="all, delete-orphan")
+    parent_run: Mapped[Optional["RunModel"]] = relationship("RunModel", remote_side=[id], back_populates="child_runs")
+    child_runs: Mapped[List["RunModel"]] = relationship("RunModel", back_populates="parent_run")
 
 
 class RunEventModel(Base):
