@@ -157,22 +157,43 @@ class MockModelProvider(ModelProvider):
                     finish_reason="tool_calls",
                 )
 
-        # 6. Sandbox Execution: "Run code: <code>" or "Execute python: <code>"
-        sandbox_match = re.search(r"(?:run|execute)\s+(?:code|python)(?:\s+in\s+sandbox|\s+in\s+docker)?:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
-        if sandbox_match and request.tools and any(t.name == "sandbox_run_code" for t in request.tools):
-            code_str = sandbox_match.group(1).strip().strip("`")
-            return ModelResponse(
-                content=None,
-                tool_calls=[
-                    ToolCallRequest(
-                        id=f"call_{uuid.uuid4().hex[:8]}",
-                        name="sandbox_run_code",
-                        arguments={"code": code_str},
-                    )
-                ],
-                usage=ModelUsage(prompt_tokens=30, completion_tokens=15, total_tokens=45),
-                finish_reason="tool_calls",
-            )
+        # 6. Sandbox Execution: "Run code: <code>", "Execute python in sandbox: <code>"
+        sandbox_python_match = re.search(r"(?:run|execute)\s+(?:code|python)(?:\s+in\s+sandbox|\s+in\s+docker)?:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
+        if sandbox_python_match and request.tools:
+            py_tool = next((t for t in request.tools if t.name in {"sandbox_python_execute", "sandbox_run_code"}), None)
+            if py_tool:
+                code_str = sandbox_python_match.group(1).strip().strip("`")
+                return ModelResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name=py_tool.name,
+                            arguments={"code": code_str},
+                        )
+                    ],
+                    usage=ModelUsage(prompt_tokens=30, completion_tokens=15, total_tokens=45),
+                    finish_reason="tool_calls",
+                )
+
+        # 7. Sandbox Shell Execution: "Run shell in sandbox: <command>"
+        sandbox_shell_match = re.search(r"(?:run|execute)\s+shell(?:\s+in\s+sandbox|\s+in\s+docker)?:\s*(.*)", content, re.IGNORECASE | re.DOTALL)
+        if sandbox_shell_match and request.tools:
+            sh_tool = next((t for t in request.tools if t.name == "sandbox_shell_execute"), None)
+            if sh_tool:
+                cmd_str = sandbox_shell_match.group(1).strip().strip("`")
+                return ModelResponse(
+                    content=None,
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name=sh_tool.name,
+                            arguments={"command": cmd_str},
+                        )
+                    ],
+                    usage=ModelUsage(prompt_tokens=30, completion_tokens=15, total_tokens=45),
+                    finish_reason="tool_calls",
+                )
 
         # If query asks about version/stack and system context contains it, reflect it in response
         if "what" in content.lower() and any(k in content.lower() for k in ["version", "stack", "language"]):

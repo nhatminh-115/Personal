@@ -8,6 +8,7 @@ from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
+import httpx2
 
 from app.core.errors import AURAError
 from app.core.logging import logger
@@ -132,11 +133,12 @@ class MCPClientManager:
             elif config.transport in {MCPTransportType.STREAMABLE_HTTP, MCPTransportType.HTTP}:
                 if not config.url:
                     raise MCPServerError(f"MCP server '{server_id}' requires a valid URL for Streamable HTTP transport.")
-                async with streamable_http_client(config.url) as (read, write):
-                    async with ClientSession(read, write) as session:
-                        await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
-                        tools_result = await asyncio.wait_for(session.list_tools(), timeout=config.timeout_seconds)
-                        raw_tools = tools_result.tools
+                async with httpx2.AsyncClient(headers=config.headers or {}, timeout=config.timeout_seconds) as http_client:
+                    async with streamable_http_client(config.url, http_client=http_client) as (read, write):
+                        async with ClientSession(read, write) as session:
+                            await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
+                            tools_result = await asyncio.wait_for(session.list_tools(), timeout=config.timeout_seconds)
+                            raw_tools = tools_result.tools
             elif config.transport == MCPTransportType.SSE:
                 if not config.url:
                     raise MCPServerError(f"MCP server '{server_id}' requires a valid URL for legacy SSE transport.")
@@ -239,13 +241,14 @@ class MCPClientManager:
                         error=f"Missing URL for MCP server '{server_id}'.",
                         metadata={"error_category": "invalid_configuration", "server_id": server_id},
                     )
-                async with streamable_http_client(config.url) as (read, write):
-                    async with ClientSession(read, write) as session:
-                        await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
-                        res = await asyncio.wait_for(
-                            session.call_tool(tool_name, arguments or {}),
-                            timeout=config.timeout_seconds,
-                        )
+                async with httpx2.AsyncClient(headers=config.headers or {}, timeout=config.timeout_seconds) as http_client:
+                    async with streamable_http_client(config.url, http_client=http_client) as (read, write):
+                        async with ClientSession(read, write) as session:
+                            await asyncio.wait_for(session.initialize(), timeout=config.timeout_seconds)
+                            res = await asyncio.wait_for(
+                                session.call_tool(tool_name, arguments or {}),
+                                timeout=config.timeout_seconds,
+                            )
             elif config.transport == MCPTransportType.SSE:
                 if not config.url:
                     return ToolResult(

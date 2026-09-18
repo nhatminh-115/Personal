@@ -1,7 +1,7 @@
 """Application settings and environment configuration."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"
     EMBEDDING_MODEL_NAME: str = "text-embedding-3-small"
     EMBEDDING_DIMENSION: int = 1536
+
+    # Model Context Protocol (MCP) Settings
+    MCP_CONFIG_PATH: Optional[Path] = Field(
+        default=Path("./mcp_servers.json"),
+        description="Path to MCP servers configuration file (JSON or YAML)",
+    )
 
 
 # Singleton global settings instance

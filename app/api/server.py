@@ -24,14 +24,21 @@ async def lifespan(app: FastAPI):
     # Ensure persistent checkpointer is initialized
     await init_checkpointer()
 
-    # Discover tools from registered MCP servers
+    # Load and initialize MCP servers from persistent configuration
     try:
+        from app.mcp.loader import load_mcp_servers_from_file
         from app.mcp.manager import mcp_manager
+
+        if settings.MCP_CONFIG_PATH:
+            configured_servers = load_mcp_servers_from_file(settings.MCP_CONFIG_PATH)
+            for srv in configured_servers:
+                mcp_manager.register_server(srv)
+
         for srv in mcp_manager.list_servers():
             if srv.enabled:
                 await mcp_manager.discover_tools(srv.id)
     except Exception as e:
-        logger.warning(f"Non-fatal error during startup MCP tool discovery: {e}")
+        logger.warning(f"Non-fatal error during startup MCP tool loading/discovery: {e}")
 
     yield
 

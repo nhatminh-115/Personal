@@ -36,6 +36,7 @@ from app.events.types import AURAEvent, EventType
 from app.events.worker import OutboxWorker
 from app.mcp.config import MCPServerConfig, MCPTransportType
 from app.mcp.manager import mcp_manager
+from app.sandbox.docker_runtime import DockerSandboxRuntime
 from app.sandbox.mock_runtime import MockSandboxRuntime
 from app.sandbox.spec import SandboxConfig
 from app.sandbox.tools import SandboxPythonExecuteTool
@@ -172,19 +173,72 @@ async def run_phase2_verification():
             assert "Record user_rec_100 updated to tier_premium" in dec_data["final_response"]
             print(f" -> Resume Completed! Final Response: '{dec_data['final_response']}'")
 
-    # -------------------------------------------------------------
-    # STEP 4: Sandbox Execution with Bounded Output Limits
-    # -------------------------------------------------------------
-    print("\n[Step 4] Sandbox execution with bounded output enforcement...")
-    cfg = SandboxConfig(max_output_bytes=1024)
-    mock_runtime = MockSandboxRuntime(available=True, config=cfg)
-    sandbox_tool = SandboxPythonExecuteTool(runtime=mock_runtime)
+            # -------------------------------------------------------------
+            # STEP 4: Sandbox Execution (Real Docker on CI / Mock Fallback)
+            # -------------------------------------------------------------
+            print("\n[Step 4] Sandbox execution with bounded output enforcement...")
+            docker_runtime = DockerSandboxRuntime()
+            docker_available = docker_runtime.is_available()
+            is_ci = os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true"
 
-    large_code = "# " + ("A" * 2000)
-    res = await sandbox_tool.execute({"code": large_code})
-    assert res.success is True
-    assert "exceeded max_output_bytes limit" in res.output
-    print(f" -> Bounded output test verified. Output length: {len(res.output)} bytes")
+            if not docker_available:
+                if is_ci:
+                    raise RuntimeError("Docker daemon is required on CI for production sandbox verification, but is unavailable!")
+                else:
+                    print(" [NOTICE] Docker daemon is unavailable in local environment — skipping real Docker acceptance slice (CI will enforce).")
+                    cfg = SandboxConfig(max_output_bytes=1024)
+                    mock_runtime = MockSandboxRuntime(available=True, config=cfg)
+                    sandbox_tool = SandboxPythonExecuteTool(runtime=mock_runtime)
+                    large_code = "# " + ("A" * 2000)
+                    res = await sandbox_tool.execute({"code": large_code})
+                    assert res.success is True
+                    assert "exceeded max_output_bytes limit" in res.output
+                    print(f" -> Local Mock Sandbox bounded output test verified. Output length: {len(res.output)} bytes")
+            else:
+                print(" -> Docker daemon detected! Executing real Docker vertical slice through /v1/chat...")
+                # 4a. Request Python execution in sandbox via /v1/chat
+                docker_chat_resp = await client.post(
+                    "/v1/chat",
+                    json={
+                        "session_id": "sess-docker-1",
+                        "message": "Execute python in sandbox: print('AURA_DOCKER_SUCCESS_99')",
+                    },
+                )
+                assert docker_chat_resp.status_code == 200, f"Chat request failed: {docker_chat_resp.text}"
+                docker_chat_data = docker_chat_resp.json()
+                assert docker_chat_data["status"] == "interrupted", f"Expected interrupted, got {docker_chat_data['status']}"
+                docker_approval_id = docker_chat_data["approval_id"]
+                assert docker_approval_id is not None
+                print(f" -> LangGraph suspended for Docker approval. Approval ID: {docker_approval_id}")
+
+                # 4b. Inspect approval
+                appr_resp = await client.get(f"/v1/approvals/{docker_approval_id}")
+                assert appr_resp.status_code == 200
+                appr_data = appr_resp.json()
+                assert appr_data["tool_name"] == "sandbox_python_execute"
+                assert appr_data["risk_level"].lower() == "high"
+                print(f" -> Approval verified: tool={appr_data['tool_name']}, risk={appr_data['risk_level']}")
+
+                # 4c. Approve tool call and resume SAME graph
+                dec_resp = await client.post(
+                    f"/v1/approvals/{docker_approval_id}/decision",
+                    json={"decision": "approved", "decision_notes": "SecOps authorized Docker execution"},
+                )
+                assert dec_resp.status_code == 200, f"Decision failed: {dec_resp.text}"
+                dec_data = dec_resp.json()
+                assert dec_data["status"] == "approved"
+                assert dec_data["execution_status"] == "completed"
+                assert "AURA_DOCKER_SUCCESS_99" in dec_data["final_response"], f"Expected docker output in response: {dec_data['final_response']}"
+                print(f" -> Real Docker execution succeeded! Final Agent Response: '{dec_data['final_response']}'")
+
+                # 4d. Verify bounded output against real Docker runtime
+                print(" -> Testing bounded output limit against real Docker container...")
+                bounded_cfg = SandboxConfig(max_output_bytes=2048, timeout_seconds=15.0)
+                bounded_res = await docker_runtime.run_python('print("DOCKER_BOUNDED_" * 500)', config=bounded_cfg)
+                assert bounded_res.exit_code == 0
+                assert bounded_res.metadata.get("truncated") is True
+                assert "Output truncated" in bounded_res.stdout
+                print(f" -> Bounded output verified on real Docker! Output bytes: {len(bounded_res.stdout)}")
 
     # -------------------------------------------------------------
     # STEP 5: Durable Outbox & OutboxWorker Processing

@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, JSON
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, JSON, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
@@ -178,10 +178,20 @@ class EventRecordModel(Base):
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, default=3)
     next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, default=utc_now, index=True)
-    idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     locked_by: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_events_idempotency_key",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+            sqlite_where=text("idempotency_key IS NOT NULL"),
+        ),
+    )
 
 
 class ScheduledJobModel(Base):

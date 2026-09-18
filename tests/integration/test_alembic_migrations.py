@@ -61,6 +61,8 @@ def test_alembic_upgrade_downgrade_cycle():
             "locked_by",
         }
         assert expected_event_cols.issubset(event_cols), f"Missing events columns: {expected_event_cols - event_cols}"
+        event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
+        assert "uq_events_idempotency_key" in event_indexes, f"Missing unique index on events: {event_indexes}"
 
         # Check scheduled_jobs columns
         job_cols = {col["name"] for col in inspector.get_columns("scheduled_jobs")}

@@ -51,10 +51,25 @@ class DockerSandboxRuntime(SandboxRuntime):
         """Execute container synchronously in dedicated thread worker."""
         client = self._get_client()
         os.makedirs(cfg.workspace_dir, exist_ok=True)
-        try:
-            os.chmod(cfg.workspace_dir, 0o777)
-        except OSError:
-            pass
+
+        # Determine non-root container user matching workspace owner where supported
+        container_user = cfg.user
+        if os.name != "nt":
+            try:
+                # Ensure standard safe permissions (0o755: rwxr-xr-x), NEVER world-writable (0o777)
+                os.chmod(cfg.workspace_dir, 0o755)
+            except OSError:
+                pass
+
+            try:
+                st = os.stat(cfg.workspace_dir)
+                host_uid = st.st_uid
+                host_gid = st.st_gid
+                # If host workspace owner is non-root, match container user to workspace owner
+                if host_uid != 0 and (cfg.user is None or cfg.user == "1000:1000"):
+                    container_user = f"{host_uid}:{host_gid}"
+            except Exception as e:
+                logger.debug(f"Could not inspect host workspace owner UID/GID: {e}")
 
         volumes = {
             os.path.abspath(cfg.workspace_dir): {
@@ -86,7 +101,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 command=command_args,
                 volumes=volumes,
                 working_dir=cfg.workdir,
-                user=cfg.user,
+                user=container_user,
                 read_only=cfg.read_only_root,
                 network_mode="none" if cfg.network_disabled else "bridge",
                 mem_limit=cfg.memory_limit,

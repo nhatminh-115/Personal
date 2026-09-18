@@ -3,6 +3,7 @@
 from collections import defaultdict
 from typing import Awaitable, Callable, Dict, List, Optional
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
@@ -76,8 +77,25 @@ class EventBus:
                 next_attempt_at=event.next_attempt_at or utc_now(),
             )
             db.add(db_record)
-            await db.commit()
-            await db.refresh(db_record)
+            try:
+                await db.commit()
+                await db.refresh(db_record)
+            except IntegrityError as e:
+                await db.rollback()
+                # Check if another concurrent transaction committed an event with the same idempotency_key
+                if event.idempotency_key:
+                    stmt = select(EventRecordModel).where(EventRecordModel.idempotency_key == event.idempotency_key)
+                    res = await db.execute(stmt)
+                    existing = res.scalar_one_or_none()
+                    if existing:
+                        logger.info(
+                            f"Concurrent race resolved to existing event for idempotency_key '{event.idempotency_key}'.",
+                            extra={"idempotency_key": event.idempotency_key, "event_id": existing.id},
+                        )
+                        event.id = existing.id
+                        event.status = EventStatus(existing.status)
+                        return event
+                raise e
 
             if not dispatch_immediate:
                 event.status = EventStatus.PENDING

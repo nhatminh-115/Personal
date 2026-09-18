@@ -19,20 +19,17 @@ def docker_runtime():
 @pytest.fixture
 def temp_workspace():
     with tempfile.TemporaryDirectory() as tmpdir:
-        try:
-            os.chmod(tmpdir, 0o777)
-        except OSError:
-            pass
         yield tmpdir
 
 
 @pytest.mark.asyncio
 async def test_docker_security_non_root_user(docker_runtime: DockerSandboxRuntime, temp_workspace: str):
-    """Verify code executes as non-root user (UID 1000)."""
+    """Verify code executes as non-root user (UID > 0)."""
     cfg = SandboxConfig(workspace_dir=temp_workspace, timeout_seconds=10.0)
     res = await docker_runtime.run_command("id -u", config=cfg)
     assert res.exit_code == 0
-    assert res.stdout.strip() == "1000"
+    uid = int(res.stdout.strip())
+    assert uid > 0, f"Container executed as root (UID: {uid})!"
 
 
 @pytest.mark.asyncio
@@ -114,3 +111,18 @@ async def test_docker_security_output_truncation(docker_runtime: DockerSandboxRu
     assert "Output truncated" in res.stdout
     # Actual payload before notice should not exceed 2048 bytes
     assert len(res.stdout) < 4096
+
+
+@pytest.mark.asyncio
+async def test_docker_workspace_not_world_writable(docker_runtime: DockerSandboxRuntime, temp_workspace: str):
+    """Verify that workspace directory is NOT world-writable (permissions do not allow arbitrary other write)."""
+    cfg = SandboxConfig(workspace_dir=temp_workspace, timeout_seconds=10.0)
+    # Execute a command that writes inside the workspace
+    res = await docker_runtime.run_command("echo 'secure_write' > /workspace/test.txt", config=cfg)
+    assert res.exit_code == 0
+    assert os.path.exists(os.path.join(temp_workspace, "test.txt"))
+
+    # Assert directory permissions on host do not have world-writable bit
+    if os.name != "nt":
+        mode = os.stat(temp_workspace).st_mode
+        assert mode & 0o002 == 0, f"Workspace directory is world-writable (mode: {oct(mode)})!"
