@@ -93,6 +93,7 @@ class DelegateTaskTool(Tool):
             task_description=task_description,
             context=extra_ctx,
             parent_run_id=ctx.get("run_id", "unknown-parent"),
+            parent_tool_call_id=ctx.get("tool_call_id"),
             session_id=ctx.get("session_id", "unknown-session"),
         )
 

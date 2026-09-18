@@ -8,7 +8,10 @@ from pydantic import BaseModel, Field
 class SandboxConfig(BaseModel):
     """Hardened execution parameters for sandbox container runtime."""
 
-    image: str = Field(default="python:3.12-slim", description="Base container image.")
+    image: str = Field(
+        default_factory=lambda: os.getenv("AURA_SANDBOX_IMAGE", "aura-coding-sandbox:latest"),
+        description="Base container image.",
+    )
     workspace_dir: str = Field(
         default_factory=lambda: os.path.abspath("./workspace"),
         description="Host directory mounted into container.",

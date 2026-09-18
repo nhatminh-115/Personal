@@ -105,11 +105,13 @@ class ModelRouter:
         if ctx and not request.routing_context:
             request.routing_context = ctx
 
-        # If explicit provider specified, use it directly; otherwise use routing policy
         if provider_name:
             provider = self.get_provider(provider_name)
+            if not request.selected_model and provider_name in self._metadata:
+                request.selected_model = self._metadata[provider_name].default_model
         else:
             provider, selection = self.select_model_for_task(ctx)
+            request.selected_model = selection.model_name
             from app.core.logging import logger
             logger.info(
                 f"Model routed to '{selection.provider_name}' ({selection.model_name}): {selection.reason}",

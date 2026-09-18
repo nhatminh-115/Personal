@@ -217,3 +217,25 @@ class ScheduledJobModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
 
 
+class DelegationModel(Base):
+    """Tracks durable delegation lifecycle between Root Orchestrator and Specialist runs."""
+
+    __tablename__ = "delegations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    parent_run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    parent_tool_call_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True, index=True)
+    child_run_id: Mapped[str] = mapped_column(String(36), ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    specialist_name: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(32), default="running")
+    pending_approval_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        Index("ix_delegations_parent_lookup", "parent_run_id", "parent_tool_call_id"),
+    )
+
+
+

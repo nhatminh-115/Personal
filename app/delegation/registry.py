@@ -29,7 +29,6 @@ class SpecialistRegistry:
                 max_steps=10,
                 timeout_seconds=120.0,
                 preferred_model_capabilities=["code", "reasoning"],
-                auto_approve_tools=["sandbox_shell_execute", "sandbox_python_execute"],
             )
         )
 

@@ -47,6 +47,7 @@ class RoutingContext(BaseModel):
     complexity: Literal["simple", "medium", "complex"] | None = None
     privacy_requirement: Literal["public", "internal", "confidential"] | None = None
     latency_preference: Literal["low", "normal"] | None = None
+    cost_preference: Literal["low", "normal"] | None = None
     required_capabilities: list[str] = Field(default_factory=list)
     explicit_model_override: str | None = None
     session_id: str | None = None
@@ -70,6 +71,7 @@ class ModelRequest(BaseModel):
     max_tokens: int = 2048
     metadata: dict[str, Any] = Field(default_factory=dict)
     routing_context: RoutingContext | None = None
+    selected_model: str | None = None
 
 
 class ModelResponse(BaseModel):

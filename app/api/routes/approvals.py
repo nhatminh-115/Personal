@@ -2,6 +2,7 @@ import asyncio
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from langgraph.types import Command
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -19,7 +20,7 @@ from app.api.schemas import (
 from app.approvals.service import ApprovalService
 from app.core.errors import ApprovalNotFoundError
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus
+from app.db.models import DelegationModel, RunModel, RunStatus
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
@@ -284,22 +285,60 @@ async def submit_approval_decision(
         run_record.status = exec_status
         run_record.final_response = final_response
 
+        # Synchronize delegation record status
+        del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == run_record.id)
+        del_res = await db.execute(del_stmt)
+        delegation_entry = del_res.scalar_one_or_none()
+        if delegation_entry:
+            delegation_entry.status = exec_status
+            delegation_entry.result_summary = final_response
+
         # Propagate completion to parent run if this was a delegated specialist run
         if getattr(run_record, "parent_run_id", None):
             parent = await trace_service.get_run(run_record.parent_run_id)
             if parent:
-                parent.status = exec_status
-                parent.final_response = f"Personal Orchestrator: Specialist completed task. {final_response}"
-                await trace_service.record_event(
-                    run_id=parent.id,
-                    session_id=parent.session_id,
-                    event_type="delegation_completed",
-                    payload={
-                        "child_run_id": run_record.id,
-                        "status": exec_status,
-                        "summary": final_response,
-                    },
-                )
+                parent_config = {
+                    "configurable": {
+                        "thread_id": parent.id,
+                        "db": db,
+                        "memory_service": mem_service,
+                        "approval_service": approval_service,
+                        "trace_service": trace_service,
+                        "tool_registry": tool_registry,
+                        "model_router": model_router,
+                    }
+                }
+                parent_snapshot = await graph.aget_state(parent_config)
+                if parent_snapshot.next:
+                    try:
+                        parent_final = await graph.ainvoke(
+                            Command(resume={
+                                "decision": effective_decision,
+                                "specialist_status": exec_status,
+                                "summary": final_response,
+                            }),
+                            config=parent_config,
+                        )
+                        parent.status = parent_final.get("execution_status", exec_status)
+                        parent.final_response = parent_final.get("final_response") or f"Personal Orchestrator: Specialist completed task. {final_response}"
+                    except Exception as parent_exc:
+                        logger.error(f"Error resuming parent graph: {parent_exc}", exc_info=True)
+                        parent.status = RunStatus.FAILED.value
+                else:
+                    parent.status = exec_status
+                    parent.final_response = f"Personal Orchestrator: Specialist completed task. {final_response}"
+                    events = await trace_service.get_run_events(parent.id)
+                    if not any(e.event_type == "delegation_completed" for e in events):
+                        await trace_service.record_event(
+                            run_id=parent.id,
+                            session_id=parent.session_id,
+                            event_type="delegation_completed",
+                            payload={
+                                "child_run_id": run_record.id,
+                                "status": exec_status,
+                                "summary": final_response,
+                            },
+                        )
 
         await db.commit()
 

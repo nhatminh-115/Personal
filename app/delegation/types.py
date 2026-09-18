@@ -14,7 +14,6 @@ class SpecialistDefinition(BaseModel):
     max_steps: int = 10
     timeout_seconds: float = 60.0
     preferred_model_capabilities: List[str] = Field(default_factory=lambda: ["code"])
-    auto_approve_tools: List[str] = Field(default_factory=list)
 
 
 class DelegationRequest(BaseModel):
@@ -24,6 +23,7 @@ class DelegationRequest(BaseModel):
     task_description: str
     context: Dict[str, Any] = Field(default_factory=dict)
     parent_run_id: str
+    parent_tool_call_id: Optional[str] = None
     session_id: str
     max_steps: Optional[int] = None
     timeout_seconds: Optional[float] = None

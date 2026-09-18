@@ -53,7 +53,7 @@ def test_fallback_routing_when_context_is_empty(sample_metadata):
     sel = policy.select(context=None, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel.provider_name == "cloud-standard"
     assert sel.model_name == "cloud-std-v1"
-    assert "No routing context provided" in sel.reason
+    assert "default" in sel.reason
 
 
 def test_explicit_override_routing(sample_metadata):
@@ -64,43 +64,76 @@ def test_explicit_override_routing(sample_metadata):
     sel1 = policy.select(context=ctx1, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel1.provider_name == "local-ollama"
     assert sel1.model_name == "llama3-local"
-    assert "Explicit provider override" in sel1.reason
+    assert sel1.reason == "explicit_provider_override"
 
     # Provider + Model override
     ctx2 = RoutingContext(explicit_model_override="cloud-smart:custom-checkpoint")
     sel2 = policy.select(context=ctx2, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel2.provider_name == "cloud-smart"
     assert sel2.model_name == "custom-checkpoint"
-    assert "Explicit model override" in sel2.reason
+    assert sel2.reason == "explicit_model_override"
 
 
-def test_privacy_confidential_routing(sample_metadata):
+def test_explicit_invalid_override_raises_loudly(sample_metadata):
     policy = DeterministicRoutingPolicy()
+    ctx = RoutingContext(explicit_model_override="nonexistent-provider:some-model")
+    with pytest.raises(ValueError, match="is not available"):
+        policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
+
+
+def test_unsupported_capability_raises_loudly(sample_metadata):
+    policy = DeterministicRoutingPolicy()
+    ctx = RoutingContext(required_capabilities=["quantum_teleportation"])
+    with pytest.raises(ValueError, match="No eligible provider found satisfying required capabilities"):
+        policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
+
+
+def test_privacy_confidential_takes_precedence_over_cost(sample_metadata):
+    policy = DeterministicRoutingPolicy()
+    # Request confidential + cheap. Even if cloud-standard is cheap, confidential MUST route to local
     ctx = RoutingContext(
-        task_type="coding",
         privacy_requirement="confidential",
+        cost_preference="low",
     )
     sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel.provider_name == "local-ollama"
-    assert "Confidential privacy requirement" in sel.reason
+    assert "confidential_privacy" in sel.reason
+    assert "low_cost" in sel.reason
 
 
-def test_coding_task_routing(sample_metadata):
+def test_coding_and_low_latency_routing(sample_metadata):
     policy = DeterministicRoutingPolicy()
-    ctx = RoutingContext(task_type="coding")
+    ctx = RoutingContext(
+        task_type="coding",
+        latency_preference="low",
+    )
+    # code-specialist has latency medium, local-ollama has code and latency low
     sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
-    assert sel.provider_name == "code-specialist"
-    assert sel.model_name == "deepseek-coder"
-    assert "Coding task matched" in sel.reason
+    assert sel.provider_name == "local-ollama"
+    assert "coding" in sel.reason
+    assert "low_latency" in sel.reason
 
 
-def test_complex_reasoning_routing(sample_metadata):
+def test_reasoning_and_low_cost_routing(sample_metadata):
+    # Add a cheap reasoning provider
+    meta = dict(sample_metadata)
+    meta["budget-reasoner"] = ProviderMetadata(
+        name="budget-reasoner",
+        capabilities=["reasoning"],
+        privacy_status="cloud",
+        cost_class="low",
+        latency_class="high",
+        default_model="budget-r1",
+    )
     policy = DeterministicRoutingPolicy()
-    ctx = RoutingContext(complexity="complex")
-    sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
-    assert sel.provider_name == "cloud-smart"
-    assert sel.model_name == "cloud-smart-o1"
-    assert "High complexity matched" in sel.reason
+    ctx = RoutingContext(
+        complexity="complex",
+        cost_preference="low",
+    )
+    sel = policy.select(context=ctx, available_metadata=meta, default_provider="cloud-standard")
+    assert sel.provider_name == "budget-reasoner"
+    assert "reasoning" in sel.reason
+    assert "low_cost" in sel.reason
 
 
 @pytest.mark.asyncio
@@ -129,7 +162,7 @@ async def test_router_select_model_and_tracing(test_db_session):
     provider, selection = router.select_model_for_task(ctx)
     assert selection.provider_name == "mock"
     assert selection.model_name == "mock-v1"
-    assert "Coding task matched" in selection.reason
+    assert "coding" in selection.reason
 
     # Record trace event using TraceService
     await trace_service.record_event(
@@ -150,3 +183,61 @@ async def test_router_select_model_and_tracing(test_db_session):
     assert events[0].event_type == "model_called"
     assert events[0].payload["routing_decision"]["provider"] == "mock"
     assert events[0].payload["routing_decision"]["model"] == "mock-v1"
+
+
+@pytest.mark.asyncio
+async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
+    """Verify that the routed model identity strictly reaches the outbound HTTP payload."""
+    from app.models.openai_provider import OpenAICompatibleProvider
+    captured_payloads = []
+
+    class DummyResponse:
+        status_code = 200
+        def json(self):
+            return {
+                "id": "chatcmpl-1",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "Hello world"},
+                    "finish_reason": "stop",
+                }],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+        def raise_for_status(self):
+            pass
+
+    async def mock_post(self, url, **kwargs):
+        captured_payloads.append(kwargs.get("json", {}))
+        return DummyResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
+
+    provider = OpenAICompatibleProvider(api_key="sk-test", base_url="https://api.test/v1", model_name="default-gpt")
+    router = ModelRouter()
+    router.register_provider(
+        provider,
+        ProviderMetadata(
+            name="openai",
+            capabilities=["general", "code"],
+            default_model="routed-gpt-4o-mini",
+        ),
+    )
+
+    # 1. Normal routing by policy
+    req1 = ModelRequest(
+        messages=[ChatMessage(role=ModelRole.USER, content="Test routing")],
+        routing_context=RoutingContext(task_type="coding"),
+    )
+    await router.route(req1, provider_name="openai")
+    assert len(captured_payloads) == 1
+    assert captured_payloads[0]["model"] == "routed-gpt-4o-mini"
+
+    # 2. Explicit model override
+    req2 = ModelRequest(
+        messages=[ChatMessage(role=ModelRole.USER, content="Test override")],
+        routing_context=RoutingContext(explicit_model_override="openai:custom-fine-tuned-model"),
+    )
+    await router.route(req2)
+    assert len(captured_payloads) == 2
+    assert captured_payloads[1]["model"] == "custom-fine-tuned-model"
+

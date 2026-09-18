@@ -35,7 +35,7 @@ for p in ["aura_verify_p3.db", "aura_verify_p3_checkpoints.db"]:
 
 from app.api.server import create_app, lifespan
 from app.core.settings import settings
-from app.db.models import RunEventModel, RunModel
+from app.db.models import DelegationModel, RunEventModel, RunModel
 from app.db.session import async_session_factory
 from app.delegation.registry import specialist_registry
 from app.delegation.runtime import delegation_runtime
@@ -130,7 +130,7 @@ async def run_phase3_verification():
                     default_provider="cloud-code",
                 )
                 assert sel_conf.provider_name == "mock"
-                assert "Confidential privacy requirement" in sel_conf.reason
+                assert "confidential" in sel_conf.reason.lower()
 
                 # 2c. Coding specialization
                 sel_code = policy.select(
@@ -234,32 +234,68 @@ async def run_phase3_verification():
                 parent_run_id = chat_data["run_id"]
                 print(f" -> LangGraph suspended for code-edit approval. Approval ID: {approval_id}", flush=True)
 
-                # 5c. Inspect pending approval
-                appr_inspect = await client.get(f"/v1/approvals/{approval_id}")
-                assert appr_inspect.status_code == 200
-                appr_data = appr_inspect.json()
-                assert appr_data["tool_name"] == "write_workspace_file"
-                print(f" -> Inspected Approval: tool={appr_data['tool_name']}, risk={appr_data['risk_level']}", flush=True)
+                # 5c. Approval 1: Human Operator authorizes initial test execution (sandbox_shell_execute)
+                appr1_inspect = await client.get(f"/v1/approvals/{approval_id}")
+                assert appr1_inspect.status_code == 200
+                appr1_data = appr1_inspect.json()
+                assert appr1_data["tool_name"] == "sandbox_shell_execute"
+                print(f" -> Approval 1 (Initial Sandbox Test): tool={appr1_data['tool_name']}, risk={appr1_data['risk_level']}", flush=True)
 
-                # 5d. Operator approves file edit -> resumes same thread
-                print(" -> Human Operator authorizes file patch. Resuming execution loop...", flush=True)
-                dec_resp = await client.post(
+                dec1_resp = await client.post(
                     f"/v1/approvals/{approval_id}/decision",
+                    json={"decision": "approved", "decision_notes": "Operator authorized initial test execution in sandbox"},
+                )
+                assert dec1_resp.status_code == 200
+                dec1_data = dec1_resp.json()
+                assert dec1_data["status"] == "approved"
+                assert dec1_data["execution_status"] == "waiting_for_approval"
+                approval2_id = dec1_data["approval_id"]
+                assert approval2_id is not None
+                assert approval2_id != approval_id
+
+                # 5d. Approval 2: Human Operator authorizes file patch (write_workspace_file)
+                appr2_inspect = await client.get(f"/v1/approvals/{approval2_id}")
+                assert appr2_inspect.status_code == 200
+                appr2_data = appr2_inspect.json()
+                assert appr2_data["tool_name"] == "write_workspace_file"
+                print(f" -> Approval 2 (Workspace Code Patch): tool={appr2_data['tool_name']}, risk={appr2_data['risk_level']}", flush=True)
+
+                dec2_resp = await client.post(
+                    f"/v1/approvals/{approval2_id}/decision",
                     json={"decision": "approved", "decision_notes": "Operator authorized calculator.py bugfix patch"},
                 )
-                assert dec_resp.status_code == 200
-                dec_data = dec_resp.json()
-                assert dec_data["status"] == "approved"
-                assert dec_data["execution_status"] == "completed"
-                print(" -> Resumed run completed successfully!", flush=True)
+                assert dec2_resp.status_code == 200
+                dec2_data = dec2_resp.json()
+                assert dec2_data["status"] == "approved"
+                assert dec2_data["execution_status"] == "waiting_for_approval"
+                approval3_id = dec2_data["approval_id"]
+                assert approval3_id is not None
+                assert approval3_id != approval2_id
 
-                # 5e. Verify Code Mutation in Workspace
+                # 5e. Approval 3: Human Operator authorizes verification test run (sandbox_shell_execute)
+                appr3_inspect = await client.get(f"/v1/approvals/{approval3_id}")
+                assert appr3_inspect.status_code == 200
+                appr3_data = appr3_inspect.json()
+                assert appr3_data["tool_name"] == "sandbox_shell_execute"
+                print(f" -> Approval 3 (Verification Sandbox Test): tool={appr3_data['tool_name']}, risk={appr3_data['risk_level']}", flush=True)
+
+                dec3_resp = await client.post(
+                    f"/v1/approvals/{approval3_id}/decision",
+                    json={"decision": "approved", "decision_notes": "Operator authorized verification test run in sandbox"},
+                )
+                assert dec3_resp.status_code == 200
+                dec3_data = dec3_resp.json()
+                assert dec3_data["status"] == "approved"
+                assert dec3_data["execution_status"] == "completed"
+                print(" -> Resumed run completed successfully with verified 3-approval semantics!", flush=True)
+
+                # 5f. Verify Code Mutation in Workspace
                 patched_code = calc_code.read_text(encoding="utf-8")
                 assert "return a + b" in patched_code
                 assert "+ 1" not in patched_code
                 print(" -> Workspace verification: calculator.py has been patched accurately.", flush=True)
 
-                # 5f. Verify Database Lineage: Parent & Child Runs
+                # 5g. Verify Database Lineage: Parent & Child Runs & Delegation Record
                 async with async_session_factory() as db:
                     runs_res = await db.execute(
                         select(RunModel).where(RunModel.session_id == "sess-atlas-live-p3").order_by(RunModel.created_at.asc())
@@ -277,7 +313,16 @@ async def run_phase3_verification():
                     assert child.status == "completed"
                     assert "[Specialist: coding]" in child.user_message
 
-                    # 5g. Verify Audit Trace Events
+                    # Verify Delegation Table record
+                    del_res = await db.execute(
+                        select(DelegationModel).where(DelegationModel.parent_run_id == parent.id)
+                    )
+                    delegations = list(del_res.scalars().all())
+                    assert len(delegations) == 1
+                    assert delegations[0].child_run_id == child.id
+                    assert delegations[0].status == "completed"
+
+                    # 5h. Verify Audit Trace Events
                     parent_events_res = await db.execute(select(RunEventModel).where(RunEventModel.run_id == parent.id))
                     p_ev_types = [e.event_type for e in parent_events_res.scalars().all()]
                     assert "delegation_started" in p_ev_types
@@ -289,7 +334,7 @@ async def run_phase3_verification():
                     assert "step_completed" in c_ev_types
                     assert "approval_requested" in c_ev_types
 
-                    print(f" -> DB Lineage & Audit Trail verified: Parent Run '{parent.id}' <-> Child Run '{child.id}'", flush=True)
+                    print(f" -> DB Lineage & Audit Trail verified: Parent Run '{parent.id}' <-> Child Run '{child.id}', Delegation Record intact", flush=True)
 
         print("\n" + "=" * 80, flush=True)
         print("PHASE 3 VERIFICATION PASSED: ALL 5 MILESTONES ACCEPTED SUCCESSFULLY", flush=True)

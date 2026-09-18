@@ -143,9 +143,12 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     delegation = state.get("delegation_context", {}) or {}
     routing_ctx = RoutingContext(
         task_type=delegation.get("task_type") or meta.get("task_type"),
-        complexity=meta.get("complexity"),
-        privacy_requirement=meta.get("privacy_requirement"),
-        explicit_model_override=meta.get("model_override"),
+        complexity=meta.get("complexity") or delegation.get("complexity"),
+        privacy_requirement=meta.get("privacy_requirement") or delegation.get("privacy_requirement"),
+        latency_preference=meta.get("latency_preference") or delegation.get("latency_preference"),
+        cost_preference=meta.get("cost_preference") or delegation.get("cost_preference"),
+        required_capabilities=meta.get("required_capabilities") or delegation.get("required_capabilities") or [],
+        explicit_model_override=meta.get("model_override") or delegation.get("model_override"),
         session_id=state["session_id"],
         run_id=state["run_id"],
     )
@@ -235,15 +238,9 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
     tool_approvals = dict(state.get("tool_approvals", {}))
 
     # 1. Mark all AUTOMATIC tool calls as auto-authorized
-    delegation_ctx = state.get("delegation_context", {}) or {}
-    auto_approve_tools = set(delegation_ctx.get("auto_approve_tools", []))
-
     for tc in tool_requests:
         cid = tc.get("id", "")
         if cid not in tool_approvals:
-            if tc["name"] in auto_approve_tools:
-                tool_approvals[cid] = {"status": "auto", "arguments": tc["arguments"]}
-                continue
             tool = registry.get(tc["name"])
             risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
             capabilities = tool.required_capabilities if tool else []
@@ -426,16 +423,10 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
         approval_info = tool_approvals.get(tool_call_id, {})
         approval_status = approval_info.get("status")
 
-        delegation_ctx = state.get("delegation_context", {}) or {}
-        auto_approve_tools = set(delegation_ctx.get("auto_approve_tools", []))
-
         tool = registry.get(tool_name)
         risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
         capabilities = tool.required_capabilities if tool else []
-        if tool_name in auto_approve_tools:
-            decision = PermissionDecision.AUTOMATIC
-        else:
-            decision = permission_policy.evaluate(capabilities, risk_level)
+        decision = permission_policy.evaluate(capabilities, risk_level)
 
         # Defense-in-depth: If tool requires approval, check its explicit approval status
         if decision == PermissionDecision.REQUIRES_APPROVAL:
@@ -507,6 +498,7 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 tool_context = {
                     "run_id": state["run_id"],
                     "session_id": state["session_id"],
+                    "tool_call_id": tool_call_id,
                     "db": services.get("db"),
                     "services": services,
                 }

@@ -48,9 +48,9 @@ jobs:
           uv pip install --system -r requirements-dev.lock
           uv pip install --system -e .
 
-      - name: Pre-pull Docker image for sandbox
+      - name: Build coding sandbox Docker image with pytest
         run: |
-          docker pull python:3.12-slim
+          docker build -t aura-coding-sandbox:latest -f docker/coding_sandbox.Dockerfile .
 
       - name: Wait for PostgreSQL asyncpg connection
         run: |

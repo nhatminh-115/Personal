@@ -64,85 +64,100 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             )
 
         if not context:
-            return fallback("No routing context provided; using default provider.")
+            return fallback("default_fallback")
 
         # 1. Explicit model override
         override = getattr(context, "explicit_model_override", None)
         if override:
             if ":" in override:
                 prov_part, model_part = override.split(":", 1)
-                if prov_part in available_metadata:
-                    return ModelSelection(
-                        provider_name=prov_part,
-                        model_name=model_part,
-                        reason=f"Explicit model override '{override}'",
-                        context=context,
-                    )
+                if prov_part not in available_metadata:
+                    raise ValueError(f"Invalid model override: provider '{prov_part}' is not available.")
+                return ModelSelection(
+                    provider_name=prov_part,
+                    model_name=model_part,
+                    reason="explicit_model_override",
+                    context=context,
+                )
             elif override in available_metadata:
                 meta = available_metadata[override]
                 return ModelSelection(
                     provider_name=override,
                     model_name=meta.default_model,
-                    reason=f"Explicit provider override '{override}'",
+                    reason="explicit_provider_override",
                     context=context,
                 )
+            else:
+                raise ValueError(f"Invalid model override: provider '{override}' is not available.")
 
-        # 2. Strict Privacy Requirement (Confidential/Local)
+        # 2. Strict Capabilities Filtering
+        req_caps = set(context.required_capabilities or [])
+        if context.task_type == "coding":
+            req_caps.add("code")
+        if context.complexity == "complex":
+            req_caps.add("reasoning")
+
+        candidates: List[tuple[str, ProviderMetadata]] = list(available_metadata.items())
+
+        if req_caps:
+            candidates = [
+                (p, m) for p, m in candidates
+                if req_caps.issubset(set(m.capabilities))
+            ]
+            if not candidates:
+                raise ValueError(
+                    f"No eligible provider found satisfying required capabilities: {sorted(list(req_caps))}"
+                )
+
+        # 3. Strict Privacy Requirement (Absolute precedence over cost/latency)
         if context.privacy_requirement == "confidential":
-            local_prov = next(
-                (p for p, m in available_metadata.items() if m.privacy_status in ("local", "airgap")),
-                None,
-            )
-            if local_prov:
-                return ModelSelection(
-                    provider_name=local_prov,
-                    model_name=available_metadata[local_prov].default_model,
-                    reason="Confidential privacy requirement matched local/airgap provider.",
-                    context=context,
+            candidates = [
+                (p, m) for p, m in candidates
+                if m.privacy_status in ("local", "airgap")
+            ]
+            if not candidates:
+                raise ValueError(
+                    "No eligible local/airgap provider found for confidential privacy requirement."
                 )
 
-        # 3. Coding / Software Engineering Task
-        is_coding = context.task_type == "coding" or "code" in context.required_capabilities
-        if is_coding:
-            coding_prov = next(
-                (p for p, m in available_metadata.items() if "code" in m.capabilities),
-                None,
-            )
-            if coding_prov:
-                return ModelSelection(
-                    provider_name=coding_prov,
-                    model_name=available_metadata[coding_prov].default_model,
-                    reason="Coding task matched provider with code capability.",
-                    context=context,
-                )
+        # 4. Multi-criteria Ranking / Filtering: Cost and Latency
+        cost_scores = {"low": 1, "medium": 2, "high": 3}
+        latency_scores = {"low": 1, "medium": 2, "high": 3}
 
-        # 4. Complex Reasoning Requirement
-        if context.complexity == "complex" or "reasoning" in context.required_capabilities:
-            reasoning_prov = next(
-                (p for p, m in available_metadata.items() if "reasoning" in m.capabilities),
-                None,
-            )
-            if reasoning_prov:
-                return ModelSelection(
-                    provider_name=reasoning_prov,
-                    model_name=available_metadata[reasoning_prov].default_model,
-                    reason="High complexity matched provider with advanced reasoning capability.",
-                    context=context,
-                )
+        reasons = []
+        if context.privacy_requirement == "confidential":
+            reasons.append("confidential_privacy")
+        if "code" in req_caps:
+            reasons.append("coding")
+        if "reasoning" in req_caps:
+            reasons.append("reasoning")
+        if context.latency_preference == "low":
+            reasons.append("low_latency")
+        if context.cost_preference == "low":
+            reasons.append("low_cost")
 
-        # 5. Low latency requirement
-        if context.latency_preference == "low" or "fast" in context.required_capabilities:
-            fast_prov = next(
-                (p for p, m in available_metadata.items() if "fast" in m.capabilities or m.latency_class == "low"),
-                None,
-            )
-            if fast_prov:
-                return ModelSelection(
-                    provider_name=fast_prov,
-                    model_name=available_metadata[fast_prov].default_model,
-                    reason="Low latency preference matched fast provider.",
-                    context=context,
-                )
+        def rank_candidate(item: tuple[str, ProviderMetadata]):
+            name, meta = item
+            c_score = cost_scores.get(meta.cost_class, 2)
+            l_score = latency_scores.get(meta.latency_class, 2)
+            default_pref = 0 if name == default_provider else 1
 
-        # 6. Default Fallback
-        return fallback("Matched default provider baseline.")
+            if context.cost_preference == "low" and context.latency_preference == "low":
+                return (c_score, l_score, default_pref)
+            elif context.cost_preference == "low":
+                return (c_score, default_pref)
+            elif context.latency_preference == "low":
+                return (l_score, default_pref)
+            else:
+                return (default_pref, c_score)
+
+        candidates.sort(key=rank_candidate)
+        chosen_prov, chosen_meta = candidates[0]
+
+        reason_code = "_".join(reasons) + "_matched" if reasons else "default_baseline_matched"
+        return ModelSelection(
+            provider_name=chosen_prov,
+            model_name=chosen_meta.default_model,
+            reason=reason_code,
+            context=context,
+        )

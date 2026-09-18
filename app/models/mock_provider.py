@@ -76,15 +76,22 @@ class MockModelProvider(ModelProvider):
                     tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name=target_tool, arguments=arg)],
                     finish_reason="tool_calls",
                 )
+            latest_tool = tool_msgs[-1]
             # Step 2: Read source file after observing test failure
-            elif len(tool_msgs) == 1 and "read_workspace_file" in tool_names:
+            if len(tool_msgs) == 1 and latest_tool.name in {"sandbox_shell_execute", "sandbox_python_execute"}:
+                out = latest_tool.content.lower()
+                if "not found" in out or "127" in out:
+                    return ModelResponse(
+                        content=f"Coding Specialist aborted: Environment error executing tests: {latest_tool.content}",
+                        finish_reason="stop",
+                    )
                 return ModelResponse(
-                    content="Diagnosing test failure: inspecting source code...",
+                    content="Observed test failure in sandbox. Diagnosing root cause: inspecting source code...",
                     tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name="read_workspace_file", arguments={"path": "calculator.py"})],
                     finish_reason="tool_calls",
                 )
             # Step 3: Write fix after reading buggy code
-            elif len(tool_msgs) == 2 and "write_workspace_file" in tool_names:
+            elif len(tool_msgs) == 2 and latest_tool.name == "read_workspace_file":
                 return ModelResponse(
                     content="Identified bug in calculator.py: applying code patch...",
                     tool_calls=[ToolCallRequest(
@@ -95,18 +102,26 @@ class MockModelProvider(ModelProvider):
                     finish_reason="tool_calls",
                 )
             # Step 4: Re-run tests to verify fix
-            elif len(tool_msgs) == 3 and "sandbox_shell_execute" in tool_names:
+            elif len(tool_msgs) == 3 and latest_tool.name == "write_workspace_file":
                 return ModelResponse(
-                    content="Verifying fix by re-running test suite in sandbox...",
+                    content="Code patch written to workspace. Verifying fix by re-running test suite in sandbox...",
                     tool_calls=[ToolCallRequest(id=f"call_{uuid.uuid4().hex[:8]}", name="sandbox_shell_execute", arguments={"command": "pytest"})],
                     finish_reason="tool_calls",
                 )
-            # Step 5: Finalize and return clear summary to root
+            # Step 5: Inspect actual validation test result
             else:
-                return ModelResponse(
-                    content="Specialist successfully diagnosed and fixed bug in calculator.py. Test suite is now green (1 passed).",
-                    finish_reason="stop",
-                )
+                out = latest_tool.content.lower()
+                is_passing = ("passed" in out) and ("failed" not in out) and ("error" not in out)
+                if is_passing:
+                    return ModelResponse(
+                        content="Specialist successfully diagnosed and fixed bug in calculator.py. Test suite is now green (1 passed).",
+                        finish_reason="stop",
+                    )
+                else:
+                    return ModelResponse(
+                        content=f"Specialist validation failed: test did not pass. Output: {latest_tool.content}",
+                        finish_reason="stop",
+                    )
 
         # Personal Orchestrator Root Delegation
         if any(t.name == "delegate_task" for t in (request.tools or [])):

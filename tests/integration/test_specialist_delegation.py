@@ -94,13 +94,51 @@ async def test_root_orchestrator_delegates_to_coding_specialist_end_to_end(
     assert approval_id is not None
     parent_run_id = data["run_id"]
 
-    # 2b. Human Operator approves the file edit action
-    dec_resp = await async_client.post(
+    # 2b. Approval 1: Human Operator approves initial test run (sandbox_shell_execute)
+    app1_detail = await async_client.get(f"/v1/approvals/{approval_id}")
+    assert app1_detail.status_code == 200
+    assert app1_detail.json()["tool_name"] == "sandbox_shell_execute"
+
+    dec1_resp = await async_client.post(
         f"/v1/approvals/{approval_id}/decision",
+        json={"decision": "approved", "decision_notes": "Authorize initial test run"},
+    )
+    assert dec1_resp.status_code == 200
+    dec1_data = dec1_resp.json()
+    assert dec1_data["status"] == "approved"
+    assert dec1_data["execution_status"] == "waiting_for_approval"
+    approval2_id = dec1_data["approval_id"]
+    assert approval2_id is not None
+    assert approval2_id != approval_id
+
+    # 2c. Approval 2: Human Operator approves file edit (write_workspace_file)
+    app2_detail = await async_client.get(f"/v1/approvals/{approval2_id}")
+    assert app2_detail.status_code == 200
+    assert app2_detail.json()["tool_name"] == "write_workspace_file"
+
+    dec2_resp = await async_client.post(
+        f"/v1/approvals/{approval2_id}/decision",
         json={"decision": "approved", "decision_notes": "Authorize calculator.py bugfix"},
     )
-    assert dec_resp.status_code == 200
-    dec_data = dec_resp.json()
+    assert dec2_resp.status_code == 200
+    dec2_data = dec2_resp.json()
+    assert dec2_data["status"] == "approved"
+    assert dec2_data["execution_status"] == "waiting_for_approval"
+    approval3_id = dec2_data["approval_id"]
+    assert approval3_id is not None
+    assert approval3_id != approval2_id
+
+    # 2d. Approval 3: Human Operator approves re-running tests (sandbox_shell_execute)
+    app3_detail = await async_client.get(f"/v1/approvals/{approval3_id}")
+    assert app3_detail.status_code == 200
+    assert app3_detail.json()["tool_name"] == "sandbox_shell_execute"
+
+    dec3_resp = await async_client.post(
+        f"/v1/approvals/{approval3_id}/decision",
+        json={"decision": "approved", "decision_notes": "Authorize test re-run to verify fix"},
+    )
+    assert dec3_resp.status_code == 200
+    dec_data = dec3_resp.json()
     assert dec_data["status"] == "approved"
     assert dec_data["execution_status"] == "completed"
     assert "Personal Orchestrator" in dec_data["final_response"] or "calculator.py" in dec_data["final_response"]

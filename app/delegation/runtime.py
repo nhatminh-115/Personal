@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import PermissionError, ToolError
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus
+from app.db.models import DelegationModel, RunModel, RunStatus
 from app.delegation.registry import SpecialistRegistry, specialist_registry
 from app.delegation.types import DelegationRequest, DelegationResult, SpecialistDefinition
 from app.observability.tracer import TraceService
@@ -50,42 +50,95 @@ class DelegationRuntime:
                 "is already a specialist and cannot delegate to other specialists."
             )
 
-        child_run_id = str(uuid.uuid4())
         trace_service = services.get("trace_service") if services else TraceService(db)
 
-        # 3. Create Child Run record in DB with parent lineage
-        child_run = RunModel(
-            id=child_run_id,
-            session_id=request.session_id,
-            user_message=f"[Specialist: {spec.name}] {request.task_description}",
-            parent_run_id=request.parent_run_id,
-            status=RunStatus.RUNNING.value,
-        )
-        db.add(child_run)
-        await db.commit()
+        # 3. Idempotent check: lookup existing delegation for (parent_run_id, parent_tool_call_id)
+        existing_delegation: Optional[DelegationModel] = None
+        if request.parent_tool_call_id:
+            del_stmt = select(DelegationModel).where(
+                DelegationModel.parent_run_id == request.parent_run_id,
+                DelegationModel.parent_tool_call_id == request.parent_tool_call_id,
+            )
+            del_res = await db.execute(del_stmt)
+            existing_delegation = del_res.scalar_one_or_none()
 
-        # 4. Trace delegation start
-        if trace_service:
-            await trace_service.record_event(
-                run_id=request.parent_run_id,
-                session_id=request.session_id,
-                event_type="delegation_started",
-                payload={
-                    "specialist": spec.name,
-                    "child_run_id": child_run_id,
-                    "task": request.task_description,
-                },
+        if existing_delegation:
+            child_run_id = existing_delegation.child_run_id
+            child_run = await db.get(RunModel, child_run_id)
+            logger.info(
+                f"Reusing existing delegation '{existing_delegation.id}' for child run '{child_run_id}' (status: {existing_delegation.status})",
+                extra={"parent_run_id": request.parent_run_id, "child_run_id": child_run_id},
             )
-            await trace_service.record_event(
-                run_id=child_run_id,
+            effective_status = existing_delegation.status
+            if child_run and child_run.status in (RunStatus.COMPLETED.value, RunStatus.FAILED.value):
+                effective_status = child_run.status
+            if effective_status in (RunStatus.COMPLETED.value, RunStatus.FAILED.value):
+                summary = (child_run.final_response if child_run and child_run.final_response else existing_delegation.result_summary) or ""
+                if trace_service:
+                    events = await trace_service.get_run_events(request.parent_run_id)
+                    if not any(e.event_type == "delegation_completed" for e in events):
+                        await trace_service.record_event(
+                            run_id=request.parent_run_id,
+                            session_id=request.session_id,
+                            event_type="delegation_completed",
+                            payload={
+                                "child_run_id": child_run_id,
+                                "specialist": spec.name,
+                                "status": effective_status,
+                                "summary": summary,
+                                "steps": 0,
+                            },
+                        )
+                return DelegationResult(
+                    specialist_name=spec.name,
+                    child_run_id=child_run_id,
+                    status=effective_status,
+                    summary=summary,
+                    steps_taken=0,
+                )
+        else:
+            child_run_id = str(uuid.uuid4())
+            child_run = RunModel(
+                id=child_run_id,
                 session_id=request.session_id,
-                event_type="request_received",
-                payload={
-                    "parent_run_id": request.parent_run_id,
-                    "specialist": spec.name,
-                    "task": request.task_description,
-                },
+                user_message=f"[Specialist: {spec.name}] {request.task_description}",
+                parent_run_id=request.parent_run_id,
+                status=RunStatus.RUNNING.value,
             )
+            db.add(child_run)
+
+            delegation_rec = DelegationModel(
+                parent_run_id=request.parent_run_id,
+                parent_tool_call_id=request.parent_tool_call_id,
+                child_run_id=child_run_id,
+                specialist_name=spec.name,
+                status=RunStatus.RUNNING.value,
+            )
+            db.add(delegation_rec)
+            await db.commit()
+
+            # 4. Trace delegation start EXACTLY ONCE on initial creation
+            if trace_service:
+                await trace_service.record_event(
+                    run_id=request.parent_run_id,
+                    session_id=request.session_id,
+                    event_type="delegation_started",
+                    payload={
+                        "specialist": spec.name,
+                        "child_run_id": child_run_id,
+                        "task": request.task_description,
+                    },
+                )
+                await trace_service.record_event(
+                    run_id=child_run_id,
+                    session_id=request.session_id,
+                    event_type="request_received",
+                    payload={
+                        "parent_run_id": request.parent_run_id,
+                        "specialist": spec.name,
+                        "task": request.task_description,
+                    },
+                )
 
         # 5. Build Scoped Tool Registry for the specialist
         scoped_tools = ScopedToolRegistry(self.base_tool_registry, spec.allowed_tools)
@@ -115,7 +168,6 @@ class DelegationRuntime:
                 "specialist_name": spec.name,
                 "parent_run_id": request.parent_run_id,
                 "task_type": spec.name,
-                "auto_approve_tools": spec.auto_approve_tools,
             },
             "metadata": {
                 "task_type": spec.name,
@@ -140,17 +192,32 @@ class DelegationRuntime:
         }
 
         try:
-            final_state = await graph.ainvoke(initial_state, config=child_config)
+            # Check if child graph is already initialized/suspended
+            child_snapshot = await graph.aget_state(child_config)
+            if child_snapshot.next:
+                final_state = child_snapshot.values
+            else:
+                final_state = await graph.ainvoke(initial_state, config=child_config)
 
             # Check if child graph was suspended for human approval
-            if "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
-                interrupt_val = final_state["__interrupt__"][0].value
+            post_child_snapshot = await graph.aget_state(child_config)
+            if post_child_snapshot.next:
+                # Child graph is suspended at an interrupt
+                intr_list = post_child_snapshot.tasks[0].interrupts if post_child_snapshot.tasks else []
+                interrupt_val = intr_list[0].value if intr_list else {}
                 approval_id = interrupt_val.get("approval_id")
                 tool_name = interrupt_val.get("tool_name")
                 risk_level = interrupt_val.get("risk_level")
 
                 child_run.status = RunStatus.WAITING_FOR_APPROVAL.value
                 child_run.final_response = f"Specialist requires approval for '{tool_name}' ({risk_level}). Approval ID: {approval_id}"
+
+                del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == child_run_id)
+                del_res = await db.execute(del_stmt)
+                del_rec = del_res.scalar_one_or_none()
+                if del_rec:
+                    del_rec.status = RunStatus.WAITING_FOR_APPROVAL.value
+                    del_rec.pending_approval_id = approval_id
                 await db.commit()
 
                 # Bubble up interrupt to parent Personal Orchestrator
@@ -162,11 +229,17 @@ class DelegationRuntime:
                     "child_run_id": child_run_id,
                 })
 
-                # Resume child graph with decision
-                final_state = await graph.ainvoke(Command(resume=parent_resume), config=child_config)
+                # Resume child graph with decision only if it is still suspended and not already completed
+                child_snap = await graph.aget_state(child_config)
+                if child_snap.next and (not parent_resume or parent_resume.get("specialist_status") not in (RunStatus.COMPLETED.value, RunStatus.FAILED.value)):
+                    final_state = await graph.ainvoke(Command(resume=parent_resume), config=child_config)
+                else:
+                    final_state = child_snap.values
+            else:
+                parent_resume = {}
 
-            status = final_state.get("execution_status", "completed")
-            summary = final_state.get("final_response") or "Specialist execution finished."
+            status = (parent_resume.get("specialist_status") if (isinstance(parent_resume, dict) and parent_resume.get("specialist_status")) else None) or final_state.get("execution_status", "completed")
+            summary = (parent_resume.get("summary") if (isinstance(parent_resume, dict) and parent_resume.get("summary")) else None) or final_state.get("final_response") or "Specialist execution finished."
             error = final_state.get("error_message") or final_state.get("termination_reason")
             steps = final_state.get("step_number", 0)
 
@@ -174,6 +247,15 @@ class DelegationRuntime:
             child_run.status = status
             child_run.final_response = summary
             child_run.error_message = error
+
+            # Update delegation record
+            del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == child_run_id)
+            del_res = await db.execute(del_stmt)
+            del_rec = del_res.scalar_one_or_none()
+            if del_rec:
+                del_rec.status = status
+                del_rec.result_summary = summary
+                del_rec.pending_approval_id = None
             await db.commit()
 
             if trace_service:
@@ -205,6 +287,13 @@ class DelegationRuntime:
             logger.error(f"Specialist child run '{child_run_id}' failed: {exc}", exc_info=True)
             child_run.status = RunStatus.FAILED.value
             child_run.error_message = str(exc)
+
+            del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == child_run_id)
+            del_res = await db.execute(del_stmt)
+            del_rec = del_res.scalar_one_or_none()
+            if del_rec:
+                del_rec.status = RunStatus.FAILED.value
+                del_rec.result_summary = str(exc)
             await db.commit()
 
             if trace_service:

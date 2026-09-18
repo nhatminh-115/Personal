@@ -39,7 +39,8 @@ class OpenAICompatibleProvider(ModelProvider):
     def _convert_messages(self, messages: list[ChatMessage]) -> list[dict[str, Any]]:
         converted = []
         for msg in messages:
-            item: dict[str, Any] = {"role": msg.role.value, "content": msg.content or ""}
+            role_val = msg.role.value if hasattr(msg.role, "value") else str(msg.role)
+            item: dict[str, Any] = {"role": role_val, "content": msg.content or ""}
             if msg.name:
                 item["name"] = msg.name
             if msg.tool_call_id:
@@ -82,7 +83,7 @@ class OpenAICompatibleProvider(ModelProvider):
         }
 
         payload: dict[str, Any] = {
-            "model": self._model_name,
+            "model": request.selected_model or self._model_name,
             "messages": self._convert_messages(request.messages),
             "temperature": request.temperature,
             "max_tokens": request.max_tokens,
