@@ -3,12 +3,34 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from typing import List
+from sqlalchemy import select
 from app.api.dependencies import get_memory_service
-from app.api.schemas import MessageResponse, SessionDetailResponse
+from app.api.schemas import MessageResponse, SessionDetailResponse, SessionSummaryResponse
+from app.db.models import SessionModel
 from app.db.session import get_db
 from app.memory.base import MemoryService
 
 router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
+
+
+@router.get("", response_model=List[SessionSummaryResponse])
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+) -> List[SessionSummaryResponse]:
+    """List recent conversation sessions ordered by last update."""
+    stmt = select(SessionModel).order_by(SessionModel.updated_at.desc()).limit(50)
+    result = await db.execute(stmt)
+    sessions = list(result.scalars().all())
+    return [
+        SessionSummaryResponse(
+            id=s.id,
+            title=s.title,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+        )
+        for s in sessions
+    ]
 
 
 @router.get("/{session_id}", response_model=SessionDetailResponse)

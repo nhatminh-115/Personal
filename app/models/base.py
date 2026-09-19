@@ -52,6 +52,7 @@ class RoutingContext(BaseModel):
     explicit_model_override: str | None = None
     session_id: str | None = None
     run_id: str | None = None
+    requires_tools: bool = False
 
 
 class ModelUsage(BaseModel):

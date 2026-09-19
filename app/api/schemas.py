@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="User query or instruction")
     project_name: Optional[str] = Field(default=None, description="Optional project context scope")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
+    model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
 
 
 class ChatResponse(BaseModel):
@@ -85,3 +86,72 @@ class RunDetailResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     events: List[RunEventResponse]
+
+
+# --- Session Listing Schema ---
+class SessionSummaryResponse(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+# --- Model Discovery Schemas ---
+class ModelInfoResponse(BaseModel):
+    id: str
+    label: str
+    capabilities: List[str] = Field(default_factory=list)
+    tool_support: Literal["supported", "unsupported", "unknown"] = "unknown"
+
+
+class ProviderInfoResponse(BaseModel):
+    id: str
+    label: str
+    kind: Literal["local", "cloud"]
+    available: bool
+    base_url: str
+    models: List[ModelInfoResponse] = Field(default_factory=list)
+    privacy_status: Literal["local", "cloud", "airgap"] = "local"
+
+
+class ModelCatalogResponse(BaseModel):
+    providers: List[ProviderInfoResponse]
+
+
+class ModelProbeRequest(BaseModel):
+    provider_id: str
+    model_id: str
+
+
+class ModelProbeResponse(BaseModel):
+    provider_id: str
+    model_id: str
+    tool_support: Literal["supported", "unsupported", "unknown"]
+    details: str
+
+
+# --- Memory Inspector Schema ---
+class MemoryItemResponse(BaseModel):
+    id: str
+    session_id: Optional[str] = None
+    memory_type: str
+    project_name: Optional[str] = None
+    key: str
+    content: str
+    confidence: float
+    metadata_json: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+# --- Research Inspector Schema ---
+class ResearchInspectorResponse(BaseModel):
+    run_id: str
+    child_run_id: Optional[str] = None
+    goal: Optional[Dict[str, Any]] = None
+    queries: List[Dict[str, Any]] = Field(default_factory=list)
+    sources: List[Dict[str, Any]] = Field(default_factory=list)
+    inspected_source_ids: List[str] = Field(default_factory=list)
+    evidence: List[Dict[str, Any]] = Field(default_factory=list)
+    claims: List[Dict[str, Any]] = Field(default_factory=list)
+    status: str = "unknown"
+

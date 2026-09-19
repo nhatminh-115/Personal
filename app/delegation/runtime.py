@@ -204,6 +204,7 @@ class DelegationRuntime:
                 "specialist_name": spec.name,
                 "parent_run_id": request.parent_run_id,
                 "task_type": spec.name,
+                "model_override": (request.context or {}).get("model_override"),
             },
             "metadata": {
                 "task_type": spec.name,

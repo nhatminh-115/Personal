@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import approvals, chat, runs, sessions
+from app.api.routes import approvals, chat, memory, models, runs, sessions
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -23,6 +23,13 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Ensure persistent checkpointer is initialized
     await init_checkpointer()
+
+    # Discover and register local and cloud model providers dynamically
+    try:
+        from app.models.discovery import model_discovery_service
+        await model_discovery_service.register_discovered_providers()
+    except Exception as e:
+        logger.warning(f"Non-fatal error during model discovery: {e}")
 
     # Load and initialize MCP servers from persistent configuration
     try:
@@ -76,6 +83,8 @@ def create_app() -> FastAPI:
     app.include_router(approvals.router)
     app.include_router(sessions.router)
     app.include_router(runs.router)
+    app.include_router(models.router)
+    app.include_router(memory.router)
 
     # Global Domain Exception Handlers
     @app.exception_handler(WorkspaceEscapeError)

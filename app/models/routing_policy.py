@@ -19,6 +19,7 @@ class ProviderMetadata(BaseModel):
     default_model: str = "default"
     models: List[str] = Field(default_factory=list)
     allow_arbitrary_models: bool = False
+    tool_support: Dict[str, str] = Field(default_factory=dict)  # model_name -> 'supported' | 'unsupported' | 'unknown'
 
 
 class ModelSelection(BaseModel):
@@ -86,6 +87,11 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                             f"Invalid model override: model '{model_part}' is not supported by provider '{prov_part}'. "
                             f"Supported models: {sorted(list(allowed))}"
                         )
+                # Check tool capability if tools are required by execution context
+                tool_cap = meta.tool_support.get(model_part, "unknown")
+                if getattr(context, "requires_tools", False) and tool_cap == "unsupported":
+                    raise ValueError("Selected model cannot satisfy required agent/tool capability.")
+
                 return ModelSelection(
                     provider_name=prov_part,
                     model_name=model_part,

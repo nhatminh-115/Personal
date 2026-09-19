@@ -231,3 +231,9 @@ aura_checkpoints.db*
 workspace/*
 !workspace/.gitkeep
 
+# Node / Frontend
+node_modules/
+web/node_modules/
+web/dist/
+
+

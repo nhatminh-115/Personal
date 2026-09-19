@@ -63,12 +63,16 @@ async def chat_endpoint(
     )
 
     # 4. Construct initial state for LangGraph
+    merged_metadata = dict(req.metadata or {})
+    if req.model_override:
+        merged_metadata["model_override"] = req.model_override
+
     initial_state = create_initial_agent_state(
         run_id=run_id,
         session_id=req.session_id,
         user_message=req.message,
         project_name=req.project_name,
-        metadata=req.metadata,
+        metadata=merged_metadata,
     )
 
     config = {

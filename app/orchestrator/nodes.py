@@ -152,6 +152,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
         explicit_model_override=meta.get("model_override") or delegation.get("model_override"),
         session_id=state["session_id"],
         run_id=state["run_id"],
+        requires_tools=bool(tool_defs),
     )
 
     model_req = ModelRequest(
