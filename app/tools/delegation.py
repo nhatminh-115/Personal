@@ -27,7 +27,8 @@ class DelegateTaskTool(Tool):
     def description(self) -> str:
         return (
             "Delegate a scoped, specialized sub-task to an authorized specialist agent "
-            "(e.g., 'coding' for inspecting code, running tests, diagnosing, and editing). "
+            "(e.g., 'coding' for inspecting code, running tests, diagnosing, and editing; "
+            "'research' for literature review, finding prior art, reading paper methods, and extracting grounded evidence). "
             "Only available to the Personal Orchestrator."
         )
 
@@ -47,7 +48,7 @@ class DelegateTaskTool(Tool):
             "properties": {
                 "specialist_name": {
                     "type": "string",
-                    "description": "Name of the target specialist (e.g. 'coding').",
+                    "description": "Name of the target specialist (e.g. 'coding' or 'research').",
                 },
                 "task_description": {
                     "type": "string",
