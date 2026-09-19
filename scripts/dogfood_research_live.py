@@ -21,31 +21,24 @@ CRITICAL REQUIREMENTS:
 - Must NOT run when OPENAI_API_KEY is missing (fails fast with explicit notice).
 - Must NOT manually invoke research tools, screen papers with hardcoded strings, or create synthetic claims.
 - The real non-mock model decides queries, source selection, evidence extraction, and claims.
+- Module-level imports must remain safe and NOT initialize AURA settings or databases.
 """
 
 import asyncio
 import os
+from pathlib import Path
 import sys
 import time
-import uuid
 from typing import Any, Dict, List, Optional
+import uuid
 import httpx
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 # Ensure project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath("."))
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-
-from app.core.logging import logger
-from app.core.settings import settings
-from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel
-from app.db.session import async_session_factory
-from app.orchestrator.graph import get_compiled_graph
-from app.research.models import ResearchState
-
 
 RESEARCH_WORKLOAD = (
     "Investigate prior work on LLM architectures that maintain or update a compact persistent "
@@ -56,6 +49,9 @@ RESEARCH_WORKLOAD = (
     "direction are already established versus insufficiently verified."
 )
 PROJECT_NAME = "Stateful_LLM_Architecture"
+
+DOGFOOD_DATABASE_URL = "sqlite+aiosqlite:///aura_dogfood_live.db"
+DOGFOOD_CHECKPOINT_DB_PATH = "./aura_dogfood_live_checkpoints.db"
 
 
 def validate_live_dogfood_environment() -> None:
@@ -96,13 +92,39 @@ def validate_live_dogfood_environment() -> None:
         sys.exit(1)
 
 
+def configure_dogfood_runtime() -> None:
+    """Configures the isolated dogfood environment and initializes runtime singletons."""
+    os.environ["DATABASE_URL"] = DOGFOOD_DATABASE_URL
+    os.environ["CHECKPOINT_DB_PATH"] = DOGFOOD_CHECKPOINT_DB_PATH
+
+    # Clean up previous dogfood db artifacts if any
+    for p in ["aura_dogfood_live.db", "aura_dogfood_live_checkpoints.db"]:
+        if os.path.exists(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+
+    from app.core.settings import settings
+    settings.DATABASE_URL = DOGFOOD_DATABASE_URL
+    settings.CHECKPOINT_DB_PATH = Path(DOGFOOD_CHECKPOINT_DB_PATH).resolve()
+
+    from app.db import session as db_session
+    db_session.configure_engine(DOGFOOD_DATABASE_URL)
+
+
 async def audit_dogfood_run(
     parent_run_id: str,
-    db: Optional[AsyncSession] = None,
+    db: Optional[Any] = None,
     graph: Optional[Any] = None,
     elapsed_seconds: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Inspects persisted database lineage, checkpoints, and audit traces for reporting."""
+    from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel
+    from app.db.session import async_session_factory
+    from app.orchestrator.graph import get_compiled_graph
+    from app.research.models import ResearchState
+
     if db is None:
         async with async_session_factory() as session:
             return await audit_dogfood_run(parent_run_id, db=session, graph=graph, elapsed_seconds=elapsed_seconds)
@@ -262,21 +284,17 @@ async def audit_dogfood_run(
 
 
 async def run_live_agent_dogfood():
+    # 1. Validate live credentials fail-fast
     validate_live_dogfood_environment()
 
-    # Configure isolated dogfood database
-    os.environ["DATABASE_URL"] = "sqlite+aiosqlite:///aura_dogfood_live.db"
-    os.environ["CHECKPOINT_DB_PATH"] = "./aura_dogfood_live_checkpoints.db"
+    # 2. Configure isolated dogfood runtime environment and singletons
+    configure_dogfood_runtime()
 
-    # Cleanup previous dogfood db artifacts
-    for p in ["aura_dogfood_live.db", "aura_dogfood_live_checkpoints.db"]:
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
-
+    # 3. Only then import modules that depend on settings/runtime
     from app.api.server import create_app, lifespan
+    from app.core.settings import settings
+    from app.db import session as db_session
+    from app.orchestrator.graph import init_checkpointer
 
     overall_start_time = time.time()
     print("=" * 80)
@@ -284,7 +302,12 @@ async def run_live_agent_dogfood():
     print(f"Model Provider        : {settings.MODEL_PROVIDER} ({settings.OPENAI_MODEL_NAME})")
     print(f"Research Provider Mode: {settings.RESEARCH_PROVIDER_MODE} (Live Semantic Scholar + arXiv)")
     print(f"Target Project        : {PROJECT_NAME}")
+    print(f"Isolated Database URL : {settings.DATABASE_URL}")
+    print(f"Isolated Checkpoints  : {settings.CHECKPOINT_DB_PATH}")
     print("=" * 80)
+
+    # Initialize checkpointer against isolated path
+    await init_checkpointer(settings.CHECKPOINT_DB_PATH)
 
     app = create_app()
     session_id = f"sess-dogfood-{uuid.uuid4().hex[:8]}"

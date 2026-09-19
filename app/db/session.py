@@ -32,6 +32,18 @@ async_session_factory = async_sessionmaker(
 )
 
 
+def configure_engine(database_url: str | None = None) -> AsyncEngine:
+    """Reconfigure the global engine and async_session_factory with target or settings database URL."""
+    global engine, async_session_factory
+    engine = get_engine(database_url)
+    async_session_factory = async_sessionmaker(
+        engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    return engine
+
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency for yielding an async database session per request."""
     async with async_session_factory() as session:
