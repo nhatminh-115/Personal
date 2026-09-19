@@ -20,6 +20,7 @@ dependencies = [
     "python-multipart>=0.0.12",
     "mcp>=2.0.0",
     "docker>=7.0.0",
+    "pypdf>=4.0.0",
 ]
 
 [project.optional-dependencies]

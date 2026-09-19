@@ -32,6 +32,7 @@ def _get_services(config: Optional[RunnableConfig]) -> Dict[str, Any]:
         "trace_service": configurable.get("trace_service"),
         "tool_registry": configurable.get("tool_registry", tool_registry),
         "model_router": configurable.get("model_router", model_router),
+        "research_provider": configurable.get("research_provider"),
     }
 
 

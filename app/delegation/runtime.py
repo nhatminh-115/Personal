@@ -225,6 +225,11 @@ class DelegationRuntime:
         }
 
         # 7. Execute compiled graph with injected scoped registry
+        active_research_provider = services.get("research_provider") if services else None
+        if spec.name == "research" and not active_research_provider:
+            from app.research.factory import create_research_provider
+            active_research_provider = create_research_provider()
+
         graph = await get_compiled_graph()
         child_config = {
             "configurable": {
@@ -235,6 +240,7 @@ class DelegationRuntime:
                 "approval_service": services.get("approval_service") if services else None,
                 "trace_service": trace_service,
                 "model_router": services.get("model_router") if services else None,
+                "research_provider": active_research_provider,
             }
         }
 

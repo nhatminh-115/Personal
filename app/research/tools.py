@@ -4,8 +4,8 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional
 from app.approvals.capabilities import Capability
-from app.research.corpus import corpus_engine
 from app.research.dedup import SourceDeduplicator
+from app.research.factory import get_default_research_provider
 from app.research.models import (
     ClaimType,
     EvidenceItem,
@@ -16,8 +16,20 @@ from app.research.models import (
     ResearchStatus,
     SourceStatus,
 )
+from app.research.provider import ResearchSourceProvider
 from app.research.provenance import CitationValidationError, CitationValidator
 from app.tools.base import RiskLevel, Tool, ToolResult
+
+
+def _extract_research_provider(context: Optional[Dict[str, Any]]) -> ResearchSourceProvider:
+    """Resolve active ResearchSourceProvider from execution context or fallback to default factory."""
+    if context:
+        prov = context.get("research_provider")
+        if not prov and "services" in context and isinstance(context["services"], dict):
+            prov = context["services"].get("research_provider")
+        if prov and isinstance(prov, ResearchSourceProvider):
+            return prov
+    return get_default_research_provider()
 
 
 def normalize_snippet(text: str) -> str:
@@ -97,7 +109,8 @@ class ResearchSearchTool(Tool):
 
         max_results = int(input_data.get("max_results", 5))
         search_type = input_data.get("search_type", "broad")
-        raw_results = corpus_engine.search(query, search_type=search_type, max_results=max_results)
+        provider = _extract_research_provider(context)
+        raw_results = await provider.search(query, search_type=search_type, max_results=max_results)
 
         r_state = _extract_research_state(context)
         existing_sources = dict(r_state.sources) if r_state else {}
@@ -201,11 +214,12 @@ class ReadDocumentSectionTool(Tool):
         section_name = input_data.get("section_name", "methods").strip().lower()
 
         r_state = _extract_research_state(context)
+        provider = _extract_research_provider(context)
         src = None
         if r_state and source_id in r_state.sources:
             src = r_state.sources[source_id]
         if not src:
-            src = corpus_engine.fetch_source(source_id)
+            src = await provider.fetch_source(source_id)
             if src and r_state:
                 r_state.upsert_source(src)
 
@@ -217,6 +231,14 @@ class ReadDocumentSectionTool(Tool):
             )
 
         section_content = src.sections.get(section_name)
+        if not section_content:
+            # Dynamically fetch section from active provider (e.g. download PDF or parse section)
+            section_content = await provider.fetch_section(source_id, section_name)
+            if section_content:
+                src.sections[section_name] = section_content
+                if r_state:
+                    r_state.upsert_source(src)
+
         if not section_content:
             avail = list(src.sections.keys())
             return ToolResult(
@@ -319,11 +341,12 @@ class ExtractEvidenceTool(Tool):
             )
 
         r_state = _extract_research_state(context)
+        provider = _extract_research_provider(context)
         src = None
         if r_state and source_id in r_state.sources:
             src = r_state.sources[source_id]
         if not src:
-            src = corpus_engine.fetch_source(source_id)
+            src = await provider.fetch_source(source_id)
             if src and r_state:
                 r_state.upsert_source(src)
 

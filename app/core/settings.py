@@ -63,6 +63,15 @@ class Settings(BaseSettings):
         description="Path to MCP servers configuration file (JSON or YAML)",
     )
 
+    # Research Provider Settings
+    RESEARCH_PROVIDER_MODE: Literal["deterministic", "live"] = "deterministic"
+    SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
+    RESEARCH_HTTP_TIMEOUT_SECONDS: float = 30.0
+    RESEARCH_MAX_PDF_BYTES: int = 15 * 1024 * 1024  # 15 MB
+    RESEARCH_MAX_PDF_PAGES: int = 50
+    RESEARCH_MAX_EXTRACTED_CHARS: int = 500_000
+    ARXIV_MIN_REQUEST_INTERVAL_SECONDS: float = 3.0
+
 
 # Singleton global settings instance
 settings = Settings()

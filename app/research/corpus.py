@@ -121,8 +121,11 @@ class ResearchCorpusEngine(ResearchSourceProvider):
         self._corpus[p2.source_id] = p2
         self._corpus[p3.source_id] = p3
 
-    def search(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:
+    async def search(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:
         """Perform keyword search across titles, abstracts, and metadata."""
+        return self._search_sync(query, search_type=search_type, max_results=max_results)
+
+    def _search_sync(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:
         tokens = [t.lower() for t in re.findall(r"\w+", query) if len(t) > 2]
         scored: List[tuple[float, ResearchSource]] = []
 
@@ -150,10 +153,10 @@ class ResearchCorpusEngine(ResearchSourceProvider):
         src = self._corpus.get(source_id)
         return src.model_copy(deep=True) if src else None
 
-    def fetch_source(self, source_id: str) -> Optional[ResearchSource]:
+    async def fetch_source(self, source_id: str) -> Optional[ResearchSource]:
         return self.get_source(source_id)
 
-    def fetch_section(self, source_id: str, section_name: str) -> Optional[str]:
+    async def fetch_section(self, source_id: str, section_name: str) -> Optional[str]:
         src = self._corpus.get(source_id)
         if not src:
             return None
@@ -162,6 +165,9 @@ class ResearchCorpusEngine(ResearchSourceProvider):
     def add_source(self, source: ResearchSource) -> None:
         self._corpus[source.source_id] = source
 
+
+# Alias for test clarity
+DeterministicResearchProvider = ResearchCorpusEngine
 
 # Singleton global corpus engine
 corpus_engine = ResearchCorpusEngine()
