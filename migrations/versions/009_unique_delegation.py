@@ -1,6 +1,6 @@
-"""009_unique_delegation_parent_call
+"""009_unique_delegation
 
-Revision ID: 009_unique_delegation_parent_call
+Revision ID: 009_unique_delegation
 Revises: 008_delegations
 Create Date: 2026-09-19 10:00:00.000000
 
@@ -9,7 +9,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
-revision: str = "009_unique_delegation_parent_call"
+revision: str = "009_unique_delegation"
 down_revision: Union[str, None] = "008_delegations"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
