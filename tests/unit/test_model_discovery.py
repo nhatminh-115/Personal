@@ -20,15 +20,18 @@ from app.models.routing_policy import DeterministicRoutingPolicy, ProviderMetada
 
 
 @pytest.mark.asyncio
-async def test_ollama_discovery_success():
-    """Ollama discovery succeeds and parses models with tool capability heuristics."""
+async def test_ollama_discovery_conservative_classification():
+    """Ollama discovery strictly classifies tool support using metadata and probes, not name heuristics."""
     svc = ModelDiscoveryService()
 
     fake_tags = {
         "models": [
-            {"name": "llama3.2:3b", "model": "llama3.2:3b"},
+            # Model with explicit capability metadata reported by runtime
+            {"name": "llama3.2:3b", "model": "llama3.2:3b", "capabilities": ["tools"]},
+            # Model without explicit capability metadata -> must be unknown despite "mistral" name
             {"name": "mistral:7b", "model": "mistral:7b"},
-            {"name": "tinyllama:latest", "model": "tinyllama:latest"},
+            # Model with explicit unsupported metadata
+            {"name": "tinyllama:latest", "model": "tinyllama:latest", "tools": False},
         ]
     }
 
@@ -42,11 +45,13 @@ async def test_ollama_discovery_success():
     assert res.id == "ollama"
     assert res.available is True
     assert len(res.models) == 3
-    # llama3.2 and mistral should have tool_support="supported", tinyllama="unknown"
     model_map = {m.id: m for m in res.models}
+    # Explicit capability -> supported
     assert model_map["llama3.2:3b"].tool_support == "supported"
-    assert model_map["mistral:7b"].tool_support == "supported"
-    assert model_map["tinyllama:latest"].tool_support == "unknown"
+    # No explicit capability -> unknown (no name-based assumption)
+    assert model_map["mistral:7b"].tool_support == "unknown"
+    # Explicit false -> unsupported
+    assert model_map["tinyllama:latest"].tool_support == "unsupported"
 
 
 @pytest.mark.asyncio
@@ -63,13 +68,13 @@ async def test_ollama_unavailable():
 
 
 @pytest.mark.asyncio
-async def test_lmstudio_discovery_success():
-    """LM Studio discovery succeeds against /v1/models endpoint."""
+async def test_lmstudio_discovery_conservative_classification():
+    """LM Studio discovery classifies explicitly or defaults to unknown without heuristics."""
     svc = ModelDiscoveryService()
 
     fake_models = {
         "data": [
-            {"id": "qwen2.5-7b-instruct", "object": "model"},
+            {"id": "qwen2.5-7b-instruct", "object": "model", "capabilities": ["tool_calls"]},
             {"id": "phi-3-mini", "object": "model"},
         ]
     }
@@ -243,3 +248,95 @@ async def test_capability_probe_endpoint():
         assert resp.status_code == 200
         data = resp.json()
         assert data["tool_support"] == "supported"
+
+
+@pytest.mark.asyncio
+async def test_probe_connection_failure_yields_unknown_not_unsupported():
+    """Failed connection or timeout during probe must yield 'unknown' / provider unavailable, NOT 'unsupported'."""
+    svc = ModelDiscoveryService()
+
+    with patch("httpx.AsyncClient.post", side_effect=httpx.ConnectTimeout("Connection timed out")):
+        res = await svc.probe_model_capability("ollama", "test-model")
+
+    assert res.tool_support == "unknown"
+    assert "timed out" in res.details.lower() or "connection" in res.details.lower()
+    # Cache must reflect unknown, not unsupported
+    assert svc._probed_cache.get("ollama:test-model") == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_probe_success_without_tool_calls_yields_unsupported():
+    """When runtime responds 200 but model emits no tool calls, it provides meaningful evidence of 'unsupported'."""
+    svc = ModelDiscoveryService()
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": "I cannot call functions.",
+                }
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+        res = await svc.probe_model_capability("ollama", "chat-only-model")
+
+    assert res.tool_support == "unsupported"
+    assert "without tool calls" in res.details.lower()
+    assert svc._probed_cache.get("ollama:chat-only-model") == "unsupported"
+
+
+@pytest.mark.asyncio
+async def test_probe_success_with_tool_calls_yields_supported():
+    """When runtime responds 200 and model emits tool calls, marks 'supported'."""
+    svc = ModelDiscoveryService()
+
+    fake_resp = MagicMock()
+    fake_resp.status_code = 200
+    fake_resp.json.return_value = {
+        "choices": [
+            {
+                "message": {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                            "id": "call_123",
+                            "type": "function",
+                            "function": {"name": "probe_test", "arguments": '{"status":"ok"}'},
+                        }
+                    ],
+                }
+            }
+        ]
+    }
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+        res = await svc.probe_model_capability("ollama", "tool-capable-model")
+
+    assert res.tool_support == "supported"
+    assert svc._probed_cache.get("ollama:tool-capable-model") == "supported"
+
+
+@pytest.mark.asyncio
+async def test_no_redundant_discovery_on_get_and_refresh():
+    """GET /v1/models and POST /v1/models/refresh execute exactly one discovery snapshot per call."""
+    app = create_app()
+    transport = ASGITransport(app=app)
+
+    with patch("app.models.discovery.model_discovery_service.discover_all", wraps=model_discovery_service.discover_all) as mock_discover:
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            # 1. GET /v1/models
+            resp1 = await client.get("/v1/models")
+            assert resp1.status_code == 200
+            assert mock_discover.call_count == 1
+
+            # 2. POST /v1/models/refresh
+            mock_discover.reset_mock()
+            resp2 = await client.post("/v1/models/refresh")
+            assert resp2.status_code == 200
+            assert mock_discover.call_count == 1
+

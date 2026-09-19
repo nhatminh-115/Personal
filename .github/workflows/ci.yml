@@ -97,3 +97,17 @@ jobs:
       - name: Run live Phase 4 verification
         run: |
           python scripts/verify_phase4.py
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: "web/package-lock.json"
+
+      - name: Run frontend tests and build
+        run: |
+          cd web
+          npm ci
+          npm test
+          npm run build

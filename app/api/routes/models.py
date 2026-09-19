@@ -16,18 +16,7 @@ from app.models.router import ModelRouter
 router = APIRouter(prefix="/v1/models", tags=["Models"])
 
 
-@router.get("", response_model=ModelCatalogResponse, status_code=status.HTTP_200_OK)
-async def get_models(
-    router_instance: ModelRouter = Depends(get_model_router),
-) -> ModelCatalogResponse:
-    """
-    List available local and cloud model providers and their discovered models.
-    Strictly sanitizes internal credentials: never exposes API keys or headers.
-    """
-    catalog = await model_discovery_service.discover_all()
-    # Register any newly discovered local providers dynamically
-    await model_discovery_service.register_discovered_providers(router_instance)
-
+def _build_catalog_response(catalog: ModelCatalogResponse) -> ModelCatalogResponse:
     return ModelCatalogResponse(
         providers=[
             ProviderInfoResponse(
@@ -52,6 +41,20 @@ async def get_models(
     )
 
 
+@router.get("", response_model=ModelCatalogResponse, status_code=status.HTTP_200_OK)
+async def get_models(
+    router_instance: ModelRouter = Depends(get_model_router),
+) -> ModelCatalogResponse:
+    """
+    List available local and cloud model providers and their discovered models.
+    Strictly sanitizes internal credentials: never exposes API keys or headers.
+    Uses a single discovery snapshot to populate the response and register providers.
+    """
+    catalog = await model_discovery_service.discover_all()
+    await model_discovery_service.register_discovered_providers(router_instance, catalog=catalog)
+    return _build_catalog_response(catalog)
+
+
 @router.post("/probe", response_model=ModelProbeResponse, status_code=status.HTTP_200_OK)
 async def probe_model(req: ModelProbeRequest) -> ModelProbeResponse:
     """Explicit user-triggered test of a model's structured tool calling ability."""
@@ -71,6 +74,10 @@ async def probe_model(req: ModelProbeRequest) -> ModelProbeResponse:
 async def refresh_models(
     router_instance: ModelRouter = Depends(get_model_router),
 ) -> ModelCatalogResponse:
-    """Manually re-trigger provider detection and register newly available providers."""
-    await model_discovery_service.register_discovered_providers(router_instance)
-    return await get_models(router_instance)
+    """
+    Manually re-trigger provider detection and register newly available providers.
+    Executes a single discovery snapshot without redundant probes.
+    """
+    catalog = await model_discovery_service.discover_all()
+    await model_discovery_service.register_discovered_providers(router_instance, catalog=catalog)
+    return _build_catalog_response(catalog)

@@ -49,29 +49,45 @@ class CapabilityProbeResult(BaseModel):
     details: str
 
 
-KNOWN_TOOL_CALLING_FAMILIES = {
-    "llama3.1",
-    "llama3.2",
-    "llama-3.1",
-    "llama-3.2",
-    "mistral",
-    "mixtral",
-    "qwen2.5",
-    "qwen-2.5",
-    "command-r",
-    "hermes",
-    "functionary",
-    "gpt-4",
-    "gpt-3.5",
-}
+def extract_runtime_tool_capability(raw_model: Dict[str, Any]) -> Optional[Literal["supported", "unsupported"]]:
+    """Extract explicit tool capability metadata reported by local runtime, when available."""
+    # 1. Direct capabilities list or dict
+    caps = raw_model.get("capabilities")
+    if isinstance(caps, list):
+        caps_lower = [str(c).lower() for c in caps]
+        if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
+            return "supported"
+    elif isinstance(caps, dict):
+        if any(caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
+            return "supported"
+        if any(caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
+            return "unsupported"
+
+    # 2. Direct boolean fields on raw_model
+    if raw_model.get("tools") is True or raw_model.get("tool_calls") is True:
+        return "supported"
+    if raw_model.get("tools") is False or raw_model.get("tool_calls") is False:
+        return "unsupported"
+
+    # 3. Nested in details dictionary
+    details = raw_model.get("details")
+    if isinstance(details, dict):
+        det_caps = details.get("capabilities")
+        if isinstance(det_caps, list):
+            caps_lower = [str(c).lower() for c in det_caps]
+            if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
+                return "supported"
+        elif isinstance(det_caps, dict):
+            if any(det_caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
+                return "supported"
+            if any(det_caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
+                return "unsupported"
+
+    return None
 
 
 def infer_tool_support(model_id: str) -> Literal["supported", "unsupported", "unknown"]:
-    """Heuristic tool capability inference based on model identifier family."""
-    mid = model_id.lower()
-    for fam in KNOWN_TOOL_CALLING_FAMILIES:
-        if fam in mid:
-            return "supported"
+    """Conservative fallback: returns unknown without model-name regex heuristics."""
     return "unknown"
 
 
@@ -80,6 +96,26 @@ class ModelDiscoveryService:
 
     def __init__(self) -> None:
         self._probed_cache: Dict[str, Literal["supported", "unsupported", "unknown"]] = {}
+
+    def _resolve_tool_support(
+        self,
+        cache_key: str,
+        raw_model: Dict[str, Any],
+    ) -> Literal["supported", "unsupported", "unknown"]:
+        """
+        Priority order for tool capability classification:
+        1. Explicit capability metadata reported by the local runtime, when available
+        2. Successful / verified explicit capability probe
+        3. Otherwise 'unknown'
+        """
+        explicit_cap = extract_runtime_tool_capability(raw_model)
+        if explicit_cap is not None:
+            return explicit_cap
+
+        if cache_key in self._probed_cache and self._probed_cache[cache_key] != "unknown":
+            return self._probed_cache[cache_key]
+
+        return "unknown"
 
     async def discover_ollama(
         self,
@@ -104,7 +140,7 @@ class ModelDiscoveryService:
                         m_name = m.get("name") or m.get("model", "")
                         if m_name:
                             cache_key = f"ollama:{m_name}"
-                            tool_sup = self._probed_cache.get(cache_key) or infer_tool_support(m_name)
+                            tool_sup = self._resolve_tool_support(cache_key, m)
                             models.append(
                                 ModelEntry(
                                     id=m_name,
@@ -123,7 +159,7 @@ class ModelDiscoveryService:
                             m_id = m.get("id", "")
                             if m_id:
                                 cache_key = f"ollama:{m_id}"
-                                tool_sup = self._probed_cache.get(cache_key) or infer_tool_support(m_id)
+                                tool_sup = self._resolve_tool_support(cache_key, m)
                                 models.append(
                                     ModelEntry(
                                         id=m_id,
@@ -166,7 +202,7 @@ class ModelDiscoveryService:
                         m_id = m.get("id", "")
                         if m_id:
                             cache_key = f"lmstudio:{m_id}"
-                            tool_sup = self._probed_cache.get(cache_key) or infer_tool_support(m_id)
+                            tool_sup = self._resolve_tool_support(cache_key, m)
                             models.append(
                                 ModelEntry(
                                     id=m_id,
@@ -278,12 +314,17 @@ class ModelDiscoveryService:
     async def register_discovered_providers(
         self,
         router: Optional[ModelRouter] = None,
+        catalog: Optional[ModelCatalogResponse] = None,
         ollama_url: Optional[str] = None,
         lmstudio_url: Optional[str] = None,
-    ) -> None:
-        """Register any discovered available local providers with the ModelRouter."""
+    ) -> ModelCatalogResponse:
+        """
+        Register any discovered available local providers with the ModelRouter.
+        Accepts an optional pre-computed catalog snapshot to avoid redundant discovery requests.
+        """
         target_router = router or model_router
-        catalog = await self.discover_all(ollama_url, lmstudio_url)
+        if catalog is None:
+            catalog = await self.discover_all(ollama_url, lmstudio_url)
 
         for p in catalog.providers:
             if p.id == "ollama" and p.available and p.models:
@@ -334,13 +375,20 @@ class ModelDiscoveryService:
                 )
                 logger.info(f"Registered local LM Studio provider with {len(p.models)} models")
 
+        return catalog
+
     async def probe_model_capability(
         self,
         provider_id: str,
         model_id: str,
         base_url: Optional[str] = None,
     ) -> CapabilityProbeResult:
-        """Explicitly test a model's ability to emit structured tool calls."""
+        """
+        Explicitly test a model's ability to emit structured tool calls.
+        Only marks 'unsupported' when the runtime/model successfully responds
+        and provides meaningful evidence that structured tool calling is unsupported.
+        Connection errors or timeouts yield 'unknown' / provider unavailable.
+        """
         if provider_id not in {"ollama", "lmstudio"}:
             return CapabilityProbeResult(
                 provider_id=provider_id,
@@ -353,6 +401,8 @@ class ModelDiscoveryService:
             base_url
             or ("http://127.0.0.1:11434/v1" if provider_id == "ollama" else "http://127.0.0.1:1234/v1")
         ).rstrip("/")
+
+        cache_key = f"{provider_id}:{model_id}"
 
         probe_payload = {
             "model": model_id,
@@ -394,28 +444,59 @@ class ModelDiscoveryService:
                     if choices:
                         msg = choices[0].get("message", {})
                         if msg.get("tool_calls"):
-                            self._probed_cache[f"{provider_id}:{model_id}"] = "supported"
+                            self._probed_cache[cache_key] = "supported"
                             return CapabilityProbeResult(
                                 provider_id=provider_id,
                                 model_id=model_id,
                                 tool_support="supported",
                                 details="Model successfully emitted structured tool call.",
                             )
-
-                self._probed_cache[f"{provider_id}:{model_id}"] = "unsupported"
-                return CapabilityProbeResult(
-                    provider_id=provider_id,
-                    model_id=model_id,
-                    tool_support="unsupported",
-                    details=f"Model responded without tool calls (status {resp.status_code}).",
-                )
-        except Exception as e:
-            self._probed_cache[f"{provider_id}:{model_id}"] = "unsupported"
+                    # Model responded successfully (200), but emitted no tool calls despite tool request
+                    self._probed_cache[cache_key] = "unsupported"
+                    return CapabilityProbeResult(
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        tool_support="unsupported",
+                        details="Model responded without tool calls when function calling was requested.",
+                    )
+                elif resp.status_code == 400:
+                    err_msg = ""
+                    try:
+                        err_msg = resp.json().get("error", {}).get("message", "")
+                    except Exception:
+                        err_msg = resp.text
+                    self._probed_cache[cache_key] = "unsupported"
+                    return CapabilityProbeResult(
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        tool_support="unsupported",
+                        details=f"Runtime rejected tool calling schema (HTTP 400): {err_msg}",
+                    )
+                else:
+                    # 5xx or other status: provider unavailable or error, NOT unsupported
+                    self._probed_cache[cache_key] = "unknown"
+                    return CapabilityProbeResult(
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        tool_support="unknown",
+                        details=f"Provider returned HTTP {resp.status_code}. Status unknown or provider unavailable.",
+                    )
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RequestError, OSError) as e:
+            # Failed connection/timeout: unknown or provider unavailable, NOT unsupported!
+            self._probed_cache[cache_key] = "unknown"
             return CapabilityProbeResult(
                 provider_id=provider_id,
                 model_id=model_id,
-                tool_support="unsupported",
-                details=f"Connection probe failed: {e}",
+                tool_support="unknown",
+                details=f"Connection probe failed or timed out: {e}. Provider unavailable.",
+            )
+        except Exception as e:
+            self._probed_cache[cache_key] = "unknown"
+            return CapabilityProbeResult(
+                provider_id=provider_id,
+                model_id=model_id,
+                tool_support="unknown",
+                details=f"Unexpected probe failure: {e}",
             )
 
 
