@@ -129,3 +129,45 @@ class ResearchState(BaseModel):
     status: ResearchStatus = ResearchStatus.RUNNING
     current_iteration: int = 1
     max_iterations: int = 5
+
+    def register_query(self, query: ResearchQuery) -> None:
+        """Record a search query execution and update current iteration."""
+        self.queries.append(query)
+        self.current_iteration = max(self.current_iteration, query.iteration + 1)
+
+    def upsert_source(self, source: ResearchSource) -> None:
+        """Register or update a candidate research source."""
+        self.sources[source.source_id] = source
+
+    def mark_source_inspected(self, source_id: str) -> None:
+        """Mark a source as inspected and track in inspected_source_ids."""
+        if source_id not in self.inspected_source_ids:
+            self.inspected_source_ids.append(source_id)
+        if source_id in self.sources:
+            self.sources[source_id].status = SourceStatus.INSPECTED
+
+    def mark_source_rejected(self, source_id: str, reason: str = "") -> None:
+        """Mark a source as rejected with rationale."""
+        if source_id in self.sources:
+            self.sources[source_id].status = SourceStatus.REJECTED
+            self.sources[source_id].rejection_reason = reason
+
+    def register_evidence(self, item: EvidenceItem) -> None:
+        """Register an authoritative evidence item into the active registry."""
+        self.evidence[item.evidence_id] = item
+
+    def register_claim(self, claim: ResearchClaim) -> None:
+        """Append a validated research claim."""
+        self.claims.append(claim)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize state for LangGraph checkpointer using primitive json-compatible types."""
+        return self.model_dump(mode="json")
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ResearchState":
+        """Deserialize from LangGraph state dict safely."""
+        if not data:
+            return cls()
+        return cls.model_validate(data)
+

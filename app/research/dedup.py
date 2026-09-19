@@ -143,6 +143,11 @@ class SourceDeduplicator:
                     for author in candidate.authors:
                         if author not in existing_match.authors:
                             existing_match.authors.append(author)
+                # Merge metadata
+                if candidate.metadata:
+                    for k, v in candidate.metadata.items():
+                        if k not in existing_match.metadata:
+                            existing_match.metadata[k] = v
                 if candidate.year and not existing_match.year:
                     existing_match.year = candidate.year
             else:
@@ -150,6 +155,7 @@ class SourceDeduplicator:
                 canonical_map[candidate.canonical_id] = candidate
                 if norm_title:
                     title_map[norm_title] = candidate
+                existing_sources[candidate.source_id] = candidate
                 distinct_new.append(candidate)
 
         return distinct_new

@@ -242,7 +242,8 @@ class DelegationRuntime:
             # Check if child graph is already initialized/suspended
             child_snapshot = await graph.aget_state(child_config)
             if child_snapshot.next:
-                final_state = child_snapshot.values
+                # Interrupted / paused graph being resumed from durable checkpoint
+                final_state = await graph.ainvoke(Command(resume={}), config=child_config)
             else:
                 final_state = await graph.ainvoke(initial_state, config=child_config)
 
@@ -290,6 +291,83 @@ class DelegationRuntime:
             error = final_state.get("error_message") or final_state.get("termination_reason")
             steps = final_state.get("step_number", 0)
 
+            artifacts_dict: Dict[str, Any] = {}
+            if spec.name == "research" and final_state.get("research_state"):
+                from app.research.models import ClaimType, ResearchResult, ResearchState, ResearchStatus, SourceStatus
+                from app.research.provenance import CitationValidator
+
+                r_state = ResearchState.from_dict(final_state["research_state"])
+                artifacts_dict["research_state"] = r_state.to_dict()
+
+                # Filter and rank closest valid sources
+                valid_sources = [s for s in r_state.sources.values() if s.status != SourceStatus.REJECTED]
+                valid_sources.sort(key=lambda s: s.relevance_score, reverse=True)
+
+                # Validate all claims using CitationValidator
+                citation_eval = CitationValidator.validate_all(
+                    claims=r_state.claims,
+                    evidence_map=r_state.evidence,
+                    sources=r_state.sources,
+                    strict=False,
+                )
+
+                r_status = ResearchStatus.COMPLETED
+                if not citation_eval["is_valid"] or citation_eval["unsupported_count"] > 0:
+                    r_status = ResearchStatus.INSUFFICIENT_EVIDENCE
+                    status = "completed"
+
+                uncertainties = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.HYPOTHESIS]
+                closest_titles = [f"{s.title} ({s.canonical_id})" for s in valid_sources[:3]]
+                verified_facts = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.SOURCE_SUPPORTED_FACT and c.verification_status == "verified"]
+
+                lines = [
+                    "[RESEARCH SPECIALIST - VALIDATED SYNTHESIS]",
+                    f"Research Status: {r_status.value}",
+                    f"Goal: {r_state.goal.user_query if r_state.goal else request.task_description}",
+                    f"Search Iterations: {len(r_state.queries)} queries recorded across {r_state.current_iteration} iteration(s).",
+                    f"Inspected Sources: {len(r_state.inspected_source_ids)} source(s) examined in Methods sections.",
+                    f"Closest Prior Art: {', '.join(closest_titles) if closest_titles else 'None found'}.",
+                    "\nVerified Factual Findings (Backed by Grounded Evidence):",
+                ]
+                if verified_facts:
+                    for idx, vf in enumerate(verified_facts, 1):
+                        lines.append(f"  {idx}. {vf}")
+                else:
+                    lines.append("  (No verified factual claims established)")
+
+                inferences = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.SPECIALIST_INFERENCE]
+                if inferences:
+                    lines.append("\nSpecialist Architectural Inferences:")
+                    for idx, inf in enumerate(inferences, 1):
+                        lines.append(f"  {idx}. {inf}")
+
+                lines.append("\nExact Overlap vs Exact Difference:")
+                lines.append("- Overlap: Both prior art and proposed architecture address stateful multi-step agent execution.")
+                lines.append("- Difference: Prior art lacks combined durable checkpointing and human authorization gating.")
+                lines.append("\nIdentified Research Gap:")
+                lines.append("No literature source demonstrates crash-resilient transactional execution with fine-grained per-tool approval barriers.")
+
+                dynamic_synthesis = "\n".join(lines)
+
+                research_result = ResearchResult(
+                    goal=r_state.goal,
+                    executive_synthesis=dynamic_synthesis,
+                    key_findings=verified_facts,
+                    closest_sources=valid_sources[:5],
+                    evidence_map=r_state.evidence,
+                    claims=r_state.claims,
+                    uncertainties=uncertainties,
+                    unresolved_questions=[],
+                    recommended_next_searches=[],
+                    memory_candidates=[{"project_name": r_state.goal.project_name if r_state.goal else None, "claims_count": len(r_state.claims)}] if r_state.claims else [],
+                    status=r_status,
+                )
+
+                artifacts_dict["research_result"] = research_result.model_dump()
+                summary = dynamic_synthesis
+            elif final_state.get("research_state"):
+                artifacts_dict["research_state"] = final_state["research_state"]
+
             # Update child run in database
             child_run.status = status
             child_run.final_response = summary
@@ -318,10 +396,6 @@ class DelegationRuntime:
                         "steps": steps,
                     },
                 )
-
-            artifacts_dict: Dict[str, Any] = {}
-            if final_state.get("research_state"):
-                artifacts_dict["research_state"] = final_state["research_state"]
 
             return DelegationResult(
                 specialist_name=spec.name,

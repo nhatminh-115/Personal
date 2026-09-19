@@ -130,3 +130,69 @@ def test_source_deduplicator_keeps_distinct_sources():
 
     assert len(distinct_new) == 1
     assert distinct_new[0].source_id == "s2"
+
+
+def test_same_paper_across_different_search_iterations_merges_into_single_source():
+    """Verify that a paper discovered across 3 different iterations via:
+    1. arXiv URL
+    2. Mirror URL
+    3. Normalized title
+    merges into exactly ONE ResearchSource with combined aliases.
+    """
+    existing_registry: dict[str, ResearchSource] = {}
+
+    # Iteration 1: Paper discovered via arXiv URL
+    iter1_source = ResearchSource(
+        source_id="src_iter1_arxiv",
+        canonical_id="arxiv:2308.1001",
+        title="Stateful Multi-Turn Agent Workflows",
+        authors=["Alice Chen"],
+        year=2023,
+        url="https://arxiv.org/abs/2308.1001",
+        abstract="Initial brief abstract from arXiv.",
+        sections={"introduction": "Intro from arXiv."},
+        status=SourceStatus.CANDIDATE,
+    )
+    new_1 = SourceDeduplicator.deduplicate([iter1_source], existing_sources=existing_registry)
+    assert len(new_1) == 1
+    assert len(existing_registry) == 1
+
+    # Iteration 2: Same paper discovered via Mirror URL
+    iter2_source = ResearchSource(
+        source_id="src_iter2_mirror",
+        canonical_id="arxiv:2308.1001",
+        title="Stateful Multi-Turn Agent Workflows: A Graph Approach",
+        authors=["Alice Chen", "Bob Davis"],
+        year=2023,
+        url="https://semanticscholar.org/paper/stateful-workflows",
+        abstract="Richer abstract from Semantic Scholar.",
+        sections={"methods": "Detailed methods content from mirror."},
+        status=SourceStatus.CANDIDATE,
+    )
+    new_2 = SourceDeduplicator.deduplicate([iter2_source], existing_sources=existing_registry)
+    assert len(new_2) == 0, "Expected mirror source to be merged, not added as a second source!"
+    assert len(existing_registry) == 1, "Expected registry to still have exactly 1 source!"
+
+    # Iteration 3: Same paper discovered via Normalized Title only (no explicit URL)
+    iter3_source = ResearchSource(
+        source_id="src_iter3_title",
+        canonical_id="",  # No canonical ID provided upfront
+        title="Stateful Multi-Turn Agent Workflows",
+        authors=["Alice Chen", "Bob Davis"],
+        year=2023,
+        sections={"results": "Results section from proceedings."},
+        status=SourceStatus.CANDIDATE,
+    )
+    new_3 = SourceDeduplicator.deduplicate([iter3_source], existing_sources=existing_registry)
+    assert len(new_3) == 0, "Expected normalized title match to merge into existing source!"
+    assert len(existing_registry) == 1, "Expected exactly 1 ResearchSource to remain after 3 iterations!"
+
+    # Assert all enriched metadata converged into the single canonical source
+    single_source = list(existing_registry.values())[0]
+    assert single_source.source_id == "src_iter1_arxiv"
+    assert "https://semanticscholar.org/paper/stateful-workflows" in single_source.aliases
+    assert "introduction" in single_source.sections
+    assert "methods" in single_source.sections
+    assert "results" in single_source.sections
+    assert "Bob Davis" in single_source.authors
+

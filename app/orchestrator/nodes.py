@@ -238,13 +238,17 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
     tool_approvals = dict(state.get("tool_approvals", {}))
 
     # 1. Mark all AUTOMATIC tool calls as auto-authorized
+    require_approval_for = (state.get("metadata") or {}).get("require_approval_for", [])
     for tc in tool_requests:
         cid = tc.get("id", "")
         if cid not in tool_approvals:
             tool = registry.get(tc["name"])
             risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
             capabilities = tool.required_capabilities if tool else []
-            decision = permission_policy.evaluate(capabilities, risk_level)
+            if tc["name"] in require_approval_for:
+                decision = PermissionDecision.REQUIRES_APPROVAL
+            else:
+                decision = permission_policy.evaluate(capabilities, risk_level)
             if decision == PermissionDecision.AUTOMATIC:
                 tool_approvals[cid] = {"status": "auto", "arguments": tc["arguments"]}
 
@@ -257,6 +261,8 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
             target_tc = tc
             tool = registry.get(tc["name"])
             target_risk_level = tool.risk_level.value if tool else RiskLevel.HIGH.value
+            if tc["name"] in require_approval_for:
+                target_risk_level = RiskLevel.HIGH.value
             break
 
     # If all tool requests have been decided, proceed directly
@@ -501,6 +507,8 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                     "tool_call_id": tool_call_id,
                     "db": services.get("db"),
                     "services": services,
+                    "research_state": state.get("research_state"),
+                    "metadata": state.get("metadata"),
                 }
                 result = await tool.execute(tool_input, context=tool_context)
                 error_cat = None
@@ -562,6 +570,7 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
         "errors": errors,
         "total_tool_calls": total_tool_calls,
         "consecutive_failures": consecutive_failures,
+        "research_state": state.get("research_state"),
     }
 
 
@@ -631,6 +640,11 @@ async def observe_node(state: AgentState, config: Optional[RunnableConfig] = Non
             "termination_reason": term_reason,
             "final_response": resp,
         }
+
+    # 5. Check optional deterministic mid-run test interrupt hook
+    pause_step = (state.get("metadata") or {}).get("pause_after_step")
+    if pause_step is not None and int(pause_step) == step_num:
+        interrupt({"pause_reason": "mid_research_pause", "step": step_num})
 
     # Prepare state for next iterative reasoning turn
     return {

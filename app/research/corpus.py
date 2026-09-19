@@ -1,12 +1,11 @@
-"""Deterministic research corpus and offline search engine for reproducible verification."""
-
 import re
 from typing import Dict, List, Optional
 from app.research.models import ResearchSource, SourceStatus
+from app.research.provider import ResearchSourceProvider
 
 
-class ResearchCorpusEngine:
-    """Provides indexed literature search and document section retrieval."""
+class ResearchCorpusEngine(ResearchSourceProvider):
+    """Provides indexed literature search and document section retrieval for deterministic testing."""
 
     def __init__(self) -> None:
         self._corpus: Dict[str, ResearchSource] = {}
@@ -55,7 +54,7 @@ class ResearchCorpusEngine:
             },
             status=SourceStatus.CANDIDATE,
             relevance_score=0.92,
-            metadata={"topic": "stateful_agents", "doi": "10.48550/arXiv.2308.1001"},
+            metadata={"topic": "stateful_agents", "doi": "10.48550/arXiv.2308.1001", "fixture": True, "provider": "deterministic_corpus"},
         )
 
         # Paper 2: Complementary Prior Art (Durable checkpoints, but for automated batch pipelines, no human approvals)
@@ -94,7 +93,7 @@ class ResearchCorpusEngine:
             },
             status=SourceStatus.CANDIDATE,
             relevance_score=0.85,
-            metadata={"topic": "checkpointing", "doi": "10.48550/arXiv.2401.5502"},
+            metadata={"topic": "checkpointing", "doi": "10.48550/arXiv.2401.5502", "fixture": True, "provider": "deterministic_corpus"},
         )
 
         # Paper 3: Irrelevant distractor (Pruning transformer attention, completely different domain)
@@ -115,14 +114,14 @@ class ResearchCorpusEngine:
             },
             status=SourceStatus.CANDIDATE,
             relevance_score=0.20,
-            metadata={"topic": "model_compression"},
+            metadata={"topic": "model_compression", "fixture": True, "provider": "deterministic_corpus"},
         )
 
         self._corpus[p1.source_id] = p1
         self._corpus[p2.source_id] = p2
         self._corpus[p3.source_id] = p3
 
-    def search(self, query: str, max_results: int = 5) -> List[ResearchSource]:
+    def search(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:
         """Perform keyword search across titles, abstracts, and metadata."""
         tokens = [t.lower() for t in re.findall(r"\w+", query) if len(t) > 2]
         scored: List[tuple[float, ResearchSource]] = []
@@ -150,6 +149,15 @@ class ResearchCorpusEngine:
     def get_source(self, source_id: str) -> Optional[ResearchSource]:
         src = self._corpus.get(source_id)
         return src.model_copy(deep=True) if src else None
+
+    def fetch_source(self, source_id: str) -> Optional[ResearchSource]:
+        return self.get_source(source_id)
+
+    def fetch_section(self, source_id: str, section_name: str) -> Optional[str]:
+        src = self._corpus.get(source_id)
+        if not src:
+            return None
+        return src.sections.get(section_name.lower())
 
     def add_source(self, source: ResearchSource) -> None:
         self._corpus[source.source_id] = source

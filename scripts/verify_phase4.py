@@ -45,9 +45,16 @@ from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel
 from app.db.session import async_session_factory
 from app.delegation.registry import specialist_registry
 from app.memory.service import SQLMemoryService
-from app.orchestrator.graph import close_checkpointer
+from app.orchestrator.graph import close_checkpointer, get_compiled_graph
 from app.research.dedup import SourceDeduplicator, compute_canonical_id, normalize_title
-from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchSource, SourceStatus
+from app.research.models import (
+    ClaimType,
+    EvidenceItem,
+    ResearchClaim,
+    ResearchSource,
+    ResearchState,
+    SourceStatus,
+)
 from app.research.provenance import CitationValidationError, CitationValidator
 
 
@@ -176,8 +183,8 @@ async def run_phase4_verification():
                 assert "Research Gap" in response_text
                 print(" -> Technical comparison and synthesis validated: overlap vs differences clearly segregated.", flush=True)
 
-                # 3b. Verify Database Lineage
-                print("\n[Step 4] Verifying Database Lineage & Audit Trail...", flush=True)
+                # 3b. Verify Database Lineage & Durable ResearchState
+                print("\n[Step 4] Verifying Database Lineage, Audit Trail & Authoritative ResearchState...", flush=True)
                 async with async_session_factory() as db:
                     del_stmt = select(DelegationModel).where(DelegationModel.parent_run_id == parent_run_id)
                     del_res = await db.execute(del_stmt)
@@ -193,7 +200,53 @@ async def run_phase4_verification():
                     assert child_run.status == "completed"
                     print(f" -> DB Lineage verified: Parent Run '{parent_run_id}' <-> Child Specialist Run '{child_run_id}'", flush=True)
 
-                    # 3c. Verify Project Memory persistence
+                    # 3c. Inspect checkpointed ResearchState
+                    graph = await get_compiled_graph()
+                    child_snapshot = await graph.aget_state({"configurable": {"thread_id": child_run_id}})
+                    r_state_dict = child_snapshot.values.get("research_state")
+                    assert r_state_dict is not None, "ResearchState was not saved in LangGraph checkpoint!"
+                    r_state = ResearchState.from_dict(r_state_dict)
+
+                    # Assert >= 2 distinct ResearchQuery records
+                    assert len(r_state.queries) >= 2, f"Expected >= 2 queries, found {len(r_state.queries)}"
+                    assert len({q.query_text for q in r_state.queries}) >= 2
+                    print(f" -> Multi-query execution verified: {len(r_state.queries)} distinct queries recorded.", flush=True)
+
+                    # Assert >= 3 candidate sources discovered in canonical registry
+                    assert len(r_state.sources) >= 3, f"Expected >= 3 sources, found {len(r_state.sources)}"
+                    print(f" -> Canonical sources verified: {len(r_state.sources)} sources in shared registry.", flush=True)
+
+                    # Assert >= 2 inspected sources
+                    assert len(r_state.inspected_source_ids) >= 2
+                    print(f" -> Inspected sources verified: {r_state.inspected_source_ids}", flush=True)
+
+                    # Assert >= 1 rejected/unselected source
+                    unselected = [s for s in r_state.sources.values() if s.source_id not in r_state.inspected_source_ids]
+                    assert len(unselected) >= 1
+                    print(f" -> Rejected/unselected distractor verified: {[s.source_id for s in unselected]}", flush=True)
+
+                    # Assert >= 2 actual EvidenceItems with authoritative IDs
+                    assert len(r_state.evidence) >= 2
+                    actual_ev_ids = list(r_state.evidence.keys())
+                    print(f" -> Authoritative dynamic evidence IDs: {actual_ev_ids}", flush=True)
+
+                    # Explicitly assert that fake placeholder IDs like ev_extracted_1 do NOT exist
+                    assert "ev_extracted_1" not in actual_ev_ids, "Fake placeholder ID 'ev_extracted_1' detected in registry!"
+                    assert "ev_extracted_2" not in actual_ev_ids, "Fake placeholder ID 'ev_extracted_2' detected in registry!"
+
+                    # Assert factual claims reference real EvidenceItems and each EvidenceItem references real Source
+                    assert len(r_state.claims) >= 1
+                    for claim in r_state.claims:
+                        if claim.claim_type == ClaimType.SOURCE_SUPPORTED_FACT:
+                            assert len(claim.evidence_ids) >= 1
+                            for eid in claim.evidence_ids:
+                                assert eid in r_state.evidence
+                                assert eid != "ev_extracted_1"
+                    for ev in r_state.evidence.values():
+                        assert ev.source_id in r_state.sources
+                        assert ev.metadata.get("grounded") is True
+
+                    # 3d. Verify Project Memory persistence with exact evidence IDs
                     mem_svc = SQLMemoryService(db)
                     project_memories = await mem_svc.get_project_memories("Atlas_Architecture")
                     assert len(project_memories) >= 1, "Expected research finding to be stored in project memory!"
@@ -202,9 +255,30 @@ async def run_phase4_verification():
                     assert "Prior art review" in finding.content or "Chen & Davis" in finding.content
                     assert finding.metadata_json.get("type") == "research_finding"
                     assert len(finding.metadata_json.get("source_references", [])) >= 2
-                    print(f" -> Project Memory verified: '{finding.key}' persisted with source references.", flush=True)
+                    finding_ev_ids = finding.metadata_json.get("evidence_ids", [])
+                    assert len(finding_ev_ids) >= 2
+                    for feid in finding_ev_ids:
+                        assert feid in actual_ev_ids, f"Project memory contains unknown evidence ID '{feid}'!"
+                        assert feid != "ev_extracted_1"
+                    print(f" -> Project Memory verified: '{finding.key}' persisted with real dynamic evidence IDs: {finding_ev_ids}", flush=True)
 
-                    # 3d. Verify Audit Events
+                    # Assert final ResearchResult passes CitationValidator
+                    val_res = CitationValidator.validate_all(
+                        claims=r_state.claims,
+                        evidence_map=r_state.evidence,
+                        sources_map=r_state.sources,
+                        strict=True,
+                    )
+                    assert val_res["is_valid"] is True
+                    assert val_res["unsupported_count"] == 0
+                    print(" -> Final ResearchResult passed CitationValidator with 0 unsupported claims.", flush=True)
+
+                    # Tag and output fixture note
+                    for src in r_state.sources.values():
+                        assert src.metadata.get("fixture") is True
+                    print(" -> Deterministic research fixture verification: All sources correctly labeled with metadata['fixture'] = True.", flush=True)
+
+                    # 3e. Verify Audit Events
                     ev_stmt = select(RunEventModel).where(RunEventModel.run_id == parent_run_id).order_by(RunEventModel.created_at)
                     events = (await db.execute(ev_stmt)).scalars().all()
                     ev_types = [e.event_type for e in events]

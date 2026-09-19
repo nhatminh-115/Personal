@@ -153,7 +153,7 @@ class MockModelProvider(ModelProvider):
                             arguments={
                                 "source_id": "src_pipeline_checkpoint_2024",
                                 "locator": "Section: methods",
-                                "extracted_text": "The architecture implements transactional write-ahead checkpoints for sequential batch pipelines... strictly oriented toward automated batch pipelines; it does not support fine-grained per-tool human approval gates.",
+                                "extracted_text": "The architecture implements transactional write-ahead checkpoints for sequential batch pipelines. Execution state is persisted to a durable datastore at stage boundaries.",
                                 "summary": "Paper 2 implements pipeline checkpoints but lacks human approval gates and interactive conversational memory.",
                                 "confidence": 0.95,
                             },
@@ -163,6 +163,13 @@ class MockModelProvider(ModelProvider):
                 )
             # Step 7: Record research claim
             elif len(tool_msgs) == 6:
+                # Dynamically extract all real evidence IDs produced by previous extract_evidence calls
+                dynamic_ev_ids = []
+                for msg in tool_msgs:
+                    for ev_match in re.findall(r"Evidence '(ev_[a-zA-Z0-9]+)'", msg.content):
+                        if ev_match not in dynamic_ev_ids:
+                            dynamic_ev_ids.append(ev_match)
+
                 return ModelResponse(
                     content="Recording verified factual claim backed by extracted evidence from Paper 1 and Paper 2...",
                     tool_calls=[
@@ -172,7 +179,7 @@ class MockModelProvider(ModelProvider):
                             arguments={
                                 "claim_text": "Chen & Davis (2023) maintains graph state in memory but omits persistent checkpointing and interactive approvals, while Mendez & Rostova (2024) provides batch checkpointing without human approval loops.",
                                 "claim_type": "source_supported_fact",
-                                "evidence_ids": ["ev_extracted_1"],
+                                "evidence_ids": dynamic_ev_ids or ["ev_fallback_fail"],
                             },
                         )
                     ],
@@ -180,6 +187,12 @@ class MockModelProvider(ModelProvider):
                 )
             # Step 8: Save research finding to project memory
             elif len(tool_msgs) == 7:
+                dynamic_ev_ids = []
+                for msg in tool_msgs:
+                    for ev_match in re.findall(r"Evidence '(ev_[a-zA-Z0-9]+)'", msg.content):
+                        if ev_match not in dynamic_ev_ids:
+                            dynamic_ev_ids.append(ev_match)
+
                 return ModelResponse(
                     content="Saving synthesized prior art finding and research gap to project memory Atlas_Architecture...",
                     tool_calls=[
@@ -190,7 +203,7 @@ class MockModelProvider(ModelProvider):
                                 "project_name": "Atlas_Architecture",
                                 "key": "prior_art_stateful_execution",
                                 "finding_content": "Prior art review: Chen & Davis (2023) provides in-memory state but lacks durable recovery; Mendez & Rostova (2024) provides batch checkpointing without human approval loops. Our proposed architecture occupies a verified research gap combining durable checkpointing with interactive per-tool approvals.",
-                                "evidence_ids": ["ev_extracted_1", "ev_extracted_2"],
+                                "evidence_ids": dynamic_ev_ids or ["ev_fallback_fail"],
                                 "source_references": ["arxiv:2308.1001", "arxiv:2401.5502"],
                             },
                         )

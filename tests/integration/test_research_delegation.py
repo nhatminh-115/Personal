@@ -93,9 +93,41 @@ async def test_root_orchestrator_delegates_to_research_specialist_end_to_end(
     assert finding_memory.metadata_json.get("type") == "research_finding"
     assert len(finding_memory.metadata_json.get("source_references", [])) >= 2
 
-    # 4. Verify Audit Trace Events
     events_stmt = select(RunEventModel).where(RunEventModel.run_id == parent_run_id).order_by(RunEventModel.created_at)
     events = (await test_db_session.execute(events_stmt)).scalars().all()
     event_types = [e.event_type for e in events]
     assert "delegation_started" in event_types
     assert "delegation_completed" in event_types
+
+
+@pytest.mark.asyncio
+async def test_record_research_claim_rejects_nonexistent_evidence_id_in_production():
+    """Integration test reproducing and preventing the bug: nonexistent placeholder
+    evidence IDs like 'ev_extracted_1' must fail loudly in RecordResearchClaimTool
+    and cannot be recorded into ResearchState.
+    """
+    from app.research.models import ResearchState
+    from app.research.tools import RecordResearchClaimTool
+
+    tool = RecordResearchClaimTool()
+    # Context with empty evidence registry
+    r_state = ResearchState()
+    context = {"research_state": r_state.to_dict()}
+
+    # Attempt to record factual claim with ungrounded placeholder ID
+    res = await tool.execute(
+        {
+            "claim_text": "Chen & Davis uses ephemeral in-memory graphs.",
+            "claim_type": "source_supported_fact",
+            "evidence_ids": ["ev_extracted_1"],  # Fake placeholder ID
+        },
+        context=context,
+    )
+
+    assert res.success is False
+    assert "Citation validation error" in res.error
+    assert "references nonexistent evidence ID 'ev_extracted_1'" in res.error
+
+    # Assert claim was NOT registered in research state
+    updated_state = ResearchState.from_dict(context["research_state"])
+    assert len(updated_state.claims) == 0

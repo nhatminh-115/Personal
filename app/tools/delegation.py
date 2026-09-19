@@ -88,10 +88,13 @@ class DelegateTaskTool(Tool):
                 error="Database session required for delegation execution.",
             )
 
+        merged_context = dict(ctx.get("metadata") or {})
+        merged_context.update(extra_ctx)
+
         req = DelegationRequest(
             specialist_name=specialist_name,
             task_description=task_description,
-            context=extra_ctx,
+            context=merged_context,
             parent_run_id=ctx.get("run_id", "unknown-parent"),
             parent_tool_call_id=ctx.get("tool_call_id"),
             session_id=ctx.get("session_id", "unknown-session"),

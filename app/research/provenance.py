@@ -17,14 +17,17 @@ class CitationValidationError(Exception):
 class CitationValidator:
     """Enforces strict provenance, detects fabricated citations, and categorizes claims."""
 
-    @staticmethod
+    @classmethod
     def validate_claim(
+        cls,
         claim: ResearchClaim,
         evidence_map: Dict[str, EvidenceItem],
-        sources_map: Dict[str, ResearchSource],
+        sources_map: Optional[Dict[str, ResearchSource]] = None,
+        sources: Optional[Dict[str, ResearchSource]] = None,
         strict: bool = True,
     ) -> Tuple[bool, Optional[str]]:
         """Validate an individual claim against available evidence and sources."""
+        src_map = sources_map if sources_map is not None else (sources or {})
         if claim.claim_type == ClaimType.SOURCE_SUPPORTED_FACT:
             if not claim.evidence_ids:
                 msg = f"Factual claim '{claim.claim_id}' has no associated evidence IDs."
@@ -40,7 +43,7 @@ class CitationValidator:
                     return False, msg
 
                 ev_item = evidence_map[ev_id]
-                if ev_item.source_id not in sources_map:
+                if ev_item.source_id not in src_map:
                     msg = f"Evidence '{ev_id}' references nonexistent source ID '{ev_item.source_id}'."
                     if strict:
                         raise CitationValidationError(msg)
@@ -53,10 +56,12 @@ class CitationValidator:
         cls,
         claims: List[ResearchClaim],
         evidence_map: Dict[str, EvidenceItem],
-        sources_map: Dict[str, ResearchSource],
+        sources_map: Optional[Dict[str, ResearchSource]] = None,
+        sources: Optional[Dict[str, ResearchSource]] = None,
         strict: bool = False,
     ) -> Dict[str, Any]:
         """Validate all claims, segregate facts from inferences, and report integrity score."""
+        src_map = sources_map if sources_map is not None else (sources or {})
         verified_facts: List[ResearchClaim] = []
         inferences: List[ResearchClaim] = []
         hypotheses: List[ResearchClaim] = []
