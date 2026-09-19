@@ -20,6 +20,7 @@ def sample_metadata():
             cost_class="low",
             latency_class="low",
             default_model="cloud-std-v1",
+            models=["cloud-std-v1", "cloud-std-v2"],
         ),
         "cloud-smart": ProviderMetadata(
             name="cloud-smart",
@@ -28,6 +29,7 @@ def sample_metadata():
             cost_class="high",
             latency_class="medium",
             default_model="cloud-smart-o1",
+            models=["cloud-smart-o1", "custom-checkpoint"],
         ),
         "code-specialist": ProviderMetadata(
             name="code-specialist",
@@ -36,6 +38,8 @@ def sample_metadata():
             cost_class="medium",
             latency_class="medium",
             default_model="deepseek-coder",
+            models=["deepseek-coder"],
+            allow_arbitrary_models=False,
         ),
         "local-ollama": ProviderMetadata(
             name="local-ollama",
@@ -44,6 +48,15 @@ def sample_metadata():
             cost_class="low",
             latency_class="low",
             default_model="llama3-local",
+            models=["llama3-local", "qwen-local"],
+        ),
+        "flexible-provider": ProviderMetadata(
+            name="flexible-provider",
+            capabilities=["general"],
+            privacy_status="cloud",
+            default_model="flex-default",
+            models=["flex-default"],
+            allow_arbitrary_models=True,
         ),
     }
 
@@ -66,7 +79,7 @@ def test_explicit_override_routing(sample_metadata):
     assert sel1.model_name == "llama3-local"
     assert sel1.reason == "explicit_provider_override"
 
-    # Provider + Model override
+    # Provider + Model override (supported model)
     ctx2 = RoutingContext(explicit_model_override="cloud-smart:custom-checkpoint")
     sel2 = policy.select(context=ctx2, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel2.provider_name == "cloud-smart"
@@ -74,11 +87,26 @@ def test_explicit_override_routing(sample_metadata):
     assert sel2.reason == "explicit_model_override"
 
 
-def test_explicit_invalid_override_raises_loudly(sample_metadata):
+def test_explicit_invalid_provider_override_raises_loudly(sample_metadata):
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(explicit_model_override="nonexistent-provider:some-model")
     with pytest.raises(ValueError, match="is not available"):
         policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
+
+
+def test_explicit_unsupported_model_on_known_provider_raises_loudly(sample_metadata):
+    policy = DeterministicRoutingPolicy()
+    ctx = RoutingContext(explicit_model_override="code-specialist:unsupported-gpt-model")
+    with pytest.raises(ValueError, match="is not supported by provider 'code-specialist'"):
+        policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
+
+
+def test_explicit_override_allows_arbitrary_models_when_configured(sample_metadata):
+    policy = DeterministicRoutingPolicy()
+    ctx = RoutingContext(explicit_model_override="flexible-provider:any-experimental-checkpoint")
+    sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
+    assert sel.provider_name == "flexible-provider"
+    assert sel.model_name == "any-experimental-checkpoint"
 
 
 def test_unsupported_capability_raises_loudly(sample_metadata):

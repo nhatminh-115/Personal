@@ -37,9 +37,14 @@ def test_alembic_upgrade_downgrade_cycle():
             "memories",
             "events",
             "scheduled_jobs",
+            "delegations",
             "alembic_version",
         }
         assert expected_tables.issubset(tables), f"Missing tables: {expected_tables - tables}"
+
+        # Check delegations index
+        delegation_indexes = {idx["name"] for idx in inspector.get_indexes("delegations")}
+        assert "uq_delegations_parent_call" in delegation_indexes, f"Missing unique index on delegations: {delegation_indexes}"
 
         # Check events columns
         event_cols = {col["name"] for col in inspector.get_columns("events")}

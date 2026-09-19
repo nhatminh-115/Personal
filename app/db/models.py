@@ -234,7 +234,14 @@ class DelegationModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     __table_args__ = (
-        Index("ix_delegations_parent_lookup", "parent_run_id", "parent_tool_call_id"),
+        Index(
+            "uq_delegations_parent_call",
+            "parent_run_id",
+            "parent_tool_call_id",
+            unique=True,
+            postgresql_where=text("parent_tool_call_id IS NOT NULL"),
+            sqlite_where=text("parent_tool_call_id IS NOT NULL"),
+        ),
     )
 
 

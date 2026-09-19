@@ -79,7 +79,12 @@ class SandboxShellExecuteTool(Tool):
 
         try:
             from app.core.settings import settings
-            cfg = SandboxConfig(workspace_dir=str(settings.AURA_WORKSPACE_ROOT))
+            base_cfg = getattr(self._runtime, "_config", None)
+            max_bytes = base_cfg.max_output_bytes if base_cfg else 100_000
+            cfg = SandboxConfig(
+                workspace_dir=str(settings.AURA_WORKSPACE_ROOT),
+                max_output_bytes=max_bytes,
+            )
             res = await self._runtime.run_command(command, config=cfg)
             success = res.exit_code == 0 and not res.timed_out
             err_msg = res.stderr if res.stderr else (res.stdout if not success else None)
@@ -164,7 +169,12 @@ class SandboxPythonExecuteTool(Tool):
 
         try:
             from app.core.settings import settings
-            cfg = SandboxConfig(workspace_dir=str(settings.AURA_WORKSPACE_ROOT))
+            base_cfg = getattr(self._runtime, "_config", None)
+            max_bytes = base_cfg.max_output_bytes if base_cfg else 100_000
+            cfg = SandboxConfig(
+                workspace_dir=str(settings.AURA_WORKSPACE_ROOT),
+                max_output_bytes=max_bytes,
+            )
             res = await self._runtime.run_python(code, config=cfg)
             success = res.exit_code == 0 and not res.timed_out
             err_msg = res.stderr if res.stderr else (res.stdout if not success else None)

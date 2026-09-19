@@ -17,6 +17,8 @@ class ProviderMetadata(BaseModel):
     latency_class: Literal["low", "medium", "high"] = "medium"
     privacy_status: Literal["cloud", "local", "airgap"] = "cloud"
     default_model: str = "default"
+    models: List[str] = Field(default_factory=list)
+    allow_arbitrary_models: bool = False
 
 
 class ModelSelection(BaseModel):
@@ -73,6 +75,17 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                 prov_part, model_part = override.split(":", 1)
                 if prov_part not in available_metadata:
                     raise ValueError(f"Invalid model override: provider '{prov_part}' is not available.")
+                meta = available_metadata[prov_part]
+                # Validate against supported models if known / configured
+                if meta.models and not meta.allow_arbitrary_models:
+                    allowed = set(meta.models)
+                    if meta.default_model:
+                        allowed.add(meta.default_model)
+                    if model_part not in allowed:
+                        raise ValueError(
+                            f"Invalid model override: model '{model_part}' is not supported by provider '{prov_part}'. "
+                            f"Supported models: {sorted(list(allowed))}"
+                        )
                 return ModelSelection(
                     provider_name=prov_part,
                     model_name=model_part,

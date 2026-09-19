@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 from langgraph.errors import GraphInterrupt
 from langgraph.types import Command, interrupt
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import PermissionError, ToolError
@@ -96,49 +97,84 @@ class DelegationRuntime:
                     summary=summary,
                     steps_taken=0,
                 )
+            created_new = False
         else:
-            child_run_id = str(uuid.uuid4())
-            child_run = RunModel(
-                id=child_run_id,
+            candidate_child_run_id = str(uuid.uuid4())
+            try:
+                async with db.begin_nested():
+                    child_run = RunModel(
+                        id=candidate_child_run_id,
+                        session_id=request.session_id,
+                        user_message=f"[Specialist: {spec.name}] {request.task_description}",
+                        parent_run_id=request.parent_run_id,
+                        status=RunStatus.RUNNING.value,
+                    )
+                    db.add(child_run)
+
+                    delegation_rec = DelegationModel(
+                        parent_run_id=request.parent_run_id,
+                        parent_tool_call_id=request.parent_tool_call_id,
+                        child_run_id=candidate_child_run_id,
+                        specialist_name=spec.name,
+                        status=RunStatus.RUNNING.value,
+                    )
+                    db.add(delegation_rec)
+                    await db.flush()
+                await db.commit()
+                child_run_id = candidate_child_run_id
+                created_new = True
+            except IntegrityError:
+                # Concurrent race condition: another caller already inserted the delegation!
+                # Savepoint rollback automatically cleaned candidate child_run and delegation_rec.
+                logger.info(
+                    f"Concurrent race detected on delegation creation for ({request.parent_run_id}, {request.parent_tool_call_id}). Resolving to existing winner."
+                )
+                del_stmt = select(DelegationModel).where(
+                    DelegationModel.parent_run_id == request.parent_run_id,
+                    DelegationModel.parent_tool_call_id == request.parent_tool_call_id,
+                )
+                del_res = await db.execute(del_stmt)
+                existing_delegation = del_res.scalar_one_or_none()
+                if not existing_delegation:
+                    raise
+                child_run_id = existing_delegation.child_run_id
+                child_run = await db.get(RunModel, child_run_id)
+                effective_status = existing_delegation.status
+                if child_run and child_run.status in (RunStatus.COMPLETED.value, RunStatus.FAILED.value):
+                    effective_status = child_run.status
+                if effective_status in (RunStatus.COMPLETED.value, RunStatus.FAILED.value):
+                    summary = (child_run.final_response if child_run and child_run.final_response else existing_delegation.result_summary) or ""
+                    return DelegationResult(
+                        specialist_name=spec.name,
+                        child_run_id=child_run_id,
+                        status=effective_status,
+                        summary=summary,
+                        steps_taken=0,
+                    )
+                created_new = False
+
+        # 4. Trace delegation start EXACTLY ONCE on initial creation
+        if created_new and trace_service:
+            await trace_service.record_event(
+                run_id=request.parent_run_id,
                 session_id=request.session_id,
-                user_message=f"[Specialist: {spec.name}] {request.task_description}",
-                parent_run_id=request.parent_run_id,
-                status=RunStatus.RUNNING.value,
+                event_type="delegation_started",
+                payload={
+                    "specialist": spec.name,
+                    "child_run_id": child_run_id,
+                    "task": request.task_description,
+                },
             )
-            db.add(child_run)
-
-            delegation_rec = DelegationModel(
-                parent_run_id=request.parent_run_id,
-                parent_tool_call_id=request.parent_tool_call_id,
-                child_run_id=child_run_id,
-                specialist_name=spec.name,
-                status=RunStatus.RUNNING.value,
+            await trace_service.record_event(
+                run_id=child_run_id,
+                session_id=request.session_id,
+                event_type="request_received",
+                payload={
+                    "parent_run_id": request.parent_run_id,
+                    "specialist": spec.name,
+                    "task": request.task_description,
+                },
             )
-            db.add(delegation_rec)
-            await db.commit()
-
-            # 4. Trace delegation start EXACTLY ONCE on initial creation
-            if trace_service:
-                await trace_service.record_event(
-                    run_id=request.parent_run_id,
-                    session_id=request.session_id,
-                    event_type="delegation_started",
-                    payload={
-                        "specialist": spec.name,
-                        "child_run_id": child_run_id,
-                        "task": request.task_description,
-                    },
-                )
-                await trace_service.record_event(
-                    run_id=child_run_id,
-                    session_id=request.session_id,
-                    event_type="request_received",
-                    payload={
-                        "parent_run_id": request.parent_run_id,
-                        "specialist": spec.name,
-                        "task": request.task_description,
-                    },
-                )
 
         # 5. Build Scoped Tool Registry for the specialist
         scoped_tools = ScopedToolRegistry(self.base_tool_registry, spec.allowed_tools)

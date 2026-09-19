@@ -105,6 +105,7 @@ async def run_phase3_verification():
                         capabilities=["code", "general"],
                         privacy_status="cloud",
                         default_model="code-expert-v1",
+                        models=["code-expert-v1", "custom-weights"],
                     ),
                     "cloud-reasoning": ProviderMetadata(
                         name="cloud-reasoning",
@@ -122,6 +123,17 @@ async def run_phase3_verification():
                 )
                 assert sel_override.provider_name == "cloud-code"
                 assert sel_override.model_name == "custom-weights"
+
+                # 2a-ii. Unsupported model on known provider raises loudly
+                try:
+                    policy.select(
+                        context=RoutingContext(explicit_model_override="cloud-code:nonexistent-model"),
+                        available_metadata=meta_registry,
+                        default_provider="mock",
+                    )
+                    raise AssertionError("Expected ValueError for unsupported model on known provider!")
+                except ValueError as err:
+                    assert "is not supported by provider 'cloud-code'" in str(err)
 
                 # 2b. Privacy confidential requirement
                 sel_conf = policy.select(

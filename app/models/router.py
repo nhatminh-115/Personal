@@ -44,6 +44,8 @@ class ModelRouter:
                     latency_class="low",
                     privacy_status="local",
                     default_model="mock-default",
+                    models=["mock-default", "mock-fast", "mock-pro"],
+                    allow_arbitrary_models=True,
                 ),
             )
             self.register_provider(
@@ -55,6 +57,8 @@ class ModelRouter:
                     latency_class="medium",
                     privacy_status="cloud",
                     default_model=settings.OPENAI_MODEL_NAME or "gpt-4o",
+                    models=[settings.OPENAI_MODEL_NAME or "gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+                    allow_arbitrary_models=True,
                 ),
             )
 
