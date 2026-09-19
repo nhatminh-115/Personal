@@ -188,13 +188,17 @@ class MockModelProvider(ModelProvider):
             # Step 8: Save research finding to project memory
             elif len(tool_msgs) == 7:
                 dynamic_ev_ids = []
+                dynamic_claim_ids = []
                 for msg in tool_msgs:
                     for ev_match in re.findall(r"Evidence '(ev_[a-zA-Z0-9]+)'", msg.content):
                         if ev_match not in dynamic_ev_ids:
                             dynamic_ev_ids.append(ev_match)
+                    for cl_match in re.findall(r"Research Claim '(cl_[a-zA-Z0-9]+)'", msg.content):
+                        if cl_match not in dynamic_claim_ids:
+                            dynamic_claim_ids.append(cl_match)
 
                 return ModelResponse(
-                    content="Saving synthesized prior art finding and research gap to project memory Atlas_Architecture...",
+                    content="Saving synthesized prior art finding derived from validated claims to project memory Atlas_Architecture...",
                     tool_calls=[
                         ToolCallRequest(
                             id=f"call_{uuid.uuid4().hex[:8]}",
@@ -202,7 +206,8 @@ class MockModelProvider(ModelProvider):
                             arguments={
                                 "project_name": "Atlas_Architecture",
                                 "key": "prior_art_stateful_execution",
-                                "finding_content": "Prior art review: Chen & Davis (2023) provides in-memory state but lacks durable recovery; Mendez & Rostova (2024) provides batch checkpointing without human approval loops. Our proposed architecture occupies a verified research gap combining durable checkpointing with interactive per-tool approvals.",
+                                "claim_ids": dynamic_claim_ids,
+                                "finding_content": "Prior art review: Chen & Davis (2023) provides in-memory state but lacks durable recovery; Mendez & Rostova (2024) provides batch checkpointing without human approval loops. Technical differentiation: combining durable checkpointing with interactive per-tool approvals.",
                                 "evidence_ids": dynamic_ev_ids or ["ev_fallback_fail"],
                                 "source_references": ["arxiv:2308.1001", "arxiv:2401.5502"],
                             },

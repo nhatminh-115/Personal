@@ -55,7 +55,12 @@ from app.research.models import (
     ResearchState,
     SourceStatus,
 )
-from app.research.provenance import CitationValidationError, CitationValidator
+from app.research.provenance import (
+    CitationValidationError,
+    CitationValidator,
+    validate_research_result,
+    validate_research_state,
+)
 
 
 async def run_phase4_verification():
@@ -178,10 +183,12 @@ async def run_phase4_verification():
                 # 3a. Assert technical content synthesis
                 assert "Chen & Davis" in response_text or "Stateful Multi-Turn" in response_text or "2308.1001" in response_text
                 assert "Mendez & Rostova" in response_text or "Pipeline Checkpointing" in response_text or "2401.5502" in response_text
-                assert "Exact Overlap" in response_text
-                assert "Exact Difference" in response_text
-                assert "Research Gap" in response_text
-                print(" -> Technical comparison and synthesis validated: overlap vs differences clearly segregated.", flush=True)
+                assert "Verified Factual Findings" in response_text
+                assert "Identified Research Gap" in response_text
+                assert "No evidence-backed research gap can be established from the current corpus." in response_text
+                assert "No literature source demonstrates crash-resilient transactional execution" not in response_text
+                assert "Prior art lacks combined durable checkpointing and human authorization gating" not in response_text
+                print(" -> Technical comparison and synthesis validated: claims rendered strictly from validated findings without fabricated conclusions.", flush=True)
 
                 # 3b. Verify Database Lineage & Durable ResearchState
                 print("\n[Step 4] Verifying Database Lineage, Audit Trail & Authoritative ResearchState...", flush=True)
@@ -246,13 +253,14 @@ async def run_phase4_verification():
                         assert ev.source_id in r_state.sources
                         assert ev.metadata.get("grounded") is True
 
-                    # 3d. Verify Project Memory persistence with exact evidence IDs
+                    # 3d. Verify Project Memory persistence with exact claim and evidence IDs
                     mem_svc = SQLMemoryService(db)
                     project_memories = await mem_svc.get_project_memories("Atlas_Architecture")
                     assert len(project_memories) >= 1, "Expected research finding to be stored in project memory!"
                     finding = next((m for m in project_memories if "prior_art_stateful_execution" in m.key), None)
                     assert finding is not None
                     assert "Prior art review" in finding.content or "Chen & Davis" in finding.content
+                    assert "verified research gap" not in finding.content.lower()
                     assert finding.metadata_json.get("type") == "research_finding"
                     assert len(finding.metadata_json.get("source_references", [])) >= 2
                     finding_ev_ids = finding.metadata_json.get("evidence_ids", [])
@@ -260,18 +268,22 @@ async def run_phase4_verification():
                     for feid in finding_ev_ids:
                         assert feid in actual_ev_ids, f"Project memory contains unknown evidence ID '{feid}'!"
                         assert feid != "ev_extracted_1"
-                    print(f" -> Project Memory verified: '{finding.key}' persisted with real dynamic evidence IDs: {finding_ev_ids}", flush=True)
+                    finding_claim_ids = finding.metadata_json.get("claim_ids", [])
+                    assert len(finding_claim_ids) >= 1
+                    print(f" -> Project Memory verified: '{finding.key}' persisted with claim IDs: {finding_claim_ids} and evidence IDs: {finding_ev_ids}", flush=True)
 
-                    # Assert final ResearchResult passes CitationValidator
-                    val_res = CitationValidator.validate_all(
-                        claims=r_state.claims,
-                        evidence_map=r_state.evidence,
-                        sources_map=r_state.sources,
-                        strict=True,
-                    )
+                    # Assert final ResearchResult passes canonical validate_research_state helper
+                    val_res = validate_research_state(r_state, strict=True)
                     assert val_res["is_valid"] is True
                     assert val_res["unsupported_count"] == 0
-                    print(" -> Final ResearchResult passed CitationValidator with 0 unsupported claims.", flush=True)
+                    assert val_res["verified_facts_count"] >= 1
+                    survived_claim = val_res["verified_facts"][0]
+                    assert survived_claim.claim_id.startswith("cl_")
+                    assert survived_claim.claim_id in finding_claim_ids
+                    for eid in survived_claim.evidence_ids:
+                        assert eid in r_state.evidence
+                        assert r_state.evidence[eid].source_id in r_state.sources
+                    print(f" -> Final ResearchResult passed validate_research_state with {val_res['verified_facts_count']} verified factual claims and 0 unsupported claims.", flush=True)
 
                     # Tag and output fixture note
                     for src in r_state.sources.values():

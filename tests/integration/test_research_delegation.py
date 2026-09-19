@@ -131,3 +131,76 @@ async def test_record_research_claim_rejects_nonexistent_evidence_id_in_producti
     # Assert claim was NOT registered in research state
     updated_state = ResearchState.from_dict(context["research_state"])
     assert len(updated_state.claims) == 0
+
+
+@pytest.mark.asyncio
+async def test_save_research_finding_blocks_unsupported_gap_and_unverified_claims():
+    """Integration test verifying SaveResearchFindingTool blocks overclaiming 'verified research gap'
+    and blocks claims not present or unverified in ResearchState.
+    """
+    from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchSource, ResearchState, ResearchStatus
+    from app.research.tools import SaveResearchFindingTool
+
+    tool = SaveResearchFindingTool()
+    source = ResearchSource(source_id="src_1", canonical_id="arxiv:1234", title="Paper 1")
+    evidence = EvidenceItem(
+        evidence_id="ev_valid_1",
+        source_id="src_1",
+        source_title="Paper 1",
+        source_locator="Methods",
+        extracted_text="Some text",
+    )
+    fact_claim = ResearchClaim(
+        claim_id="cl_valid_1",
+        claim_text="Paper 1 has some text",
+        claim_type=ClaimType.SOURCE_SUPPORTED_FACT,
+        evidence_ids=["ev_valid_1"],
+        verification_status="verified",
+    )
+    r_state = ResearchState(
+        sources={"src_1": source},
+        evidence={"ev_valid_1": evidence},
+        claims=[fact_claim],
+        status=ResearchStatus.INSUFFICIENT_EVIDENCE,
+    )
+    context = {"research_state": r_state.to_dict()}
+
+    # 1. Attempting to write overclaiming "verified research gap" when status is insufficient_evidence must fail
+    res_overclaim = await tool.execute(
+        {
+            "project_name": "TestProject",
+            "key": "finding_key",
+            "claim_ids": ["cl_valid_1"],
+            "finding_content": "We found a verified research gap in the literature.",
+        },
+        context=context,
+    )
+    assert res_overclaim.success is False
+    assert "Finding asserts 'verified research gap'" in res_overclaim.error
+
+    # 2. Attempting to cite nonexistent claim ID must fail
+    res_missing_claim = await tool.execute(
+        {
+            "project_name": "TestProject",
+            "key": "finding_key",
+            "claim_ids": ["cl_nonexistent_999"],
+            "finding_content": "Valid text",
+        },
+        context=context,
+    )
+    assert res_missing_claim.success is False
+    assert "claim ID 'cl_nonexistent_999' not found" in res_missing_claim.error
+
+    # 3. Valid write without overclaiming succeeds and stores claim_ids
+    res_success = await tool.execute(
+        {
+            "project_name": "TestProject",
+            "key": "finding_key",
+            "claim_ids": ["cl_valid_1"],
+            "finding_content": "Prior art review: Paper 1 describes in-memory states.",
+        },
+        context=context,
+    )
+    assert res_success.success is True
+    assert "cl_valid_1" in res_success.metadata["claim_ids"]
+    assert "ev_valid_1" in res_success.metadata["evidence_ids"]

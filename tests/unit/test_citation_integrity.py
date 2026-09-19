@@ -158,3 +158,115 @@ def test_build_evidence_graph_links_properly(sample_research_graph):
     edge_types = [e["relation"] for e in edges]
     assert "contains_evidence" in edge_types
     assert "supports_claim" in edge_types
+
+
+def test_validate_all_sources_and_sources_map_identical_behavior(sample_research_graph):
+    """Regression test proving sources_map= and sources= produce identical verification results."""
+    from app.research.provenance import validate_research_result, validate_research_state
+    from app.research.models import ResearchResult, ResearchState, ResearchGoal
+
+    sources, evidence_map = sample_research_graph
+    fact = ResearchClaim(
+        claim_id="cl_fact_1",
+        claim_text="Nodes reside purely in volatile memory without durable checkpoints.",
+        claim_type=ClaimType.SOURCE_SUPPORTED_FACT,
+        evidence_ids=["ev_001"],
+    )
+    inf = ResearchClaim(
+        claim_id="cl_inf_1",
+        claim_text="System cannot tolerate power loss.",
+        claim_type=ClaimType.SPECIALIST_INFERENCE,
+        evidence_ids=["ev_001"],
+    )
+    claims = [fact, inf]
+
+    res_via_sources_map = CitationValidator.validate_all(
+        claims=claims,
+        evidence_map=evidence_map,
+        sources_map=sources,
+        strict=False,
+    )
+    res_via_sources = CitationValidator.validate_all(
+        claims=claims,
+        evidence_map=evidence_map,
+        sources=sources,
+        strict=False,
+    )
+
+    assert res_via_sources["is_valid"] is True
+    assert res_via_sources["verified_facts_count"] == 1
+    assert res_via_sources["inferences_count"] == 1
+    assert res_via_sources["unsupported_count"] == 0
+    assert len(res_via_sources["verified_facts"]) == 1
+    assert res_via_sources["verified_facts"][0].verification_status == "verified"
+
+    # Strict equivalence of both invocation forms
+    assert res_via_sources_map["is_valid"] == res_via_sources["is_valid"]
+    assert res_via_sources_map["verified_facts_count"] == res_via_sources["verified_facts_count"]
+    assert res_via_sources_map["inferences_count"] == res_via_sources["inferences_count"]
+    assert res_via_sources_map["unsupported_count"] == res_via_sources["unsupported_count"]
+    assert res_via_sources_map["referenced_evidence_ids"] == res_via_sources["referenced_evidence_ids"]
+    assert res_via_sources_map["referenced_source_ids"] == res_via_sources["referenced_source_ids"]
+
+
+def test_valid_factual_claim_remains_verified_with_sources_kwarg(sample_research_graph):
+    """Reproduces the exact bug where sources= previously caused claims to become unsupported."""
+    sources, evidence_map = sample_research_graph
+    claim = ResearchClaim(
+        claim_id="cl_factual_valid",
+        claim_text="Paper 1 uses purely volatile memory without durable checkpoints.",
+        claim_type=ClaimType.SOURCE_SUPPORTED_FACT,
+        evidence_ids=["ev_001"],
+    )
+
+    # Invocation with sources= keyword argument (exactly how runtime invoked it)
+    eval_result = CitationValidator.validate_all(
+        claims=[claim],
+        evidence_map=evidence_map,
+        sources=sources,
+        strict=False,
+    )
+
+    assert eval_result["is_valid"] is True
+    assert eval_result["unsupported_count"] == 0
+    assert eval_result["verified_facts_count"] == 1
+    assert claim.verification_status == "verified"
+    assert "ev_001" in eval_result["referenced_evidence_ids"]
+    assert "src_001" in eval_result["referenced_source_ids"]
+
+
+def test_canonical_validate_research_helpers(sample_research_graph):
+    """Verifies that validate_research_state and validate_research_result share identical semantics."""
+    from app.research.provenance import validate_research_result, validate_research_state
+    from app.research.models import ResearchGoal, ResearchResult, ResearchState
+
+    sources, evidence_map = sample_research_graph
+    claim = ResearchClaim(
+        claim_id="cl_fact_help",
+        claim_text="Paper 1 uses purely volatile memory without durable checkpoints.",
+        claim_type=ClaimType.SOURCE_SUPPORTED_FACT,
+        evidence_ids=["ev_001"],
+    )
+    goal = ResearchGoal(goal_id="g1", user_query="Investigate architectures")
+
+    state = ResearchState(
+        goal=goal,
+        sources=sources,
+        evidence=evidence_map,
+        claims=[claim],
+    )
+    res_state = validate_research_state(state)
+    assert res_state["is_valid"] is True
+    assert res_state["verified_facts_count"] == 1
+
+    result = ResearchResult(
+        goal=goal,
+        executive_synthesis="Test synthesis",
+        key_findings=["Finding"],
+        closest_sources=list(sources.values()),
+        evidence_map=evidence_map,
+        claims=[claim],
+    )
+    res_result = validate_research_result(result)
+    assert res_result["is_valid"] is True
+    assert res_result["verified_facts_count"] == 1

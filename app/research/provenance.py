@@ -71,7 +71,12 @@ class CitationValidator:
         referenced_source_ids: Set[str] = set()
 
         for claim in claims:
-            is_valid, reason = cls.validate_claim(claim, evidence_map, sources_map, strict=strict)
+            is_valid, reason = cls.validate_claim(
+                claim=claim,
+                evidence_map=evidence_map,
+                sources_map=src_map,
+                strict=strict,
+            )
             if not is_valid:
                 claim.verification_status = "unsupported"
                 unsupported_claims.append((claim, reason or "Validation failure"))
@@ -161,3 +166,42 @@ class CitationValidator:
                     })
 
         return {"nodes": nodes, "edges": edges}
+
+
+def validate_research_state(
+    state: Any,
+    strict: bool = False,
+) -> Dict[str, Any]:
+    """Canonical validation entrypoint for a ResearchState instance."""
+    claims = getattr(state, "claims", [])
+    evidence_map = getattr(state, "evidence", {})
+    sources_map = getattr(state, "sources", {})
+    return CitationValidator.validate_all(
+        claims=claims,
+        evidence_map=evidence_map,
+        sources_map=sources_map,
+        strict=strict,
+    )
+
+
+def validate_research_result(
+    result: Any,
+    sources: Optional[Dict[str, ResearchSource]] = None,
+    strict: bool = False,
+) -> Dict[str, Any]:
+    """Canonical validation entrypoint for a ResearchResult instance."""
+    if sources is not None:
+        src_map = sources
+    elif hasattr(result, "closest_sources") and result.closest_sources:
+        src_map = {s.source_id: s for s in result.closest_sources}
+    else:
+        src_map = {}
+
+    claims = getattr(result, "claims", [])
+    evidence_map = getattr(result, "evidence_map", {})
+    return CitationValidator.validate_all(
+        claims=claims,
+        evidence_map=evidence_map,
+        sources_map=src_map,
+        strict=strict,
+    )

@@ -294,7 +294,7 @@ class DelegationRuntime:
             artifacts_dict: Dict[str, Any] = {}
             if spec.name == "research" and final_state.get("research_state"):
                 from app.research.models import ClaimType, ResearchResult, ResearchState, ResearchStatus, SourceStatus
-                from app.research.provenance import CitationValidator
+                from app.research.provenance import CitationValidator, validate_research_state
 
                 r_state = ResearchState.from_dict(final_state["research_state"])
                 artifacts_dict["research_state"] = r_state.to_dict()
@@ -303,23 +303,26 @@ class DelegationRuntime:
                 valid_sources = [s for s in r_state.sources.values() if s.status != SourceStatus.REJECTED]
                 valid_sources.sort(key=lambda s: s.relevance_score, reverse=True)
 
-                # Validate all claims using CitationValidator
-                citation_eval = CitationValidator.validate_all(
-                    claims=r_state.claims,
-                    evidence_map=r_state.evidence,
-                    sources=r_state.sources,
-                    strict=False,
-                )
+                # Validate all claims using canonical validate_research_state helper
+                citation_eval = validate_research_state(r_state, strict=False)
 
-                r_status = ResearchStatus.COMPLETED
-                if not citation_eval["is_valid"] or citation_eval["unsupported_count"] > 0:
-                    r_status = ResearchStatus.INSUFFICIENT_EVIDENCE
-                    status = "completed"
+                # Research status semantics:
+                # Factual findings may be verified, but if no validated gap claim exists or corpus is limited fixture,
+                # overall research status remains insufficient_evidence.
+                has_validated_gap = any(
+                    c.verification_status == "verified" and any(w in c.claim_text.lower() for w in ["gap", "novelty", "unaddressed"])
+                    for c in r_state.claims
+                )
+                r_status = ResearchStatus.COMPLETED if (citation_eval["is_valid"] and has_validated_gap) else ResearchStatus.INSUFFICIENT_EVIDENCE
+                status = "completed"
 
                 uncertainties = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.HYPOTHESIS]
                 closest_titles = [f"{s.title} ({s.canonical_id})" for s in valid_sources[:3]]
                 verified_facts = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.SOURCE_SUPPORTED_FACT and c.verification_status == "verified"]
+                inferences = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.SPECIALIST_INFERENCE and c.verification_status != "unsupported"]
+                hypotheses = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.HYPOTHESIS and c.verification_status != "unsupported"]
 
+                # Render dynamic synthesis strictly from verified ResearchResult contents
                 lines = [
                     "[RESEARCH SPECIALIST - VALIDATED SYNTHESIS]",
                     f"Research Status: {r_status.value}",
@@ -335,17 +338,26 @@ class DelegationRuntime:
                 else:
                     lines.append("  (No verified factual claims established)")
 
-                inferences = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.SPECIALIST_INFERENCE]
                 if inferences:
-                    lines.append("\nSpecialist Architectural Inferences:")
+                    lines.append("\nSpecialist Inferences:")
                     for idx, inf in enumerate(inferences, 1):
                         lines.append(f"  {idx}. {inf}")
 
-                lines.append("\nExact Overlap vs Exact Difference:")
-                lines.append("- Overlap: Both prior art and proposed architecture address stateful multi-step agent execution.")
-                lines.append("- Difference: Prior art lacks combined durable checkpointing and human authorization gating.")
+                if hypotheses:
+                    lines.append("\nHypotheses & Next Steps:")
+                    for idx, hyp in enumerate(hypotheses, 1):
+                        lines.append(f"  {idx}. {hyp}")
+
                 lines.append("\nIdentified Research Gap:")
-                lines.append("No literature source demonstrates crash-resilient transactional execution with fine-grained per-tool approval barriers.")
+                gap_claims = [
+                    c.claim_text for c in r_state.claims
+                    if c.verification_status == "verified" and any(w in c.claim_text.lower() for w in ["gap", "novelty", "unaddressed", "no literature"])
+                ]
+                if gap_claims:
+                    for gc in gap_claims:
+                        lines.append(f"- {gc}")
+                else:
+                    lines.append("No evidence-backed research gap can be established from the current corpus.")
 
                 dynamic_synthesis = "\n".join(lines)
 

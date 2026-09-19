@@ -13,6 +13,7 @@ from app.research.models import (
     ResearchQuery,
     ResearchSource,
     ResearchState,
+    ResearchStatus,
     SourceStatus,
 )
 from app.research.provenance import CitationValidationError, CitationValidator
@@ -558,9 +559,15 @@ class SaveResearchFindingTool(Tool):
                     "type": "string",
                     "description": "Unique topic or finding key (e.g. 'prior_art_stateful_llm').",
                 },
+                "claim_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Authoritative validated ResearchClaim IDs supporting this finding.",
+                    "default": [],
+                },
                 "finding_content": {
                     "type": "string",
-                    "description": "Synthesized finding content with comparative insights.",
+                    "description": "Synthesized finding content with comparative insights derived from validated claims.",
                 },
                 "evidence_ids": {
                     "type": "array",
@@ -575,23 +582,67 @@ class SaveResearchFindingTool(Tool):
                     "default": [],
                 },
             },
-            "required": ["project_name", "key", "finding_content"],
+            "required": ["project_name", "key"],
         }
 
     async def execute(self, input_data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> ToolResult:
         project_name = input_data.get("project_name", "").strip()
         key = input_data.get("key", "").strip()
         content = input_data.get("finding_content", "").strip()
-        evidence_ids = input_data.get("evidence_ids", [])
-        source_refs = input_data.get("source_references", [])
+        claim_ids = input_data.get("claim_ids", [])
+        evidence_ids = list(input_data.get("evidence_ids", []))
+        source_refs = list(input_data.get("source_references", []))
 
-        if not project_name or not key or not content:
-            return ToolResult(success=False, output="", error="Missing required parameters (project_name, key, finding_content).")
+        if not project_name or not key:
+            return ToolResult(success=False, output="", error="Missing required parameters (project_name, key).")
 
         r_state = _extract_research_state(context)
+        validated_claims = []
 
-        # Gate memory write: validate evidence_ids against active evidence registry
+        # Gate memory write: require and validate ResearchClaim linkage
         if r_state:
+            if claim_ids:
+                for cid in claim_ids:
+                    matched = next((c for c in r_state.claims if c.claim_id == cid), None)
+                    if not matched:
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error=f"Memory write rejected: claim ID '{cid}' not found in active claims registry.",
+                            metadata={"invalid_claim_id": cid},
+                        )
+                    if matched.verification_status != "verified":
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error=f"Memory write rejected: claim ID '{cid}' is unverified ({matched.verification_status}). Only verified claims can enter project memory.",
+                            metadata={"unverified_claim_id": cid},
+                        )
+                    validated_claims.append(matched)
+            else:
+                if evidence_ids:
+                    matched = [
+                        c for c in r_state.claims
+                        if c.verification_status == "verified" and any(eid in c.evidence_ids for eid in evidence_ids)
+                    ]
+                    if not matched:
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error="Memory write rejected: No verified ResearchClaim found supporting these evidence citations. Persisted findings must be derived from validated claims.",
+                            metadata={"evidence_ids": evidence_ids},
+                        )
+                    validated_claims.extend(matched)
+                elif r_state.claims:
+                    validated_claims = [c for c in r_state.claims if c.verification_status == "verified"]
+
+            # Merge evidence_ids from validated claims
+            for c in validated_claims:
+                for eid in c.evidence_ids:
+                    if eid not in evidence_ids:
+                        evidence_ids.append(eid)
+
+            # Validate all evidence_ids against active evidence registry
             for ev_id in evidence_ids:
                 if ev_id not in r_state.evidence:
                     return ToolResult(
@@ -601,7 +652,12 @@ class SaveResearchFindingTool(Tool):
                         metadata={"invalid_evidence_id": ev_id},
                     )
 
-            # Validate source references
+            # Auto-populate and validate source references
+            for ev_id in evidence_ids:
+                sid = r_state.evidence[ev_id].source_id
+                if sid not in source_refs:
+                    source_refs.append(sid)
+
             known_sources = r_state.sources
             for sref in source_refs:
                 matched = any(
@@ -615,6 +671,31 @@ class SaveResearchFindingTool(Tool):
                         error=f"Memory write rejected: source reference '{sref}' not found in active source registry.",
                         metadata={"invalid_source_ref": sref},
                     )
+
+        if not content:
+            if validated_claims:
+                content = "\n".join([f"- [{c.claim_type.value}] {c.claim_text}" for c in validated_claims])
+            else:
+                return ToolResult(success=False, output="", error="Missing required parameter 'finding_content' and no validated claims to derive from.")
+
+        # Guard against overclaiming "verified research gap"
+        lower_content = content.lower()
+        gap_phrases = ["verified research gap", "verified gap", "proven gap", "proven research gap"]
+        if any(gp in lower_content for gp in gap_phrases):
+            has_validated_gap_claim = any(
+                c.verification_status == "verified" and
+                c.claim_type in (ClaimType.SPECIALIST_INFERENCE, ClaimType.SOURCE_SUPPORTED_FACT) and
+                any(w in c.claim_text.lower() for w in ["gap", "novelty", "unaddressed"])
+                for c in validated_claims
+            )
+            is_insufficient = (r_state.status == ResearchStatus.INSUFFICIENT_EVIDENCE) if r_state else True
+            if is_insufficient or not has_validated_gap_claim:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error="Memory write rejected: Finding asserts 'verified research gap', but research status is insufficient_evidence or no validated gap claim exists.",
+                    metadata={"overclaiming_terms": [gp for gp in gap_phrases if gp in lower_content]},
+                )
 
         # Build compact evidence snapshot for long-term interpretability
         evidence_snapshot = []
@@ -639,9 +720,11 @@ class SaveResearchFindingTool(Tool):
                 from app.memory.service import SQLMemoryService
                 memory_svc = SQLMemoryService(context["db"])
 
+        stored_claim_ids = [c.claim_id for c in validated_claims]
         meta = {
             "type": "research_finding",
             "project_name": project_name,
+            "claim_ids": stored_claim_ids,
             "evidence_ids": evidence_ids,
             "source_references": source_refs,
             "evidence_snapshot": evidence_snapshot,
@@ -658,7 +741,7 @@ class SaveResearchFindingTool(Tool):
             )
             output_text = f"Stored research finding in project memory '{project_name}:{key}' (Memory ID: {stored.id})"
         else:
-            output_text = f"[Simulated memory write] Project memory '{project_name}:{key}' staged with {len(evidence_ids)} evidence citations."
+            output_text = f"[Simulated memory write] Project memory '{project_name}:{key}' staged with {len(evidence_ids)} evidence citations and {len(stored_claim_ids)} claim citations."
 
         return ToolResult(
             success=True,
@@ -666,6 +749,7 @@ class SaveResearchFindingTool(Tool):
             metadata={
                 "project_name": project_name,
                 "key": key,
+                "claim_ids": stored_claim_ids,
                 "evidence_ids": evidence_ids,
                 "source_references": source_refs,
                 "evidence_snapshot": evidence_snapshot,
