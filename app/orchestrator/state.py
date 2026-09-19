@@ -34,6 +34,7 @@ class AgentState(TypedDict, total=False):
     start_time: Optional[float]
     termination_reason: Optional[str]
     delegation_context: Optional[Dict[str, Any]]
+    research_state: Optional[Dict[str, Any]]
 
 
 def create_initial_agent_state(

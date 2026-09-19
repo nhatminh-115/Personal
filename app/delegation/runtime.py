@@ -211,6 +211,17 @@ class DelegationRuntime:
                 **(request.context or {}),
             },
             "project_name": request.context.get("project_name") if request.context else None,
+            "research_state": {
+                "goal": {
+                    "goal_id": f"goal_{child_run_id[:8]}",
+                    "user_query": request.task_description,
+                    "project_name": request.context.get("project_name") if request.context else None,
+                },
+                "queries": [],
+                "sources": {},
+                "evidence": {},
+                "claims": [],
+            } if spec.name == "research" else None,
         }
 
         # 7. Execute compiled graph with injected scoped registry
@@ -308,11 +319,16 @@ class DelegationRuntime:
                     },
                 )
 
+            artifacts_dict: Dict[str, Any] = {}
+            if final_state.get("research_state"):
+                artifacts_dict["research_state"] = final_state["research_state"]
+
             return DelegationResult(
                 specialist_name=spec.name,
                 child_run_id=child_run_id,
                 status=status,
                 summary=summary,
+                artifacts=artifacts_dict,
                 steps_taken=steps,
                 error=error,
             )

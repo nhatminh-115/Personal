@@ -39,7 +39,7 @@ class ModelRouter:
                 MockModelProvider(),
                 ProviderMetadata(
                     name="mock",
-                    capabilities=["general", "code", "reasoning", "fast", "local"],
+                    capabilities=["general", "code", "reasoning", "research", "long_context", "fast", "local"],
                     cost_class="low",
                     latency_class="low",
                     privacy_status="local",
@@ -52,7 +52,7 @@ class ModelRouter:
                 OpenAICompatibleProvider(),
                 ProviderMetadata(
                     name="openai",
-                    capabilities=["general", "code", "reasoning"],
+                    capabilities=["general", "code", "reasoning", "research", "long_context"],
                     cost_class="medium",
                     latency_class="medium",
                     privacy_status="cloud",

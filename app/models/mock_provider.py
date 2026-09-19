@@ -60,9 +60,164 @@ class MockModelProvider(ModelProvider):
         if not is_coding_specialist and request.routing_context and request.routing_context.task_type == "coding":
             is_coding_specialist = True
 
+        # Check if this request is inside the Research Specialist sub-agent
+        is_research_specialist = any("Research Specialist" in m.content for m in request.messages if m.role == ModelRole.SYSTEM)
+        if not is_research_specialist and request.routing_context and request.routing_context.task_type == "research":
+            is_research_specialist = True
+
         tool_msgs = [m for m in request.messages if m.role == ModelRole.TOOL]
         user_msgs = [m for m in request.messages if m.role == ModelRole.USER]
         content = (user_msgs[-1].content if user_msgs else latest_msg.content).strip()
+
+        # Multi-step loop for Research Specialist
+        if is_research_specialist and request.tools:
+            # Step 1: Issue initial search query
+            if len(tool_msgs) == 0:
+                return ModelResponse(
+                    content="Issuing initial literature search query to discover stateful LLM architecture literature...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="research_search",
+                            arguments={"query": "stateful LLM execution multi-turn architecture", "search_type": "broad"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 2: Inspect methods of closest candidate (Paper 1: src_stateful_graph_2023)
+            elif len(tool_msgs) == 1:
+                return ModelResponse(
+                    content="Discovered candidate sources. Discarding irrelevant attention pruning paper. Inspecting Methods section of closest overlap candidate src_stateful_graph_2023...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="read_document_section",
+                            arguments={"source_id": "src_stateful_graph_2023", "section_name": "methods"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 3: Extract evidence from Paper 1
+            elif len(tool_msgs) == 2:
+                return ModelResponse(
+                    content="Inspected Paper 1 methods. Extracting evidence regarding ephemeral in-memory state and lack of durable checkpointing...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="extract_evidence",
+                            arguments={
+                                "source_id": "src_stateful_graph_2023",
+                                "locator": "Section: methods",
+                                "extracted_text": "State management is ephemeral: all graph nodes reside purely in memory and do not implement persistent crash-safe database checkpointing or per-tool human approval interruptions.",
+                                "summary": "Demonstrates Paper 1 uses in-memory graph but lacks crash-safe persistence and approvals.",
+                                "confidence": 0.95,
+                            },
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 4: Conduct second search iteration for durable checkpointing
+            elif len(tool_msgs) == 3:
+                return ModelResponse(
+                    content="Identified research gap in Paper 1 (ephemeral memory only). Conducting second search iteration for durable checkpointing architectures...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="research_search",
+                            arguments={"query": "durable stateful agent checkpointing resume", "search_type": "closest_overlap"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 5: Inspect methods of Paper 2 (src_pipeline_checkpoint_2024)
+            elif len(tool_msgs) == 4:
+                return ModelResponse(
+                    content="Discovered candidate Paper 2 with durable checkpointing. Inspecting Methods section of src_pipeline_checkpoint_2024...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="read_document_section",
+                            arguments={"source_id": "src_pipeline_checkpoint_2024", "section_name": "methods"},
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 6: Extract evidence from Paper 2
+            elif len(tool_msgs) == 5:
+                return ModelResponse(
+                    content="Inspected Paper 2 methods. Extracting evidence regarding batch pipeline write-ahead logs vs interactive approvals...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="extract_evidence",
+                            arguments={
+                                "source_id": "src_pipeline_checkpoint_2024",
+                                "locator": "Section: methods",
+                                "extracted_text": "The architecture implements transactional write-ahead checkpoints for sequential batch pipelines... strictly oriented toward automated batch pipelines; it does not support fine-grained per-tool human approval gates.",
+                                "summary": "Paper 2 implements pipeline checkpoints but lacks human approval gates and interactive conversational memory.",
+                                "confidence": 0.95,
+                            },
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 7: Record research claim
+            elif len(tool_msgs) == 6:
+                return ModelResponse(
+                    content="Recording verified factual claim backed by extracted evidence from Paper 1 and Paper 2...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="record_research_claim",
+                            arguments={
+                                "claim_text": "Chen & Davis (2023) maintains graph state in memory but omits persistent checkpointing and interactive approvals, while Mendez & Rostova (2024) provides batch checkpointing without human approval loops.",
+                                "claim_type": "source_supported_fact",
+                                "evidence_ids": ["ev_extracted_1"],
+                            },
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 8: Save research finding to project memory
+            elif len(tool_msgs) == 7:
+                return ModelResponse(
+                    content="Saving synthesized prior art finding and research gap to project memory Atlas_Architecture...",
+                    tool_calls=[
+                        ToolCallRequest(
+                            id=f"call_{uuid.uuid4().hex[:8]}",
+                            name="save_research_finding",
+                            arguments={
+                                "project_name": "Atlas_Architecture",
+                                "key": "prior_art_stateful_execution",
+                                "finding_content": "Prior art review: Chen & Davis (2023) provides in-memory state but lacks durable recovery; Mendez & Rostova (2024) provides batch checkpointing without human approval loops. Our proposed architecture occupies a verified research gap combining durable checkpointing with interactive per-tool approvals.",
+                                "evidence_ids": ["ev_extracted_1", "ev_extracted_2"],
+                                "source_references": ["arxiv:2308.1001", "arxiv:2401.5502"],
+                            },
+                        )
+                    ],
+                    finish_reason="tool_calls",
+                )
+            # Step 9: Return final structured synthesis
+            else:
+                return ModelResponse(
+                    content=(
+                        "[RESEARCH SPECIALIST - COMPLETED]\n\n"
+                        "Executive Synthesis:\n"
+                        "Investigated prior art for stateful LLM agent architectures. Identified two closest related works in the literature.\n\n"
+                        "Technical Comparison:\n"
+                        "1. Chen & Davis (2023) [arxiv:2308.1001]:\n"
+                        "   - Mechanism: In-memory execution graphs for multi-turn state.\n"
+                        "   - Exact Overlap: Graph-based state container coordinating agent reasoning across sequential turns.\n"
+                        "   - Exact Difference: Ephemeral memory only; explicitly lacks durable database checkpointing and per-tool human approval gates.\n"
+                        "2. Mendez & Rostova (2024) [arxiv:2401.5502]:\n"
+                        "   - Mechanism: Transactional write-ahead log checkpointing for fault-tolerant agents.\n"
+                        "   - Exact Overlap: Durable state persistence across process failure and network disruption.\n"
+                        "   - Exact Difference: Batch pipeline orientation; lacks interactive human approval loops and conversational context memory.\n\n"
+                        "Conclusion & Research Gap:\n"
+                        "No identical match found in the searched corpus. The combination of durable per-tool checkpointing with interactive human approval suspension represents an evidence-backed architectural gap."
+                    ),
+                    finish_reason="stop",
+                )
 
         # Multi-step loop for Coding Specialist
         if is_coding_specialist and request.tools:
@@ -145,6 +300,28 @@ class MockModelProvider(ModelProvider):
                 else:
                     return ModelResponse(
                         content=f"Personal Orchestrator: {tool_msgs[-1].content}",
+                        finish_reason="stop",
+                    )
+            elif ("research" in content.lower() or "investigate" in content.lower() or "prior work" in content.lower() or "related work" in content.lower() or "closest papers" in content.lower() or "papers" in content.lower()):
+                if not tool_msgs:
+                    return ModelResponse(
+                        content="Delegating literature review and prior art investigation to Research Specialist...",
+                        tool_calls=[
+                            ToolCallRequest(
+                                id=f"call_{uuid.uuid4().hex[:8]}",
+                                name="delegate_task",
+                                arguments={
+                                    "specialist_name": "research",
+                                    "task_description": content,
+                                    "context": {"project_name": "Atlas_Architecture"},
+                                },
+                            )
+                        ],
+                        finish_reason="tool_calls",
+                    )
+                else:
+                    return ModelResponse(
+                        content=f"Personal Orchestrator Research Synthesis:\nBased on the Research Specialist investigation:\n{tool_msgs[-1].content}",
                         finish_reason="stop",
                     )
 
