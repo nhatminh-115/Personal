@@ -10,6 +10,7 @@ from app.core.errors import (
     ModelCapabilityMismatch,
     ModelUnavailable,
     NoEligibleRoute,
+    PrivacyBoundaryViolation,
     ReasoningControlUnsupported,
     RoutingConfirmationRequired,
 )
@@ -818,3 +819,358 @@ async def test_routing_trace_events_persistence(test_db_session: AsyncSession):
     assert events["model_selected"]["agent_role"] == "root"
     assert events["model_selected"]["model"] == "mock-default"
     assert events["reasoning_effort_selected"]["selected_effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db_session: AsyncSession, monkeypatch):
+    """Verify that a persisted profile's global_privacy_policy and global_fallback_policy
+    are truthfully preserved in a real Research specialist child run created via DelegationRuntime.
+    """
+    from unittest.mock import AsyncMock, MagicMock
+    from app.delegation.runtime import DelegationRuntime
+    from app.delegation.types import DelegationRequest
+
+    # 1. Create and persist custom profile in DB
+    prof_id = "prof-persisted-custom-p1"
+    db_profile = RoutingProfileModel(
+        id=prof_id,
+        name="Custom Local Privacy Profile",
+        global_privacy_policy="local_only",
+        global_fallback_policy="none",
+        version=3,
+        is_active=True,
+        routes_json={
+            "routes": {
+                "root": {"model_override": "mock:root-model"},
+                "research": {"model_override": "mock:research-model"},
+            }
+        },
+    )
+    test_db_session.add(db_profile)
+
+    sess_id = str(uuid.uuid4())
+    parent_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=sess_id))
+    test_db_session.add(RunModel(id=parent_id, session_id=sess_id, user_message="parent root task"))
+    await test_db_session.commit()
+
+    # Mock compiled graph to avoid external LLM invocation while exercising the full delegation lifecycle
+    mock_graph = AsyncMock()
+    mock_state_snapshot = MagicMock(next=None)
+    mock_graph.aget_state.return_value = mock_state_snapshot
+    mock_graph.ainvoke.return_value = {"messages": [{"role": "assistant", "content": "research completed"}]}
+
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
+
+    runtime = DelegationRuntime()
+    del_req = DelegationRequest(
+        specialist_name="research",
+        task_description="Execute local research task",
+        parent_run_id=parent_id,
+        session_id=sess_id,
+        context={
+            "profile_id": prof_id,
+            "winning_scope": "session",
+        },
+    )
+
+    result = await runtime.delegate(del_req, db=test_db_session)
+    assert result.specialist_name == "research"
+
+    # Inspect child RunModel in DB
+    child_run = await test_db_session.get(RunModel, result.child_run_id)
+    assert child_run is not None
+    snapshot = child_run.routing_snapshot_json
+
+    # Assert contract preservation
+    assert snapshot["privacy_policy"] == "local_only"
+    assert snapshot["fallback_policy"] == "none"
+    assert snapshot["profile_id"] == prof_id
+    assert snapshot["profile_version"] == 3
+    assert snapshot["role"] == "research"
+    assert snapshot["explicit_model_override"] == "mock:research-model"
+
+    # Inspect the child's routing_context_dict
+    routing_ctx_dict = del_req.context["routing_context_dict"]
+    assert routing_ctx_dict["privacy_requirement"] == "local_only"
+    assert routing_ctx_dict["fallback_policy"] == "none"
+    assert routing_ctx_dict["explicit_model_override"] == "mock:research-model"
+
+
+@pytest.mark.asyncio
+async def test_delegation_runtime_lock_all_child_propagation(test_db_session: AsyncSession, monkeypatch):
+    """Verify that lock-all propagation via DelegationRuntime propagates exact model to the Research child."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.delegation.runtime import DelegationRuntime
+    from app.delegation.types import DelegationRequest
+
+    sess_id = str(uuid.uuid4())
+    parent_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=sess_id))
+    test_db_session.add(RunModel(id=parent_id, session_id=sess_id, user_message="parent root task"))
+    await test_db_session.commit()
+
+    mock_graph = AsyncMock()
+    mock_graph.aget_state.return_value = MagicMock(next=None)
+    mock_graph.ainvoke.return_value = {"messages": [{"role": "assistant", "content": "locked model ran"}]}
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
+
+    runtime = DelegationRuntime()
+    del_req = DelegationRequest(
+        specialist_name="research",
+        task_description="Execute lock-all research task",
+        parent_run_id=parent_id,
+        session_id=sess_id,
+        context={
+            "is_lock_all": True,
+            "model_override": "mock:lock-model-target",
+        },
+    )
+
+    result = await runtime.delegate(del_req, db=test_db_session)
+    child_run = await test_db_session.get(RunModel, result.child_run_id)
+    assert child_run is not None
+    snapshot = child_run.routing_snapshot_json
+
+    assert snapshot["is_lock_all"] is True
+    assert snapshot["explicit_model_override"] == "mock:lock-model-target"
+
+
+def test_adaptive_reasoning_clamps_to_model_max_support():
+    """Verify that adaptive reasoning clamps target effort to model's maximum supported reasoning level."""
+    meta = {
+        "p_medium": ProviderMetadata(
+            name="p_medium",
+            capabilities=["reasoning"],
+            default_model="m_med",
+            models=["m_med"],
+            reasoning_support={"m_med": "medium"},
+        )
+    }
+    policy = DeterministicRoutingPolicy()
+    # Complex task suggests High effort, bounds are Low->High, model max is Medium
+    ctx = RoutingContext(
+        reasoning_policy=ReasoningPolicy.ADAPTIVE,
+        reasoning_effort_min=ReasoningEffort.LOW,
+        reasoning_effort_max=ReasoningEffort.HIGH,
+        complexity="complex",
+    )
+    sel = policy.select(context=ctx, available_metadata=meta, default_provider="p_medium")
+    assert sel.reasoning_effort_selected == "medium"
+
+
+def test_adaptive_reasoning_rejects_model_below_profile_minimum():
+    """Verify that if a model's max reasoning level falls below profile's minimum required effort, candidate is ineligible."""
+    meta = {
+        "p_low": ProviderMetadata(
+            name="p_low",
+            capabilities=["reasoning"],
+            default_model="m_low",
+            models=["m_low"],
+            reasoning_support={"m_low": "low"},
+        )
+    }
+    policy = DeterministicRoutingPolicy()
+    # Profile requires at least Medium effort
+    ctx = RoutingContext(
+        reasoning_policy=ReasoningPolicy.ADAPTIVE,
+        reasoning_effort_min=ReasoningEffort.MEDIUM,
+        reasoning_effort_max=ReasoningEffort.HIGH,
+        complexity="simple",
+    )
+    with pytest.raises(ReasoningControlUnsupported):
+        policy.select(context=ctx, available_metadata=meta, default_provider="p_low")
+
+
+def test_fixed_reasoning_accepts_levels_up_to_model_max_and_rejects_greater():
+    """Verify max-level semantics for fixed reasoning: levels <= model_max are accepted, > model_max rejected."""
+    meta = {
+        "p_high": ProviderMetadata(
+            name="p_high",
+            capabilities=["reasoning"],
+            default_model="m_high",
+            models=["m_high"],
+            reasoning_support={"m_high": "high"},
+        )
+    }
+    policy = DeterministicRoutingPolicy()
+
+    # levels <= high must succeed
+    for effort in (ReasoningEffort.INSTANT, ReasoningEffort.LOW, ReasoningEffort.MEDIUM, ReasoningEffort.HIGH):
+        ctx = RoutingContext(reasoning_effort=effort)
+        sel = policy.select(context=ctx, available_metadata=meta, default_provider="p_high")
+        assert sel.reasoning_effort_selected == effort.value
+
+    # level > high (i.e. max) must be rejected
+    ctx_max = RoutingContext(reasoning_effort=ReasoningEffort.MAX)
+    with pytest.raises(ReasoningControlUnsupported):
+        policy.select(context=ctx_max, available_metadata=meta, default_provider="p_high")
+
+
+def test_explicit_override_rejects_known_capability_mismatches_without_fallback():
+    """Verify that explicit lock strictly rejects unsupported capabilities with no fallback."""
+    meta = {
+        "p_mock": ProviderMetadata(
+            name="p_mock",
+            capabilities=["general"],
+            default_model="m_basic",
+            models=["m_basic"],
+            vision_support={"m_basic": False},
+            structured_output_support={"m_basic": False},
+            tool_support={"m_basic": "unsupported"},
+        ),
+        "p_other": ProviderMetadata(
+            name="p_other",
+            capabilities=["general", "code", "long_context"],
+            default_model="m_capable",
+            models=["m_capable"],
+            vision_support={"m_capable": True},
+            structured_output_support={"m_capable": True},
+            tool_support={"m_capable": "supported"},
+        ),
+    }
+    policy = DeterministicRoutingPolicy()
+
+    # 1. Vision mismatch
+    ctx_vision = RoutingContext(explicit_model_override="p_mock:m_basic", requires_vision=True)
+    with pytest.raises(ModelCapabilityMismatch, match="vision"):
+        policy.select(context=ctx_vision, available_metadata=meta, default_provider="p_mock")
+
+    # 2. Structured output mismatch
+    ctx_struct = RoutingContext(explicit_model_override="p_mock:m_basic", requires_structured_output=True)
+    with pytest.raises(ModelCapabilityMismatch, match="structured output"):
+        policy.select(context=ctx_struct, available_metadata=meta, default_provider="p_mock")
+
+    # 3. Long context mismatch
+    ctx_long = RoutingContext(explicit_model_override="p_mock:m_basic", requires_long_context=True)
+    with pytest.raises(ModelCapabilityMismatch, match="long_context"):
+        policy.select(context=ctx_long, available_metadata=meta, default_provider="p_mock")
+
+    # 4. Required capability mismatch
+    ctx_caps = RoutingContext(explicit_model_override="p_mock:m_basic", required_capabilities=["code"])
+    with pytest.raises(ModelCapabilityMismatch, match="required capabilities"):
+        policy.select(context=ctx_caps, available_metadata=meta, default_provider="p_mock")
+
+    # 5. Tools mismatch
+    ctx_tool = RoutingContext(explicit_model_override="p_mock:m_basic", requires_tools=True)
+    with pytest.raises(ModelCapabilityMismatch, match="tool"):
+        policy.select(context=ctx_tool, available_metadata=meta, default_provider="p_mock")
+
+
+def test_explicit_override_fixed_reasoning_cannot_falsely_claim_controlled_high():
+    """Verify that explicit lock cannot claim controlled High if model max is Low or fixed_by_model."""
+    meta = {
+        "p_mock": ProviderMetadata(
+            name="p_mock",
+            capabilities=["reasoning"],
+            default_model="m_low",
+            models=["m_low", "m_fixed", "m_unknown"],
+            reasoning_support={
+                "m_low": "low",
+                "m_fixed": "fixed_by_model",
+                "m_unknown": "unknown",
+            },
+        )
+    }
+    policy = DeterministicRoutingPolicy()
+
+    # Model max is low -> request High must fail
+    ctx_high = RoutingContext(explicit_model_override="p_mock:m_low", reasoning_effort=ReasoningEffort.HIGH)
+    with pytest.raises(ReasoningControlUnsupported):
+        policy.select(context=ctx_high, available_metadata=meta, default_provider="p_mock")
+
+    # Model is fixed_by_model -> request High must fail
+    ctx_fixed = RoutingContext(explicit_model_override="p_mock:m_fixed", reasoning_effort=ReasoningEffort.HIGH)
+    with pytest.raises(ReasoningControlUnsupported):
+        policy.select(context=ctx_fixed, available_metadata=meta, default_provider="p_mock")
+
+    # Model is unknown -> request High must fail
+    ctx_unknown = RoutingContext(explicit_model_override="p_mock:m_unknown", reasoning_effort=ReasoningEffort.HIGH)
+    with pytest.raises(ReasoningControlUnsupported):
+        policy.select(context=ctx_unknown, available_metadata=meta, default_provider="p_mock")
+
+
+def test_explicit_override_adaptive_returns_fixed_by_model_and_unknown_truthfully():
+    """Verify that explicit lock in adaptive mode truthfully reports fixed_by_model and unknown."""
+    meta = {
+        "p_mock": ProviderMetadata(
+            name="p_mock",
+            capabilities=["reasoning"],
+            default_model="m_fixed",
+            models=["m_fixed", "m_unknown", "m_med"],
+            reasoning_support={
+                "m_fixed": "fixed_by_model",
+                "m_unknown": "unknown",
+                "m_med": "medium",
+            },
+        )
+    }
+    policy = DeterministicRoutingPolicy()
+
+    # Fixed by model
+    ctx1 = RoutingContext(explicit_model_override="p_mock:m_fixed", reasoning_policy=ReasoningPolicy.ADAPTIVE)
+    sel1 = policy.select(context=ctx1, available_metadata=meta, default_provider="p_mock")
+    assert sel1.reasoning_effort_selected == "fixed_by_model"
+
+    # Unknown
+    ctx2 = RoutingContext(explicit_model_override="p_mock:m_unknown", reasoning_policy=ReasoningPolicy.ADAPTIVE)
+    sel2 = policy.select(context=ctx2, available_metadata=meta, default_provider="p_mock")
+    assert sel2.reasoning_effort_selected == "unknown"
+
+    # Controllable medium clamped
+    ctx3 = RoutingContext(
+        explicit_model_override="p_mock:m_med",
+        reasoning_policy=ReasoningPolicy.ADAPTIVE,
+        complexity="complex",
+        reasoning_effort_min=ReasoningEffort.LOW,
+        reasoning_effort_max=ReasoningEffort.HIGH,
+    )
+    sel3 = policy.select(context=ctx3, available_metadata=meta, default_provider="p_mock")
+    assert sel3.reasoning_effort_selected == "medium"
+
+
+@pytest.mark.asyncio
+async def test_fallback_blocked_event_recorded_on_routing_rejection(test_db_session: AsyncSession):
+    """Verify that reason_node emits fallback_blocked event when route selection fails."""
+    from app.observability.tracer import TraceService
+    from app.orchestrator.nodes import reason_node
+    from app.models.router import ModelRouter
+
+    run_id = str(uuid.uuid4())
+    sess_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=sess_id))
+    test_db_session.add(RunModel(id=run_id, session_id=sess_id, user_message="blocked test"))
+    await test_db_session.commit()
+
+    trace_svc = TraceService(test_db_session)
+    mock_router = ModelRouter()
+    mock_router._providers.clear()
+    mock_router._metadata.clear()
+    # Register only a cloud provider
+    mock_router.register_provider(
+        SpyModelProvider(name="cloud-p", privacy="cloud"),
+        ProviderMetadata(name="cloud-p", capabilities=["general"], default_model="m-cloud", models=["m-cloud"], privacy_status="cloud"),
+    )
+
+    state = {
+        "run_id": run_id,
+        "session_id": sess_id,
+        "messages": [{"role": "user", "content": "do local work"}],
+        "routing_context_dict": {
+            "privacy_requirement": "local_only",
+            "fallback_policy": "none",
+        },
+    }
+
+    with pytest.raises(PrivacyBoundaryViolation):
+        await reason_node(state, {"configurable": {"trace_service": trace_svc, "model_router": mock_router}})
+
+    # Assert fallback_blocked event was persisted in database
+    ev_stmt = select(RunEventModel).where(RunEventModel.run_id == run_id, RunEventModel.event_type == "fallback_blocked")
+    ev_res = await test_db_session.execute(ev_stmt)
+    ev = ev_res.scalar_one_or_none()
+    assert ev is not None
+    assert ev.payload["policy"] == "none"
+    assert ev.payload["error_type"] == "PrivacyBoundaryViolation"
+    assert ev.payload["privacy_boundary"] == "local_only"
+

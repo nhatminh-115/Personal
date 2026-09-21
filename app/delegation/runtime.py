@@ -123,7 +123,8 @@ class DelegationRuntime:
                 profile_res = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
                 db_profile = profile_res.scalar_one_or_none()
                 if db_profile and db_profile.is_active:
-                    profile = RoutingProfile(**db_profile.routes_json, id=db_profile.id, name=db_profile.name, version=db_profile.version)
+                    from app.models.routing_resolver import model_to_routing_profile
+                    profile = model_to_routing_profile(db_profile)
             
             if not profile:
                 from app.models.routing_resolver import get_system_balanced_profile

@@ -84,52 +84,174 @@ class DeterministicRoutingPolicy(RoutingPolicy):
         override = getattr(context, "explicit_model_override", None)
         if override:
             if ":" in override:
-                prov_part, model_part = override.split(":", 1)
-                if prov_part not in available_metadata:
-                    raise ModelUnavailable(f"Invalid model override: provider '{prov_part}' is not available.")
-                meta = available_metadata[prov_part]
-                
+                target_prov, target_model = override.split(":", 1)
+                if target_prov not in available_metadata:
+                    raise ModelUnavailable(f"Invalid model override: provider '{target_prov}' is not available.")
+                meta = available_metadata[target_prov]
                 if meta.models and not meta.allow_arbitrary_models:
                     allowed = set(meta.models)
                     if meta.default_model:
                         allowed.add(meta.default_model)
-                    if model_part not in allowed:
+                    if target_model not in allowed:
                         raise ModelUnavailable(
-                            f"Invalid model override: model '{model_part}' is not supported by provider '{prov_part}'. "
+                            f"Invalid model override: model '{target_model}' is not supported by provider '{target_prov}'. "
                             f"Supported models: {sorted(list(allowed))}"
                         )
-                        
-                # Check tool capability if tools are required by execution context
-                tool_cap = meta.tool_support.get(model_part, "unknown")
-                if getattr(context, "requires_tools", False) and tool_cap == "unsupported":
-                    raise ModelCapabilityMismatch("Selected override model cannot satisfy required agent/tool capability.")
-
-                # Privacy lock-all enforcement
-                if getattr(context, "privacy_requirement", None) == PrivacyPolicy.LOCAL_ONLY and meta.privacy_status == "cloud":
-                    raise PrivacyBoundaryViolation("Explicit override selects a cloud model but privacy is local_only.")
-
-                effort_str = context.reasoning_effort.value if hasattr(context.reasoning_effort, "value") else context.reasoning_effort
-                return ModelSelection(
-                    provider_name=prov_part,
-                    model_name=model_part,
-                    reason="explicit_model_override",
-                    context=context,
-                    reasoning_effort_selected=effort_str,
-                )
+                reason = "explicit_model_override"
             elif override in available_metadata:
-                meta = available_metadata[override]
-                if getattr(context, "privacy_requirement", None) == PrivacyPolicy.LOCAL_ONLY and meta.privacy_status == "cloud":
-                    raise PrivacyBoundaryViolation("Explicit provider override selects a cloud provider but privacy is local_only.")
-                effort_str = context.reasoning_effort.value if hasattr(context.reasoning_effort, "value") else context.reasoning_effort
-                return ModelSelection(
-                    provider_name=override,
-                    model_name=meta.default_model,
-                    reason="explicit_provider_override",
-                    context=context,
-                    reasoning_effort_selected=effort_str,
-                )
+                target_prov = override
+                meta = available_metadata[target_prov]
+                target_model = meta.default_model
+                reason = "explicit_provider_override"
             else:
                 raise ModelUnavailable(f"Invalid model override: provider '{override}' is not available.")
+
+            # Hard capability and boundary checks on explicit override:
+            # A user choosing an exact model/provider override must not bypass hard capability constraints.
+            # NO fallback is permitted on failure.
+            privacy = getattr(context, "privacy_requirement", None) or PrivacyPolicy.PUBLIC
+            if privacy in (PrivacyPolicy.CONFIDENTIAL, PrivacyPolicy.LOCAL_ONLY):
+                if meta.privacy_status not in ("local", "airgap"):
+                    raise PrivacyBoundaryViolation(
+                        f"Explicit override selects cloud provider '{target_prov}' but privacy is {privacy.value}."
+                    )
+
+            req_caps = getattr(context, "required_capabilities", [])
+            if req_caps:
+                missing_caps = [c for c in req_caps if c not in meta.capabilities]
+                if missing_caps:
+                    raise ModelCapabilityMismatch(
+                        f"Explicit override model '{target_model}' does not satisfy required capabilities: {missing_caps}"
+                    )
+
+            if getattr(context, "requires_tools", False):
+                tool_cap = meta.tool_support.get(target_model, "unknown")
+                if tool_cap == "unsupported":
+                    raise ModelCapabilityMismatch(
+                        "Selected override model cannot satisfy required agent/tool capability."
+                    )
+
+            if getattr(context, "requires_vision", False):
+                vision_cap = meta.vision_support.get(target_model, False)
+                if not vision_cap:
+                    raise ModelCapabilityMismatch(
+                        f"Explicit override model '{target_model}' does not support vision."
+                    )
+
+            if getattr(context, "requires_structured_output", False):
+                struct_cap = meta.structured_output_support.get(target_model, False)
+                if not struct_cap:
+                    raise ModelCapabilityMismatch(
+                        f"Explicit override model '{target_model}' does not support structured output."
+                    )
+
+            if getattr(context, "requires_long_context", False):
+                if "long_context" not in meta.capabilities:
+                    raise ModelCapabilityMismatch(
+                        f"Explicit override provider '{target_prov}' does not satisfy long_context capability."
+                    )
+
+            # Explicit-override reasoning truthfulness
+            EFFORT_ORDER = [
+                ReasoningEffort.INSTANT,
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.MAX,
+            ]
+            EFFORT_STRS = [e.value for e in EFFORT_ORDER]
+            support = meta.reasoning_support.get(target_model, "unknown")
+            user_fixed_effort = getattr(context, "reasoning_effort", None)
+            reasoning_policy = getattr(context, "reasoning_policy", None)
+
+            if user_fixed_effort is not None or reasoning_policy == ReasoningPolicy.FIXED:
+                eff_val = user_fixed_effort.value if hasattr(user_fixed_effort, "value") else str(user_fixed_effort or ReasoningEffort.MEDIUM.value)
+                if eff_val == ReasoningEffort.INSTANT.value:
+                    if support == "unsupported":
+                        raise ReasoningControlUnsupported(f"Explicit override model '{target_model}' does not support reasoning.")
+                    elif support == "fixed_by_model":
+                        resolved_effort = "fixed_by_model"
+                    elif support == "unknown":
+                        resolved_effort = "unknown"
+                    else:
+                        resolved_effort = eff_val
+                else:
+                    if support in ("unsupported", "fixed_by_model", "unknown"):
+                        raise ReasoningControlUnsupported(
+                            f"Explicit override model '{target_model}' has reasoning_support='{support}', cannot satisfy controllable fixed reasoning '{eff_val}'."
+                        )
+                    if support not in EFFORT_STRS:
+                        raise ReasoningControlUnsupported(f"Explicit override model '{target_model}' has unrecognized reasoning_support='{support}'.")
+                    if eff_val not in EFFORT_STRS:
+                        raise ReasoningControlUnsupported(f"Requested reasoning effort '{eff_val}' is invalid.")
+                    model_max_idx = EFFORT_STRS.index(support)
+                    req_idx = EFFORT_STRS.index(eff_val)
+                    if req_idx > model_max_idx:
+                        raise ReasoningControlUnsupported(
+                            f"Explicit override model '{target_model}' max reasoning support is '{support}', cannot satisfy requested '{eff_val}'."
+                        )
+                    resolved_effort = eff_val
+            elif reasoning_policy == ReasoningPolicy.ADAPTIVE:
+                if support == "unsupported":
+                    resolved_effort = "unsupported"
+                elif support == "fixed_by_model":
+                    resolved_effort = "fixed_by_model"
+                elif support == "unknown":
+                    resolved_effort = "unknown"
+                else:
+                    comp = getattr(context, "complexity", None)
+                    if comp == "simple":
+                        target_effort = ReasoningEffort.LOW
+                    elif comp == "complex":
+                        target_effort = ReasoningEffort.HIGH
+                    else:
+                        target_effort = ReasoningEffort.MEDIUM
+
+                    reasoning_effort_min = getattr(context, "reasoning_effort_min", None) or ReasoningEffort.LOW
+                    if isinstance(reasoning_effort_min, str):
+                        try:
+                            reasoning_effort_min = ReasoningEffort(reasoning_effort_min)
+                        except ValueError:
+                            pass
+                    reasoning_effort_max = getattr(context, "reasoning_effort_max", None) or ReasoningEffort.HIGH
+                    if isinstance(reasoning_effort_max, str):
+                        try:
+                            reasoning_effort_max = ReasoningEffort(reasoning_effort_max)
+                        except ValueError:
+                            pass
+
+                    min_idx = EFFORT_ORDER.index(reasoning_effort_min) if reasoning_effort_min in EFFORT_ORDER else 1
+                    max_idx = EFFORT_ORDER.index(reasoning_effort_max) if reasoning_effort_max in EFFORT_ORDER else 3
+                    target_idx = EFFORT_ORDER.index(target_effort)
+                    profile_target_idx = max(min_idx, min(max_idx, target_idx))
+
+                    if support in EFFORT_STRS:
+                        model_max_idx = EFFORT_STRS.index(support)
+                        selected_idx = min(profile_target_idx, model_max_idx)
+                        resolved_effort = EFFORT_STRS[selected_idx]
+                    else:
+                        resolved_effort = support
+            else:
+                if support == "fixed_by_model":
+                    resolved_effort = "fixed_by_model"
+                elif support == "unknown":
+                    resolved_effort = "unknown"
+                elif support in EFFORT_STRS:
+                    if user_fixed_effort:
+                        eff_val = user_fixed_effort.value if hasattr(user_fixed_effort, "value") else str(user_fixed_effort)
+                        resolved_effort = eff_val
+                    else:
+                        resolved_effort = None
+                else:
+                    resolved_effort = None
+
+            return ModelSelection(
+                provider_name=target_prov,
+                model_name=target_model,
+                reason=reason,
+                context=context,
+                reasoning_effort_selected=resolved_effort,
+            )
 
         candidates: List[tuple[str, str, ProviderMetadata]] = []
         for p, m in available_metadata.items():
@@ -205,6 +327,7 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             ReasoningEffort.HIGH,
             ReasoningEffort.MAX,
         ]
+        EFFORT_STRS = [e.value for e in EFFORT_ORDER]
         
         user_fixed_effort = getattr(context, "reasoning_effort", None)
         reasoning_policy = getattr(context, "reasoning_policy", None)
@@ -212,10 +335,6 @@ class DeterministicRoutingPolicy(RoutingPolicy):
         valid_reasoning_candidates = []
 
         if reasoning_policy == ReasoningPolicy.ADAPTIVE:
-            # Deterministic adaptive selection (Requirement 3):
-            # complexity=simple -> target low
-            # complexity=medium -> target medium
-            # complexity=complex -> target high
             comp = getattr(context, "complexity", None)
             if comp == "simple":
                 target_effort = ReasoningEffort.LOW
@@ -240,8 +359,7 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             min_idx = EFFORT_ORDER.index(reasoning_effort_min) if reasoning_effort_min in EFFORT_ORDER else 1
             max_idx = EFFORT_ORDER.index(reasoning_effort_max) if reasoning_effort_max in EFFORT_ORDER else 3
             target_idx = EFFORT_ORDER.index(target_effort)
-            clamped_idx = max(min_idx, min(max_idx, target_idx))
-            clamped_effort = EFFORT_ORDER[clamped_idx]
+            profile_target_idx = max(min_idx, min(max_idx, target_idx))
 
             for p, mod, m in candidates:
                 support = m.reasoning_support.get(mod, "unknown")
@@ -252,26 +370,39 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                 elif support == "unknown":
                     # Unknown remains eligible only as uncontrolled/unknown, NOT numeric effort
                     valid_reasoning_candidates.append((p, mod, m, "unknown"))
+                elif support in EFFORT_STRS:
+                    model_max_idx = EFFORT_STRS.index(support)
+                    # If resulting model-supported effort would fall below profile's required minimum, ineligible
+                    if model_max_idx < min_idx:
+                        continue
+                    selected_idx = min(profile_target_idx, model_max_idx)
+                    valid_reasoning_candidates.append((p, mod, m, EFFORT_STRS[selected_idx]))
                 else:
-                    # Model has controllable reasoning support
-                    valid_reasoning_candidates.append((p, mod, m, clamped_effort.value))
+                    valid_reasoning_candidates.append((p, mod, m, EFFORT_STRS[profile_target_idx]))
 
-        elif user_fixed_effort is not None:
-            # User explicitly requested a fixed controllable reasoning effort (Requirement 5)
-            eff_val = user_fixed_effort.value if hasattr(user_fixed_effort, "value") else str(user_fixed_effort)
+            if not valid_reasoning_candidates:
+                raise ReasoningControlUnsupported(
+                    f"No eligible provider found satisfying adaptive reasoning bounds [{reasoning_effort_min}, {reasoning_effort_max}]."
+                )
+
+        elif user_fixed_effort is not None or reasoning_policy == ReasoningPolicy.FIXED:
+            eff_val = user_fixed_effort.value if hasattr(user_fixed_effort, "value") else str(user_fixed_effort or ReasoningEffort.MEDIUM.value)
+            req_idx = EFFORT_STRS.index(eff_val) if eff_val in EFFORT_STRS else -1
             for p, mod, m in candidates:
                 support = m.reasoning_support.get(mod, "unknown")
                 if support == "unsupported":
                     continue
-                elif support == eff_val:
-                    valid_reasoning_candidates.append((p, mod, m, eff_val))
                 elif support == "fixed_by_model":
                     if eff_val == ReasoningEffort.INSTANT.value:
                         valid_reasoning_candidates.append((p, mod, m, "fixed_by_model"))
                 elif support == "unknown":
-                    # Requirement 5: Unknown reasoning control must NOT be treated as supported for fixed controllable request
                     if eff_val == ReasoningEffort.INSTANT.value:
                         valid_reasoning_candidates.append((p, mod, m, "unknown"))
+                elif support in EFFORT_STRS:
+                    model_max_idx = EFFORT_STRS.index(support)
+                    # If requested effort <= model's maximum supported effort:
+                    if req_idx != -1 and req_idx <= model_max_idx:
+                        valid_reasoning_candidates.append((p, mod, m, eff_val))
 
             if not valid_reasoning_candidates and eff_val != ReasoningEffort.INSTANT.value:
                 raise ReasoningControlUnsupported(f"No eligible provider found satisfying fixed reasoning effort: {eff_val}")

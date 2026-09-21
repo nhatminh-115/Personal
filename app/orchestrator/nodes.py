@@ -144,7 +144,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     delegation = state.get("delegation_context", {}) or {}
     
     # Reconstruct from pre-resolved context dict if available
-    rc_dict = meta.get("routing_context_dict")
+    rc_dict = meta.get("routing_context_dict") or state.get("routing_context_dict")
     if rc_dict:
         routing_ctx = RoutingContext(**rc_dict)
         routing_ctx.requires_tools = bool(tool_defs)
@@ -163,14 +163,38 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             requires_tools=bool(tool_defs),
         )
 
+    try:
+        provider, selection = router.select_model_for_task(routing_ctx)
+    except Exception as exc:
+        if trace_service:
+            fb_val = routing_ctx.fallback_policy.value if hasattr(routing_ctx.fallback_policy, "value") else str(routing_ctx.fallback_policy or "none")
+            payload = {
+                "policy": fb_val,
+                "reason": str(exc),
+                "error_type": exc.__class__.__name__,
+                "privacy_boundary": routing_ctx.privacy_requirement.value if hasattr(routing_ctx.privacy_requirement, "value") else str(routing_ctx.privacy_requirement),
+            }
+            if hasattr(exc, "details") and isinstance(exc.details, dict):
+                if "proposed_provider" in exc.details:
+                    payload["proposed_provider"] = exc.details["proposed_provider"]
+                if "proposed_model" in exc.details:
+                    payload["proposed_model"] = exc.details["proposed_model"]
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="fallback_blocked",
+                payload=payload,
+            )
+        raise
+
     model_req = ModelRequest(
         messages=chat_messages,
         tools=tool_defs,
         temperature=0.0,
         routing_context=routing_ctx,
+        selected_model=selection.model_name,
+        selected_reasoning=selection.reasoning_effort_selected,
     )
-
-    provider, selection = router.select_model_for_task(routing_ctx)
 
     if trace_service:
         agent_role = delegation.get("specialist_name") or ("root" if not delegation else "specialist")
@@ -235,7 +259,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             },
         )
 
-    response = await router.route(model_req)
+    response = await router.route(model_req, provider_name=selection.provider_name)
 
     messages = list(state.get("messages", []))
 
