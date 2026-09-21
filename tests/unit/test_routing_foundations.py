@@ -1129,6 +1129,46 @@ def test_explicit_override_adaptive_returns_fixed_by_model_and_unknown_truthfull
     assert sel3.reasoning_effort_selected == "medium"
 
 
+def test_explicit_override_adaptive_rejects_model_below_profile_minimum():
+    """Verify that an explicit model lock in Adaptive mode raises ReasoningControlUnsupported
+    without fallback when the model's max reasoning falls below profile's minimum required effort.
+    """
+    meta = {
+        "p_low": ProviderMetadata(
+            name="p_low",
+            capabilities=["reasoning"],
+            default_model="m_low",
+            models=["m_low"],
+            reasoning_support={"m_low": "low"},
+        ),
+        "p_high": ProviderMetadata(
+            name="p_high",
+            capabilities=["reasoning"],
+            default_model="m_high",
+            models=["m_high"],
+            reasoning_support={"m_high": "high"},
+        ),
+    }
+    policy = DeterministicRoutingPolicy()
+
+    # Exact model locked: p_low:m_low, Profile requires Medium -> High
+    ctx = RoutingContext(
+        explicit_model_override="p_low:m_low",
+        reasoning_policy=ReasoningPolicy.ADAPTIVE,
+        reasoning_effort_min=ReasoningEffort.MEDIUM,
+        reasoning_effort_max=ReasoningEffort.HIGH,
+        complexity="complex",
+    )
+
+    with pytest.raises(ReasoningControlUnsupported) as exc_info:
+        policy.select(context=ctx, available_metadata=meta, default_provider="p_low")
+
+    err_msg = str(exc_info.value)
+    assert "m_low" in err_msg
+    assert "low" in err_msg
+    assert "medium" in err_msg
+
+
 @pytest.mark.asyncio
 async def test_fallback_blocked_event_recorded_on_routing_rejection(test_db_session: AsyncSession):
     """Verify that reason_node emits fallback_blocked event when route selection fails."""

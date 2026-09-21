@@ -227,6 +227,12 @@ class DeterministicRoutingPolicy(RoutingPolicy):
 
                     if support in EFFORT_STRS:
                         model_max_idx = EFFORT_STRS.index(support)
+                        if model_max_idx < min_idx:
+                            min_val = reasoning_effort_min.value if hasattr(reasoning_effort_min, "value") else str(reasoning_effort_min)
+                            raise ReasoningControlUnsupported(
+                                f"Explicit override model '{target_model}' max reasoning support is '{support}', "
+                                f"which falls below profile minimum required reasoning effort '{min_val}'."
+                            )
                         selected_idx = min(profile_target_idx, model_max_idx)
                         resolved_effort = EFFORT_STRS[selected_idx]
                     else:
