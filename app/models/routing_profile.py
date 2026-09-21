@@ -19,6 +19,18 @@ class ReasoningConfig(BaseModel):
         if self.policy == ReasoningPolicy.ADAPTIVE:
             if not self.min_effort or not self.max_effort:
                 raise ValueError("Adaptive reasoning policy requires both min_effort and max_effort to be set.")
+            EFFORT_ORDER = [
+                ReasoningEffort.INSTANT,
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+                ReasoningEffort.MAX,
+            ]
+            if EFFORT_ORDER.index(self.min_effort) > EFFORT_ORDER.index(self.max_effort):
+                raise ValueError(
+                    f"Adaptive reasoning min_effort ({self.min_effort.value}) cannot be greater than max_effort ({self.max_effort.value}). "
+                    f"Expected ordering: instant < low < medium < high < max."
+                )
         return self
 
 
@@ -39,6 +51,7 @@ class RoutingProfile(BaseModel):
     name: str
     version: int = 1
     is_active: bool = True
+    is_default: bool = False
     
     global_privacy_policy: PrivacyPolicy = PrivacyPolicy.PUBLIC
     global_fallback_policy: FallbackPolicy = FallbackPolicy.CLOUD_ALLOWED

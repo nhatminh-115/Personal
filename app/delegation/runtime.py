@@ -176,6 +176,13 @@ class DelegationRuntime:
                 await db.commit()
                 child_run_id = candidate_child_run_id
                 created_new = True
+                if trace_service:
+                    await trace_service.record_event(
+                        run_id=candidate_child_run_id,
+                        session_id=request.session_id,
+                        event_type="routing_profile_resolved",
+                        payload=child_run.routing_snapshot_json,
+                    )
             except IntegrityError:
                 # Concurrent race condition: another caller already inserted the delegation!
                 # Savepoint rollback automatically cleaned candidate child_run and delegation_rec.

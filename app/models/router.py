@@ -63,7 +63,7 @@ class ModelRouter:
                     default_model=settings.OPENAI_MODEL_NAME or "gpt-4o",
                     models=[settings.OPENAI_MODEL_NAME or "gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
                     allow_arbitrary_models=True,
-                    reasoning_support={"o1": "high", "o3-mini": "medium", "gpt-4o": "fixed_by_model", "gpt-4o-mini": "fixed_by_model"},
+                    reasoning_support={"o1": "fixed_by_model", "o3-mini": "fixed_by_model", "gpt-4o": "fixed_by_model", "gpt-4o-mini": "fixed_by_model"},
                     tool_support={"o1": "supported", "o3-mini": "supported", "gpt-4o": "supported", "gpt-4o-mini": "supported"},
                     vision_support={"gpt-4o": True, "gpt-4o-mini": True, "o1": True, "o3-mini": False},
                     structured_output_support={"gpt-4o": True, "gpt-4o-mini": True, "o1": True, "o3-mini": True},
@@ -121,9 +121,13 @@ class ModelRouter:
             provider = self.get_provider(provider_name)
             if not request.selected_model and provider_name in self._metadata:
                 request.selected_model = self._metadata[provider_name].default_model
+            if not request.selected_reasoning and ctx:
+                eff = getattr(ctx, "reasoning_effort", None)
+                request.selected_reasoning = eff.value if hasattr(eff, "value") else (str(eff) if eff else None)
         else:
             provider, selection = self.select_model_for_task(ctx)
             request.selected_model = selection.model_name
+            request.selected_reasoning = selection.reasoning_effort_selected
             from app.core.logging import logger
             logger.info(
                 f"Model routed to '{selection.provider_name}' ({selection.model_name}): {selection.reason}",
@@ -131,6 +135,7 @@ class ModelRouter:
                     "provider": selection.provider_name,
                     "model": selection.model_name,
                     "reason": selection.reason,
+                    "reasoning_effort": selection.reasoning_effort_selected,
                     "run_id": ctx.run_id if ctx else None,
                 },
             )

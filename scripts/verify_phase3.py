@@ -125,14 +125,15 @@ async def run_phase3_verification():
                 assert sel_override.model_name == "custom-weights"
 
                 # 2a-ii. Unsupported model on known provider raises loudly
+                from app.core.errors import ModelUnavailable
                 try:
                     policy.select(
                         context=RoutingContext(explicit_model_override="cloud-code:nonexistent-model"),
                         available_metadata=meta_registry,
                         default_provider="mock",
                     )
-                    raise AssertionError("Expected ValueError for unsupported model on known provider!")
-                except ValueError as err:
+                    raise AssertionError("Expected ModelUnavailable for unsupported model on known provider!")
+                except ModelUnavailable as err:
                     assert "is not supported by provider 'cloud-code'" in str(err)
 
                 # 2b. Privacy confidential requirement

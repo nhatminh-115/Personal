@@ -173,6 +173,53 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     provider, selection = router.select_model_for_task(routing_ctx)
 
     if trace_service:
+        agent_role = delegation.get("specialist_name") or ("root" if not delegation else "specialist")
+        await trace_service.record_event(
+            run_id=state["run_id"],
+            session_id=state["session_id"],
+            event_type="model_selected",
+            payload={
+                "agent_role": agent_role,
+                "task_type": routing_ctx.task_type,
+                "provider": selection.provider_name,
+                "model": selection.model_name,
+                "profile_id": routing_ctx.profile_id,
+                "profile_version": routing_ctx.profile_version,
+                "winning_scope": routing_ctx.winning_scope,
+                "selection_reason": selection.reason,
+                "privacy": routing_ctx.privacy_requirement.value if hasattr(routing_ctx.privacy_requirement, "value") else str(routing_ctx.privacy_requirement),
+                "fallback_policy": routing_ctx.fallback_policy.value if hasattr(routing_ctx.fallback_policy, "value") else str(routing_ctx.fallback_policy),
+            },
+        )
+
+        await trace_service.record_event(
+            run_id=state["run_id"],
+            session_id=state["session_id"],
+            event_type="reasoning_effort_selected",
+            payload={
+                "policy_mode": routing_ctx.reasoning_policy.value if hasattr(routing_ctx.reasoning_policy, "value") else str(routing_ctx.reasoning_policy) if routing_ctx.reasoning_policy else None,
+                "configured_bounds": {
+                    "min": routing_ctx.reasoning_effort_min.value if hasattr(routing_ctx.reasoning_effort_min, "value") else str(routing_ctx.reasoning_effort_min) if routing_ctx.reasoning_effort_min else None,
+                    "max": routing_ctx.reasoning_effort_max.value if hasattr(routing_ctx.reasoning_effort_max, "value") else str(routing_ctx.reasoning_effort_max) if routing_ctx.reasoning_effort_max else None,
+                },
+                "selected_effort": selection.reasoning_effort_selected,
+            },
+        )
+
+        if routing_ctx.fallback_policy:
+            fb_val = routing_ctx.fallback_policy.value if hasattr(routing_ctx.fallback_policy, "value") else str(routing_ctx.fallback_policy)
+            if fb_val != "none":
+                await trace_service.record_event(
+                    run_id=state["run_id"],
+                    session_id=state["session_id"],
+                    event_type="fallback_considered",
+                    payload={
+                        "fallback_policy": fb_val,
+                        "primary_provider": router._default_provider_name,
+                        "selected_provider": selection.provider_name,
+                    },
+                )
+
         await trace_service.record_event(
             run_id=state["run_id"],
             session_id=state["session_id"],

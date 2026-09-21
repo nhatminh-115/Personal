@@ -31,39 +31,6 @@ def generate_uuid() -> str:
     return str(uuid.uuid4())
 
 
-"""SQLAlchemy ORM models for AURA persistence."""
-
-import uuid
-from datetime import datetime, timezone
-from typing import Any, List, Optional
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, JSON, text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from pgvector.sqlalchemy import Vector
-
-from app.db.base import Base
-
-
-from enum import Enum
-
-
-class RunStatus(str, Enum):
-    """Explicit run lifecycle states."""
-    CREATED = "created"
-    RUNNING = "running"
-    WAITING_FOR_APPROVAL = "waiting_for_approval"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
-
-def generate_uuid() -> str:
-    return str(uuid.uuid4())
-
-
 class SessionModel(Base):
     """Represents a conversation session/thread."""
 
@@ -289,6 +256,7 @@ class RoutingProfileModel(Base):
     name: Mapped[str] = mapped_column(String(128))
     version: Mapped[int] = mapped_column(Integer, default=1)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     global_privacy_policy: Mapped[str] = mapped_column(String(32), default="public")
     global_fallback_policy: Mapped[str] = mapped_column(String(32), default="cloud_allowed")
     cost_preference: Mapped[str] = mapped_column(String(32), default="normal")

@@ -6,10 +6,8 @@ from sqlalchemy import select
 
 from app.db.models import SessionModel, ProjectRoutingAssignmentModel, RoutingProfileModel
 from app.models.base import RoutingContext, PrivacyPolicy, FallbackPolicy, ReasoningEffort, ReasoningPolicy
-from app.models.routing_profile import RoutingProfile, RouteConfig
+from app.models.routing_profile import RoutingProfile, RouteConfig, ReasoningConfig
 from app.core.errors import InvalidRoutingProfile
-
-import json
 
 
 def get_system_balanced_profile() -> RoutingProfile:
@@ -18,22 +16,47 @@ def get_system_balanced_profile() -> RoutingProfile:
         id="system-balanced",
         name="System Balanced",
         version=1,
+        is_default=False,
         global_privacy_policy=PrivacyPolicy.PUBLIC,
         global_fallback_policy=FallbackPolicy.CLOUD_ALLOWED,
         routes={
             "root": RouteConfig(
-                reasoning={"policy": ReasoningPolicy.ADAPTIVE, "effort": ReasoningEffort.LOW, "min_effort": ReasoningEffort.LOW, "max_effort": ReasoningEffort.MEDIUM}
+                reasoning=ReasoningConfig(policy=ReasoningPolicy.ADAPTIVE, effort=ReasoningEffort.LOW, min_effort=ReasoningEffort.LOW, max_effort=ReasoningEffort.MEDIUM)
             ),
             "research": RouteConfig(
-                reasoning={"policy": ReasoningPolicy.ADAPTIVE, "effort": ReasoningEffort.MEDIUM, "min_effort": ReasoningEffort.MEDIUM, "max_effort": ReasoningEffort.HIGH}
+                reasoning=ReasoningConfig(policy=ReasoningPolicy.ADAPTIVE, effort=ReasoningEffort.MEDIUM, min_effort=ReasoningEffort.MEDIUM, max_effort=ReasoningEffort.HIGH)
             ),
             "coding": RouteConfig(
-                reasoning={"policy": ReasoningPolicy.ADAPTIVE, "effort": ReasoningEffort.MEDIUM, "min_effort": ReasoningEffort.MEDIUM, "max_effort": ReasoningEffort.HIGH}
+                reasoning=ReasoningConfig(policy=ReasoningPolicy.ADAPTIVE, effort=ReasoningEffort.MEDIUM, min_effort=ReasoningEffort.MEDIUM, max_effort=ReasoningEffort.HIGH)
             ),
             "writing": RouteConfig(
-                reasoning={"policy": ReasoningPolicy.ADAPTIVE, "effort": ReasoningEffort.LOW, "min_effort": ReasoningEffort.LOW, "max_effort": ReasoningEffort.MEDIUM}
+                reasoning=ReasoningConfig(policy=ReasoningPolicy.ADAPTIVE, effort=ReasoningEffort.LOW, min_effort=ReasoningEffort.LOW, max_effort=ReasoningEffort.MEDIUM)
             ),
         }
+    )
+
+
+def model_to_routing_profile(db_profile: RoutingProfileModel) -> RoutingProfile:
+    """Canonical conversion from DB model to validated RoutingProfile schema."""
+    routes_raw = db_profile.routes_json or {}
+    if isinstance(routes_raw, dict) and "routes" in routes_raw and isinstance(routes_raw["routes"], dict):
+        routes_data = routes_raw["routes"]
+    elif isinstance(routes_raw, dict):
+        routes_data = routes_raw
+    else:
+        routes_data = {}
+
+    return RoutingProfile(
+        id=db_profile.id,
+        name=db_profile.name,
+        version=db_profile.version,
+        is_active=db_profile.is_active,
+        is_default=getattr(db_profile, "is_default", False),
+        global_privacy_policy=PrivacyPolicy(db_profile.global_privacy_policy) if db_profile.global_privacy_policy else PrivacyPolicy.PUBLIC,
+        global_fallback_policy=FallbackPolicy(db_profile.global_fallback_policy) if db_profile.global_fallback_policy else FallbackPolicy.CLOUD_ALLOWED,
+        cost_preference=db_profile.cost_preference,  # type: ignore
+        latency_preference=db_profile.latency_preference,  # type: ignore
+        routes=routes_data,
     )
 
 
@@ -57,7 +80,7 @@ async def resolve_routing_profile(
             profile_res = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == session_obj.routing_profile_id))
             db_profile = profile_res.scalar_one_or_none()
             if db_profile and db_profile.is_active:
-                return RoutingProfile(**db_profile.routes_json, id=db_profile.id, name=db_profile.name, version=db_profile.version), "session"
+                return model_to_routing_profile(db_profile), "session"
 
     # 2. Project override
     if project_name:
@@ -67,10 +90,17 @@ async def resolve_routing_profile(
             profile_res = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == assignment.routing_profile_id))
             db_profile = profile_res.scalar_one_or_none()
             if db_profile and db_profile.is_active:
-                return RoutingProfile(**db_profile.routes_json, id=db_profile.id, name=db_profile.name, version=db_profile.version), "project"
+                return model_to_routing_profile(db_profile), "project"
 
-    # 3. Default Profile (if designated, for now we skip to system)
-    # TODO: Fetch default profile if a setting for it exists.
+    # 3. Default Profile (Requirement 11)
+    def_res = await db.execute(
+        select(RoutingProfileModel)
+        .where(RoutingProfileModel.is_default == True, RoutingProfileModel.is_active == True)
+        .order_by(RoutingProfileModel.updated_at.desc(), RoutingProfileModel.id.desc())
+    )
+    default_profile = def_res.scalars().first()
+    if default_profile:
+        return model_to_routing_profile(default_profile), "default"
 
     # 4. System Balanced
     return get_system_balanced_profile(), "system"
@@ -104,8 +134,17 @@ def apply_routing_profile_to_context(
     if getattr(context, "is_lock_all", False) and context.explicit_model_override:
         return context
 
-    # Otherwise apply profile routing for the specific role (e.g. "root", "research", "coding")
-    route_config = profile.routes.get(role) or RouteConfig()
+    # Otherwise apply profile routing (Requirement 14):
+    # Specialist role route wins when role != root
+    # For root: exact task route wins if configured (e.g. "writing"), else root route
+    if role != "root":
+        route_config = profile.routes.get(role) or RouteConfig()
+    else:
+        task_type = getattr(context, "task_type", None)
+        if task_type and task_type in profile.routes:
+            route_config = profile.routes[task_type]
+        else:
+            route_config = profile.routes.get("root") or RouteConfig()
     
     # Merge global policies
     context.privacy_requirement = route_config.privacy_policy or profile.global_privacy_policy

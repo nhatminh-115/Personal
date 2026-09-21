@@ -119,6 +119,7 @@ class ModelRequest(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     routing_context: RoutingContext | None = None
     selected_model: str | None = None
+    selected_reasoning: str | None = None
 
 
 class ModelResponse(BaseModel):

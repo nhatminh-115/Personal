@@ -40,7 +40,7 @@ class ModelSelection(BaseModel):
     model_name: str
     reason: str
     context: Optional[RoutingContext] = None
-    reasoning_effort_selected: Optional[ReasoningEffort] = None
+    reasoning_effort_selected: Optional[str] = None
 
 
 class RoutingPolicy(ABC):
@@ -108,23 +108,25 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                 if getattr(context, "privacy_requirement", None) == PrivacyPolicy.LOCAL_ONLY and meta.privacy_status == "cloud":
                     raise PrivacyBoundaryViolation("Explicit override selects a cloud model but privacy is local_only.")
 
+                effort_str = context.reasoning_effort.value if hasattr(context.reasoning_effort, "value") else context.reasoning_effort
                 return ModelSelection(
                     provider_name=prov_part,
                     model_name=model_part,
                     reason="explicit_model_override",
                     context=context,
-                    reasoning_effort_selected=context.reasoning_effort
+                    reasoning_effort_selected=effort_str,
                 )
             elif override in available_metadata:
                 meta = available_metadata[override]
                 if getattr(context, "privacy_requirement", None) == PrivacyPolicy.LOCAL_ONLY and meta.privacy_status == "cloud":
                     raise PrivacyBoundaryViolation("Explicit provider override selects a cloud provider but privacy is local_only.")
+                effort_str = context.reasoning_effort.value if hasattr(context.reasoning_effort, "value") else context.reasoning_effort
                 return ModelSelection(
                     provider_name=override,
                     model_name=meta.default_model,
                     reason="explicit_provider_override",
                     context=context,
-                    reasoning_effort_selected=context.reasoning_effort
+                    reasoning_effort_selected=effort_str,
                 )
             else:
                 raise ModelUnavailable(f"Invalid model override: provider '{override}' is not available.")
@@ -170,10 +172,21 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             if not candidates:
                 raise ModelCapabilityMismatch("No eligible model found that supports structured output.")
 
-        # 4. Fallback Policy Assessment
+        # 3b. Long Context Capability Filtering (Requirement 8)
+        if getattr(context, "requires_long_context", False):
+            candidates = [(p, mod, m) for p, mod, m in candidates if "long_context" in m.capabilities]
+            if not candidates:
+                raise ModelCapabilityMismatch("No eligible provider found satisfying long_context capability.")
+
+        # 4. Fallback Policy Assessment (Requirement 9)
         fallback_policy = getattr(context, "fallback_policy", None) or FallbackPolicy.CLOUD_ALLOWED
-        if fallback_policy == FallbackPolicy.ASK_BEFORE_CLOUD:
-            # We don't remove cloud models here, but we mark that if a cloud model wins, we must pause.
+        if fallback_policy == FallbackPolicy.NONE:
+            # If active route/provider assigned, NONE strictly blocks switching to alternative providers/models
+            target_prov = getattr(context, "assigned_provider", None) or default_provider
+            candidates = [(p, mod, m) for p, mod, m in candidates if p == target_prov]
+            if not candidates:
+                raise NoEligibleRoute("Assigned route unavailable and fallback policy is NONE.")
+        elif fallback_policy == FallbackPolicy.ASK_BEFORE_CLOUD:
             pass
         elif fallback_policy == FallbackPolicy.LOCAL_ONLY:
             candidates = [(p, mod, m) for p, mod, m in candidates if m.privacy_status in ("local", "airgap")]
@@ -184,45 +197,96 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             if not candidates:
                 raise NoEligibleRoute("No eligible models remain after applying same_provider_only fallback policy.")
 
-        # 5. Reasoning Effort Resolution & Filtering
-        reasoning_policy = getattr(context, "reasoning_policy", None) or ReasoningPolicy.FIXED
-        reasoning_effort = getattr(context, "reasoning_effort", None) or ReasoningEffort.LOW
-        reasoning_effort_min = getattr(context, "reasoning_effort_min", None)
-        reasoning_effort_max = getattr(context, "reasoning_effort_max", None)
+        # 5. Reasoning Effort Resolution & Filtering (Requirements 3 & 5)
+        EFFORT_ORDER = [
+            ReasoningEffort.INSTANT,
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+            ReasoningEffort.MAX,
+        ]
+        
+        user_fixed_effort = getattr(context, "reasoning_effort", None)
+        reasoning_policy = getattr(context, "reasoning_policy", None)
         
         valid_reasoning_candidates = []
-        for p, mod, m in candidates:
-            support = m.reasoning_support.get(mod, "unknown")
-            if support == "unsupported":
-                continue
-                
-            if reasoning_policy == ReasoningPolicy.FIXED:
-                if support == "fixed_by_model":
-                    valid_reasoning_candidates.append((p, mod, m, "fixed_by_model"))
-                elif support == reasoning_effort.value:
-                    valid_reasoning_candidates.append((p, mod, m, reasoning_effort))
-                elif support == "unknown":
-                    valid_reasoning_candidates.append((p, mod, m, reasoning_effort)) # Assume it can do it for now
-            else: # ADAPTIVE
-                if support == "fixed_by_model":
-                    valid_reasoning_candidates.append((p, mod, m, "fixed_by_model"))
-                elif support == "unknown":
-                    valid_reasoning_candidates.append((p, mod, m, reasoning_effort))
-                else:
-                    # In a real adaptive implementation, this would match dynamic budget.
-                    # Here we ensure the model's support falls within bounds or matches the base effort
-                    # We will simply pass it through if it supports the base effort.
-                    if support == reasoning_effort.value:
-                        valid_reasoning_candidates.append((p, mod, m, reasoning_effort))
 
-        if valid_reasoning_candidates:
-            pass # We replace candidates list below
-        elif reasoning_policy == ReasoningPolicy.FIXED and reasoning_effort != ReasoningEffort.INSTANT:
-            raise ReasoningControlUnsupported(f"No eligible provider found satisfying fixed reasoning effort: {reasoning_effort}")
+        if reasoning_policy == ReasoningPolicy.ADAPTIVE:
+            # Deterministic adaptive selection (Requirement 3):
+            # complexity=simple -> target low
+            # complexity=medium -> target medium
+            # complexity=complex -> target high
+            comp = getattr(context, "complexity", None)
+            if comp == "simple":
+                target_effort = ReasoningEffort.LOW
+            elif comp == "complex":
+                target_effort = ReasoningEffort.HIGH
+            else:
+                target_effort = ReasoningEffort.MEDIUM
+
+            reasoning_effort_min = getattr(context, "reasoning_effort_min", None) or ReasoningEffort.LOW
+            if isinstance(reasoning_effort_min, str):
+                try:
+                    reasoning_effort_min = ReasoningEffort(reasoning_effort_min)
+                except ValueError:
+                    pass
+            reasoning_effort_max = getattr(context, "reasoning_effort_max", None) or ReasoningEffort.HIGH
+            if isinstance(reasoning_effort_max, str):
+                try:
+                    reasoning_effort_max = ReasoningEffort(reasoning_effort_max)
+                except ValueError:
+                    pass
+
+            min_idx = EFFORT_ORDER.index(reasoning_effort_min) if reasoning_effort_min in EFFORT_ORDER else 1
+            max_idx = EFFORT_ORDER.index(reasoning_effort_max) if reasoning_effort_max in EFFORT_ORDER else 3
+            target_idx = EFFORT_ORDER.index(target_effort)
+            clamped_idx = max(min_idx, min(max_idx, target_idx))
+            clamped_effort = EFFORT_ORDER[clamped_idx]
+
+            for p, mod, m in candidates:
+                support = m.reasoning_support.get(mod, "unknown")
+                if support == "unsupported":
+                    continue
+                elif support == "fixed_by_model":
+                    valid_reasoning_candidates.append((p, mod, m, "fixed_by_model"))
+                elif support == "unknown":
+                    # Unknown remains eligible only as uncontrolled/unknown, NOT numeric effort
+                    valid_reasoning_candidates.append((p, mod, m, "unknown"))
+                else:
+                    # Model has controllable reasoning support
+                    valid_reasoning_candidates.append((p, mod, m, clamped_effort.value))
+
+        elif user_fixed_effort is not None:
+            # User explicitly requested a fixed controllable reasoning effort (Requirement 5)
+            eff_val = user_fixed_effort.value if hasattr(user_fixed_effort, "value") else str(user_fixed_effort)
+            for p, mod, m in candidates:
+                support = m.reasoning_support.get(mod, "unknown")
+                if support == "unsupported":
+                    continue
+                elif support == eff_val:
+                    valid_reasoning_candidates.append((p, mod, m, eff_val))
+                elif support == "fixed_by_model":
+                    if eff_val == ReasoningEffort.INSTANT.value:
+                        valid_reasoning_candidates.append((p, mod, m, "fixed_by_model"))
+                elif support == "unknown":
+                    # Requirement 5: Unknown reasoning control must NOT be treated as supported for fixed controllable request
+                    if eff_val == ReasoningEffort.INSTANT.value:
+                        valid_reasoning_candidates.append((p, mod, m, "unknown"))
+
+            if not valid_reasoning_candidates and eff_val != ReasoningEffort.INSTANT.value:
+                raise ReasoningControlUnsupported(f"No eligible provider found satisfying fixed reasoning effort: {eff_val}")
+
         else:
-            # Fall back to base candidates if reasoning constraints were too strict but it's not a hard failure
-            valid_reasoning_candidates = [(p, mod, m, None) for p, mod, m in candidates]
-            
+            # Unconstrained reasoning context: pass all candidates with their natural support
+            for p, mod, m in candidates:
+                support = m.reasoning_support.get(mod, "unknown")
+                if support != "unsupported":
+                    effort_tag = None if support == "unknown" else support
+                    valid_reasoning_candidates.append((p, mod, m, effort_tag))
+
+        if not valid_reasoning_candidates:
+            raise NoEligibleRoute("No eligible models found satisfying reasoning constraints.")
+
         # 6. Multi-criteria Ranking / Filtering: Cost and Latency
         cost_scores = {"low": 1, "medium": 2, "high": 3}
         latency_scores = {"low": 1, "medium": 2, "high": 3}
@@ -233,29 +297,57 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             l_score = latency_scores.get(meta.latency_class, 2)
             default_pref = 0 if p == default_provider else 1
 
-            if context.cost_preference == "low" and context.latency_preference == "low":
+            if getattr(context, "cost_preference", None) == "low" and getattr(context, "latency_preference", None) == "low":
                 return (c_score, l_score, default_pref)
-            elif context.cost_preference == "low":
+            elif getattr(context, "cost_preference", None) == "low":
                 return (c_score, default_pref)
-            elif context.latency_preference == "low":
+            elif getattr(context, "latency_preference", None) == "low":
                 return (l_score, default_pref)
             else:
                 return (default_pref, c_score)
 
         valid_reasoning_candidates.sort(key=rank_candidate)
-        if not valid_reasoning_candidates:
-            raise NoEligibleRoute("No models left after routing pipeline filters.")
-            
         chosen_prov, chosen_model, chosen_meta, chosen_effort = valid_reasoning_candidates[0]
 
-        # Enforce ask_before_cloud
+        # Enforce ask_before_cloud (Requirement 10)
         if fallback_policy == FallbackPolicy.ASK_BEFORE_CLOUD and chosen_meta.privacy_status == "cloud":
-            raise RoutingConfirmationRequired(f"Cloud provider {chosen_prov} selected but policy requires confirmation.")
+            default_meta = available_metadata.get(default_provider)
+            from_privacy = default_meta.privacy_status if default_meta else "local"
+            details = {
+                "proposed_provider": chosen_prov,
+                "proposed_model": chosen_model,
+                "reason": "fallback_to_cloud",
+                "from_privacy": from_privacy,
+                "to_privacy": chosen_meta.privacy_status,
+                "profile_id": getattr(context, "profile_id", None),
+            }
+            raise RoutingConfirmationRequired(
+                f"Cloud provider '{chosen_prov}' ({chosen_model}) selected but policy requires confirmation before cloud execution.",
+                details=details,
+            )
+
+        # Build descriptive reason code for traceability and milestone compatibility
+        reasons = []
+        if privacy in (PrivacyPolicy.CONFIDENTIAL, "confidential"):
+            reasons.append("confidential_privacy")
+        elif privacy in (PrivacyPolicy.LOCAL_ONLY, "local_only"):
+            reasons.append("local_only_privacy")
+        if getattr(context, "task_type", None):
+            reasons.append(context.task_type)
+        for cap in req_caps:
+            if cap not in reasons:
+                reasons.append(cap)
+        if getattr(context, "latency_preference", None) == "low":
+            reasons.append("low_latency")
+        if getattr(context, "cost_preference", None) == "low":
+            reasons.append("low_cost")
+
+        reason_code = "_".join(reasons) + "_matched" if reasons else "routing_pipeline_matched"
 
         return ModelSelection(
             provider_name=chosen_prov,
             model_name=chosen_model,
-            reason="routing_pipeline_matched",
+            reason=reason_code,
             context=context,
-            reasoning_effort_selected=chosen_effort if isinstance(chosen_effort, ReasoningEffort) else None
+            reasoning_effort_selected=chosen_effort,
         )
