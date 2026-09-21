@@ -165,9 +165,10 @@ def test_explicit_routing_and_zero_cloud_fallback():
     assert sel_local.model_name == "llama3.2:3b"
     assert sel_local.reason == "explicit_model_override"
 
+    from app.core.errors import ModelUnavailable
     # 2. Unavailable local provider must raise error, NOT fall back to OpenAI
     ctx_missing_local = RoutingContext(explicit_model_override="lmstudio:nonexistent")
-    with pytest.raises(ValueError, match="provider 'lmstudio' is not available"):
+    with pytest.raises(ModelUnavailable, match="provider 'lmstudio' is not available"):
         router.select_model_for_task(ctx_missing_local)
 
     # 3. Successful cloud routing
@@ -197,7 +198,8 @@ def test_unsupported_tool_capability_rejection():
         requires_tools=True,
     )
 
-    with pytest.raises(ValueError, match="Selected model cannot satisfy required agent/tool capability"):
+    from app.core.errors import ModelCapabilityMismatch
+    with pytest.raises(ModelCapabilityMismatch, match="Selected override model cannot satisfy required agent/tool capability"):
         router.select_model_for_task(ctx)
 
 

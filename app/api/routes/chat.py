@@ -44,12 +44,42 @@ async def chat_endpoint(
     # 1. Ensure session exists
     await mem_service.get_or_create_session(req.session_id)
 
+    from app.models.routing_resolver import resolve_routing_profile, apply_routing_profile_to_context
+    from app.models.base import RoutingContext
+
+    profile, scope = await resolve_routing_profile(db, session_id=req.session_id, project_name=req.project_name)
+    
+    # Base routing context for Root
+    root_context = RoutingContext(
+        session_id=req.session_id,
+        run_id=run_id
+    )
+    root_context = apply_routing_profile_to_context(
+        profile,
+        role="root",
+        context=root_context,
+        winning_scope=scope,
+        message_override=req.model_override
+    )
+
     # 2. Persist Run entity in database
     run_record = RunModel(
         id=run_id,
         session_id=req.session_id,
         status=RunStatus.RUNNING.value,
         user_message=req.message,
+        routing_snapshot_json={
+            "profile_id": profile.id,
+            "profile_version": profile.version,
+            "winning_scope": scope,
+            "role": "root",
+            "is_lock_all": root_context.is_lock_all,
+            "privacy_policy": root_context.privacy_requirement.value,
+            "fallback_policy": root_context.fallback_policy.value,
+            "explicit_model_override": root_context.explicit_model_override,
+            "reasoning_policy": root_context.reasoning_policy.value if root_context.reasoning_policy else None,
+            "reasoning_effort": root_context.reasoning_effort.value if root_context.reasoning_effort else None,
+        }
     )
     db.add(run_record)
     await db.commit()
@@ -61,9 +91,22 @@ async def chat_endpoint(
         event_type="request_received",
         payload={"message": req.message},
     )
+    
+    await trace_service.record_event(
+        run_id=run_id,
+        session_id=req.session_id,
+        event_type="routing_profile_resolved",
+        payload=run_record.routing_snapshot_json,
+    )
 
     # 4. Construct initial state for LangGraph
     merged_metadata = dict(req.metadata or {})
+    merged_metadata["routing_context_dict"] = root_context.model_dump()
+    merged_metadata["profile_id"] = profile.id
+    merged_metadata["winning_scope"] = scope
+    merged_metadata["is_lock_all"] = root_context.is_lock_all
+    merged_metadata["global_fallback_policy"] = profile.global_fallback_policy.value
+    
     if req.model_override:
         merged_metadata["model_override"] = req.model_override
 

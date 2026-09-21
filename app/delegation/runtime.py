@@ -99,7 +99,48 @@ class DelegationRuntime:
                 )
             created_new = False
         else:
+            from app.models.routing_resolver import apply_routing_profile_to_context
+            from app.db.models import RoutingProfileModel
+            from app.models.routing_profile import RoutingProfile
+            from app.models.base import RoutingContext
+            
             candidate_child_run_id = str(uuid.uuid4())
+            
+            # Resolve child routing profile
+            profile_id = (request.context or {}).get("profile_id")
+            winning_scope = (request.context or {}).get("winning_scope", "system")
+            is_lock_all = (request.context or {}).get("is_lock_all", False)
+            model_override = (request.context or {}).get("model_override") if is_lock_all else None
+            
+            child_rc = RoutingContext(
+                session_id=request.session_id,
+                run_id=candidate_child_run_id,
+                is_lock_all=is_lock_all,
+            )
+            
+            profile = None
+            if profile_id:
+                profile_res = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
+                db_profile = profile_res.scalar_one_or_none()
+                if db_profile and db_profile.is_active:
+                    profile = RoutingProfile(**db_profile.routes_json, id=db_profile.id, name=db_profile.name, version=db_profile.version)
+            
+            if not profile:
+                from app.models.routing_resolver import get_system_balanced_profile
+                profile = get_system_balanced_profile()
+                winning_scope = "system"
+                
+            child_rc = apply_routing_profile_to_context(
+                profile,
+                role=spec.name,
+                context=child_rc,
+                winning_scope=winning_scope,
+                message_override=model_override,
+            )
+            
+            request.context = request.context or {}
+            request.context["routing_context_dict"] = child_rc.model_dump()
+            
             try:
                 async with db.begin_nested():
                     child_run = RunModel(
@@ -108,6 +149,18 @@ class DelegationRuntime:
                         user_message=f"[Specialist: {spec.name}] {request.task_description}",
                         parent_run_id=request.parent_run_id,
                         status=RunStatus.RUNNING.value,
+                        routing_snapshot_json={
+                            "profile_id": profile.id,
+                            "profile_version": profile.version,
+                            "winning_scope": winning_scope,
+                            "role": spec.name,
+                            "is_lock_all": child_rc.is_lock_all,
+                            "privacy_policy": child_rc.privacy_requirement.value,
+                            "fallback_policy": child_rc.fallback_policy.value,
+                            "explicit_model_override": child_rc.explicit_model_override,
+                            "reasoning_policy": child_rc.reasoning_policy.value if child_rc.reasoning_policy else None,
+                            "reasoning_effort": child_rc.reasoning_effort.value if child_rc.reasoning_effort else None,
+                        }
                     )
                     db.add(child_run)
 

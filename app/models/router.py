@@ -46,6 +46,10 @@ class ModelRouter:
                     default_model="mock-default",
                     models=["mock-default", "mock-fast", "mock-pro"],
                     allow_arbitrary_models=True,
+                    reasoning_support={"mock-pro": "high", "mock-default": "fixed_by_model"},
+                    tool_support={"mock-pro": "supported", "mock-default": "supported", "mock-fast": "supported"},
+                    vision_support={"mock-pro": True, "mock-default": False},
+                    structured_output_support={"mock-pro": True, "mock-default": True},
                 ),
             )
             self.register_provider(
@@ -59,6 +63,10 @@ class ModelRouter:
                     default_model=settings.OPENAI_MODEL_NAME or "gpt-4o",
                     models=[settings.OPENAI_MODEL_NAME or "gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
                     allow_arbitrary_models=True,
+                    reasoning_support={"o1": "high", "o3-mini": "medium", "gpt-4o": "fixed_by_model", "gpt-4o-mini": "fixed_by_model"},
+                    tool_support={"o1": "supported", "o3-mini": "supported", "gpt-4o": "supported", "gpt-4o-mini": "supported"},
+                    vision_support={"gpt-4o": True, "gpt-4o-mini": True, "o1": True, "o3-mini": False},
+                    structured_output_support={"gpt-4o": True, "gpt-4o-mini": True, "o1": True, "o3-mini": True},
                 ),
             )
 

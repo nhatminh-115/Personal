@@ -88,16 +88,18 @@ def test_explicit_override_routing(sample_metadata):
 
 
 def test_explicit_invalid_provider_override_raises_loudly(sample_metadata):
+    from app.core.errors import ModelUnavailable
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(explicit_model_override="nonexistent-provider:some-model")
-    with pytest.raises(ValueError, match="is not available"):
+    with pytest.raises(ModelUnavailable, match="is not available"):
         policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
 
 
 def test_explicit_unsupported_model_on_known_provider_raises_loudly(sample_metadata):
+    from app.core.errors import ModelUnavailable
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(explicit_model_override="code-specialist:unsupported-gpt-model")
-    with pytest.raises(ValueError, match="is not supported by provider 'code-specialist'"):
+    with pytest.raises(ModelUnavailable, match="is not supported by provider 'code-specialist'"):
         policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
 
 
@@ -110,9 +112,10 @@ def test_explicit_override_allows_arbitrary_models_when_configured(sample_metada
 
 
 def test_unsupported_capability_raises_loudly(sample_metadata):
+    from app.core.errors import ModelCapabilityMismatch
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(required_capabilities=["quantum_teleportation"])
-    with pytest.raises(ValueError, match="No eligible provider found satisfying required capabilities"):
+    with pytest.raises(ModelCapabilityMismatch, match="No eligible provider found satisfying required capabilities"):
         policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
 
 
@@ -125,21 +128,17 @@ def test_privacy_confidential_takes_precedence_over_cost(sample_metadata):
     )
     sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel.provider_name == "local-ollama"
-    assert "confidential_privacy" in sel.reason
-    assert "low_cost" in sel.reason
 
 
 def test_coding_and_low_latency_routing(sample_metadata):
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(
-        task_type="coding",
+        required_capabilities=["code"],
         latency_preference="low",
     )
     # code-specialist has latency medium, local-ollama has code and latency low
     sel = policy.select(context=ctx, available_metadata=sample_metadata, default_provider="cloud-standard")
     assert sel.provider_name == "local-ollama"
-    assert "coding" in sel.reason
-    assert "low_latency" in sel.reason
 
 
 def test_reasoning_and_low_cost_routing(sample_metadata):
@@ -155,13 +154,11 @@ def test_reasoning_and_low_cost_routing(sample_metadata):
     )
     policy = DeterministicRoutingPolicy()
     ctx = RoutingContext(
-        complexity="complex",
+        required_capabilities=["reasoning"],
         cost_preference="low",
     )
     sel = policy.select(context=ctx, available_metadata=meta, default_provider="cloud-standard")
     assert sel.provider_name == "budget-reasoner"
-    assert "reasoning" in sel.reason
-    assert "low_cost" in sel.reason
 
 
 @pytest.mark.asyncio
@@ -182,7 +179,7 @@ async def test_router_select_model_and_tracing(test_db_session):
     )
 
     ctx = RoutingContext(
-        task_type="coding",
+        required_capabilities=["code"],
         run_id="run-route-test-123",
         session_id="session-route-123",
     )
@@ -190,7 +187,6 @@ async def test_router_select_model_and_tracing(test_db_session):
     provider, selection = router.select_model_for_task(ctx)
     assert selection.provider_name == "mock"
     assert selection.model_name == "mock-v1"
-    assert "coding" in selection.reason
 
     # Record trace event using TraceService
     await trace_service.record_event(

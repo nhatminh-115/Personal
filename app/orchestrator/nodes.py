@@ -142,18 +142,26 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
 
     meta = state.get("metadata", {}) or {}
     delegation = state.get("delegation_context", {}) or {}
-    routing_ctx = RoutingContext(
-        task_type=delegation.get("task_type") or meta.get("task_type"),
-        complexity=meta.get("complexity") or delegation.get("complexity"),
-        privacy_requirement=meta.get("privacy_requirement") or delegation.get("privacy_requirement"),
-        latency_preference=meta.get("latency_preference") or delegation.get("latency_preference"),
-        cost_preference=meta.get("cost_preference") or delegation.get("cost_preference"),
-        required_capabilities=meta.get("required_capabilities") or delegation.get("required_capabilities") or [],
-        explicit_model_override=meta.get("model_override") or delegation.get("model_override"),
-        session_id=state["session_id"],
-        run_id=state["run_id"],
-        requires_tools=bool(tool_defs),
-    )
+    
+    # Reconstruct from pre-resolved context dict if available
+    rc_dict = meta.get("routing_context_dict")
+    if rc_dict:
+        routing_ctx = RoutingContext(**rc_dict)
+        routing_ctx.requires_tools = bool(tool_defs)
+    else:
+        # Fallback for older tests / runs without pre-resolved profiles
+        routing_ctx = RoutingContext(
+            task_type=delegation.get("task_type") or meta.get("task_type"),
+            complexity=meta.get("complexity") or delegation.get("complexity"),
+            privacy_requirement=meta.get("privacy_requirement") or delegation.get("privacy_requirement") or "public",
+            latency_preference=meta.get("latency_preference") or delegation.get("latency_preference"),
+            cost_preference=meta.get("cost_preference") or delegation.get("cost_preference"),
+            required_capabilities=meta.get("required_capabilities") or delegation.get("required_capabilities") or [],
+            explicit_model_override=meta.get("model_override") or delegation.get("model_override"),
+            session_id=state["session_id"],
+            run_id=state["run_id"],
+            requires_tools=bool(tool_defs),
+        )
 
     model_req = ModelRequest(
         messages=chat_messages,

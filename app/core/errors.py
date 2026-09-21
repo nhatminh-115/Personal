@@ -67,3 +67,40 @@ class InternalExecutionError(AuraError):
 # Convenience aliases
 PermissionError = PermissionDeniedError
 ToolError = ToolExecutionError
+
+
+# --- Routing Errors ---
+
+class ModelUnavailable(AuraError):
+    """Raised when a specified provider or model is not available or registered."""
+    pass
+
+
+class ModelCapabilityMismatch(AuraError):
+    """Raised when a selected model lacks required capabilities (e.g., tools, vision)."""
+    pass
+
+
+class NoEligibleRoute(AuraError):
+    """Raised when no provider/model combination satisfies the current routing context constraints."""
+    pass
+
+
+class ReasoningControlUnsupported(AuraError):
+    """Raised when a routing context requests reasoning effort bounds that the model cannot natively control."""
+    pass
+
+
+class RoutingConfirmationRequired(AuraError):
+    """Special domain outcome to halt execution when a cloud fallback is requested under ask_before_cloud policy."""
+    pass
+
+
+class PrivacyBoundaryViolation(AuraError):
+    """Raised when a requested model/route violates a strict privacy boundary (e.g. local_only)."""
+    pass
+
+
+class InvalidRoutingProfile(AuraError):
+    """Raised when a RoutingProfile configuration is semantically invalid or bounds are contradictory."""
+    pass
