@@ -105,9 +105,17 @@ jobs:
           cache: "npm"
           cache-dependency-path: "web/package-lock.json"
 
-      - name: Run frontend tests and build
+      - name: Install frontend dependencies
         run: |
           cd web
           npm ci
+
+      - name: Run frontend tests
+        run: |
+          cd web
           npm test
+
+      - name: Run frontend build
+        run: |
+          cd web
           npm run build
