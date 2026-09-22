@@ -40,6 +40,8 @@ export interface ChatPaneProps {
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
   onSendMessage?: (text: string) => Promise<void>;
+  /** Called when user clicks "Start live chat" from a demo thread. */
+  onStartLiveChat?: (text: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -119,6 +121,7 @@ export function ChatPane({
   onContextObjectFocus,
   onAttachRequest,
   onSendMessage,
+  onStartLiveChat,
   currentApproval,
   onApprovalDecision,
   isLiveThread = true,
@@ -185,6 +188,8 @@ export function ChatPane({
       return;
     }
 
+    // Demo threads (isLiveThread=false) fall through to mock path.
+    // The "Start live chat" CTA button is the ONLY way to invoke onStartLiveChat.
     const nonce = Date.now();
     const userMessage: ChatMessage = {
       id: `runtime-user-${nonce}`,
@@ -234,7 +239,8 @@ export function ChatPane({
         timersRef.current = [];
       }, 1550),
     ];
-  }, [contextTokens, draft, includedContext, onMessagesChange, runPhase, workMode]);
+  }, [contextTokens, draft, includedContext, isLiveThread, onMessagesChange, onSendMessage, runPhase, workMode]);
+
 
   return (
     <div className={`chat-pane ${compact ? 'chat-pane--compact' : ''}`}>
@@ -248,6 +254,22 @@ export function ChatPane({
         </div>
 
         <div className="branch-divider"><span>Conversation thread</span></div>
+
+        {!isLiveThread ? (
+          <div className="chat-demo-banner">
+            <Sparkles size={13} />
+            <span>This is a <strong>demo thread</strong>. Replies shown here are illustrative and were not sent to the backend.</span>
+            {onStartLiveChat ? (
+              <button
+                className="demo-start-live-button"
+                type="button"
+                onClick={() => { const text = draft.trim(); if (text) { void submit(); } else { void onStartLiveChat('Start live chat'); } }}
+              >
+                Start live chat
+              </button>
+            ) : null}
+          </div>
+        ) : null}
 
         {messages.length === 0 ? (
           <div className="chat-empty-thread">

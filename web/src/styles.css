@@ -4696,6 +4696,10 @@ input:focus-visible {
 .chat-empty-thread { min-height: 180px; margin: 30px auto; width: min(560px,80%); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #57707b; text-align: center; }
 .chat-empty-thread strong { color: #879da6; font-size: 9px; }
 .chat-empty-thread span { max-width: 420px; font-size: 7px; line-height: 1.55; }
+.chat-demo-banner { display: flex; align-items: center; gap: 8px; padding: 7px 14px; margin: 10px 16px 4px; background: rgba(255,200,80,.07); border: 1px solid rgba(255,200,80,.18); border-radius: 7px; font-size: 7px; color: #a89050; flex-wrap: wrap; }
+.chat-demo-banner strong { color: #c8a840; }
+.demo-start-live-button { margin-left: auto; padding: 3px 10px; border-radius: 5px; border: 1px solid rgba(139,195,140,.4); background: rgba(139,195,140,.1); color: #8bc38c; font-size: 7px; cursor: pointer; white-space: nowrap; }
+.demo-start-live-button:hover { background: rgba(139,195,140,.2); }
 .empty-project-chat { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: #536974; }
 .empty-project-chat strong { color: #869aa3; font-size: 9px; }
 .empty-project-chat span { font-size: 7px; }

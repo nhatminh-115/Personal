@@ -49,21 +49,30 @@ describe('Navigation and Workspace Shell Invariants', () => {
       render(<App />);
     });
 
-    // Click project
-    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0];
+    // Click project card
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => {
       fireEvent.click(projectButton);
     });
 
-    // The project tab is present
-    const projectTabs = screen.getAllByText(/Stateful Architecture/i);
-    expect(projectTabs.length).toBeGreaterThan(0);
+    // There must be exactly ONE button element in the tab strip
+    // whose accessible name starts with "Stateful Architecture".
+    // We locate the tab strip by its landmark role and verify the count.
+    const allTabButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
+    );
+    expect(allTabButtons.length).toBe(1);
 
-    // Clicking again reuses existing tab
+    // Clicking the same project again MUST NOT create a second tab
     await act(async () => {
       fireEvent.click(projectButton);
     });
-    expect(screen.getAllByText(/Stateful Architecture/i).length).toBeGreaterThanOrEqual(1);
+
+    const allTabButtonsAfterSecondClick = screen.getAllByRole('button').filter(
+      (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
+    );
+    // Still exactly 1 tab for this project
+    expect(allTabButtonsAfterSecondClick.length).toBe(1);
   });
 
   it('overview / chat / board / files reuse the same project tab', async () => {

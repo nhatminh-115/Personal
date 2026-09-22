@@ -1,4 +1,5 @@
 import { Check, CloudOff, Lock, SlidersHorizontal, X } from 'lucide-react';
+import { routingPrototypeState } from '../../state/routingPrototype';
 
 interface RoutingPopoverProps {
   locked: boolean;
@@ -6,20 +7,14 @@ interface RoutingPopoverProps {
   onClose: () => void;
 }
 
-const routes = [
-  ['Root', 'Auto', 'Adaptive'],
-  ['Research', 'Model R', 'Med→High'],
-  ['Coding', 'Model C', 'High'],
-  ['Writing', 'Model W', 'Medium'],
-];
-
 export function RoutingPopover({ locked, onToggleLock, onClose }: RoutingPopoverProps) {
+  const { settings, routes } = routingPrototypeState;
   return (
     <div className="popover routing-popover" role="dialog" aria-label="Routing profile">
       <div className="popover__header">
         <div>
           <span className="eyebrow">ROUTING PROFILE</span>
-          <h3>Balanced</h3>
+          <h3>{settings.profileName}</h3>
         </div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="Close routing popover">
           <X size={16} />
@@ -28,7 +23,7 @@ export function RoutingPopover({ locked, onToggleLock, onClose }: RoutingPopover
 
       <div className="routing-scope-row">
         <span>Scope</span>
-        <strong>Session</strong>
+        <strong>{settings.scope}</strong>
       </div>
 
       <div className="route-table">
@@ -37,9 +32,9 @@ export function RoutingPopover({ locked, onToggleLock, onClose }: RoutingPopover
           <span>Model</span>
           <span>Reasoning</span>
         </div>
-        {routes.map(([route, model, reasoning]) => (
-          <div className="route-table__row" key={route}>
-            <strong>{route}</strong>
+        {routes.map(({ specialist, model, reasoning }) => (
+          <div className="route-table__row" key={specialist}>
+            <strong>{specialist}</strong>
             <span>{model}</span>
             <span>{reasoning}</span>
           </div>
@@ -51,14 +46,14 @@ export function RoutingPopover({ locked, onToggleLock, onClose }: RoutingPopover
           <CloudOff size={15} />
           <span>
             <small>Privacy</small>
-            <strong>Internal</strong>
+            <strong>{settings.privacy}</strong>
           </span>
         </div>
         <div className="setting-card">
           <SlidersHorizontal size={15} />
           <span>
             <small>Fallback</small>
-            <strong>Ask before cloud</strong>
+            <strong>{settings.fallback}</strong>
           </span>
         </div>
       </div>

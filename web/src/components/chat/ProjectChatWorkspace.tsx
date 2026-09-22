@@ -20,6 +20,7 @@ export interface ProjectChatWorkspaceProps {
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
   onSendMessage?: (text: string) => Promise<void>;
+  onStartLiveChat?: (text: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -44,6 +45,7 @@ export function ProjectChatWorkspace({
   onContextObjectFocus,
   onAttachRequest,
   onSendMessage,
+  onStartLiveChat,
   currentApproval,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
@@ -139,6 +141,7 @@ export function ProjectChatWorkspace({
             onContextObjectFocus={onContextObjectFocus}
             onAttachRequest={onAttachRequest}
             onSendMessage={onSendMessage}
+            onStartLiveChat={onStartLiveChat}
             currentApproval={currentApproval}
             onApprovalDecision={onApprovalDecision}
             isLiveThread={activeThread.source === 'live' || Boolean(activeThread.sessionId)}

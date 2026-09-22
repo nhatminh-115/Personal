@@ -184,16 +184,35 @@ export default function App() {
     return () => { cancelled = true; };
   }, []);
 
+  // ── Per-thread live execution state ──────────────────────────────────────
+  // Each live-execution key is scoped to the thread that originated it.
+  // This prevents run/approval/research state from leaking across threads.
+  interface ThreadLiveState {
+    runId: string | null;
+    runStatus: string | null;
+    approval: ApprovalDetail | null;
+    runDetail: RunDetail | null;
+    researchData: ResearchInspectorData | null;
+  }
+
   // Live Backend State
   const [catalog, setCatalog] = useState<ModelCatalog>({ providers: [] });
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [selectedModelOverride] = useState<string | null>(null);
-  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
-  const [currentRunStatus, setCurrentRunStatus] = useState<string | null>(null);
-  const [currentApproval, setCurrentApproval] = useState<ApprovalDetail | null>(null);
-  const [runDetail, setRunDetail] = useState<RunDetail | null>(null);
-  const [researchData, setResearchData] = useState<ResearchInspectorData | null>(null);
+  const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
+
+  /** Convenience accessor — live state for the currently active thread only */
+  const activeThreadLive: ThreadLiveState = activeThreadId
+    ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null })
+    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null };
+
+  function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
+    setThreadLiveStates((prev) => ({
+      ...prev,
+      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null }, ...(prev[threadId] ?? {}), ...patch },
+    }));
+  }
 
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
@@ -206,14 +225,21 @@ export default function App() {
     }
   }, [activeProject?.name]);
 
-  const refreshInspectorData = useCallback(async (runId: string) => {
+  const refreshInspectorData = useCallback(async (originatingThreadId: string, runId: string) => {
     try {
       const [rDetail, rResearch] = await Promise.all([
         api.fetchRunDetails(runId).catch(() => null),
         api.fetchRunResearch(runId).catch(() => null),
       ]);
-      if (rDetail) setRunDetail(rDetail);
-      if (rResearch) setResearchData(rResearch);
+      setThreadLiveStates((prev) => ({
+        ...prev,
+        [originatingThreadId]: {
+          ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null },
+          ...(prev[originatingThreadId] ?? {}),
+          ...(rDetail ? { runDetail: rDetail } : {}),
+          ...(rResearch ? { researchData: rResearch } : {}),
+        },
+      }));
     } catch (e) {
       console.error('Failed to load inspector data', e);
     }
@@ -222,7 +248,7 @@ export default function App() {
   // Ensure app-level live states are marked as accessed
   void catalog;
   void sessions;
-  void currentRunStatus;
+  void activeThreadLive;
 
   const pushToast = useCallback((title: string, detail?: string) => {
     const id = Date.now() + Math.floor(Math.random() * 999);
@@ -520,7 +546,25 @@ export default function App() {
     if (!activeProjectId) return;
     setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: threadId }));
     setFocusedMessageId(null);
-  }, [activeProjectId]);
+
+    // Session hydration: when switching to a live thread that has a backend
+    // sessionId, fetch /v1/sessions/{sessionId} and reconcile messages.
+    // This is fail-safe: hydration failure never destroys local state.
+    const thread = chatThreads.find((t) => t.id === threadId);
+    if (thread?.source === 'live' && thread.sessionId) {
+      void api.fetchSession(thread.sessionId).then((detail) => {
+        if (!detail?.messages?.length) return;
+        setChatThreads((current) => current.map((t) => {
+          if (t.id !== threadId) return t;
+          // Merge: keep local optimistic messages, append any backend-only messages
+          const localIds = new Set(t.messages.map((m) => m.id).filter(Boolean));
+          const newFromBackend = detail.messages.filter((m) => m.id && !localIds.has(m.id));
+          if (!newFromBackend.length) return t;
+          return { ...t, messages: [...t.messages, ...newFromBackend] };
+        }));
+      }).catch(() => { /* hydration failure is silently ignored */ });
+    }
+  }, [activeProjectId, chatThreads]);
 
   const newThread = useCallback(() => {
     if (!activeProjectId) return;
@@ -564,7 +608,21 @@ export default function App() {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
+
+      // ── Truthfulness invariant ─────────────────────────────────────────────
+      // Demo threads MUST NOT silently call POST /v1/chat.
+      // The caller (ChatPane) shows a CTA instead; this is a hard guard in case
+      // it is bypassed.
+      if (currentThread?.source === 'demo') {
+        pushToast('Demo thread', 'Start a live chat to use the AURA backend with this project.');
+        return;
+      }
+
       const sessionId = currentThread?.sessionId || `sess-${activeProjectId}-${activeThreadId}`;
+
+      // Capture originating thread at the time of send so approval decisions
+      // are bound even if the user switches threads before the run completes.
+      const originatingThreadId = activeThreadId;
 
       const nonce = Date.now();
       const userMsg: ChatMessage = {
@@ -578,8 +636,8 @@ export default function App() {
         status: 'Sent',
       };
 
-      updateThreadMessages(activeThreadId, (prev) => [...prev, userMsg]);
-      setCurrentRunStatus('running');
+      updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
+      patchThreadLive(originatingThreadId, { runStatus: 'running' });
 
       try {
         const resp = await api.sendChat(
@@ -589,21 +647,21 @@ export default function App() {
           selectedModelOverride
         );
 
-        setCurrentRunId(resp.run_id);
-        setCurrentRunStatus(resp.status);
+        patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
 
         if (resp.status === 'waiting_for_approval' && resp.approval_id) {
           const appDetail = await api.fetchApproval(resp.approval_id);
-          setCurrentApproval(appDetail);
+          // Store approval bound to originating thread
+          patchThreadLive(originatingThreadId, { approval: { ...appDetail, _originatingThreadId: originatingThreadId } as any });
         } else {
-          setCurrentApproval(null);
+          patchThreadLive(originatingThreadId, { approval: null });
           if (resp.response) {
             let steps: ExecutionStep[] = [];
             if (resp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(resp.run_id);
-                setRunDetail(rDetail);
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
+                patchThreadLive(originatingThreadId, { runDetail: rDetail });
               } catch (e) {
                 console.warn('Failed to fetch run details for execution steps', e);
               }
@@ -621,12 +679,12 @@ export default function App() {
               executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
             };
-            updateThreadMessages(activeThreadId, (prev) => [...prev, assistantMsg]);
+            updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
           }
         }
 
         if (resp.run_id) {
-          refreshInspectorData(resp.run_id);
+          void refreshInspectorData(originatingThreadId, resp.run_id);
         }
 
         api.fetchSessions().then(setSessions).catch(() => {});
@@ -634,17 +692,17 @@ export default function App() {
           api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
         }
       } catch (err: any) {
-        setCurrentRunStatus('failed');
+        patchThreadLive(originatingThreadId, { runStatus: 'failed' });
         const errorMsg: ChatMessage = {
           id: `live-err-${nonce}`,
           role: 'assistant',
           branch: 'Root',
           nodeId: `live-err-node-${nonce}`,
-          content: `Error: ${err.message || 'Execution failed'}`,
+          content: `Error: ${(err as Error).message || 'Execution failed'}`,
           timestamp: 'just now',
           status: 'Failed',
         };
-        updateThreadMessages(activeThreadId, (prev) => [...prev, errorMsg]);
+        updateThreadMessages(originatingThreadId, (prev) => [...prev, errorMsg]);
       }
     },
     [
@@ -655,7 +713,72 @@ export default function App() {
       selectedModelOverride,
       updateThreadMessages,
       refreshInspectorData,
+      pushToast,
     ]
+  );
+
+  /**
+   * handleStartLiveChat — creates a fresh live thread for the active project
+   * then immediately sends `text` to the backend.
+   *
+   * This is the explicit user action that transitions from demo-only viewing to
+   * an actual backend session.  Demo threads are never promoted; a new thread is
+   * always created so the demo transcript is preserved exactly as-is.
+   */
+  const handleStartLiveChat = useCallback(
+    async (text: string) => {
+      if (!activeProjectId || !activeProject) return;
+      const id = `${activeProjectId}-live-${Date.now()}`;
+      const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
+      const thread: ChatThreadRecord = {
+        id,
+        projectId: activeProjectId,
+        title: text.slice(0, 42) + (text.length > 42 ? '…' : ''),
+        summary: 'Live backend session',
+        updated: 'just now',
+        messages: [],
+        sessionId,
+        source: 'live',
+      };
+      setChatThreads((current) => [thread, ...current]);
+      setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
+      openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
+      // Small yield so state settles before we send
+      await new Promise((resolve) => window.setTimeout(resolve, 0));
+      void (async () => {
+        const originatingThreadId = id;
+        const nonce = Date.now();
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: text, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
+        patchThreadLive(originatingThreadId, { runStatus: 'running' });
+        try {
+          const resp = await api.sendChat(sessionId, text, activeProject.name, selectedModelOverride);
+          patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
+          if (resp.status === 'waiting_for_approval' && resp.approval_id) {
+            const appDetail = await api.fetchApproval(resp.approval_id);
+            patchThreadLive(originatingThreadId, { approval: { ...appDetail, _originatingThreadId: originatingThreadId } as any });
+          } else {
+            patchThreadLive(originatingThreadId, { approval: null });
+            if (resp.response) {
+              let steps: ExecutionStep[] = [];
+              if (resp.run_id) {
+                try { const rDetail = await api.fetchRunDetails(resp.run_id); steps = mapRunEventsToExecutionSteps(rDetail.events); patchThreadLive(originatingThreadId, { runDetail: rDetail }); } catch {}
+              }
+              const assistantMsg: ChatMessage = { id: `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined };
+              updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
+            }
+          }
+          if (resp.run_id) void refreshInspectorData(originatingThreadId, resp.run_id);
+        } catch (err: any) {
+          patchThreadLive(originatingThreadId, { runStatus: 'failed' });
+          updateThreadMessages(originatingThreadId, (prev) => [...prev, { id: `live-err-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-err-node-${nonce}`, content: `Error: ${(err as Error).message || 'Execution failed'}`, timestamp: 'just now', status: 'Failed' }]);
+        }
+      })();
+      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
+      void count; // suppress lint — count used for UI naming above
+    },
+    [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, selectedModelOverride, updateThreadMessages]
   );
 
   const handleApprovalDecision = useCallback(
@@ -664,30 +787,40 @@ export default function App() {
       notes?: string,
       editedInput?: Record<string, any>
     ) => {
-      if (!currentApproval || !activeThreadId) return;
+      const approval = activeThreadLive.approval;
+      if (!approval) return;
 
-      setCurrentRunStatus('running');
+      // ── Approval thread binding ────────────────────────────────────────────
+      // The originating threadId was captured at approval-creation time and
+      // stored alongside the approval object.  We use it here so that the
+      // final response is appended to the correct thread even if the user has
+      // navigated to a different thread since the approval was raised.
+      const originatingThreadId: string =
+        (approval as any)._originatingThreadId ?? activeThreadId ?? '';
+      if (!originatingThreadId) return;
+
+      patchThreadLive(originatingThreadId, { runStatus: 'running' });
       try {
         const decisionResp = await api.submitApproval(
-          currentApproval.id,
+          approval.id,
           decision,
           notes,
           editedInput
         );
 
-        setCurrentRunStatus(decisionResp.execution_status);
+        patchThreadLive(originatingThreadId, { runStatus: decisionResp.execution_status });
 
         if (decisionResp.execution_status === 'waiting_for_approval' && decisionResp.approval_id) {
           const nextApp = await api.fetchApproval(decisionResp.approval_id);
-          setCurrentApproval(nextApp);
+          patchThreadLive(originatingThreadId, { approval: { ...nextApp, _originatingThreadId: originatingThreadId } as any });
         } else {
-          setCurrentApproval(null);
+          patchThreadLive(originatingThreadId, { approval: null });
           if (decisionResp.final_response) {
             let steps: ExecutionStep[] = [];
             if (decisionResp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(decisionResp.run_id);
-                setRunDetail(rDetail);
+                patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
               } catch (e) {
                 console.warn('Failed to fetch run details after approval', e);
@@ -707,26 +840,28 @@ export default function App() {
               executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
             };
-            updateThreadMessages(activeThreadId, (prev) => [...prev, assistantMsg]);
+            // Append to ORIGINATING thread, not the currently active one
+            updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
           }
         }
 
-        if (currentRunId) {
-          refreshInspectorData(currentRunId);
+        const runId = threadLiveStates[originatingThreadId]?.runId;
+        if (runId) {
+          void refreshInspectorData(originatingThreadId, runId);
         }
         if (activeProject?.name) {
           api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
         }
       } catch (err: any) {
-        setCurrentRunStatus('failed');
+        patchThreadLive(originatingThreadId, { runStatus: 'failed' });
         console.error('Approval decision error:', err);
       }
     },
     [
-      currentApproval,
+      activeThreadLive.approval,
       activeThreadId,
+      threadLiveStates,
       updateThreadMessages,
-      currentRunId,
       refreshInspectorData,
       activeProject?.name,
     ]
@@ -912,7 +1047,8 @@ export default function App() {
             onContextObjectFocus={handleChatContextObjectFocus}
             onAttachRequest={openProjectFiles}
             onSendMessage={handleSendMessage}
-            currentApproval={currentApproval}
+            onStartLiveChat={handleStartLiveChat}
+            currentApproval={activeThreadLive.approval}
             onApprovalDecision={handleApprovalDecision}
           />
         ) : null}
@@ -951,7 +1087,8 @@ export default function App() {
                 onContextObjectFocus={handleChatContextObjectFocus}
                 onAttachRequest={openProjectFiles}
                 onSendMessage={handleSendMessage}
-                currentApproval={currentApproval}
+                onStartLiveChat={handleStartLiveChat}
+                currentApproval={activeThreadLive.approval}
                 onApprovalDecision={handleApprovalDecision}
               />
             </div>
@@ -965,8 +1102,8 @@ export default function App() {
       {inspectorOpen ? (
         <InspectorPanel
           selectedNode={selectedNode}
-          runDetail={runDetail}
-          researchData={researchData}
+          runDetail={activeThreadLive.runDetail}
+          researchData={activeThreadLive.researchData}
           memories={memories}
           onClose={() => setInspectorOpen(false)}
           onContextSelect={openBoardNode}
