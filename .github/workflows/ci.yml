@@ -105,22 +105,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: "web/package-lock.json"
 
-      - name: Install frontend dependencies
+      - name: Run frontend tests and build
         run: |
           cd web
           npm ci
-
-      - name: Run frontend tests
-        run: |
-          cd web
-          npm test -- --reporter=verbose 2>&1 | tee test.log || {
-            grep -E "FAIL|Error|✕|❯" test.log | head -n 30 | while IFS= read -r line; do
-              echo "::error::$line"
-            done
-            exit 1
-          }
-
-      - name: Run frontend build
-        run: |
-          cd web
+          npm test
           npm run build
