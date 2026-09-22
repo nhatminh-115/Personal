@@ -113,7 +113,12 @@ jobs:
       - name: Run frontend tests
         run: |
           cd web
-          npm test
+          npm test -- --reporter=verbose 2>&1 | tee test.log || {
+            grep -E "FAIL|Error|✕|❯" test.log | head -n 30 | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+            exit 1
+          }
 
       - name: Run frontend build
         run: |
