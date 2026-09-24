@@ -201,6 +201,11 @@ export default function App() {
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [selectedModelOverride] = useState<string | null>(null);
   const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
+  /**
+   * approvalOrigins — typed binding: approval.id → originatingThreadId.
+   * Replaces the `_originatingThreadId as any` hack on the DTO.
+   */
+  const [approvalOrigins, setApprovalOrigins] = useState<Record<string, string>>({});
 
   /** Convenience accessor — live state for the currently active thread only */
   const activeThreadLive: ThreadLiveState = activeThreadId
@@ -556,11 +561,59 @@ export default function App() {
         if (!detail?.messages?.length) return;
         setChatThreads((current) => current.map((t) => {
           if (t.id !== threadId) return t;
-          // Merge: keep local optimistic messages, append any backend-only messages
-          const localIds = new Set(t.messages.map((m) => m.id).filter(Boolean));
-          const newFromBackend = detail.messages.filter((m) => m.id && !localIds.has(m.id));
-          if (!newFromBackend.length) return t;
-          return { ...t, messages: [...t.messages, ...newFromBackend] };
+
+          // ── Role+content occurrence reconciliation ──────────────────────────
+          // Backend canonical IDs are UUIDs; local optimistic IDs are synthetic
+          // ("live-user-…", "live-assistant-…").  We CANNOT dedup by ID alone.
+          //
+          // Algorithm:
+          //   1. Build an occurrence counter over local (role, content) pairs.
+          //   2. For each backend message, check if occurrence N of that pair
+          //      already exists locally.  If yes: adopt the backend canonical ID
+          //      (so the backend wins on identity) and preserve all local UI
+          //      metadata (executionLabel, execution, provenance, etc.).
+          //      If no: it is a genuinely new backend-only message → append.
+
+          type OccKey = `${string}::${string}`;
+          const occurrenceCounter = new Map<OccKey, number>();
+
+          // Index local messages by occurrence of (role, content)
+          const localByOccurrence = new Map<string, ChatMessage & { _localIdx: number }>();
+          t.messages.forEach((m, idx) => {
+            const key: OccKey = `${m.role}::${m.content}`;
+            const n = (occurrenceCounter.get(key) ?? 0) + 1;
+            occurrenceCounter.set(key, n);
+            localByOccurrence.set(`${key}::${n}`, { ...m, _localIdx: idx });
+          });
+
+          // Reset counter for backend pass
+          occurrenceCounter.clear();
+
+          const merged: ChatMessage[] = [...t.messages];
+          let appended = false;
+
+          for (const bm of detail.messages) {
+            const key: OccKey = `${bm.role}::${bm.content}`;
+            const n = (occurrenceCounter.get(key) ?? 0) + 1;
+            occurrenceCounter.set(key, n);
+
+            const localMatch = localByOccurrence.get(`${key}::${n}`);
+            if (localMatch) {
+              // Adopt the backend canonical ID on the existing local message
+              if (localMatch.id !== bm.id && bm.id) {
+                merged[localMatch._localIdx] = { ...merged[localMatch._localIdx], id: bm.id };
+              }
+            } else {
+              // Genuinely new message from backend — append
+              merged.push(bm);
+              appended = true;
+            }
+          }
+
+          // Only update thread if something actually changed
+          const idChanged = detail.messages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
+          if (!appended && !idChanged) return t;
+          return { ...t, messages: merged };
         }));
       }).catch(() => { /* hydration failure is silently ignored */ });
     }
@@ -651,8 +704,9 @@ export default function App() {
 
         if (resp.status === 'waiting_for_approval' && resp.approval_id) {
           const appDetail = await api.fetchApproval(resp.approval_id);
-          // Store approval bound to originating thread
-          patchThreadLive(originatingThreadId, { approval: { ...appDetail, _originatingThreadId: originatingThreadId } as any });
+          // Typed binding: register originating thread in the approvalOrigins map
+          setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
+          patchThreadLive(originatingThreadId, { approval: appDetail });
         } else {
           patchThreadLive(originatingThreadId, { approval: null });
           if (resp.response) {
@@ -728,13 +782,18 @@ export default function App() {
   const handleStartLiveChat = useCallback(
     async (text: string) => {
       if (!activeProjectId || !activeProject) return;
+      const promptText = text.trim();
       const id = `${activeProjectId}-live-${Date.now()}`;
       const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
+      // Title: use draft text if provided, otherwise a generic label
+      const title = promptText
+        ? promptText.slice(0, 42) + (promptText.length > 42 ? '…' : '')
+        : `Live chat ${count}`;
       const thread: ChatThreadRecord = {
         id,
         projectId: activeProjectId,
-        title: text.slice(0, 42) + (text.length > 42 ? '…' : ''),
+        title,
         summary: 'Live backend session',
         updated: 'just now',
         messages: [],
@@ -744,20 +803,27 @@ export default function App() {
       setChatThreads((current) => [thread, ...current]);
       setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
       openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
+      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
+
+      // If there is no prompt text, we only create the thread — no backend call.
+      if (!promptText) return;
+
       // Small yield so state settles before we send
       await new Promise((resolve) => window.setTimeout(resolve, 0));
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: text, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
-          const resp = await api.sendChat(sessionId, text, activeProject.name, selectedModelOverride);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, selectedModelOverride);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);
-            patchThreadLive(originatingThreadId, { approval: { ...appDetail, _originatingThreadId: originatingThreadId } as any });
+            // Typed binding: record which thread owns this approval
+            setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
+            patchThreadLive(originatingThreadId, { approval: appDetail });
           } else {
             patchThreadLive(originatingThreadId, { approval: null });
             if (resp.response) {
@@ -775,7 +841,6 @@ export default function App() {
           updateThreadMessages(originatingThreadId, (prev) => [...prev, { id: `live-err-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-err-node-${nonce}`, content: `Error: ${(err as Error).message || 'Execution failed'}`, timestamp: 'just now', status: 'Failed' }]);
         }
       })();
-      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
       void count; // suppress lint — count used for UI naming above
     },
     [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, selectedModelOverride, updateThreadMessages]
@@ -790,13 +855,12 @@ export default function App() {
       const approval = activeThreadLive.approval;
       if (!approval) return;
 
-      // ── Approval thread binding ────────────────────────────────────────────
-      // The originating threadId was captured at approval-creation time and
-      // stored alongside the approval object.  We use it here so that the
-      // final response is appended to the correct thread even if the user has
-      // navigated to a different thread since the approval was raised.
+      // ── Typed approval thread binding ──────────────────────────────────────
+      // `approvalOrigins` maps approval.id → originatingThreadId, set at the
+      // moment the approval was raised.  This replaces the `as any` hack and
+      // survives the user navigating to a different thread before deciding.
       const originatingThreadId: string =
-        (approval as any)._originatingThreadId ?? activeThreadId ?? '';
+        approvalOrigins[approval.id] ?? activeThreadId ?? '';
       if (!originatingThreadId) return;
 
       patchThreadLive(originatingThreadId, { runStatus: 'running' });
@@ -812,7 +876,9 @@ export default function App() {
 
         if (decisionResp.execution_status === 'waiting_for_approval' && decisionResp.approval_id) {
           const nextApp = await api.fetchApproval(decisionResp.approval_id);
-          patchThreadLive(originatingThreadId, { approval: { ...nextApp, _originatingThreadId: originatingThreadId } as any });
+          // Register the next approval in the typed map
+          setApprovalOrigins((prev) => ({ ...prev, [nextApp.id]: originatingThreadId }));
+          patchThreadLive(originatingThreadId, { approval: nextApp });
         } else {
           patchThreadLive(originatingThreadId, { approval: null });
           if (decisionResp.final_response) {
@@ -845,7 +911,9 @@ export default function App() {
           }
         }
 
-        const runId = threadLiveStates[originatingThreadId]?.runId;
+        // Fix 5: use decisionResp.run_id as the authoritative ID for this refresh;
+        // fall back to the thread's stored runId only if the response omits it.
+        const runId = decisionResp.run_id ?? threadLiveStates[originatingThreadId]?.runId;
         if (runId) {
           void refreshInspectorData(originatingThreadId, runId);
         }
@@ -860,6 +928,7 @@ export default function App() {
     [
       activeThreadLive.approval,
       activeThreadId,
+      approvalOrigins,
       threadLiveStates,
       updateThreadMessages,
       refreshInspectorData,

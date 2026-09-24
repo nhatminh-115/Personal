@@ -6,13 +6,15 @@
  *            mutating a demo thread.
  * Invariant: clicking "Start live chat" from demo banner creates a brand-new
  *            thread with source: 'live'.
+ * Invariant: CTA with draft text sends that exact text; CTA with empty draft
+ *            creates thread only without backend call.
  */
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
 describe('Demo / Live Separation', () => {
-  let postCalls: string[];
+  let postCalls: { url: string; body: string }[];
 
   beforeEach(() => {
     window.localStorage.clear();
@@ -21,7 +23,7 @@ describe('Demo / Live Separation', () => {
 
     global.fetch = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
       if (options?.method === 'POST' && url.includes('/v1/chat')) {
-        postCalls.push(url);
+        postCalls.push({ url, body: typeof options.body === 'string' ? options.body : '' });
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ run_id: 'run-1', session_id: 'sess-1', status: 'completed', response: 'Reply', tool_results: [] }),
@@ -51,8 +53,7 @@ describe('Demo / Live Separation', () => {
   it('sending text from a demo thread does NOT call POST /v1/chat', async () => {
     await openStatefulChats();
 
-    // The active thread is a demo thread (Novelty & architecture)
-    // Type in composer and press Enter
+    // The active thread is a demo thread — type and press Enter
     const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Test from demo' } });
@@ -77,10 +78,55 @@ describe('Demo / Live Separation', () => {
     const newChatBtn = screen.getByTitle('New chat');
     await act(async () => { fireEvent.click(newChatBtn); });
 
-    // The new thread's banner should NOT show "demo thread"
-    // (it is live and should show the standard composer)
+    // The new thread is live — demo banner must be gone
     const demoBanners = screen.queryAllByText(/demo thread/i);
-    // If the new thread is live, the demo banner is gone
     expect(demoBanners).toHaveLength(0);
+  });
+
+  it('CTA with non-empty draft creates live thread AND sends exact draft text to backend', async () => {
+    await openStatefulChats();
+
+    // Type a draft message
+    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const draftText = 'Explain the architecture';
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: draftText } });
+    });
+
+    // Click "Start live chat" CTA button
+    const ctaBtn = screen.getByText('Start live chat');
+    await act(async () => { fireEvent.click(ctaBtn); });
+
+    // Wait for async backend call
+    await act(async () => { await new Promise((r) => window.setTimeout(r, 100)); });
+
+    // Backend was called exactly once
+    expect(postCalls).toHaveLength(1);
+    // The exact draft text was sent — NOT literal "Start live chat"
+    expect(postCalls[0].body).toContain(draftText);
+    expect(postCalls[0].body).not.toContain('Start live chat');
+  });
+
+  it('CTA with empty draft creates live thread WITHOUT calling backend', async () => {
+    await openStatefulChats();
+
+    // Ensure textarea is empty
+    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    await act(async () => {
+      fireEvent.change(textarea, { target: { value: '' } });
+    });
+
+    // Click CTA
+    const ctaBtn = screen.getByText('Start live chat');
+    await act(async () => { fireEvent.click(ctaBtn); });
+
+    // Wait for any potential async
+    await act(async () => { await new Promise((r) => window.setTimeout(r, 100)); });
+
+    // No backend call — thread was created only
+    expect(postCalls).toHaveLength(0);
+
+    // Demo banner is gone — we switched to the new live thread
+    expect(screen.queryAllByText(/demo thread/i)).toHaveLength(0);
   });
 });

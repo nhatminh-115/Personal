@@ -263,7 +263,7 @@ export function ChatPane({
               <button
                 className="demo-start-live-button"
                 type="button"
-                onClick={() => { const text = draft.trim(); if (text) { void submit(); } else { void onStartLiveChat('Start live chat'); } }}
+                onClick={() => { void onStartLiveChat(draft.trim()); }}
               >
                 Start live chat
               </button>

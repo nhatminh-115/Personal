@@ -75,38 +75,52 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(allTabButtonsAfterSecondClick.length).toBe(1);
   });
 
-  it('overview / chat / board / files reuse the same project tab', async () => {
+  it('overview / chat / board / split / files reuse the same single project tab', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    // Navigate to Stateful Architecture project
+    // Helper: count how many buttons inside .workspace-chrome mention the project name
+    function countProjectTabs() {
+      return screen.getAllByRole('button').filter(
+        (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
+      ).length;
+    }
+
+    // ── Step 1: Open project (Overview) ────────────────────────────────────
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
-    await act(async () => {
-      fireEvent.click(projectButton);
-    });
+    await act(async () => { fireEvent.click(projectButton); });
+    expect(countProjectTabs()).toBe(1);
 
-    // Click Chats in project home
+    // ── Step 2: Switch to Chat ──────────────────────────────────────────────
     const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
-    await act(async () => {
-      fireEvent.click(chatsBtn);
-    });
+    await act(async () => { fireEvent.click(chatsBtn); });
 
-    // Verify workspace mode group is present
+    // Workspace mode group present
     expect(screen.getByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
+    expect(countProjectTabs()).toBe(1);
 
-    // Switch to Board mode
-    const boardModeBtn = screen.getByRole('button', { name: /Board/i });
-    await act(async () => {
-      fireEvent.click(boardModeBtn);
-    });
+    // ── Step 3: Switch to Board ─────────────────────────────────────────────
+    const boardModeBtn = screen.getByRole('button', { name: /^Board$/i });
+    await act(async () => { fireEvent.click(boardModeBtn); });
+    expect(countProjectTabs()).toBe(1);
 
-    // Switch to Split mode
-    const splitModeBtn = screen.getByRole('button', { name: /Split/i });
-    await act(async () => {
-      fireEvent.click(splitModeBtn);
-    });
+    // ── Step 4: Switch to Split ─────────────────────────────────────────────
+    const splitModeBtn = screen.getByRole('button', { name: /^Split$/i });
+    await act(async () => { fireEvent.click(splitModeBtn); });
+    expect(countProjectTabs()).toBe(1);
+
+    // ── Step 5: Navigate to Files ───────────────────────────────────────────
+    const filesBtn = screen.getByRole('button', { name: /^Files$/i });
+    await act(async () => { fireEvent.click(filesBtn); });
+    expect(countProjectTabs()).toBe(1);
+
+    // ── Step 6: Back to Overview ────────────────────────────────────────────
+    const overviewBtn = screen.getByRole('button', { name: /^Overview$/i });
+    await act(async () => { fireEvent.click(overviewBtn); });
+    expect(countProjectTabs()).toBe(1);
   });
+
 
   it('file object opens its own dedicated preview tab', async () => {
     await act(async () => {
