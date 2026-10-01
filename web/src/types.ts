@@ -84,7 +84,7 @@ export type AuraFlowEdge = Edge<{
 
 export interface AIContextItem {
   id: string;
-  kind: 'turn' | 'note' | 'paper' | 'code' | 'file';
+  kind: 'turn' | 'note' | 'paper' | 'claim' | 'code' | 'file';
   title: string;
   detail: string;
   tokens: number;
