@@ -15,6 +15,18 @@ const kindLabel = {
   execution: 'Execution',
 } as const;
 
+const relationLabels: Record<string, string> = {
+  contains_evidence: 'Contains evidence',
+  supports_claim: 'Supports claim',
+  selected_into: 'Included in context set',
+  bridges_to: 'Context bridge',
+  branches_to: 'Branch continues here',
+};
+
+export function getEdgeLabel(kind: keyof typeof kindLabel, relationType?: string) {
+  return (relationType && relationLabels[relationType]) || kindLabel[kind];
+}
+
 export function SmartEdge({
   id,
   sourceX,
@@ -54,6 +66,7 @@ export function SmartEdge({
       });
 
   const [edgePath, labelX, labelY] = pathResult;
+  const label = getEdgeLabel(kind, data?.relationType);
   const stroke = selected
     ? '#89dceb'
     : isContext
@@ -85,10 +98,10 @@ export function SmartEdge({
             className="edge-action-pill nodrag nopan"
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           >
-            <span>{kindLabel[kind]}</span>
+            <span>{label}</span>
             <button
               type="button"
-              aria-label={`Delete ${kindLabel[kind].toLowerCase()}`}
+              aria-label={`Delete ${label.toLowerCase()}`}
               title="Delete link · Del"
               onClick={(event) => {
                 event.stopPropagation();
