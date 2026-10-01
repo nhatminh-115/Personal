@@ -64,6 +64,7 @@ export interface AuraNodeData extends Record<string, unknown> {
 export type AuraFlowNode = Node<AuraNodeData>;
 export type AuraFlowEdge = Edge<{
   edgeKind?: 'reply' | 'context' | 'semantic' | 'execution';
+  createdBy?: string;
   onDelete?: (id: string) => void;
 }>;
 

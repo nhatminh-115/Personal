@@ -121,6 +121,7 @@ class WorkspaceObjectResponse(BaseModel):
 
 
 class WorkspaceObjectCreate(BaseModel):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=36)
     object_type: Literal["manual_note", "context_bridge", "context_set", "conversation_branch"]
     title: str = Field(default="", max_length=255)
     content: str = Field(default="", max_length=100_000)
@@ -152,6 +153,23 @@ class WorkspaceEdgeCreate(BaseModel):
     relation_type: str = Field(min_length=1, max_length=48)
     edge_family: Literal["semantic", "context", "execution", "provenance"]
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceEdgeBatchDelete(BaseModel):
+    edge_ids: List[str] = Field(min_length=1, max_length=100)
+
+
+class WorkspaceEdgeRestoreInput(BaseModel):
+    id: str = Field(min_length=1, max_length=36)
+    source_object_id: str = Field(min_length=1, max_length=36)
+    target_object_id: str = Field(min_length=1, max_length=36)
+    relation_type: str = Field(min_length=1, max_length=48)
+    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceEdgeBatchRestore(BaseModel):
+    edges: List[WorkspaceEdgeRestoreInput] = Field(min_length=1, max_length=100)
 
 
 class WorkspaceLayoutWrite(BaseModel):
