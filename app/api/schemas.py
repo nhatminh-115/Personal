@@ -227,6 +227,7 @@ class WorkspaceSearchResult(BaseModel):
     excerpt: str
     project_name: Optional[str] = None
     created_by: str
+    verification_status: Optional[str] = None
     updated_at: datetime
 
 
