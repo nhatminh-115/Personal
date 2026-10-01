@@ -1,0 +1,70 @@
+.study-material-detail {
+  min-height: 34px;
+  margin: 13px 0;
+  color: #6d838e;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.study-material-note {
+  margin: 12px 0 0;
+  color: #7f6e58;
+  font-size: 7px;
+  line-height: 1.45;
+}
+
+.study-track-empty {
+  margin-top: 24px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px dashed rgba(149, 179, 197, .14);
+  border-radius: 14px;
+  color: #738b96;
+}
+
+.study-track-empty h2,
+.study-history h2 {
+  margin: 0;
+  color: #9eb2bc;
+  font-size: 14px;
+}
+
+.study-track-empty p {
+  max-width: 520px;
+  margin: 0 0 4px;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.study-history {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.study-history article {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(149, 179, 197, .07);
+  border-radius: 9px;
+  color: #728994;
+  font-size: 9px;
+}
+
+.study-history article strong {
+  flex: 1;
+  color: #a8b9c1;
+}
+
+.study-history article button {
+  border: 0;
+  background: transparent;
+  color: #87aab7;
+  cursor: pointer;
+}

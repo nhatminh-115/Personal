@@ -22,6 +22,7 @@ def _study_session_response(item: WorkspaceObjectModel) -> StudySessionResponse:
         id=item.id,
         track_id=metadata.get("track_id", ""),
         track_title=item.title,
+        material_id=metadata.get("material_id") if isinstance(metadata.get("material_id"), str) else None,
         status=status_value,
         started_at=item.created_at,
         completed_at=datetime.fromisoformat(completed_at) if isinstance(completed_at, str) else None,
@@ -51,13 +52,33 @@ async def start_study_session(
     track_title = body.track_title.strip()
     if not track_id or not track_title:
         raise HTTPException(status_code=422, detail="Study track ID and title must not be blank.")
+    material_id = body.material_id.strip() if body.material_id else None
+    if material_id:
+        material = await db.get(WorkspaceObjectModel, material_id)
+        material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
+        if (
+            material is None
+            or material.project_name is not None
+            or material.object_type != "file_reference"
+            or material.created_by != "user"
+            or material_metadata.get("collection") not in {"Study", "Research"}
+        ):
+            raise HTTPException(status_code=404, detail="Study material not found in the personal Library.")
+        # The reference is the durable identity; use its current canonical title
+        # and store the link on the Study object without copying file contents.
+        track_id = material.id
+        track_title = material.title
     item = WorkspaceObjectModel(
         project_name=None,
         object_type="study_session",
         created_by="user",
         title=track_title,
         content="",
-        metadata_json={"track_id": track_id, "status": "in_progress"},
+        metadata_json={
+            "track_id": track_id,
+            "status": "in_progress",
+            **({"material_id": material_id} if material_id else {}),
+        },
     )
     db.add(item)
     await db.commit()
