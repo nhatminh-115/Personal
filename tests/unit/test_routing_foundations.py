@@ -33,6 +33,7 @@ from app.models.base import (
     ReasoningEffort,
     ReasoningPolicy,
     RoutingContext,
+    ToolCallRequest,
 )
 from app.models.mock_provider import MockModelProvider
 from app.models.provider import ModelProvider
@@ -1643,3 +1644,22 @@ def test_exact_model_override_rejects_known_insufficient_context_without_fallbac
             metadata,
             default_provider="long",
         )
+
+
+def test_prompt_token_estimate_includes_tool_call_arguments():
+    from app.orchestrator.nodes import _estimate_prompt_tokens
+
+    plain = ChatMessage(role=ModelRole.ASSISTANT, content="tool call follows")
+    tool_call = ChatMessage(
+        role=ModelRole.ASSISTANT,
+        content="tool call follows",
+        tool_calls=[
+            ToolCallRequest(
+                id="call-1",
+                name="read_file",
+                arguments={"path": "workspace", "payload": "x" * 6000},
+            )
+        ],
+    )
+
+    assert _estimate_prompt_tokens([tool_call], []) > _estimate_prompt_tokens([plain], []) + 1_900
