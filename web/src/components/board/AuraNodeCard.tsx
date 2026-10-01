@@ -135,10 +135,10 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
         </div>
       ) : null}
 
-      {data.workspaceObjectType === 'conversation_branch' && data.onContinueBranch ? (
+      {(data.workspaceObjectType === 'conversation_branch' || data.workspaceObjectType === 'context_set') && data.onUseWorkspaceContext ? (
         <div className="aura-node__actions nodrag nopan">
-          <button type="button" onClick={() => data.onContinueBranch?.(id)}>
-            <GitBranch size={11} /> Continue in Chat
+          <button type="button" onClick={() => data.onUseWorkspaceContext?.(id)}>
+            {data.workspaceObjectType === 'conversation_branch' ? <><GitBranch size={11} /> Continue in Chat</> : <>Use in Chat</>}
           </button>
         </div>
       ) : null}

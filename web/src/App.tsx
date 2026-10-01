@@ -1258,7 +1258,7 @@ export default function App() {
             branchRequest={branchRequest}
             executionExpanded={params.get('execution') === '1'}
             onAskWithContext={handleBoardAskWithContext}
-            onContinueBranch={(branchId) => { void handleStartLiveChat('', [branchId]); }}
+            onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }}
           />
         ) : null}
 
@@ -1288,7 +1288,7 @@ export default function App() {
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onContinueBranch={(branchId) => { void handleStartLiveChat('', [branchId]); }} />
+              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
             </div>
           </div>
         ) : null}

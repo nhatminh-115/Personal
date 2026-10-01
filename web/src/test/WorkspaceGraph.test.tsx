@@ -214,7 +214,7 @@ describe('Persistent workspace graph Board projection', () => {
     const onContinueBranch = vi.fn();
     const { rerender, container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="branch-live-action" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} onContinueBranch={onContinueBranch} />
+        <BoardCanvas boardKey="branch-live-action" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} onUseWorkspaceContext={onContinueBranch} />
       </ReactFlowProvider>,
     );
     expect(await screen.findByText('Continue after the handoff')).toBeInTheDocument();
@@ -243,6 +243,39 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(contextItem).toHaveAttribute('aria-pressed', 'true'));
     fireEvent.click(contextItem);
     expect(onContinueBranch).toHaveBeenLastCalledWith('selected:');
+  });
+
+  it('offers a saved Context Set directly to a new live chat without mutating the set', async () => {
+    const contextSetId = 'saved-context-set';
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: contextSetId,
+        session_id: null,
+        source_message_id: null,
+        object_type: 'context_set',
+        created_by: 'user',
+        title: 'Release review context',
+        content: '',
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-context-set', project_name: projects[0].name });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({} as never);
+    const onUseWorkspaceContext = vi.fn();
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="context-set-live-action" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} onUseWorkspaceContext={onUseWorkspaceContext} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('Release review context')).toBeInTheDocument();
+    const useButton = [...container.querySelectorAll('[data-id="saved-context-set"] button')]
+      .find((button) => button.textContent?.includes('Use in Chat'))!;
+    fireEvent.click(useButton);
+    expect(onUseWorkspaceContext).toHaveBeenCalledWith(contextSetId);
+    expect(createObject).not.toHaveBeenCalled();
   });
 
 });
