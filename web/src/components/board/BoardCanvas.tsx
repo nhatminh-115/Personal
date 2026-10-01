@@ -21,6 +21,7 @@ import { buildMergedContinuation } from './contextActions';
 import { SmartEdge } from './SmartEdge';
 import { ApiError, api } from '../../services/api';
 import { projectExecutionGraph } from './executionProjection';
+import type { BoardSnapshot } from '../../hooks/useBoardHistory';
 
 const nodeTypes = { aura: AuraNodeCard };
 const edgeTypes = { smart: SmartEdge };
@@ -73,12 +74,13 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
         body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
         summary: object.content.slice(0, 160),
-        density: 'compact',
+        density: graph.layout.layout?.densities?.[object.id] ?? 'compact',
         manual: object.created_by === 'user' && kind === 'note',
         accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
         layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
         workspaceObjectType: object.object_type,
+        workspaceCreatedBy: object.created_by,
         workspaceMetadata: object.metadata_json,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
@@ -103,14 +105,24 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     source: edge.source_object_id,
     target: edge.target_object_id,
     type: 'smoothstep',
-    data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
+    data: {
+      edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic',
+      workspaceCreatedBy: edge.created_by,
+      relationType: edge.relation_type,
+      edgeFamily: edge.edge_family,
+      workspaceMetadata: edge.metadata_json,
+    },
   }));
   const execution = projectExecutionGraph(graph.execution_traces ?? [], nodes);
   return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges };
 }
 
 function layoutSnapshotFor(nodes: AuraFlowNode[], viewport: { x: number; y: number; zoom: number } | null) {
-  return JSON.stringify({ positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])), viewport });
+  return JSON.stringify({
+    positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])),
+    densities: Object.fromEntries(nodes.map((node) => [node.id, node.data.density])),
+    viewport,
+  });
 }
 
 interface BoardCanvasProps {
@@ -130,6 +142,36 @@ interface BoardCanvasProps {
 }
 
 const densityOrder: NodeDensity[] = ['collapsed', 'compact', 'full'];
+
+function isUserWorkspaceObject(node: AuraFlowNode) {
+  return node.data.workspaceCreatedBy === 'user'
+    && ['manual_note', 'context_bridge', 'context_set', 'conversation_branch'].includes(node.data.workspaceObjectType ?? '');
+}
+
+function edgeIdentity(edge: AuraFlowEdge) {
+  return JSON.stringify([
+    edge.source,
+    edge.target,
+    edge.data?.relationType ?? (edge.data?.edgeKind === 'context' ? 'bridges_to' : edge.data?.edgeKind ?? 'related_to'),
+    edge.data?.edgeFamily ?? (edge.data?.edgeKind === 'context' ? 'context' : 'semantic'),
+  ]);
+}
+
+function workspaceObjectWrite(node: AuraFlowNode) {
+  const bridge = node.data.workspaceObjectType === 'context_bridge';
+  const metadata = {
+    ...(node.data.workspaceMetadata ?? {}),
+    ...(bridge ? {
+      bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+      bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+    } : {}),
+  };
+  return {
+    title: node.data.title,
+    content: bridge ? (node.data.bridgeNote ?? node.data.body) : node.data.body,
+    metadata_json: metadata,
+  };
+}
 
 export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
@@ -157,18 +199,113 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
+  const historySync = useRef<Promise<void>>(Promise.resolve());
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
+
+  const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
+
+  const persistHistoryChange = useCallback((current: BoardSnapshot, target: BoardSnapshot) => {
+    if (!workspaceProjectName || !workspaceReady.current) return;
+    historySync.current = historySync.current.then(async () => {
+      for (const timer of noteSaveTimers.current.values()) window.clearTimeout(timer);
+      for (const timer of bridgeSectionSaveTimers.current.values()) window.clearTimeout(timer);
+      noteSaveTimers.current.clear();
+      bridgeSectionSaveTimers.current.clear();
+
+      const currentObjects = new Map(current.nodes.filter(isUserWorkspaceObject).map((node) => [node.id, node]));
+      const targetObjects = new Map(target.nodes.filter(isUserWorkspaceObject).map((node) => [node.id, node]));
+      const deletedObjectIds = new Set([...currentObjects.keys()].filter((id) => !targetObjects.has(id)));
+      const currentKeys = new Set(current.edges.map(edgeIdentity));
+      const targetKeys = new Set(target.edges.map(edgeIdentity));
+
+      for (const edge of current.edges) {
+        if (edge.data?.workspaceCreatedBy !== 'user' || targetKeys.has(edgeIdentity(edge))) continue;
+        if (deletedObjectIds.has(edge.source) || deletedObjectIds.has(edge.target)) continue;
+        await api.deleteWorkspaceEdge(workspaceProjectName, edge.id);
+      }
+      for (const id of deletedObjectIds) await api.deleteWorkspaceObject(workspaceProjectName, id);
+
+      for (const [id, node] of targetObjects) {
+        const before = currentObjects.get(id);
+        if (!before) {
+          const sourceIds = target.edges.filter((edge) => edge.target === id && edge.data?.edgeFamily === 'context').map((edge) => edge.source);
+          await api.createWorkspaceObject(workspaceProjectName, {
+            id,
+            object_type: node.data.workspaceObjectType as 'manual_note' | 'context_bridge' | 'context_set' | 'conversation_branch',
+            ...workspaceObjectWrite(node),
+            source_object_ids: sourceIds,
+          });
+          continue;
+        }
+        if (['manual_note', 'context_bridge'].includes(node.data.workspaceObjectType ?? '')
+          && JSON.stringify(workspaceObjectWrite(before)) !== JSON.stringify(workspaceObjectWrite(node))) {
+          await api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(node));
+        }
+      }
+
+      const newObjectIds = new Set([...targetObjects.keys()].filter((id) => !currentObjects.has(id)));
+      for (const edge of target.edges) {
+        if (edge.data?.workspaceCreatedBy !== 'user' || currentKeys.has(edgeIdentity(edge))) continue;
+        const targetNode = targetObjects.get(edge.target);
+        const autoCreatedContextRelation = newObjectIds.has(edge.target)
+          && edge.data.edgeFamily === 'context'
+          && ['context_bridge', 'context_set', 'conversation_branch'].includes(targetNode?.data.workspaceObjectType ?? '');
+        if (autoCreatedContextRelation) continue;
+        await api.createWorkspaceEdge(workspaceProjectName, {
+          source_object_id: edge.source,
+          target_object_id: edge.target,
+          relation_type: edge.data.relationType ?? (edge.data.edgeKind === 'context' ? 'bridges_to' : 'related_to'),
+          edge_family: edge.data.edgeFamily ?? (edge.data.edgeKind === 'context' ? 'context' : 'semantic'),
+          metadata_json: edge.data.workspaceMetadata ?? {},
+        });
+      }
+
+      if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+      const targetLayout = {
+        positions: Object.fromEntries(target.nodes.map((node) => [node.id, node.position])),
+        densities: Object.fromEntries(target.nodes.map((node) => [node.id, node.data.density])),
+        viewport: viewportRef.current,
+      };
+      const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, targetLayout, layoutRevision.current);
+      layoutRevision.current = savedLayout.revision;
+      layoutSnapshot.current = JSON.stringify(targetLayout);
+
+      const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+      const projected = mapWorkspaceGraph(graph);
+      layoutRevision.current = graph.layout.revision;
+      nodesRef.current = projected.nodes;
+      edgesRef.current = projected.edges;
+      setNodes(projected.nodes);
+      setEdges(projected.edges);
+      setExecutionNodes(projected.executionNodes);
+      setExecutionEdges(projected.executionEdges);
+    }).catch(async () => {
+      toast('Undo/redo could not be saved', 'The Board will reload the latest project graph before further edits.');
+      try {
+        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+        const projected = mapWorkspaceGraph(graph);
+        layoutRevision.current = graph.layout.revision;
+        nodesRef.current = projected.nodes;
+        edgesRef.current = projected.edges;
+        setNodes(projected.nodes);
+        setEdges(projected.edges);
+        setExecutionNodes(projected.executionNodes);
+        setExecutionEdges(projected.executionEdges);
+      } catch {
+        toast('Board reload failed', 'Reopen the Board to reconcile it with the saved project graph.');
+      }
+    });
+  }, [setEdges, setNodes, toast, workspaceProjectName]);
 
   const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
     nodesRef,
     edgesRef,
     setNodes,
     setEdges,
+    onHistoryChange: persistHistoryChange,
   });
-
-  const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
   useEffect(() => {
     const nextNodes = (seedNodes ?? initialNodes).map((node) => ({ ...node, data: { ...node.data }, selected: false }));
@@ -195,11 +332,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const savedViewport = graph.layout.layout?.viewport ?? null;
       let revision = graph.layout.revision;
       const persistedPositions = graph.layout.layout?.positions ?? {};
-      const missingPositions = nextNodes.some((node) => !persistedPositions[node.id]);
-      if (missingPositions) {
+      const persistedDensities = graph.layout.layout?.densities ?? {};
+      const missingLayout = nextNodes.some((node) => !persistedPositions[node.id] || !persistedDensities[node.id]);
+      if (missingLayout) {
         try {
           const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, {
             positions: Object.fromEntries(nextNodes.map((node) => [node.id, node.position])),
+            densities: Object.fromEntries(nextNodes.map((node) => [node.id, node.data.density])),
             viewport: savedViewport,
           }, revision);
           revision = savedLayout.revision;
@@ -237,8 +376,12 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   useEffect(() => {
     if (!workspaceProjectName || !workspaceReady.current || layoutConflict.current) return;
-    const positions = Object.fromEntries(nodes.filter((node) => !node.id.startsWith('branch-') && !node.id.startsWith('note-') && !node.id.startsWith('merge-') && !node.id.startsWith('lens-answer-') && !node.id.startsWith('bridge-')).map((node) => [node.id, node.position]));
-    const layout = { positions, viewport };
+    const persistentNodes = nodes.filter((node) => !node.id.startsWith('branch-') && !node.id.startsWith('note-') && !node.id.startsWith('merge-') && !node.id.startsWith('lens-answer-') && !node.id.startsWith('bridge-'));
+    const layout = {
+      positions: Object.fromEntries(persistentNodes.map((node) => [node.id, node.position])),
+      densities: Object.fromEntries(persistentNodes.map((node) => [node.id, node.data.density])),
+      viewport,
+    };
     const snapshot = JSON.stringify(layout);
     if (snapshot === layoutSnapshot.current) return;
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
@@ -394,6 +537,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }).then(async () => {
           const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
           const projected = mapWorkspaceGraph(graph);
+          recordHistory();
           layoutRevision.current = graph.layout.revision;
           nodesRef.current = projected.nodes;
           edgesRef.current = projected.edges;
@@ -554,17 +698,18 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         id,
         type: 'aura',
         position,
-        data: {
-          kind: 'note',
-          eyebrow: 'MANUAL NOTE',
-          title: 'Untitled note',
+      data: {
+        kind: 'note',
+        eyebrow: 'MANUAL NOTE',
+        title: 'Untitled note',
           body,
           summary: body,
           density: 'compact',
-          manual: true,
-          accent: 'amber',
-          layer: 'knowledge',
-        },
+        manual: true,
+        accent: 'amber',
+        layer: 'knowledge',
+        ...(workspaceProjectName ? { workspaceObjectType: 'manual_note', workspaceCreatedBy: 'user', workspaceMetadata: {} } : {}),
+      },
       };
       setNodes((current) => [...current, note]);
       toast('Manual note created', 'It lives on the Knowledge layer and is explicitly marked Manual.');
@@ -594,6 +739,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
@@ -646,6 +792,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
@@ -708,6 +855,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         await api.createWorkspaceObject(workspaceProjectName, mergeInput);
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
@@ -883,7 +1031,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                 source: persisted.source_object_id,
                 target: persisted.target_object_id,
                 type: 'smoothstep',
-                data: { edgeKind: 'semantic' },
+                data: {
+                  edgeKind: 'semantic',
+                  workspaceCreatedBy: persisted.created_by,
+                  relationType: persisted.relation_type,
+                  edgeFamily: persisted.edge_family,
+                  workspaceMetadata: persisted.metadata_json,
+                },
               }]);
               return;
             } catch {

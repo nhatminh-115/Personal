@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { AuraFlowEdge, AuraFlowNode } from '../types';
 
-interface BoardSnapshot {
+export interface BoardSnapshot {
   nodes: AuraFlowNode[];
   edges: AuraFlowEdge[];
 }
@@ -11,6 +11,7 @@ interface UseBoardHistoryOptions {
   edgesRef: MutableRefObject<AuraFlowEdge[]>;
   setNodes: Dispatch<SetStateAction<AuraFlowNode[]>>;
   setEdges: Dispatch<SetStateAction<AuraFlowEdge[]>>;
+  onHistoryChange?: (current: BoardSnapshot, target: BoardSnapshot) => void;
   limit?: number;
 }
 
@@ -44,7 +45,7 @@ function snapshot(nodes: AuraFlowNode[], edges: AuraFlowEdge[]): BoardSnapshot {
   };
 }
 
-export function useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges, limit = 80 }: UseBoardHistoryOptions) {
+export function useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges, onHistoryChange, limit = 80 }: UseBoardHistoryOptions) {
   const undoRef = useRef<BoardSnapshot[]>([]);
   const redoRef = useRef<BoardSnapshot[]>([]);
   const [availability, setAvailability] = useState({ canUndo: false, canRedo: false });
@@ -63,26 +64,30 @@ export function useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges, limit 
   const undo = useCallback(() => {
     const previous = undoRef.current.pop();
     if (!previous) return false;
-    redoRef.current.push(snapshot(nodesRef.current, edgesRef.current));
+    const current = snapshot(nodesRef.current, edgesRef.current);
+    redoRef.current.push(current);
+    onHistoryChange?.(current, previous);
     nodesRef.current = previous.nodes;
     edgesRef.current = previous.edges;
     setNodes(previous.nodes);
     setEdges(previous.edges);
     syncAvailability();
     return true;
-  }, [edgesRef, nodesRef, setEdges, setNodes, syncAvailability]);
+  }, [edgesRef, nodesRef, onHistoryChange, setEdges, setNodes, syncAvailability]);
 
   const redo = useCallback(() => {
     const next = redoRef.current.pop();
     if (!next) return false;
-    undoRef.current.push(snapshot(nodesRef.current, edgesRef.current));
+    const current = snapshot(nodesRef.current, edgesRef.current);
+    undoRef.current.push(current);
+    onHistoryChange?.(current, next);
     nodesRef.current = next.nodes;
     edgesRef.current = next.edges;
     setNodes(next.nodes);
     setEdges(next.edges);
     syncAvailability();
     return true;
-  }, [edgesRef, nodesRef, setEdges, setNodes, syncAvailability]);
+  }, [edgesRef, nodesRef, onHistoryChange, setEdges, setNodes, syncAvailability]);
 
   return {
     record,

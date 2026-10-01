@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardCanvas } from '../components/board/BoardCanvas';
 import { api } from '../services/api';
-import type { AuraFlowNode, WorkspaceGraph } from '../types';
+import type { AuraFlowNode, WorkspaceGraph, WorkspaceObject } from '../types';
 
 const savedGraph: WorkspaceGraph = {
   project_name: 'AURA Project',
@@ -138,6 +138,51 @@ describe('Persistent workspace graph Board projection', () => {
       content: 'Updated internal wording.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
     })), { timeout: 2000 });
+  });
+
+  it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
+    let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'putWorkspaceLayout').mockImplementation(async (_project, layout, expectedRevision) => {
+      const revision = expectedRevision + 1;
+      graph = { ...graph, layout: { ...graph.layout, layout, revision } };
+      return graph.layout;
+    });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
+      const object = {
+        id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
+        metadata_json: input.metadata_json ?? {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      } as WorkspaceObject;
+      graph = { ...graph, objects: [...graph.objects.filter((item) => item.id !== object.id), object] };
+      return object;
+    });
+    const deleteObject = vi.spyOn(api, 'deleteWorkspaceObject').mockImplementation(async (_project, id) => {
+      graph = { ...graph, objects: graph.objects.filter((item) => item.id !== id) };
+    });
+
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="undo-persistent-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+    await screen.findByText('Persistent answer');
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
+    fireEvent.click(container.querySelector('.react-flow__pane')!, { clientX: 500, clientY: 300 });
+    await waitFor(() => expect(createObject).toHaveBeenCalledTimes(1));
+    const createdId = 'restored-note-id';
+
+    const undoButton = screen.getByTitle('Undo · Ctrl Z');
+    await waitFor(() => expect(undoButton).toBeEnabled());
+    fireEvent.click(undoButton);
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId!));
+    await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByTitle('Redo · Ctrl ⇧ Z'));
+    await waitFor(() => expect(createObject).toHaveBeenCalledTimes(2));
+    expect(createObject.mock.calls[1][1].id).toBe(createdId);
+    expect(graph.objects.some((object) => object.id === createdId)).toBe(true);
   });
 
 });

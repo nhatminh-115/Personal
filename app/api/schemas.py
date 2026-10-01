@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
+from uuid import UUID
 from pydantic import BaseModel, Field
 from app.capabilities.registry import CapabilityProviderMetadata
 
@@ -125,6 +126,7 @@ class WorkspaceObjectResponse(BaseModel):
 
 
 class WorkspaceObjectCreate(BaseModel):
+    id: Optional[UUID] = Field(default=None, description="Stable client object ID used when restoring an undone workspace object")
     object_type: Literal["manual_note", "context_bridge", "context_set", "conversation_branch"]
     title: str = Field(default="", max_length=255)
     content: str = Field(default="", max_length=100_000)

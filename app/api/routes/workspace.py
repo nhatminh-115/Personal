@@ -246,7 +246,12 @@ async def create_workspace_object(
     if len(sources) != len(source_ids):
         raise HTTPException(status_code=404, detail="One or more source objects were not found in this project.")
 
+    object_id = str(body.id) if body.id else None
+    if object_id and await db.get(WorkspaceObjectModel, object_id):
+        raise HTTPException(status_code=409, detail="Workspace object ID already exists in this project.")
+
     item = WorkspaceObjectModel(
+        **({"id": object_id} if object_id else {}),
         project_name=project_name,
         object_type=body.object_type,
         created_by="user",
@@ -314,8 +319,8 @@ async def delete_workspace_object(project_name: str, object_id: str, db: AsyncSe
     item = await db.get(WorkspaceObjectModel, object_id)
     if item is None or item.project_name != project_name:
         raise HTTPException(status_code=404, detail="Workspace object not found.")
-    if item.created_by != "user" or item.object_type not in {"manual_note", "context_bridge"}:
-        raise HTTPException(status_code=409, detail="Only user-authored notes and bridges can be deleted.")
+    if item.created_by != "user" or item.object_type not in {"manual_note", "context_bridge", "context_set", "conversation_branch"}:
+        raise HTTPException(status_code=409, detail="Only user-authored workspace objects can be deleted.")
     await db.delete(item)
     await db.commit()
 
