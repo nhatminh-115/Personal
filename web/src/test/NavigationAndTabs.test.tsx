@@ -125,6 +125,32 @@ describe('Navigation and Workspace Shell Invariants', () => {
     await waitFor(() => expect(document.querySelector('[data-id="search-match-1"]')).toHaveClass('selected'));
   });
 
+  it('opens a project-scoped manual note at its node in the project Board', async () => {
+    const project = { id: 'note-project', name: 'Note Project', subtitle: 'Project notes', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z' };
+    const note = { id: 'board-note-search-match', project_name: project.name, session_id: null, source_message_id: null, object_type: 'manual_note', created_by: 'user', title: 'Board note match', content: 'Project-specific constraints.', metadata_json: {}, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z' };
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve([{ object_id: note.id, object_type: note.object_type, title: note.title, excerpt: note.content, project_name: project.name, created_by: 'user', updated_at: note.updated_at }]) });
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ project_name: project.name, objects: [note], edges: [], layout: { project_name: project.name, layout: {}, revision: 0, updated_at: null }, execution_traces: [] }) });
+      if (url.includes('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([project]) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory') || url.includes('/v1/workspace/notes') || url.includes('/v1/workspace/library')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'board note match' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('Board note match')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+
+    expect(await screen.findByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/Note%20Project/graph')));
+    await waitFor(() => expect(document.querySelector('[data-id="board-note-search-match"]')).toHaveClass('selected'));
+  });
+
   it('opening a project creates/reuses exactly one project tab', async () => {
     await act(async () => {
       render(<App />);
