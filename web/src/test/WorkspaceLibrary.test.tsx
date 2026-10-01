@@ -30,7 +30,7 @@ describe('Workspace Library references', () => {
 
   it('keeps bundled seeds local and syncs only imported file metadata', async () => {
     await act(async () => { render(<App />); });
-    fireEvent.click(screen.getByRole('button', { name: /Library/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Library$/i }));
     await screen.findByRole('heading', { name: 'Your files can stay where they already live.' });
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library'));
     expect(screen.getByText('TOEIC Progress')).toBeInTheDocument();
