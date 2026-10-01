@@ -16,6 +16,15 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
           id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
           content: 'Keep the migration reversible.', metadata_json: {},
+        }, {
+          id: 'research-source-1', object_type: 'research_source', title: 'Durable execution paper',
+          content: 'A paper abstract.', metadata_json: {},
+        }, {
+          id: 'research-evidence-1', object_type: 'research_evidence', title: 'Checkpoint evidence',
+          content: 'Execution resumes from a checkpoint.', metadata_json: {},
+        }, {
+          id: 'research-claim-1', object_type: 'research_claim', title: 'Restartability claim',
+          content: 'Verified claim text.', metadata_json: { verification_status: 'verified' },
         }] }) });
       }
       if (url.includes('/v1/models')) {
@@ -101,6 +110,11 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
     const contextItem = await screen.findByRole('button', { name: /Shared project constraint/i });
+    expect(await screen.findByRole('button', { name: /Durable execution paper.*research source/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Checkpoint evidence.*research evidence/i })).toBeInTheDocument();
+    const claimItem = await screen.findByRole('button', { name: /Restartability claim.*research claim.*verified/i });
+    fireEvent.click(claimItem);
+    expect(claimItem).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(contextItem);
     expect(contextItem).toHaveAttribute('aria-pressed', 'true');
 
@@ -118,7 +132,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(chatPayload).not.toBeNull();
     expect(chatPayload.message).toBe('Explain state persistence in AURA');
     expect(chatPayload.session_id).toBeDefined();
-    expect(chatPayload.context_object_ids).toEqual(['workspace-note-1']);
+    expect(chatPayload.context_object_ids).toEqual(['workspace-note-1', 'research-claim-1']);
     expect(chatPayload.task_type).toBe('coding');
 
     // Verify response rendered in v9.1 UI

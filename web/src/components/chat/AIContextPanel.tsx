@@ -1,4 +1,4 @@
-import { BookOpen, Braces, FileText, Network, NotebookPen, ScrollText, X } from 'lucide-react';
+import { BadgeCheck, BookOpen, Braces, FileText, Network, NotebookPen, ScrollText, X } from 'lucide-react';
 import type { AIContextItem } from '../../types';
 
 interface AIContextPanelProps {
@@ -12,6 +12,7 @@ const iconByKind = {
   turn: ScrollText,
   note: NotebookPen,
   paper: BookOpen,
+  claim: BadgeCheck,
   code: Braces,
   file: FileText,
 } as const;

@@ -71,15 +71,24 @@ export function ProjectChatWorkspace({
     void api.fetchWorkspaceGraph(project.name).then((graph) => {
       if (!active) return;
       const includedIds = new Set(activeThread?.initialContextObjectIds ?? []);
-      setLiveWorkspaceContext(graph.objects.map((object) => ({
-        id: `workspace-${object.id}`,
-        nodeId: object.id,
-        kind: object.object_type === 'manual_note' ? 'note' : 'turn',
-        title: object.title || object.object_type.split('_').join(' '),
-        detail: `${object.object_type.split('_').join(' ')} · saved in this project`,
-        tokens: Math.max(1, Math.ceil(object.content.length / 4)),
-        included: includedIds.has(object.id),
-      })));
+      setLiveWorkspaceContext(graph.objects.map((object) => {
+        const kind: AIContextItem['kind'] = object.object_type === 'manual_note' ? 'note'
+          : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
+            : object.object_type === 'research_claim' ? 'claim' : 'turn';
+        const verification = object.metadata_json.verification_status;
+        const detail = object.object_type === 'research_claim' && typeof verification === 'string'
+          ? `research claim · ${verification} · saved in this project`
+          : `${object.object_type.split('_').join(' ')} · saved in this project`;
+        return {
+          id: `workspace-${object.id}`,
+          nodeId: object.id,
+          kind,
+          title: object.title || object.object_type.split('_').join(' '),
+          detail,
+          tokens: Math.max(1, Math.ceil(object.content.length / 4)),
+          included: includedIds.has(object.id),
+        };
+      }));
     }).catch(() => {
       if (active) setLiveWorkspaceContext([]);
     });
