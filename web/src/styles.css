@@ -1154,6 +1154,13 @@ input:focus-visible {
   overflow: hidden;
 }
 
+.board-canvas--loading {
+  display: grid;
+  place-items: center;
+  color: #8295a1;
+  font-size: 12px;
+}
+
 .board-canvas .react-flow {
   background: transparent;
 }
