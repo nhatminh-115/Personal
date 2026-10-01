@@ -99,7 +99,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
       setInitialSessionProfileId(selectedSession);
     }).catch((err: Error) => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, [open, projectName, effective?.profile?.id]);
+  }, [open, projectName, sessionId, sessionAvailable, effective?.profile?.id]);
 
   if (!open) return null;
   const update = (patch: Partial<RoutingProfile>) => setDraft((value) => value ? { ...value, ...patch } : value);
