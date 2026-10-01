@@ -119,6 +119,7 @@ export function InspectorPanel({
               <div className="inspector-row"><span>Profile</span><strong>{decision.snapshot.profile_id ?? '—'} · v{decision.snapshot.profile_version ?? '?'}</strong></div>
               <div className="inspector-row"><span>Scope</span><strong>{decision.snapshot.winning_scope ?? '—'}</strong></div>
               <div className="inspector-row"><span>Privacy / fallback</span><strong>{decision.snapshot.privacy_policy ?? decision.model_selection?.privacy ?? '—'} / {decision.snapshot.fallback_policy ?? decision.model_selection?.fallback_policy ?? '—'}</strong></div>
+              {decision.memory_privacy_sources?.length ? <div className="inspector-row"><span>Memory privacy sources</span><strong>{decision.memory_privacy_sources.map((source) => `${source.memory_id} · ${source.privacy_policy}`).join(' | ')}</strong></div> : null}
               <div className="inspector-row"><span>Selected model</span><strong>{decision.model_selection ? `${decision.model_selection.provider}:${decision.model_selection.model}` : decision.snapshot.explicit_model_override ?? 'Pending'}</strong></div>
               <div className="inspector-row"><span>Reasoning</span><strong>{decision.reasoning_selection?.selected_effort ?? decision.snapshot.reasoning_effort ?? 'Unknown'}</strong></div>
               {decision.model_selection ? <>

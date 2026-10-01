@@ -487,6 +487,7 @@ export interface RunRoutingDecision {
   model_selection?: Record<string, any> | null;
   reasoning_selection?: Record<string, any> | null;
   context_manifest?: CompiledContextManifest | null;
+  memory_privacy_sources?: Array<{ memory_id: string; privacy_policy: RoutingPrivacy }>;
   fallback_events: Array<{ event_type: string; payload: Record<string, any> }>;
 }
 

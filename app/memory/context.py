@@ -34,6 +34,7 @@ class AssembledContext(BaseModel):
     project_memory_ids: List[str] = Field(default_factory=list)
     project_fact_memory_ids: List[str] = Field(default_factory=list)
     privacy_requirement: Optional[str] = None
+    privacy_memory_sources: List[Dict[str, str]] = Field(default_factory=list)
 
     def format_for_system_prompt(self) -> str:
         """Format non-working memory context into a deterministic, human-readable system prompt section."""
@@ -117,6 +118,14 @@ def _apply_memory_privacy(context: AssembledContext, memory: MemoryModel, memory
         context.privacy_requirement = stricter_privacy_requirement(
             context.privacy_requirement, classification
         )
+        memory_id = getattr(memory, "id", None)
+        if isinstance(memory_id, str) and not any(
+            source["memory_id"] == memory_id for source in context.privacy_memory_sources
+        ):
+            context.privacy_memory_sources.append({
+                "memory_id": memory_id,
+                "privacy_policy": classification,
+            })
 
 
 class ContextAssembler:

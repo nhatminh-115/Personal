@@ -10,6 +10,7 @@ from app.db.models import DelegationModel, RunModel, RunEventModel
 from app.db.session import get_db
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
+from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER
 
 router = APIRouter(prefix="/v1/runs", tags=["Runs"])
 
@@ -31,7 +32,18 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
             "reasoning_policy", "reasoning_effort",
         ))
     if event_type == "context_loaded":
-        return pick(payload, ("context_count", "history_length", "compiled_object_count"))
+        safe = pick(payload, ("context_count", "history_length", "compiled_object_count"))
+        raw_sources = payload.get("memory_privacy_sources")
+        if isinstance(raw_sources, list):
+            safe["memory_privacy_sources"] = [
+                {"memory_id": item["memory_id"], "privacy_policy": item["privacy_policy"]}
+                for item in raw_sources
+                if isinstance(item, dict)
+                and isinstance(item.get("memory_id"), str)
+                and isinstance(item.get("privacy_policy"), str)
+                and item["privacy_policy"] in PRIVACY_REQUIREMENT_ORDER
+            ]
+        return safe
     if event_type == "context_compiled":
         safe_objects = []
         raw_objects = payload.get("objects")
@@ -152,6 +164,7 @@ async def get_run_routing(
         selected = next((e.payload for e in reversed(events) if e.event_type == "model_selected"), None)
         reasoning = next((e.payload for e in reversed(events) if e.event_type == "reasoning_effort_selected"), None)
         context_manifest = next((e.payload for e in reversed(events) if e.event_type == "context_compiled"), None)
+        context_loaded = next((e.payload for e in reversed(events) if e.event_type == "context_loaded"), None)
         decisions.append({
             "run_id": run.id,
             "parent_run_id": run.parent_run_id,
@@ -159,6 +172,7 @@ async def get_run_routing(
             "model_selection": _safe_event_payload("model_selected", selected) if selected is not None else None,
             "reasoning_selection": _safe_event_payload("reasoning_effort_selected", reasoning) if reasoning is not None else None,
             "context_manifest": _safe_event_payload("context_compiled", context_manifest) if context_manifest is not None else None,
+            "memory_privacy_sources": _safe_event_payload("context_loaded", context_loaded).get("memory_privacy_sources", []) if context_loaded is not None else [],
             "fallback_events": [
                 {"event_type": e.event_type, "payload": _safe_event_payload(e.event_type, e.payload)}
                 for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
