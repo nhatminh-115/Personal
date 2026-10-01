@@ -1732,6 +1732,34 @@ input:focus-visible {
   border-top: 1px solid rgba(162, 188, 207, 0.07);
 }
 
+.context-lens__merge {
+  grid-template-columns: auto minmax(180px, 1fr) auto;
+  align-items: center;
+  color: #9cafba;
+  font-size: 10px;
+}
+
+.context-lens__merge select,
+.context-lens__merge button {
+  min-height: 30px;
+  border: 1px solid rgba(163, 190, 208, 0.12);
+  border-radius: 7px;
+  background: #111a21;
+  color: #cfdae0;
+  padding: 0 9px;
+  font: inherit;
+}
+
+.context-lens__merge button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.context-lens__merge [role='status'] {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
 .lens-composer {
   display: flex;
   align-items: center;

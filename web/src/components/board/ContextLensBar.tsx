@@ -1,4 +1,4 @@
-import { Bot, GitBranch, FilePlus2, GitMerge, Link2, X } from 'lucide-react';
+import { Bot, GitBranch, FilePlus2, BookmarkPlus, GitMerge, Link2, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AuraFlowNode } from '../../types';
 
@@ -8,13 +8,17 @@ interface ContextLensBarProps {
   onCreateNote: () => void;
   onCreateBridge: () => void;
   onCreateBranch: () => void;
-  onMerge: () => void;
+  onSaveContextSet: () => void;
+  mergeTargets: Array<{ id: string; title: string }>;
+  onMergeInto: (targetId: string) => void;
   onClear: () => void;
 }
 
-export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onMerge, onClear }: ContextLensBarProps) {
+export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onSaveContextSet, mergeTargets, onMergeInto, onClear }: ContextLensBarProps) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [targetId, setTargetId] = useState('');
 
   const counts = nodes.reduce(
     (acc, node) => {
@@ -44,7 +48,10 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
           <button type="button" onClick={onCreateBranch}>
             <GitBranch size={13} /> Create Branch
           </button>
-          <button type="button" onClick={onMerge}>
+          <button type="button" onClick={onSaveContextSet}>
+            <BookmarkPlus size={13} /> Save Context Set
+          </button>
+          <button type="button" onClick={() => { setMergeOpen((open) => !open); setTargetId(''); }}>
             <GitMerge size={13} /> Merge Into…
           </button>
         </div>
@@ -52,6 +59,19 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
           <X size={14} />
         </button>
       </div>
+
+      {mergeOpen ? (
+        <div className="context-lens__expanded context-lens__merge" aria-label="Merge selected context into branch">
+          {mergeTargets.length ? <>
+            <label htmlFor="context-lens-merge-target">Destination branch</label>
+            <select id="context-lens-merge-target" value={targetId} onChange={(event) => setTargetId(event.target.value)}>
+              <option value="">Choose a branch</option>
+              {mergeTargets.map((target) => <option key={target.id} value={target.id}>{target.title}</option>)}
+            </select>
+            <button type="button" disabled={!targetId} onClick={() => { onMergeInto(targetId); setMergeOpen(false); setTargetId(''); }}>Create merged continuation</button>
+          </> : <p role="status">Create a branch before merging selected context into it.</p>}
+        </div>
+      ) : null}
 
       {composerOpen ? (
         <div className="context-lens__expanded">

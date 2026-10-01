@@ -17,6 +17,7 @@ import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity } from '../../ty
 import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
+import { buildMergedContinuation } from './contextActions';
 import { SmartEdge } from './SmartEdge';
 import { ApiError, api } from '../../services/api';
 import { projectExecutionGraph } from './executionProjection';
@@ -77,6 +78,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
         layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
+        workspaceObjectType: object.object_type,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
         bridgeOptions: kind === 'bridge' ? {
@@ -523,6 +525,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
   const selectedEdges = useMemo(() => edges.filter((edge) => edge.selected), [edges]);
+  const mergeTargets = useMemo(() => nodes
+    .filter((node) => workspaceProjectName
+      ? node.data.workspaceObjectType === 'conversation_branch'
+      : node.data.layer === 'conversation')
+    .map((node) => ({ id: node.id, title: node.data.title })), [nodes, workspaceProjectName]);
 
   const createNoteAt = useCallback(
     async (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
@@ -619,7 +626,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     toast('Context Bridge created', 'Selected objects are connected as sources for a future context handoff.');
   }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
-  const mergeSelected = useCallback(async () => {
+  const saveContextSet = useCallback(async () => {
     if (selectedNodes.length < 2) return;
     if (workspaceProjectName) {
       try {
@@ -642,9 +649,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         setEdges(projected.edges);
         setExecutionNodes(projected.executionNodes);
         setExecutionEdges(projected.executionEdges);
-        toast('Context selection saved', 'Source objects are linked without changing their content or generating a summary.');
+        toast('Context Set saved', 'Source objects are linked without changing their content or generating a summary.');
       } catch (error) {
-        toast('Context selection was not saved', error instanceof ApiError && error.status === 409
+        toast('Context Set was not saved', error instanceof ApiError && error.status === 409
           ? 'This selection would create a cycle in the context-flow graph.'
           : 'AURA could not link all selected objects in the project graph.');
       }
@@ -659,10 +666,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       position: anchor,
       data: {
         kind: 'merge',
-        eyebrow: 'MERGE CONTEXT',
-        title: 'Merged working context',
-        body: 'Selected objects are combined into a continuation context.',
-        summary: `${selectedNodes.length} sources merged`,
+        eyebrow: 'SAVED CONTEXT SET',
+        title: 'Saved context selection',
+        body: 'Selected objects remain individually inspectable. No summary was generated.',
+        summary: `${selectedNodes.length} linked sources`,
         density: 'full',
         accent: 'cyan',
         layer: 'knowledge',
@@ -680,8 +687,57 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     }));
     setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergeNode]);
     setEdges((current) => [...current, ...mergeEdges]);
-    toast('Merge node created', `${selectedNodes.length} selected objects feed a new merged context.`);
+    toast('Context Set saved', `${selectedNodes.length} selected objects are linked without changing their content.`);
   }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+
+  const mergeIntoBranch = useCallback(async (targetId: string) => {
+    const target = nodes.find((node) => node.id === targetId);
+    if (!target || selectedNodes.length < 2) return;
+    const mergeInput = buildMergedContinuation(
+      { id: target.id, title: target.data.title },
+      selectedNodes.map((node) => ({ id: node.id, title: node.data.title })),
+    );
+    const sourceIds = mergeInput.source_object_ids;
+    const sourceTitles = mergeInput.metadata_json.source_titles;
+    if (workspaceProjectName) {
+      try {
+        await api.createWorkspaceObject(workspaceProjectName, mergeInput);
+        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+        const projected = mapWorkspaceGraph(graph);
+        layoutRevision.current = graph.layout.revision;
+        nodesRef.current = projected.nodes;
+        edgesRef.current = projected.edges;
+        setNodes(projected.nodes);
+        setEdges(projected.edges);
+        setExecutionNodes(projected.executionNodes);
+        setExecutionEdges(projected.executionEdges);
+        toast('Merged continuation created', `A new branch now links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
+      } catch (error) {
+        toast('Merge was not saved', error instanceof ApiError && error.status === 409
+          ? 'This merge would create a cycle in the context-flow graph.'
+          : 'AURA could not link the selected objects into a new branch.');
+      }
+      return;
+    }
+    recordHistory();
+    const id = `merge-${idRef.current++}`;
+    const anchor = getSelectionAnchor();
+    const mergedNode: AuraFlowNode = {
+      id, type: 'aura', position: anchor,
+      data: {
+        kind: 'merge', eyebrow: 'MERGED CONTINUATION', title: `Merged into ${target.data.title}`,
+        body: 'A new continuation links the destination branch and selected context. The source branch remains unchanged.',
+        summary: `${sourceIds.length} linked sources`, density: 'full', accent: 'cyan', layer: 'knowledge',
+        sourceCount: sourceIds.length, mergeItems: sourceTitles,
+      },
+    };
+    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergedNode]);
+    setEdges((current) => [...current, ...sourceIds.map((sourceId) => ({
+      id: `edge-${idRef.current++}`, source: sourceId, target: id, type: 'smoothstep' as const,
+      data: { edgeKind: 'context' as const },
+    }))]);
+    toast('Merged continuation created', `A new node links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
+  }, [getSelectionAnchor, nodes, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const askSelected = useCallback(
     (prompt: string) => {
@@ -962,7 +1018,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onCreateNote={() => createNoteAt(getSelectionAnchor(), 'Manual note derived from the current Context Lens selection.')}
           onCreateBridge={createContextBridge}
           onCreateBranch={() => addBranch(selectedNodes[0].id)}
-          onMerge={mergeSelected}
+          onSaveContextSet={saveContextSet}
+          mergeTargets={mergeTargets}
+          onMergeInto={(targetId) => void mergeIntoBranch(targetId)}
           onClear={clearSelection}
         />
       ) : null}
