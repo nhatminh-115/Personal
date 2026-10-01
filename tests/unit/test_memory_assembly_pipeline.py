@@ -348,6 +348,31 @@ async def test_episodic_memory_privacy_is_applied_only_when_episode_enters_conte
 
 
 @pytest.mark.asyncio
+async def test_profile_context_preserves_privacy_and_memory_provenance(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    saved = await service.set_profile_fact(
+        "private_preference",
+        "Keep my sensitive settings on-device.",
+        metadata={"privacy_policy": "local_only"},
+    )
+    await service.set_profile_fact(
+        "oversized",
+        "x" * 8_001,
+        metadata={"privacy_policy": "unsupported-but-excluded"},
+    )
+
+    assembled = await assembler.assemble_context(
+        session_id="profile-privacy-context",
+        user_message="",
+    )
+
+    assert assembled.profile_facts == {"private_preference": "Keep my sensitive settings on-device."}
+    assert assembled.profile_memory_ids == {"private_preference": saved.id}
+    assert assembled.privacy_requirement == "local_only"
+
+
+@pytest.mark.asyncio
 async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
     source = WorkspaceObjectModel(
         id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
