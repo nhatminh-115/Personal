@@ -47,6 +47,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     context_items = list(state.get("retrieved_context", []))
     messages = list(state.get("messages", []))
     project_memory_ids: list[str] = []
+    project_memory_privacy: str | None = None
 
     if mem_service:
         project_name = state.get("project_name")
@@ -60,6 +61,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             project_name=project_name,
         )
         project_memory_ids = assembled.project_memory_ids
+        project_memory_privacy = assembled.privacy_requirement
 
         if not messages and assembled.working_messages:
             messages.extend(assembled.working_messages)
@@ -73,6 +75,18 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
 
     compiled_context = None
     updated_metadata = dict(state.get("metadata") or {})
+    if project_memory_privacy:
+        routing_context = updated_metadata.get("routing_context_dict")
+        if isinstance(routing_context, dict):
+            routing_context = dict(routing_context)
+            routing_context["privacy_requirement"] = stricter_privacy_requirement(
+                routing_context.get("privacy_requirement"), project_memory_privacy
+            )
+            updated_metadata["routing_context_dict"] = routing_context
+        else:
+            updated_metadata["privacy_requirement"] = stricter_privacy_requirement(
+                updated_metadata.get("privacy_requirement"), project_memory_privacy
+            )
     selected_object_ids = list(dict.fromkeys(state.get("context_object_ids", [])))
     if selected_object_ids:
         project_name = state.get("project_name") or (state.get("metadata") or {}).get("project_name")
@@ -155,6 +169,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                 "history_length": len(messages),
                 "compiled_object_count": len(compiled_context.objects) if compiled_context else 0,
                 "project_memory_ids": project_memory_ids,
+                "project_memory_privacy": project_memory_privacy,
             },
         )
 
