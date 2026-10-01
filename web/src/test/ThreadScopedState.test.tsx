@@ -11,7 +11,7 @@
  *  4. Resolving an approval while viewing B lands the response only in A.
  *  5. run/research state for A never renders as B's inspector data.
  */
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -25,21 +25,23 @@ function makeFetch({
   onApprovalSubmit,
   onRunDetails,
   onRunResearch,
+  onModels,
 }: {
-  onChat?: () => object;
+  onChat?: (options?: RequestInit) => object;
   onApproval?: () => object;
   onApprovalSubmit?: () => object;
   onRunDetails?: () => object;
   onRunResearch?: () => object;
+  onModels?: () => object;
 } = {}) {
   return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
-    if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+    if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve(onModels?.() ?? { providers: [] }) });
     if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     if (/\/v1\/sessions$/.test(url) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     if (url.match(/\/v1\/sessions\/[^/]+$/) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'sess', messages: [] }) });
 
     if (options?.method === 'POST' && url.includes('/v1/chat')) {
-      return Promise.resolve({ ok: true, json: () => Promise.resolve(onChat?.() ?? { run_id: 'run-A', session_id: 'sess-A', status: 'completed', response: 'Response from A', tool_results: [] }) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(onChat?.(options) ?? { run_id: 'run-A', session_id: 'sess-A', status: 'completed', response: 'Response from A', tool_results: [] }) });
     }
     if (url.match(/\/v1\/approvals\/[^/]+\/submit/)) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(onApprovalSubmit?.() ?? { execution_status: 'completed', final_response: 'Approval resolved in A', run_id: 'run-A' }) });
@@ -299,5 +301,45 @@ describe('Thread-Scoped Live State', () => {
     expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('');
     await selectThread('Thread A');
     expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('high');
+  });
+
+  it('keeps exact model locks per thread and only sends the originating thread override', async () => {
+    const sentBodies: Record<string, unknown>[] = [];
+    global.fetch = makeFetch({
+      onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'model-a', label: 'Model A', reasoning_support: 'supported', tool_support: 'supported' }] }] }),
+      onChat: (options) => {
+        sentBodies.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
+        return { run_id: `run-${sentBodies.length}`, session_id: 'sess-A', status: 'completed', response: 'Done', tool_results: [] };
+      },
+    });
+    await setupTwoLiveThreads();
+    await act(async () => { render(<App />); });
+    await openStatefulChats();
+    await selectThread('Thread A');
+
+    fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
+    const modelLock = screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement;
+    fireEvent.change(modelLock, { target: { value: 'local:model-a' } });
+    expect(modelLock.value).toBe('local:model-a');
+
+    const send = async (message: string) => {
+      const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+      await act(async () => {
+        fireEvent.change(input, { target: { value: message } });
+        fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+      });
+    };
+    await send('Locked in A');
+    await waitFor(() => expect(sentBodies).toHaveLength(1));
+    expect(sentBodies[0].model_override).toBe('local:model-a');
+
+    await selectThread('Thread B');
+    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('');
+    await send('Unlocked in B');
+    await waitFor(() => expect(sentBodies).toHaveLength(2));
+    expect(sentBodies[1]).not.toHaveProperty('model_override');
+
+    await selectThread('Thread A');
+    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('local:model-a');
   });
 });
