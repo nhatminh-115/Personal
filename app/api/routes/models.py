@@ -16,6 +16,21 @@ from app.models.router import ModelRouter
 router = APIRouter(prefix="/v1/models", tags=["Models"])
 
 
+def _resolved_context_window(
+    provider_id: str,
+    model_id: str,
+    catalog_window: int | None,
+    router_instance: ModelRouter,
+) -> int | None:
+    metadata = router_instance.get_provider_metadata(provider_id)
+    if metadata is None:
+        return catalog_window
+    return metadata.model_context_windows.get(
+        model_id,
+        metadata.context_window if metadata.context_window is not None else catalog_window,
+    )
+
+
 def _build_catalog_response(catalog: ModelCatalogResponse, router_instance: ModelRouter) -> ModelCatalogResponse:
     return ModelCatalogResponse(
         providers=[
@@ -31,7 +46,7 @@ def _build_catalog_response(catalog: ModelCatalogResponse, router_instance: Mode
                         label=m.label,
                         capabilities=m.capabilities,
                         tool_support=m.tool_support,
-                        context_window=m.context_window,
+                        context_window=_resolved_context_window(p.id, m.id, m.context_window, router_instance),
                         reasoning_support=(router_instance.get_provider_metadata(p.id).reasoning_support.get(m.id, "unknown") if router_instance.get_provider_metadata(p.id) else m.reasoning_support),
                         vision_support=(router_instance.get_provider_metadata(p.id).vision_support.get(m.id) if router_instance.get_provider_metadata(p.id) else m.vision_support),
                         structured_output_support=(router_instance.get_provider_metadata(p.id).structured_output_support.get(m.id) if router_instance.get_provider_metadata(p.id) else m.structured_output_support),

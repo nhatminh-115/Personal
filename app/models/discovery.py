@@ -367,6 +367,7 @@ class ModelDiscoveryService:
                         models=[m.id for m in p.models],
                         allow_arbitrary_models=True,
                         tool_support=tool_support_map,
+                        model_context_windows={m.id: m.context_window for m in p.models if m.context_window is not None},
                     ),
                 )
                 logger.info(f"Registered local Ollama provider with {len(p.models)} models")
@@ -391,6 +392,7 @@ class ModelDiscoveryService:
                         models=[m.id for m in p.models],
                         allow_arbitrary_models=True,
                         tool_support=tool_support_map,
+                        model_context_windows={m.id: m.context_window for m in p.models if m.context_window is not None},
                     ),
                 )
                 logger.info(f"Registered local LM Studio provider with {len(p.models)} models")

@@ -283,6 +283,29 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
 
 
 @pytest.mark.asyncio
+async def test_known_model_context_window_blocks_before_provider_invocation(async_client):
+    from app.models.router import model_router
+
+    metadata = model_router.get_provider_metadata("mock")
+    assert metadata is not None
+    previous_window = metadata.context_window
+    metadata.context_window = 1
+    calls_before = len(model_router.get_provider("mock").call_history)
+    try:
+        response = await async_client.post("/v1/chat", json={
+            "session_id": "small-context-window-session",
+            "message": "A quick request.",
+        })
+    finally:
+        metadata.context_window = previous_window
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "ModelCapabilityMismatch"
+    assert response.json()["details"]["context_window"] == 1
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)

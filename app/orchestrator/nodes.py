@@ -131,6 +131,13 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     }
 
 
+def _estimate_prompt_tokens(messages: list[ChatMessage], tool_defs: list[Any]) -> int:
+    """Conservative character-based estimate used only when an actual limit is known."""
+    message_chars = sum(len(message.content) for message in messages)
+    tool_chars = sum(len(tool.model_dump_json()) for tool in tool_defs)
+    return (message_chars + tool_chars + 2) // 3 + (len(messages) * 8) + (len(tool_defs) * 16)
+
+
 async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
     """Invoke the model layer to plan, answer, or decide on tool execution."""
     services = _get_services(config)
@@ -240,6 +247,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
         selected_model=selection.model_name,
         selected_reasoning=selection.reasoning_effort_selected,
     )
+    estimated_input_tokens = _estimate_prompt_tokens(chat_messages, tool_defs)
 
     if trace_service:
         agent_role = delegation.get("specialist_name") or ("root" if not delegation else "specialist")
@@ -258,6 +266,8 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
                 "selection_reason": selection.reason,
                 "privacy": routing_ctx.privacy_requirement.value if hasattr(routing_ctx.privacy_requirement, "value") else str(routing_ctx.privacy_requirement),
                 "fallback_policy": routing_ctx.fallback_policy.value if hasattr(routing_ctx.fallback_policy, "value") else str(routing_ctx.fallback_policy),
+                "context_window": selection.context_window,
+                "estimated_input_tokens": estimated_input_tokens,
             },
         )
 
@@ -289,6 +299,28 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
                     },
                 )
 
+    if selection.context_window is not None and estimated_input_tokens + model_req.max_tokens > selection.context_window:
+        details = {
+            "provider": selection.provider_name,
+            "model": selection.model_name,
+            "estimated_input_tokens": estimated_input_tokens,
+            "reserved_output_tokens": model_req.max_tokens,
+            "context_window": selection.context_window,
+        }
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="context_window_blocked",
+                payload=details,
+            )
+        from app.core.errors import ModelCapabilityMismatch
+        raise ModelCapabilityMismatch(
+            "The selected model context window cannot fit the estimated prompt and reserved response.",
+            details=details,
+        )
+
+    if trace_service:
         await trace_service.record_event(
             run_id=state["run_id"],
             session_id=state["session_id"],
@@ -296,6 +328,8 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             payload={
                 "messages_count": len(chat_messages),
                 "tools_count": len(tool_defs),
+                "estimated_input_tokens": estimated_input_tokens,
+                "context_window": selection.context_window,
                 "routing_decision": {
                     "provider": selection.provider_name,
                     "model": selection.model_name,

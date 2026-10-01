@@ -69,6 +69,22 @@ def test_fallback_routing_when_context_is_empty(sample_metadata):
     assert "default" in sel.reason
 
 
+def test_selection_preserves_known_model_context_window_and_leaves_unknown_unset(sample_metadata):
+    policy = DeterministicRoutingPolicy()
+    metadata = sample_metadata["cloud-standard"]
+    metadata.model_context_windows = {"cloud-std-v1": 8192}
+
+    known = policy.select(context=RoutingContext(), available_metadata=sample_metadata, default_provider="cloud-standard")
+    unknown = policy.select(
+        context=RoutingContext(explicit_model_override="cloud-standard:cloud-std-v2"),
+        available_metadata=sample_metadata,
+        default_provider="cloud-standard",
+    )
+
+    assert known.context_window == 8192
+    assert unknown.context_window is None
+
+
 def test_explicit_override_routing(sample_metadata):
     policy = DeterministicRoutingPolicy()
 
@@ -264,4 +280,3 @@ async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
     await router.route(req2)
     assert len(captured_payloads) == 2
     assert captured_payloads[1]["model"] == "custom-fine-tuned-model"
-
