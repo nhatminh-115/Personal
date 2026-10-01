@@ -51,6 +51,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     semantic_memory_ids: list[list[str]] = []
     episode_memory_ids: list[str] = []
     memory_privacy_requirement: str | None = None
+    memory_privacy_sources: list[dict[str, str]] = []
 
     if mem_service:
         project_name = state.get("project_name")
@@ -68,6 +69,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
         semantic_memory_ids = assembled.semantic_memory_ids
         episode_memory_ids = assembled.episode_memory_ids
         memory_privacy_requirement = assembled.privacy_requirement
+        memory_privacy_sources = assembled.privacy_memory_sources
 
         if not messages and assembled.working_messages:
             messages.extend(assembled.working_messages)
@@ -178,6 +180,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                 "project_memory_ids": project_memory_ids,
                 "project_memory_privacy": memory_privacy_requirement,
                 "memory_privacy_requirement": memory_privacy_requirement,
+                "memory_privacy_sources": memory_privacy_sources,
                 "semantic_memory_ids": semantic_memory_ids,
                 "episode_memory_ids": episode_memory_ids,
             },
