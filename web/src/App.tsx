@@ -55,6 +55,7 @@ import type {
   ResearchInspectorData,
   RunDetail,
   SessionSummary,
+  StudySessionRecord,
   ToastMessage,
   WorkspaceMode,
   EffectiveRouting,
@@ -215,6 +216,8 @@ export default function App() {
   const noteSaveTimersRef = useRef(new Map<string, number>());
   notesRef.current = notes;
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
+  const [studySessions, setStudySessions] = useState<StudySessionRecord[]>([]);
+  const [studySessionsUnavailable, setStudySessionsUnavailable] = useState(false);
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -299,6 +302,10 @@ export default function App() {
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
     api.fetchSessions().then(setSessions).catch(() => []);
+    api.fetchStudySessions().then((records) => {
+      setStudySessions(records);
+      setStudySessionsUnavailable(false);
+    }).catch(() => setStudySessionsUnavailable(true));
   }, []);
 
   useEffect(() => {
@@ -349,6 +356,35 @@ export default function App() {
     setToasts((current) => [...current, { id, title, detail }]);
     window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3200);
   }, []);
+
+  const handleStartStudySession = useCallback(async (trackId: string) => {
+    if (studySessions.some((session) => session.status === 'active')) {
+      pushToast('Finish the active study session first', 'AURA keeps one focus timer active at a time.');
+      return;
+    }
+    const id = globalThis.crypto?.randomUUID?.() ?? `study-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    try {
+      const started = await api.startStudySession(id, trackId);
+      setStudySessions((current) => [started, ...current.filter((session) => session.id !== started.id)]);
+      setStudySessionsUnavailable(false);
+      pushToast('Study session started', 'Your focus timer is saved and will resume after reload.');
+    } catch (error) {
+      pushToast('Could not start study session', executionErrorText(error));
+    }
+  }, [pushToast, studySessions]);
+
+  const handleCompleteStudySession = useCallback(async (sessionId: string) => {
+    try {
+      const completed = await api.completeStudySession(sessionId);
+      setStudySessions((current) => [completed, ...current.filter((session) => session.id !== completed.id)]
+        .sort((left, right) => Date.parse(right.started_at) - Date.parse(left.started_at)));
+      setStudySessionsUnavailable(false);
+      const minutes = Math.floor((completed.duration_seconds ?? 0) / 60);
+      pushToast('Study session saved', `${minutes} focused minute${minutes === 1 ? '' : 's'} recorded.`);
+    } catch (error) {
+      pushToast('Could not save study session', executionErrorText(error));
+    }
+  }, [pushToast]);
 
   const schedulePersonalNoteSave = useCallback((note: WorkspaceNote) => {
     const previous = noteSaveTimersRef.current.get(note.id);
@@ -1297,7 +1333,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView notes={notes} onNotesChange={handleNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} · prototype timer/activity is mocked.`)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} sessionsUnavailable={studySessionsUnavailable} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={handleStartStudySession} onCompleteSession={handleCompleteStudySession} /> : null}
         {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
 

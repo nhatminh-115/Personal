@@ -5551,6 +5551,7 @@ input:focus-visible {
 
 /* Study */
 .study-view, .automations-view { width: min(1240px, calc(100% - 72px)); }
+.study-unavailable-notice { margin: 18px 0 0; padding: 12px 14px; border: 1px solid rgba(220, 156, 99, .22); border-radius: 10px; background: rgba(181, 111, 56, .08); color: #c9a281; font-size: 12px; }
 .study-today-pill strong { font-size: 12.5px !important; }
 .study-today-pill small { font-size: 10.5px !important; }
 .study-track-card { padding: 18px; }

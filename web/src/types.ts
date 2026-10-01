@@ -198,6 +198,15 @@ export interface PersonalNoteRecord {
   updated_at: string;
 }
 
+export interface StudySessionRecord {
+  id: string;
+  track_id: string;
+  status: 'active' | 'completed';
+  started_at: string;
+  completed_at: string | null;
+  duration_seconds: number | null;
+}
+
 export interface WorkspaceEdge {
   id: string;
   project_name: string;

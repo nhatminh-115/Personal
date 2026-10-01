@@ -20,6 +20,7 @@ import {
   WorkspaceGraph,
   WorkspaceLayout,
   WorkspaceObject,
+  StudySessionRecord,
 } from '../types';
 
 export class ApiError extends Error {
@@ -59,6 +60,21 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  async fetchStudySessions(): Promise<StudySessionRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`));
+  },
+
+  async startStudySession(id: string, trackId: string): Promise<StudySessionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, track_id: trackId }),
+    }));
+  },
+
+  async completeStudySession(sessionId: string): Promise<StudySessionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, { method: 'POST' }));
+  },
+
   async fetchPersonalNotes(): Promise<PersonalNoteRecord[]> {
     return handleResponse(await fetch(`${BASE_URL}/v1/notes`));
   },

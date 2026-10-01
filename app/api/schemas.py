@@ -194,6 +194,20 @@ class PersonalNoteResponse(PersonalNoteWrite):
     updated_at: datetime
 
 
+class StudySessionStart(BaseModel):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=36)
+    track_id: str = Field(min_length=1, max_length=64)
+
+
+class StudySessionResponse(BaseModel):
+    id: str
+    track_id: str
+    status: Literal["active", "completed"]
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+    duration_seconds: Optional[int] = None
+
+
 class WorkspaceExecutionEventResponse(BaseModel):
     id: str
     event_type: str
