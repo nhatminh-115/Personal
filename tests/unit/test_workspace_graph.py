@@ -268,6 +268,9 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
     }]
     selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
     assert selected_model["payload"]["privacy"] == "local_only"
+    assert selected_model["payload"]["requires_vision"] is False
+    assert selected_model["payload"]["required_capabilities"] == []
+    assert selected_model["payload"]["estimated_input_tokens"] > 0
 
     calls_before_cloud_lock = len(model_router.get_provider("mock").call_history)
     cloud_locked = await async_client.post("/v1/chat", json={

@@ -303,6 +303,11 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
                 "fallback_policy": routing_ctx.fallback_policy.value if hasattr(routing_ctx.fallback_policy, "value") else str(routing_ctx.fallback_policy),
                 "context_window": selection.context_window,
                 "estimated_input_tokens": estimated_input_tokens,
+                "required_capabilities": routing_ctx.required_capabilities,
+                "requires_tools": routing_ctx.requires_tools,
+                "requires_vision": routing_ctx.requires_vision,
+                "requires_structured_output": routing_ctx.requires_structured_output,
+                "requires_long_context": routing_ctx.requires_long_context,
             },
         )
 

@@ -104,6 +104,25 @@ export function InspectorPanel({
               <div className="inspector-row"><span>Privacy / fallback</span><strong>{decision.snapshot.privacy_policy ?? decision.model_selection?.privacy ?? '—'} / {decision.snapshot.fallback_policy ?? decision.model_selection?.fallback_policy ?? '—'}</strong></div>
               <div className="inspector-row"><span>Selected model</span><strong>{decision.model_selection ? `${decision.model_selection.provider}:${decision.model_selection.model}` : decision.snapshot.explicit_model_override ?? 'Pending'}</strong></div>
               <div className="inspector-row"><span>Reasoning</span><strong>{decision.reasoning_selection?.selected_effort ?? decision.snapshot.reasoning_effort ?? 'Unknown'}</strong></div>
+              {decision.model_selection ? <>
+                {(() => {
+                  const selection = decision.model_selection;
+                  const requirements = [
+                    ...(Array.isArray(selection.required_capabilities) ? selection.required_capabilities : []),
+                    ...(selection.requires_tools ? ['tools'] : []),
+                    ...(selection.requires_vision ? ['vision'] : []),
+                    ...(selection.requires_structured_output ? ['structured output'] : []),
+                    ...(selection.requires_long_context ? ['long context'] : []),
+                  ];
+                  const uniqueRequirements = [...new Set(requirements)];
+                  const contextWindow = typeof selection.context_window === 'number' ? selection.context_window : null;
+                  const estimatedTokens = typeof selection.estimated_input_tokens === 'number' ? selection.estimated_input_tokens : null;
+                  return <>
+                    {uniqueRequirements.length ? <div className="inspector-row"><span>Requirements</span><strong>{uniqueRequirements.join(' · ')}</strong></div> : null}
+                    {estimatedTokens !== null ? <div className="inspector-row"><span>Context budget</span><strong>{contextWindow !== null ? `${estimatedTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${estimatedTokens.toLocaleString()} tokens · model limit unknown`}</strong></div> : null}
+                  </>;
+                })()}
+              </> : null}
               {decision.fallback_events.map((event, index) => <div className="inspector-event-item" key={`${event.event_type}-${index}`}><strong>{event.event_type}</strong><small>{event.payload.reason ?? event.payload.fallback_policy ?? ''}</small></div>)}
             </section>) : effectiveRouting ? <InspectorGroup title="Effective policy" rows={[
               ['Privacy', effectiveRouting.profile.global_privacy_policy],
