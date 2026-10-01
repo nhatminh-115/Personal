@@ -409,6 +409,7 @@ export interface CompiledContextManifest {
   estimated_tokens?: number;
   character_count?: number;
   privacy_requirement?: string | null;
+  privacy_sources?: Array<{ object_id: string; privacy_policy: RoutingPrivacy }>;
   required_capabilities?: string[];
   capability_requirements?: Record<string, boolean>;
 }
