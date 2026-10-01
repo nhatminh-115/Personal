@@ -335,6 +335,36 @@ async def test_merged_continuation_compiles_destination_branch_and_selected_cont
 
 
 @pytest.mark.asyncio
+async def test_chat_task_type_selects_the_assigned_profile_task_route(async_client):
+    profile = await async_client.post("/v1/routing/profiles", json={
+        "name": "Task route integration",
+        "routes": {
+            "root": {"model_override": "mock:mock-default"},
+            "coding": {"model_override": "mock:mock-pro"},
+            "writing": {"model_override": "mock:mock-fast"},
+        },
+    })
+    assert profile.status_code == 201
+    profile_id = profile.json()["id"]
+    assignment = await async_client.post(f"/v1/routing/assignments/aura?profile_id={profile_id}")
+    assert assignment.status_code == 200
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "coding-task-route-session",
+        "project_name": "aura",
+        "message": "Review this code change.",
+        "task_type": "coding",
+    })
+    assert response.status_code == 200
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    selected = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert selected["payload"]["task_type"] == "coding"
+    assert selected["payload"]["model"] == "mock-pro"
+    assert selected["payload"]["profile_id"] == profile_id
+
+
+@pytest.mark.asyncio
 async def test_known_model_context_window_blocks_before_provider_invocation(async_client):
     from app.models.router import model_router
 

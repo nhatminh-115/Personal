@@ -75,7 +75,8 @@ async def chat_endpoint(
     # Base routing context for Root
     root_context = RoutingContext(
         session_id=req.session_id,
-        run_id=run_id
+        run_id=run_id,
+        task_type=req.task_type,
     )
     root_context = apply_routing_profile_to_context(
         profile,
