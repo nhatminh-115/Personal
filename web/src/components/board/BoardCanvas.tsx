@@ -53,10 +53,15 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
   const positions = graph.layout.layout?.positions ?? {};
   const nodes: AuraFlowNode[] = graph.objects.map((object, index) => {
     const role = object.metadata_json.role;
-    const kind = object.object_type === 'manual_note' ? 'note'
+    const researchType = object.object_type.startsWith('research_') ? object.object_type : null;
+    const kind = researchType ? 'paper'
+      : object.object_type === 'manual_note' ? 'note'
       : object.object_type === 'context_bridge' ? 'bridge'
         : object.object_type === 'context_set' ? 'merge'
           : object.object_type === 'conversation_branch' || role === 'user' ? 'user' : 'answer';
+    const researchLabel = researchType === 'research_source' ? 'RESEARCH SOURCE'
+      : researchType === 'research_evidence' ? 'RESEARCH EVIDENCE'
+        : researchType === 'research_claim' ? 'RESEARCH CLAIM' : null;
     const mergeItems = Array.isArray(object.metadata_json.source_titles)
       ? object.metadata_json.source_titles.filter((item): item is string => typeof item === 'string')
       : [];
@@ -67,14 +72,14 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       position: positions[object.id] ?? { x: 120 + (index % 3) * 390, y: 100 + Math.floor(index / 3) * 210 },
       data: {
         kind,
-        eyebrow: object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
+        eyebrow: researchLabel ?? (object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET'),
         title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
         body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
         summary: object.content.slice(0, 160),
         density: 'compact',
         manual: object.created_by === 'user' && kind === 'note',
-        accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
-        layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
+        accent: researchType === 'research_evidence' ? 'green' : kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
+        layer: researchType || kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
@@ -93,7 +98,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     source: edge.source_object_id,
     target: edge.target_object_id,
     type: 'smoothstep',
-    data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
+    data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'provenance' ? 'provenance' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
   }));
   const execution = projectExecutionGraph(graph.execution_traces ?? [], nodes);
   return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges };
@@ -143,6 +148,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutRevision = useRef(0);
   const layoutSnapshot = useRef('');
   const layoutTimer = useRef<number | null>(null);
+  const initialFitViewTimer = useRef<number | null>(null);
   const layoutConflict = useRef(false);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
@@ -220,6 +226,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   useEffect(() => () => {
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+    if (initialFitViewTimer.current !== null) window.clearTimeout(initialFitViewTimer.current);
     noteSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
@@ -787,7 +794,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         onInit={(instance) => {
           instanceRef.current = instance;
           if (!workspaceProjectName || !viewportRef.current) {
-            window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
+            if (initialFitViewTimer.current !== null) window.clearTimeout(initialFitViewTimer.current);
+            initialFitViewTimer.current = window.setTimeout(
+              () => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }),
+              80,
+            );
           }
         }}
         defaultViewport={viewport ?? undefined}

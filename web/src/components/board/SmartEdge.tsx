@@ -12,6 +12,7 @@ const kindLabel = {
   reply: 'Reply',
   context: 'Context flow',
   semantic: 'Semantic link',
+  provenance: 'Evidence provenance',
   execution: 'Execution',
 } as const;
 
@@ -29,6 +30,7 @@ export function SmartEdge({
 }: EdgeProps<AuraFlowEdge>) {
   const kind = data?.edgeKind ?? 'reply';
   const isSemantic = kind === 'semantic';
+  const isProvenance = kind === 'provenance';
   const isContext = kind === 'context';
   const isExecution = kind === 'execution';
 
@@ -58,11 +60,13 @@ export function SmartEdge({
     ? '#89dceb'
     : isContext
       ? '#61c8db'
-      : isExecution
-        ? '#4f7680'
-        : isSemantic
-          ? '#44525f'
-          : '#34414f';
+    : isExecution
+      ? '#4f7680'
+      : isProvenance
+        ? '#73c9a2'
+      : isSemantic
+        ? '#44525f'
+        : '#34414f';
 
   return (
     <>
@@ -73,9 +77,9 @@ export function SmartEdge({
         interactionWidth={22}
         style={{
           stroke,
-          strokeWidth: selected ? 2.3 : isContext ? 2.05 : isExecution ? 1.35 : isSemantic ? 1.1 : 1.35,
-          strokeDasharray: isSemantic ? '5 7' : isExecution ? '4 5' : undefined,
-          opacity: selected ? 1 : isSemantic ? 0.64 : 0.9,
+          strokeWidth: selected ? 2.3 : isContext ? 2.05 : isExecution ? 1.35 : isProvenance ? 1.6 : isSemantic ? 1.1 : 1.35,
+          strokeDasharray: isSemantic ? '5 7' : isProvenance ? '2 4' : isExecution ? '4 5' : undefined,
+          opacity: selected ? 1 : isSemantic ? 0.64 : isProvenance ? 0.82 : 0.9,
         }}
       />
 

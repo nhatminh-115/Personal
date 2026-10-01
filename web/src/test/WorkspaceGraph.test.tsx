@@ -63,4 +63,30 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.getAllByText('Provider: local').length).toBeGreaterThan(0);
   });
 
+  it('projects persisted research sources, evidence, and claims into the knowledge layer', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [
+        { ...savedGraph.objects[0], id: 'source-1', object_type: 'research_source', title: 'A prior paper', content: 'Paper abstract.', metadata_json: { canonical_id: 'doi:example' } },
+        { ...savedGraph.objects[0], id: 'evidence-1', object_type: 'research_evidence', title: 'Methods excerpt', content: 'The source describes a fixed-size state.', metadata_json: { source_locator: 'Methods' } },
+        { ...savedGraph.objects[0], id: 'claim-1', object_type: 'research_claim', title: 'Verified claim', content: 'The paper uses a fixed-size state.', metadata_json: { verification_status: 'verified' } },
+      ],
+      edges: [],
+      layout: { ...savedGraph.layout, layout: {} },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="aura-project-research" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('RESEARCH SOURCE')).toBeInTheDocument();
+    expect(screen.getByText('RESEARCH EVIDENCE')).toBeInTheDocument();
+    expect(screen.getByText('RESEARCH CLAIM')).toBeInTheDocument();
+    expect(screen.getByText('The source describes a fixed-size state.')).toBeInTheDocument();
+  });
+
 });
