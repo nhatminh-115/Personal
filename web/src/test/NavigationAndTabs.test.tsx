@@ -44,6 +44,32 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(screen.queryByTitle('Close tab')).not.toBeInTheDocument();
   });
 
+  it('runs a real workspace search from the omnibox and displays backend results', async () => {
+    const searchResults = [{
+      object_id: 'object-search-1', object_type: 'manual_note', title: 'A saved finding',
+      excerpt: 'This contains the phrase unique omnibox search.', project_name: null,
+      created_by: 'user', updated_at: '2026-10-01T12:00:00Z',
+    }];
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve(searchResults) });
+      if (url.includes('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory') || url.includes('/v1/workspace/notes') || url.includes('/v1/workspace/library')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'unique omnibox search' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+
+    expect(await screen.findByText('A saved finding')).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/search?query=unique+omnibox+search'));
+    expect(screen.getByRole('button', { name: /^AURA$/i })).toBeInTheDocument();
+  });
+
   it('opening a project creates/reuses exactly one project tab', async () => {
     await act(async () => {
       render(<App />);

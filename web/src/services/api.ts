@@ -23,6 +23,7 @@ import {
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
+  WorkspaceSearchResult,
   AutomationRecordResponse,
   AutomationRunResponse,
 } from '../types';
@@ -215,6 +216,12 @@ export const api = {
 
   async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`));
+  },
+
+  async searchWorkspace(query: string, projectName?: string): Promise<WorkspaceSearchResult[]> {
+    const params = new URLSearchParams({ query });
+    if (projectName) params.set('project_name', projectName);
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/search?${params.toString()}`));
   },
 
   async createWorkspaceProject(input: { id: string; name: string; subtitle: string }): Promise<WorkspaceProjectRecord> {

@@ -347,6 +347,16 @@ export interface WorkspaceProjectRecord {
   updated_at: string;
 }
 
+export interface WorkspaceSearchResult {
+  object_id: string;
+  object_type: string;
+  title: string;
+  excerpt: string;
+  project_name: string | null;
+  created_by: string;
+  updated_at: string;
+}
+
 export interface AutomationRecordResponse {
   id: string;
   name: string;
