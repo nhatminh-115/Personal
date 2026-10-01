@@ -382,7 +382,7 @@ async def test_profile_context_preserves_privacy_and_memory_provenance(test_db_s
 async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
     source = WorkspaceObjectModel(
         id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
-        content="Keep the migration reversible.", created_by="user",
+        content="Keep the migration reversible.", metadata_json={"privacy_policy": "confidential"}, created_by="user",
     )
     unrelated = WorkspaceObjectModel(
         id="unrelated-note", project_name="Atlas", object_type="manual_note", title="Private note",
@@ -396,6 +396,7 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
         id="bridge", project_name="Atlas", object_type="context_bridge", title="Migration context",
         content="Use the selected constraint.", created_by="user",
         metadata_json={
+            "privacy_policy": "local_only",
             "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
             "bridge_sections": {
                 "conclusions": "Keep the migration reversible.",
@@ -432,6 +433,11 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
         "failed": False,
         "artifacts": False,
     }
+    assert compiled.privacy_requirement == "local_only"
+    assert compiled.privacy_sources == [
+        {"object_id": "bridge", "privacy_policy": "local_only"},
+        {"object_id": "source-note", "privacy_policy": "confidential"},
+    ]
     assert "Keep the migration reversible." in compiled.prompt_text
     assert "Disabled observation must not be sent." not in compiled.prompt_text
     assert "Constraint" not in compiled.prompt_text
