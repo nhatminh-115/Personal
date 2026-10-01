@@ -110,7 +110,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Open project chat
-    const projectButton = screen.getAllByText(/^AURA$/i).find((item) => item.closest('.project-card'))!;
+    const projectButton = (await screen.findByText(/^AURA$/i, { selector: '.project-card *' })).closest('.project-card')!;
     await act(async () => {
       fireEvent.click(projectButton);
     });

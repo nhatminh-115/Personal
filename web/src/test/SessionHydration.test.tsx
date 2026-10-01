@@ -73,7 +73,7 @@ describe('Session Hydration', () => {
     await act(async () => { fireEvent.click(projectButton); });
 
     // Open project chats
-    const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
     await act(async () => { fireEvent.click(chatsBtn); });
 
     // Click the live thread
@@ -124,7 +124,7 @@ describe('Session Hydration', () => {
 
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
-    const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
     await act(async () => { fireEvent.click(chatsBtn); });
 
     const liveThreadBtn = screen.getByText('Live thread 2');
@@ -187,7 +187,7 @@ describe('Session Hydration', () => {
 
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
-    const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
     await act(async () => { fireEvent.click(chatsBtn); });
 
     const liveThreadBtn = screen.getByText('Live dedup thread');

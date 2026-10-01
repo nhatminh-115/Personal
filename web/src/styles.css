@@ -395,6 +395,15 @@ input:focus-visible {
   background: var(--bg);
 }
 
+.workspace-loading {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  color: #8295a1;
+  font-size: 12px;
+}
+
 .inspector-panel {
   grid-column: 3;
   grid-row: 2;
@@ -404,6 +413,13 @@ input:focus-visible {
   background: #0a1018;
   overflow: hidden;
   z-index: 12;
+}
+
+.inspector-panel--loading {
+  display: grid;
+  place-items: center;
+  color: #8295a1;
+  font-size: 12px;
 }
 
 .eyebrow {

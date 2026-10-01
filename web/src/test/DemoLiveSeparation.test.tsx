@@ -40,7 +40,7 @@ describe('Demo / Live Separation', () => {
     await act(async () => { render(<App />); });
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
-    const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
     await act(async () => { fireEvent.click(chatsBtn); });
   }
 

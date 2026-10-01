@@ -93,7 +93,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(countProjectTabs()).toBe(1);
 
     // ── Step 2: Switch to Chat ──────────────────────────────────────────────
-    const chatsBtn = screen.getByText(/Open project chats/i).closest('button')!;
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
     await act(async () => { fireEvent.click(chatsBtn); });
 
     // Workspace mode group present
