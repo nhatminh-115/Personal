@@ -273,6 +273,7 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
   const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
+  const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
   const workspaceSearchRequest = useRef(0);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
@@ -1611,6 +1612,11 @@ export default function App() {
     handleSidebarNavigate('notes');
   };
 
+  const handleOpenWorkspaceSearchLibraryItem = (objectId: string) => {
+    setFocusedLibraryItemId(objectId);
+    handleSidebarNavigate('library');
+  };
+
   const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
   const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
 
@@ -1710,6 +1716,7 @@ export default function App() {
           <LibraryView
             projects={projectCatalog}
             items={libraryItems}
+            focusItemId={focusedLibraryItemId}
             connections={directoryConnections}
             directoryPickerSupported={supportsDirectoryPicker()}
             onOpenItem={(item) => void handleLibraryItem(item)}
@@ -1848,6 +1855,7 @@ export default function App() {
             error={workspaceSearch.error}
             onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenNote={handleOpenWorkspaceSearchNote}
+            onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
             onOpenFile={(result) => {
               if (!result.connection_id || !result.relative_path || !result.connection_name) return;
               const indexedFile: IndexedFolderFile = {
