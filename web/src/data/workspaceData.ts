@@ -284,54 +284,6 @@ export const initialNotes: WorkspaceNote[] = [
   },
 ];
 
-export interface StudyTrack {
-  id: string;
-  title: string;
-  subtitle: string;
-  progress: number;
-  streak: string;
-  next: string;
-  libraryIds: string[];
-  sessions: { label: string; value: string }[];
-  accent: 'cyan' | 'purple' | 'amber';
-}
-
-export const studyTracks: StudyTrack[] = [
-  {
-    id: 'toeic',
-    title: 'TOEIC',
-    subtitle: 'Listening + Reading',
-    progress: 68,
-    streak: '4 sessions this week',
-    next: 'Part 3 · 25-minute focus block',
-    libraryIds: ['toeic-progress'],
-    sessions: [{ label: 'Listening', value: '97/100' }, { label: 'Reading', value: 'planned' }, { label: 'Goal', value: '900+' }],
-    accent: 'cyan',
-  },
-  {
-    id: 'german',
-    title: 'German A1',
-    subtitle: 'Vocabulary + sentence drills',
-    progress: 34,
-    streak: '3-day streak',
-    next: 'Cases + 20 new words',
-    libraryIds: ['german-a1'],
-    sessions: [{ label: 'Words', value: '142' }, { label: 'Sentences', value: '38' }, { label: 'Level', value: 'A1' }],
-    accent: 'purple',
-  },
-  {
-    id: 'ai-reading',
-    title: 'AI Reading',
-    subtitle: 'Architecture papers and notes',
-    progress: 51,
-    streak: '6 papers this month',
-    next: 'Finish recurrent memory comparison',
-    libraryIds: ['reading-log', 'transformer-survey'],
-    sessions: [{ label: 'Queue', value: '8' }, { label: 'Read', value: '21' }, { label: 'Notes', value: '47' }],
-    accent: 'amber',
-  },
-];
-
 export type AutomationScope = 'global' | 'project';
 
 export interface AutomationRecord {

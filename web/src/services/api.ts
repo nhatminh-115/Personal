@@ -197,10 +197,10 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`));
   },
 
-  async startStudySession(trackId: string, trackTitle: string): Promise<StudySessionRecord> {
+  async startStudySession(trackId: string, trackTitle: string, materialId?: string): Promise<StudySessionRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track_id: trackId, track_title: trackTitle }),
+      body: JSON.stringify({ track_id: trackId, track_title: trackTitle, ...(materialId ? { material_id: materialId } : {}) }),
     }));
   },
 

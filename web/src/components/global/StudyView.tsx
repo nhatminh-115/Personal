@@ -1,58 +1,95 @@
-import { ArrowRight, BookOpenText, Clock3, Play, Sparkles } from 'lucide-react';
-import { studyTracks, type LibraryItem } from '../../data/workspaceData';
+import { ArrowRight, BookOpenText, Play } from 'lucide-react';
+import type { LibraryItem } from '../../data/workspaceData';
 import type { StudySessionRecord } from '../../types';
+import './StudyView.css';
 
 interface StudyViewProps {
   libraryItems: LibraryItem[];
   onOpenItem: (item: LibraryItem) => void;
-  onStartSession: (trackId: string) => void;
+  onBrowseLibrary: () => void;
+  onStartSession: (item: LibraryItem) => void;
   sessions: StudySessionRecord[];
   onCompleteSession: (sessionId: string) => void;
 }
 
-export function StudyView({ libraryItems, onOpenItem, onStartSession, sessions, onCompleteSession }: StudyViewProps) {
+function isStudyMaterial(item: LibraryItem) {
+  return item.collection === 'Study' || item.collection === 'Research';
+}
+
+export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession }: StudyViewProps) {
+  const materials = libraryItems.filter(isStudyMaterial);
+  const materialIds = new Set(materials.map((item) => item.id));
+  const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
+
   return (
     <section className="study-view">
       <div className="library-view__header">
         <div>
           <span className="eyebrow">STUDY</span>
-          <h1>Progress, materials, and the next small session.</h1>
-          <p>Study does not duplicate files. It points back to artifacts in your personal Library.</p>
+          <h1>Study from the sources already in your workspace.</h1>
+          <p>Study keeps a durable session linked to each Library reference. It does not copy or upload file contents.</p>
         </div>
-        <div className="study-today-pill"><Sparkles size={14} /><span><strong>Today</strong><small>1 focused session is enough</small></span></div>
+        <button className="secondary-button" type="button" onClick={onBrowseLibrary}>Browse Library</button>
       </div>
 
-      <div className="study-track-grid">
-        {studyTracks.map((track) => {
-          const files = track.libraryIds.map((id) => libraryItems.find((item) => item.id === id)).filter(Boolean) as LibraryItem[];
-          const activeSession = sessions.find((session) => session.track_id === track.id && session.status === 'in_progress');
-          return (
-            <article key={track.id} className={`study-track-card study-track-card--${track.accent}`}>
-              <div className="study-track-card__top">
-                <span className="study-track-icon"><BookOpenText size={18} /></span>
-                <div><strong>{track.title}</strong><small>{track.subtitle}</small></div>
-                <span>{track.progress}%</span>
-              </div>
-              <div className="study-progress"><span style={{ width: `${track.progress}%` }} /></div>
-              <div className="study-stats">
-                {track.sessions.map((session) => <div key={session.label}><span>{session.label}</span><strong>{session.value}</strong></div>)}
-              </div>
-              <div className="study-next"><Clock3 size={13} /><span><small>Next</small><strong>{track.next}</strong></span></div>
-              <div className="study-files">
-                <span>Linked materials</span>
-                {files.map((file) => <button key={file.id} type="button" onClick={() => onOpenItem(file)}><span className={`file-kind file-kind--${file.kind.toLowerCase()}`}>{file.kind}</span><strong>{file.name}</strong><ArrowRight size={12} /></button>)}
-              </div>
-              {activeSession ? (
-                <button className="study-start-button" type="button" onClick={() => onCompleteSession(activeSession.id)}>
-                  <Play size={13} /> Mark session complete
-                </button>
-              ) : (
-                <button className="study-start-button" type="button" onClick={() => onStartSession(track.id)}><Play size={13} /> Start short session</button>
-              )}
+      {materials.length ? (
+        <div className="study-track-grid" aria-label="Study materials">
+          {materials.map((item) => {
+            const itemSessions = sessions.filter((session) => (session.material_id ?? session.track_id) === item.id);
+            const activeSession = itemSessions.find((session) => session.status === 'in_progress');
+            const completedCount = itemSessions.filter((session) => session.status === 'completed').length;
+            const canStartSession = item.source === 'imported' && item.syncState === 'synced';
+            return (
+              <article key={item.id} className="study-track-card study-track-card--cyan">
+                <div className="study-track-card__top">
+                  <span className="study-track-icon"><BookOpenText size={18} /></span>
+                  <div><strong>{item.name}</strong><small>{item.collection} · {item.kind}</small></div>
+                  <span>{completedCount} complete</span>
+                </div>
+                <p className="study-material-detail">{item.detail || 'No Library description added.'}</p>
+                <div className="study-files">
+                  <span>{item.source === 'bundled' ? 'Preview reference' : item.syncState === 'synced' ? 'Workspace reference' : 'Saving reference'}</span>
+                  <button type="button" onClick={() => onOpenItem(item)}>
+                    <span className={`file-kind file-kind--${item.kind.toLowerCase()}`}>{item.kind}</span>
+                    <strong>Open material</strong><ArrowRight size={12} />
+                  </button>
+                </div>
+                {activeSession ? (
+                  <button className="study-start-button" type="button" onClick={() => onCompleteSession(activeSession.id)}>
+                    <Play size={13} /> Mark session complete
+                  </button>
+                ) : canStartSession ? (
+                  <button className="study-start-button" type="button" onClick={() => onStartSession(item)}>
+                    <Play size={13} /> Start short session
+                  </button>
+                ) : (
+                  <p className="study-material-note">Save a personal Study or Research reference in Library to start a durable session.</p>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="study-track-empty">
+          <BookOpenText size={22} />
+          <h2>No Study sources yet</h2>
+          <p>Add a personal reference to the Study or Research collection in Library, then start a session from it here.</p>
+          <button className="primary-button" type="button" onClick={onBrowseLibrary}>Open Library</button>
+        </div>
+      )}
+
+      {unlinkedSessions.length ? (
+        <section className="study-history" aria-label="Earlier Study sessions">
+          <h2>Earlier sessions</h2>
+          {unlinkedSessions.map((session) => (
+            <article key={session.id}>
+              <strong>{session.track_title}</strong>
+              <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
+              {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
             </article>
-          );
-        })}
-      </div>
+          ))}
+        </section>
+      ) : null}
     </section>
   );
 }

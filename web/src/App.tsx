@@ -16,7 +16,6 @@ import {
   initialNotes,
   projectArtifacts,
   projects,
-  studyTracks,
   type AutomationRecord,
   type ChatThreadRecord,
   type LibraryItem,
@@ -1314,13 +1313,12 @@ export default function App() {
     return () => { active = false; };
   }, [pushToast, surface]);
 
-  const startStudySession = useCallback(async (trackId: string) => {
-    const track = studyTracks.find((item) => item.id === trackId);
-    if (!track) return;
+  const startStudySession = useCallback(async (item: LibraryItem) => {
+    if (item.source !== 'imported' || item.syncState !== 'synced') return;
     try {
-      const session = await api.startStudySession(track.id, track.title);
+      const session = await api.startStudySession(item.id, item.name, item.id);
       setStudySessions((current) => [session, ...current]);
-      pushToast('Study session started', `${track.title} · this session is saved in your workspace.`);
+      pushToast('Study session started', `${item.name} · linked to its Library reference.`);
     } catch (error) {
       pushToast('Study session was not started', executionErrorText(error));
     }
@@ -1740,7 +1738,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => void startStudySession(trackId)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
@@ -1906,4 +1904,3 @@ export default function App() {
     </div>
   );
 }
-

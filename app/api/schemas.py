@@ -165,12 +165,14 @@ class WorkspaceNoteResponse(BaseModel):
 class StudySessionWrite(BaseModel):
     track_id: str = Field(min_length=1, max_length=128)
     track_title: str = Field(min_length=1, max_length=255)
+    material_id: Optional[str] = Field(default=None, max_length=36)
 
 
 class StudySessionResponse(BaseModel):
     id: str
     track_id: str
     track_title: str
+    material_id: Optional[str] = None
     status: Literal["in_progress", "completed"]
     started_at: datetime
     completed_at: Optional[datetime] = None

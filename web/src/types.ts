@@ -320,6 +320,7 @@ export interface StudySessionRecord {
   id: string;
   track_id: string;
   track_title: string;
+  material_id?: string | null;
   status: 'in_progress' | 'completed';
   started_at: string;
   completed_at?: string | null;
