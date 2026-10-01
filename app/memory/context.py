@@ -140,11 +140,7 @@ class ContextAssembler:
 
             if store and embedding_router:
                 query_vec = await embedding_router.embed_query(user_message)
-                search_types = (
-                    [MemoryType.SEMANTIC.value, MemoryType.PROJECT.value]
-                    if project_name
-                    else [MemoryType.SEMANTIC.value]
-                )
+                search_types = [MemoryType.SEMANTIC.value]
                 matches = await store.search(
                     query_vector=query_vec,
                     limit=semantic_top_k,
@@ -155,11 +151,42 @@ class ContextAssembler:
                     embedding_model=embedding_router.current_model_name,
                     embedding_dim=embedding_router.current_dimension,
                 )
-                seen_semantic = set()
-                for mem, sim in matches:
-                    if mem.content not in seen_semantic and mem.content not in context.project_facts:
-                        context.semantic_items.append((mem.content, sim))
-                        seen_semantic.add(mem.content)
+                matches = list(matches)
+            else:
+                raw_memories = await self.mem_service.search_semantic_memory(
+                    query=user_message,
+                    limit=semantic_top_k,
+                    min_similarity=semantic_threshold,
+                    project_name=project_name,
+                    is_active_only=True,
+                )
+                matches = [(memory, 1.0) for memory in raw_memories]
+
+            seen_semantic = set()
+            semantic_memory_chars = 0
+            for mem, sim in matches:
+                if getattr(mem, "memory_type", MemoryType.SEMANTIC.value) != MemoryType.SEMANTIC.value:
+                    continue
+                if mem.content in seen_semantic or mem.content in context.project_facts:
+                    continue
+                if semantic_memory_chars + len(mem.content) > MAX_PROJECT_MEMORY_CHARS:
+                    continue
+                metadata = mem.metadata_json if isinstance(mem.metadata_json, dict) else {}
+                classification = metadata.get("privacy_policy")
+                if classification is not None and (
+                    not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
+                ):
+                    raise ContextSelectionError(
+                        "Semantic memory has an unsupported privacy classification.",
+                        {"memory_id": mem.id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
+                    )
+                if isinstance(classification, str):
+                    context.privacy_requirement = stricter_privacy_requirement(
+                        context.privacy_requirement, classification
+                    )
+                context.semantic_items.append((mem.content, sim))
+                semantic_memory_chars += len(mem.content)
+                seen_semantic.add(mem.content)
             else:
                 raw_memories = await self.mem_service.search_semantic_memory(
                     query=user_message,
