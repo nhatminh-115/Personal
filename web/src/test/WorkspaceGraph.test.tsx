@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardCanvas } from '../components/board/BoardCanvas';
@@ -61,6 +61,83 @@ describe('Persistent workspace graph Board projection', () => {
 
     expect((await screen.findAllByText('Root · test-model')).length).toBeGreaterThan(0);
     expect(screen.getAllByText('Provider: local').length).toBeGreaterThan(0);
+  });
+
+  it('hydrates and persists user-authored Context Bridge sections', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        id: 'bridge-1', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        object_type: 'context_bridge', created_by: 'user', title: 'Migration handoff',
+        content: 'Keep the rollout reversible.',
+        metadata_json: {
+          privacy_policy: 'confidential',
+          required_capabilities: ['document_parse'],
+          bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false },
+          bridge_sections: { conclusions: 'Preserve the rollback path.', observations: '', failed: '', artifacts: '' },
+        },
+        created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockResolvedValue({} as never);
+
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="bridge-hydration" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    fireEvent.click(await screen.findByTitle('Current density: compact'));
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    const section = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Context Bridge Conclusions"]');
+    expect(section).not.toBeNull();
+    expect(section).toHaveValue('Preserve the rollback path.');
+    expect(container.querySelector('textarea[aria-label="Context Bridge Important observations"]')).toBeNull();
+    fireEvent.change(section!, { target: { value: 'Keep rollback available.' } });
+
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'bridge-1', expect.objectContaining({
+      metadata_json: expect.objectContaining({
+        privacy_policy: 'confidential',
+        required_capabilities: ['document_parse'],
+        bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false },
+        bridge_sections: { conclusions: 'Keep rollback available.', observations: '', failed: '', artifacts: '' },
+      }),
+    })), { timeout: 2000 });
+  });
+
+  it('preserves privacy and capability metadata when editing a manual note', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: 'classified-note',
+        object_type: 'manual_note',
+        created_by: 'user',
+        title: 'Classified note',
+        content: 'Keep this internal.',
+        metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockResolvedValue({} as never);
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="classified-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Classified note');
+    fireEvent.click(container.querySelector('[data-id="classified-note"] button[title^="Current density"]')!);
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    fireEvent.change(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit manual note"]')!, { target: { value: 'Updated internal wording.' } });
+
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'classified-note', expect.objectContaining({
+      content: 'Updated internal wording.',
+      metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
+    })), { timeout: 2000 });
   });
 
 });

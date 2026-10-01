@@ -11,6 +11,24 @@ from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
+PRIVACY_REQUIREMENT_ORDER = {"public": 0, "internal": 1, "confidential": 2, "local_only": 3}
+BRIDGE_SECTION_LABELS = {
+    "conclusions": "Conclusions",
+    "observations": "Important observations",
+    "failed": "Failed attempts",
+    "artifacts": "Artifacts",
+}
+
+
+def stricter_privacy_requirement(current: str | None, required: str | None) -> str | None:
+    """Return the stricter known policy without weakening an existing boundary."""
+    if required is None:
+        return current
+    if current is None:
+        return required
+    if current not in PRIVACY_REQUIREMENT_ORDER or required not in PRIVACY_REQUIREMENT_ORDER:
+        return current
+    return max((current, required), key=PRIVACY_REQUIREMENT_ORDER.__getitem__)
 
 
 class CompiledContextObject(BaseModel):
@@ -18,6 +36,7 @@ class CompiledContextObject(BaseModel):
     object_type: str
     selected_by_user: bool = False
     source_object_ids: list[str] = Field(default_factory=list)
+    selected_sections: dict[str, bool | None] | None = None
 
 
 class CompiledWorkspaceContext(BaseModel):
@@ -25,6 +44,12 @@ class CompiledWorkspaceContext(BaseModel):
     objects: list[CompiledContextObject] = Field(default_factory=list)
     estimated_tokens: int = 0
     prompt_text: str = ""
+    privacy_requirement: str | None = None
+    required_capabilities: list[str] = Field(default_factory=list)
+    requires_tools: bool = False
+    requires_vision: bool = False
+    requires_structured_output: bool = False
+    requires_long_context: bool = False
 
 
 class WorkspaceContextCompiler:
@@ -83,6 +108,11 @@ class WorkspaceContextCompiler:
                 if source is None:
                     continue
                 linked_sources.setdefault(edge.target_object_id, []).append(edge.source_object_id)
+                # A bridge records its source links as provenance. Its handoff is
+                # composed from the explicitly enabled, user-authored sections;
+                # copying complete source objects would bypass that selection.
+                if objects[edge.target_object_id].object_type == "context_bridge":
+                    continue
                 if edge.source_object_id in included:
                     continue
                 included.add(source.id)
@@ -94,6 +124,53 @@ class WorkspaceContextCompiler:
                 if source.object_type in EXPANDABLE_CONTEXT_OBJECTS:
                     next_expandable.append(source.id)
             expandable = list(dict.fromkeys(next_expandable))
+
+        # Privacy classifications on selected objects and Bridge provenance
+        # sources strengthen the route boundary for this turn.
+        privacy_requirement: str | None = None
+        required_capabilities: set[str] = set()
+        capability_flags = {
+            "requires_tools": False,
+            "requires_vision": False,
+            "requires_structured_output": False,
+            "requires_long_context": False,
+        }
+        privacy_object_ids = set(included)
+        privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
+        for object_id in privacy_object_ids:
+            metadata = objects[object_id].metadata_json or {}
+            classification = metadata.get("privacy_policy")
+            if classification is not None and (
+                not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
+            ):
+                raise ContextSelectionError(
+                    "Selected workspace context has an unsupported privacy classification.",
+                    {"object_id": object_id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
+                )
+            if isinstance(classification, str):
+                privacy_requirement = stricter_privacy_requirement(privacy_requirement, classification)
+            if object_id not in included:
+                continue
+            object_capabilities = metadata.get("required_capabilities", [])
+            if not isinstance(object_capabilities, list) or any(
+                not isinstance(capability, str) or not capability.strip()
+                for capability in object_capabilities
+            ):
+                raise ContextSelectionError(
+                    "Selected workspace context has invalid capability requirements.",
+                    {"object_id": object_id, "requirement": "required_capabilities"},
+                )
+            required_capabilities.update(capability.strip() for capability in object_capabilities)
+            for key in capability_flags:
+                value = metadata.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, bool):
+                    raise ContextSelectionError(
+                        "Selected workspace context has invalid capability requirements.",
+                        {"object_id": object_id, "requirement": key},
+                    )
+                capability_flags[key] = capability_flags[key] or value
 
         # Place explicitly linked sources before the bridges/sets that consume them.
         # Stable timestamp + id ordering resolves unrelated objects deterministically.
@@ -113,9 +190,33 @@ class WorkspaceContextCompiler:
         rendered: list[str] = []
         manifest: list[CompiledContextObject] = []
         for item in ordered:
+            content = item.content or ""
+            section_selection: dict[str, bool] | None = None
+            if item.object_type == "context_bridge":
+                metadata = item.metadata_json or {}
+                options = metadata.get("bridge_options")
+                sections = metadata.get("bridge_sections")
+                section_selection = (
+                    {
+                        key: options.get(key) if type(options.get(key)) is bool else None
+                        for key in BRIDGE_SECTION_LABELS
+                    }
+                    if isinstance(options, dict)
+                    else None
+                )
+                if isinstance(options, dict) and isinstance(sections, dict):
+                    selected_content = [
+                        f"{label}:\n{sections[key]}"
+                        for key, label in BRIDGE_SECTION_LABELS.items()
+                        if section_selection is not None and section_selection[key] is True
+                        and isinstance(sections.get(key), str)
+                        and sections[key].strip()
+                    ]
+                    if selected_content:
+                        content = "\n\n".join(part for part in (content, *selected_content) if part)
             rendered.append(
                 f"[Workspace object {item.id} | type: {item.object_type} | title: {item.title or '(untitled)'}]\n"
-                f"{item.content}"
+                f"{content}"
             )
             manifest.append(
                 CompiledContextObject(
@@ -123,6 +224,7 @@ class WorkspaceContextCompiler:
                     object_type=item.object_type,
                     selected_by_user=item.id in roots,
                     source_object_ids=sorted(set(linked_sources.get(item.id, []))),
+                    selected_sections=section_selection,
                 )
             )
         prompt_text = "\n\n".join(rendered)
@@ -137,4 +239,7 @@ class WorkspaceContextCompiler:
             objects=manifest,
             estimated_tokens=(len(prompt_text) + 3) // 4,
             prompt_text=prompt_text,
+            privacy_requirement=privacy_requirement,
+            required_capabilities=sorted(required_capabilities),
+            **capability_flags,
         )

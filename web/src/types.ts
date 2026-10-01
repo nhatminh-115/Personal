@@ -41,6 +41,8 @@ export interface AuraNodeData extends Record<string, unknown> {
   chip?: string;
   running?: boolean;
   messageId?: string;
+  workspaceObjectType?: string;
+  workspaceMetadata?: Record<string, unknown>;
   layer: LayerKey;
   from?: string;
   to?: string;
@@ -50,6 +52,12 @@ export interface AuraNodeData extends Record<string, unknown> {
     failed: boolean;
     artifacts: boolean;
   };
+  bridgeSections?: {
+    conclusions: string;
+    observations: string;
+    failed: string;
+    artifacts: string;
+  };
   bridgeNote?: string;
   mergeItems?: string[];
   execution?: ExecutionStep[];
@@ -58,6 +66,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   onChangeBody?: (id: string, body: string) => void;
   onBridgeApply?: (id: string) => void;
   onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => void;
+  onBridgeSection?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => void;
   onContinueMerge?: (id: string) => void;
 }
 

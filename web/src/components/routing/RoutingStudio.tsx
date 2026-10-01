@@ -73,6 +73,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     : scope === 'session'
       ? sessionProfileId !== initialSessionProfileId
       : defaultProfileId !== initialDefaultProfileId;
+  const hasUnsavedChanges = dirty || assignmentDirty;
   const readOnly = draft?.id === 'system-balanced';
 
   useEffect(() => {
@@ -108,12 +109,31 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     routes: { ...value.routes, [role]: { ...emptyRoute(), ...value.routes[role], ...patch, reasoning: { ...emptyRoute().reasoning, ...value.routes[role]?.reasoning, ...patch.reasoning } } },
   } : value);
   const selectProfile = (id: string | null, value?: RoutingProfile) => {
-    if (dirty && !window.confirm('Discard unsaved routing profile changes?')) return;
+    if (hasUnsavedChanges && !window.confirm('Discard unsaved routing profile changes?')) return;
     const next = value ?? profiles.find((profile) => profile.id === id) ?? newProfile();
     setSelectedId(id);
     setDraft(next);
     setScopeProfileId(next.id ?? 'system-balanced');
     setError('');
+  };
+
+  const discardChanges = () => {
+    const savedProfile = profiles.find((profile) => profile.id === selectedId)
+      ?? profiles.find((profile) => profile.id === effective?.profile?.id)
+      ?? profiles[0]
+      ?? null;
+    setSelectedId(savedProfile?.id ?? null);
+    setDraft(savedProfile);
+    setScopeProfileId(initialAssignment);
+    setSessionProfileId(initialSessionProfileId);
+    setDefaultProfileId(initialDefaultProfileId);
+    setValidation(null);
+    setError('');
+  };
+
+  const requestClose = () => {
+    if (hasUnsavedChanges && !window.confirm('Discard unsaved routing profile changes?')) return;
+    onClose();
   };
 
   async function save() {
@@ -205,9 +225,9 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     finally { setBusy(false); }
   }
 
-  return <div className="routing-studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+  return <div className="routing-studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
     <section className="routing-studio" role="dialog" aria-modal="true" aria-label="Routing Studio">
-      <header className="routing-studio__header"><div><span className="eyebrow">AURA · ROUTING STUDIO</span><h2>Model routing</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Close Routing Studio">×</button></header>
+      <header className="routing-studio__header"><div><span className="eyebrow">AURA · ROUTING STUDIO</span><h2>Model routing</h2></div><button className="icon-button" type="button" onClick={requestClose} aria-label="Close Routing Studio">×</button></header>
       {error ? <div className="routing-error" role="alert">{error}</div> : null}
       <div className="routing-studio__layout">
         <aside className="routing-profile-list"><div className="routing-section-head"><h3>Profiles</h3><button type="button" onClick={() => selectProfile(null, newProfile())}>New</button></div>
@@ -253,7 +273,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
               <div className="routing-checkboxes">{[['Tools', previewTools, setPreviewTools], ['Vision', previewVision, setPreviewVision], ['Structured output', previewStructured, setPreviewStructured], ['Long context', previewLong, setPreviewLong]].map(([label, value, setter]) => <label key={String(label)}><input type="checkbox" checked={value as boolean} onChange={(e) => (setter as (v: boolean) => void)(e.target.checked)} />{label as string}</label>)}</div>
               {preview ? <div className="routing-preview-card" aria-label="Routing preview result"><div className="routing-section-head"><strong>{preview.provider}:{preview.model}</strong><span>{preview.profile_name} · v{preview.profile_version}</span></div><dl><div><dt>Reason</dt><dd>{preview.reason}</dd></div><div><dt>Reasoning</dt><dd>{preview.reasoning_effort ?? 'Unknown / provider fixed'}</dd></div><div><dt>Scope</dt><dd>{preview.winning_scope}</dd></div><div><dt>Route</dt><dd>{preview.role} · {preview.task_route ?? 'general'}</dd></div><div><dt>Privacy / fallback</dt><dd>{preview.privacy} / {preview.fallback}</dd></div></dl>{preview.warnings.map((warning) => <p className="routing-note" key={warning}>{warning}</p>)}</div> : null}
             </div>
-            <footer className="routing-studio__footer"><button type="button" className="secondary-button" disabled={busy || !draft.id} onClick={() => void duplicate()}>Duplicate</button><button type="button" className="secondary-button" disabled={busy || readOnly || !draft.id} onClick={() => void remove()}>Delete</button><span />{dirty ? <button type="button" className="secondary-button" disabled={busy} onClick={() => selectProfile(selectedId)}>Discard</button> : null}<button type="button" className="primary-button" disabled={busy || profileErrors.length > 0 || (readOnly && !assignmentDirty) || (!dirty && !assignmentDirty)} onClick={() => void save()}>{busy ? 'Saving…' : assignmentDirty && !dirty ? 'Save assignment' : 'Save changes'}</button></footer>
+            <footer className="routing-studio__footer"><button type="button" className="secondary-button" disabled={busy || !draft.id} onClick={() => void duplicate()}>Duplicate</button><button type="button" className="secondary-button" disabled={busy || readOnly || !draft.id} onClick={() => void remove()}>Delete</button><span />{hasUnsavedChanges ? <button type="button" className="secondary-button" disabled={busy} onClick={discardChanges}>Discard</button> : null}<button type="button" className="primary-button" disabled={busy || profileErrors.length > 0 || (readOnly && !assignmentDirty) || (!dirty && !assignmentDirty)} onClick={() => void save()}>{busy ? 'Saving…' : assignmentDirty && !dirty ? 'Save assignment' : 'Save changes'}</button></footer>
           </> : <p>Loading routing profiles…</p>}
         </main>
       </div>

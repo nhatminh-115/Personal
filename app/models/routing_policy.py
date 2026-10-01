@@ -20,7 +20,8 @@ class ProviderMetadata(BaseModel):
 
     name: str
     capabilities: List[str] = Field(default_factory=list)  # e.g. ["code", "reasoning", "general", "fast", "local"]
-    context_window: int = 128_000
+    context_window: int | None = None
+    model_context_windows: Dict[str, int] = Field(default_factory=dict)
     cost_class: Literal["low", "medium", "high"] = "medium"
     latency_class: Literal["low", "medium", "high"] = "medium"
     privacy_status: Literal["cloud", "local", "airgap"] = "cloud"
@@ -41,6 +42,12 @@ class ModelSelection(BaseModel):
     reason: str
     context: Optional[RoutingContext] = None
     reasoning_effort_selected: Optional[str] = None
+    context_window: int | None = None
+
+
+def selected_context_window(metadata: ProviderMetadata, model_name: str) -> int | None:
+    """Resolve only provider-supplied context limits; unknown stays unknown."""
+    return metadata.model_context_windows.get(model_name, metadata.context_window)
 
 
 class RoutingPolicy(ABC):
@@ -75,6 +82,7 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                 model_name=model,
                 reason=reason,
                 context=context,
+                context_window=selected_context_window(meta, model) if meta else None,
             )
 
         if not context:
@@ -257,6 +265,7 @@ class DeterministicRoutingPolicy(RoutingPolicy):
                 reason=reason,
                 context=context,
                 reasoning_effort_selected=resolved_effort,
+                context_window=selected_context_window(meta, target_model),
             )
 
         candidates: List[tuple[str, str, ProviderMetadata]] = []
@@ -487,4 +496,5 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             reason=reason_code,
             context=context,
             reasoning_effort_selected=chosen_effort,
+            context_window=selected_context_window(chosen_meta, chosen_model),
         )

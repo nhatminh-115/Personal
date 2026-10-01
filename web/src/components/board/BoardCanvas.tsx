@@ -17,6 +17,7 @@ import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity } from '../../ty
 import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
+import { buildMergedContinuation } from './contextActions';
 import { SmartEdge } from './SmartEdge';
 import { ApiError, api } from '../../services/api';
 import { projectExecutionGraph } from './executionProjection';
@@ -61,6 +62,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       ? object.metadata_json.source_titles.filter((item): item is string => typeof item === 'string')
       : [];
     const rawBridgeOptions = object.metadata_json.bridge_options as Record<string, unknown> | undefined;
+    const rawBridgeSections = object.metadata_json.bridge_sections as Record<string, unknown> | undefined;
     return {
       id: object.id,
       type: 'aura',
@@ -76,6 +78,8 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
         layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
+        workspaceObjectType: object.object_type,
+        workspaceMetadata: object.metadata_json,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
         bridgeOptions: kind === 'bridge' ? {
@@ -83,6 +87,12 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
           observations: typeof rawBridgeOptions?.observations === 'boolean' ? rawBridgeOptions.observations : true,
           failed: typeof rawBridgeOptions?.failed === 'boolean' ? rawBridgeOptions.failed : false,
           artifacts: typeof rawBridgeOptions?.artifacts === 'boolean' ? rawBridgeOptions.artifacts : false,
+        } : undefined,
+        bridgeSections: kind === 'bridge' ? {
+          conclusions: typeof rawBridgeSections?.conclusions === 'string' ? rawBridgeSections.conclusions : '',
+          observations: typeof rawBridgeSections?.observations === 'string' ? rawBridgeSections.observations : '',
+          failed: typeof rawBridgeSections?.failed === 'string' ? rawBridgeSections.failed : '',
+          artifacts: typeof rawBridgeSections?.artifacts === 'string' ? rawBridgeSections.artifacts : '',
         } : undefined,
         bridgeNote: object.content,
       },
@@ -146,6 +156,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutConflict = useRef(false);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
+  const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
@@ -221,6 +232,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   useEffect(() => () => {
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
     noteSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
+    bridgeSectionSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
   useEffect(() => {
@@ -274,19 +286,24 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (workspaceProjectName) {
         const node = nodesRef.current.find((item) => item.id === id);
         if (node?.data.manual || node?.data.kind === 'bridge') {
-          const previous = noteSaveTimers.current.get(id);
+          const timers = node.data.kind === 'bridge' ? bridgeSectionSaveTimers.current : noteSaveTimers.current;
+          const previous = timers.get(id);
           if (previous !== undefined) window.clearTimeout(previous);
           const timer = window.setTimeout(() => {
+            const latestNode = nodesRef.current.find((item) => item.id === id);
+            if (!latestNode) return;
             void api.updateWorkspaceObject(workspaceProjectName, id, {
-              title: node.data.title,
-              content: body,
-              metadata_json: node.data.kind === 'bridge' ? {
-                bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
-              } : {},
-            }).catch(() => toast(node.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
-            noteSaveTimers.current.delete(id);
+              title: latestNode.data.title,
+              content: latestNode.data.kind === 'bridge' ? (latestNode.data.bridgeNote ?? body) : body,
+              metadata_json: latestNode.data.kind === 'bridge' ? {
+                ...(latestNode.data.workspaceMetadata ?? {}),
+                bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+                bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+              } : latestNode.data.workspaceMetadata ?? {},
+            }).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            timers.delete(id);
           }, 500);
-          noteSaveTimers.current.set(id, timer);
+          timers.set(id, timer);
         }
       }
     },
@@ -311,11 +328,53 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }),
       );
       if (workspaceProjectName && node?.data.kind === 'bridge') {
-        void api.updateWorkspaceObject(workspaceProjectName, id, {
-          title: node.data.title,
-          content: node.data.bridgeNote ?? node.data.body,
-          metadata_json: { bridge_options: bridgeOptions },
-        }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+        const previous = bridgeSectionSaveTimers.current.get(id);
+        if (previous !== undefined) window.clearTimeout(previous);
+        const timer = window.setTimeout(() => {
+          const latestNode = nodesRef.current.find((item) => item.id === id);
+          if (!latestNode || latestNode.data.kind !== 'bridge') return;
+          void api.updateWorkspaceObject(workspaceProjectName, id, {
+            title: latestNode.data.title,
+            content: latestNode.data.bridgeNote ?? latestNode.data.body,
+            metadata_json: {
+              ...(latestNode.data.workspaceMetadata ?? {}),
+              bridge_options: latestNode.data.bridgeOptions ?? bridgeOptions,
+              bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+            },
+          }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+          bridgeSectionSaveTimers.current.delete(id);
+        }, 500);
+        bridgeSectionSaveTimers.current.set(id, timer);
+      }
+    },
+    [recordHistory, setNodes, toast, workspaceProjectName],
+  );
+
+  const updateBridgeSection = useCallback(
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => {
+      recordHistory();
+      setNodes((current) => current.map((node) => node.id === id ? {
+        ...node,
+        data: { ...node.data, bridgeSections: { ...(node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' }), [key]: value } },
+      } : node));
+      if (workspaceProjectName) {
+        const previous = bridgeSectionSaveTimers.current.get(id);
+        if (previous !== undefined) window.clearTimeout(previous);
+        const timer = window.setTimeout(() => {
+          const node = nodesRef.current.find((item) => item.id === id);
+          if (!node || node.data.kind !== 'bridge') return;
+          void api.updateWorkspaceObject(workspaceProjectName, id, {
+            title: node.data.title,
+            content: node.data.bridgeNote ?? node.data.body,
+            metadata_json: {
+              ...(node.data.workspaceMetadata ?? {}),
+              bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+              bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+            },
+          }).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          bridgeSectionSaveTimers.current.delete(id);
+        }, 500);
+        bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
     [recordHistory, setNodes, toast, workspaceProjectName],
@@ -418,10 +477,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onChangeBody: changeBody,
           onBridgeApply: workspaceProjectName ? undefined : applyBridge,
           onBridgeOption: updateBridgeOption,
+          onBridgeSection: updateBridgeSection,
           onContinueMerge: continueMerge,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, workspaceProjectName],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, updateBridgeSection, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(
@@ -469,6 +529,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
   const selectedEdges = useMemo(() => edges.filter((edge) => edge.selected), [edges]);
+  const mergeTargets = useMemo(() => nodes
+    .filter((node) => workspaceProjectName
+      ? node.data.workspaceObjectType === 'conversation_branch'
+      : node.data.layer === 'conversation')
+    .map((node) => ({ id: node.id, title: node.data.title })), [nodes, workspaceProjectName]);
 
   const createNoteAt = useCallback(
     async (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
@@ -524,7 +589,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           object_type: 'context_bridge',
           title: 'Context Bridge',
           content: '',
-          metadata_json: { bridge_options: bridgeOptions },
+          metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '' } },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
@@ -565,7 +630,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     toast('Context Bridge created', 'Selected objects are connected as sources for a future context handoff.');
   }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
-  const mergeSelected = useCallback(async () => {
+  const saveContextSet = useCallback(async () => {
     if (selectedNodes.length < 2) return;
     if (workspaceProjectName) {
       try {
@@ -588,9 +653,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         setEdges(projected.edges);
         setExecutionNodes(projected.executionNodes);
         setExecutionEdges(projected.executionEdges);
-        toast('Context selection saved', 'Source objects are linked without changing their content or generating a summary.');
+        toast('Context Set saved', 'Source objects are linked without changing their content or generating a summary.');
       } catch (error) {
-        toast('Context selection was not saved', error instanceof ApiError && error.status === 409
+        toast('Context Set was not saved', error instanceof ApiError && error.status === 409
           ? 'This selection would create a cycle in the context-flow graph.'
           : 'AURA could not link all selected objects in the project graph.');
       }
@@ -605,10 +670,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       position: anchor,
       data: {
         kind: 'merge',
-        eyebrow: 'MERGE CONTEXT',
-        title: 'Merged working context',
-        body: 'Selected objects are combined into a continuation context.',
-        summary: `${selectedNodes.length} sources merged`,
+        eyebrow: 'SAVED CONTEXT SET',
+        title: 'Saved context selection',
+        body: 'Selected objects remain individually inspectable. No summary was generated.',
+        summary: `${selectedNodes.length} linked sources`,
         density: 'full',
         accent: 'cyan',
         layer: 'knowledge',
@@ -626,8 +691,57 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     }));
     setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergeNode]);
     setEdges((current) => [...current, ...mergeEdges]);
-    toast('Merge node created', `${selectedNodes.length} selected objects feed a new merged context.`);
+    toast('Context Set saved', `${selectedNodes.length} selected objects are linked without changing their content.`);
   }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+
+  const mergeIntoBranch = useCallback(async (targetId: string) => {
+    const target = nodes.find((node) => node.id === targetId);
+    if (!target || selectedNodes.length < 2) return;
+    const mergeInput = buildMergedContinuation(
+      { id: target.id, title: target.data.title },
+      selectedNodes.map((node) => ({ id: node.id, title: node.data.title })),
+    );
+    const sourceIds = mergeInput.source_object_ids;
+    const sourceTitles = mergeInput.metadata_json.source_titles;
+    if (workspaceProjectName) {
+      try {
+        await api.createWorkspaceObject(workspaceProjectName, mergeInput);
+        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+        const projected = mapWorkspaceGraph(graph);
+        layoutRevision.current = graph.layout.revision;
+        nodesRef.current = projected.nodes;
+        edgesRef.current = projected.edges;
+        setNodes(projected.nodes);
+        setEdges(projected.edges);
+        setExecutionNodes(projected.executionNodes);
+        setExecutionEdges(projected.executionEdges);
+        toast('Merged continuation created', `A new branch now links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
+      } catch (error) {
+        toast('Merge was not saved', error instanceof ApiError && error.status === 409
+          ? 'This merge would create a cycle in the context-flow graph.'
+          : 'AURA could not link the selected objects into a new branch.');
+      }
+      return;
+    }
+    recordHistory();
+    const id = `merge-${idRef.current++}`;
+    const anchor = getSelectionAnchor();
+    const mergedNode: AuraFlowNode = {
+      id, type: 'aura', position: anchor,
+      data: {
+        kind: 'merge', eyebrow: 'MERGED CONTINUATION', title: `Merged into ${target.data.title}`,
+        body: 'A new continuation links the destination branch and selected context. The source branch remains unchanged.',
+        summary: `${sourceIds.length} linked sources`, density: 'full', accent: 'cyan', layer: 'knowledge',
+        sourceCount: sourceIds.length, mergeItems: sourceTitles,
+      },
+    };
+    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergedNode]);
+    setEdges((current) => [...current, ...sourceIds.map((sourceId) => ({
+      id: `edge-${idRef.current++}`, source: sourceId, target: id, type: 'smoothstep' as const,
+      data: { edgeKind: 'context' as const },
+    }))]);
+    toast('Merged continuation created', `A new node links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
+  }, [getSelectionAnchor, nodes, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const askSelected = useCallback(
     (prompt: string) => {
@@ -908,7 +1022,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onCreateNote={() => createNoteAt(getSelectionAnchor(), 'Manual note derived from the current Context Lens selection.')}
           onCreateBridge={createContextBridge}
           onCreateBranch={() => addBranch(selectedNodes[0].id)}
-          onMerge={mergeSelected}
+          onSaveContextSet={saveContextSet}
+          mergeTargets={mergeTargets}
+          onMergeInto={(targetId) => void mergeIntoBranch(targetId)}
           onClear={clearSelection}
         />
       ) : null}

@@ -209,6 +209,223 @@ async def test_chat_compiles_selected_workspace_context_and_records_provenance(a
 
 
 @pytest.mark.asyncio
+async def test_chat_compiles_only_selected_bridge_sections_and_records_section_provenance(async_client):
+    from app.models.router import model_router
+    from app.models.base import ModelRole
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Source constraint", "content": "Full source text must stay out of Bridge context.",
+        "metadata_json": {"privacy_policy": "local_only"},
+    })
+    assert source.status_code == 201
+    bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_bridge",
+        "title": "Selected migration handoff",
+        "content": "Keep rollback available.",
+        "metadata_json": {
+            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": True},
+            "bridge_sections": {
+                "conclusions": "Deploy in reversible stages.",
+                "observations": "Disabled observation must stay out.",
+                "failed": "",
+                "artifacts": "Migration checklist v2.",
+            },
+        },
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert bridge.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-compiled-context-session",
+        "project_name": "aura",
+        "message": "Continue the migration plan.",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+
+    assert response.status_code == 200
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert "Keep rollback available." in system_message.content
+    assert "Deploy in reversible stages." in system_message.content
+    assert "Migration checklist v2." in system_message.content
+    assert "Disabled observation must stay out." not in system_message.content
+    assert "Full source text must stay out of Bridge context." not in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert compiled_event["payload"]["privacy_requirement"] == "local_only"
+    assert compiled_event["payload"]["objects"] == [{
+        "object_id": bridge.json()["id"],
+        "object_type": "context_bridge",
+        "selected_by_user": True,
+        "source_object_ids": [source.json()["id"]],
+        "selected_sections": {
+            "conclusions": True,
+            "observations": False,
+            "failed": False,
+            "artifacts": True,
+        },
+    }]
+    selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert selected_model["payload"]["privacy"] == "local_only"
+    assert selected_model["payload"]["requires_vision"] is False
+    assert selected_model["payload"]["required_capabilities"] == []
+    assert selected_model["payload"]["estimated_input_tokens"] > 0
+    assert selected_model["payload"]["reserved_output_tokens"] == 2048
+
+    calls_before_cloud_lock = len(model_router.get_provider("mock").call_history)
+    cloud_locked = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-privacy-cloud-lock-session",
+        "project_name": "aura",
+        "message": "This must stay local.",
+        "model_override": "openai:gpt-4o",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+    assert cloud_locked.status_code == 403
+    assert cloud_locked.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before_cloud_lock
+
+
+@pytest.mark.asyncio
+async def test_merged_continuation_compiles_destination_branch_and_selected_context(async_client):
+    from app.models.router import model_router
+    from app.models.base import ModelRole
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Selected constraint",
+        "content": "Keep the migration reversible.",
+    })
+    destination = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "conversation_branch",
+        "title": "Existing destination branch",
+        "content": "The branch is investigating rollout sequencing.",
+    })
+    assert source.status_code == destination.status_code == 201
+
+    merged = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "conversation_branch",
+        "title": "Merged continuation from Existing destination branch",
+        "metadata_json": {"merged_into_branch_id": destination.json()["id"]},
+        "source_object_ids": [destination.json()["id"], source.json()["id"]],
+    })
+    assert merged.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "merged-continuation-context-session",
+        "project_name": "aura",
+        "message": "Continue with this merged context.",
+        "context_object_ids": [merged.json()["id"]],
+    })
+    assert response.status_code == 200
+
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert "Keep the migration reversible." in system_message.content
+    assert "The branch is investigating rollout sequencing." in system_message.content
+    assert "Merged continuation from Existing destination branch" in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}" )).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    compiled_objects = compiled_event["payload"]["objects"]
+    assert {item["object_id"] for item in compiled_objects} == {
+        source.json()["id"], destination.json()["id"], merged.json()["id"],
+    }
+    assert next(item for item in compiled_objects if item["object_id"] == merged.json()["id"])["selected_by_user"] is True
+
+
+@pytest.mark.asyncio
+async def test_known_model_context_window_blocks_before_provider_invocation(async_client):
+    from app.models.router import model_router
+
+    metadata = model_router.get_provider_metadata("mock")
+    assert metadata is not None
+    previous_window = metadata.context_window
+    metadata.context_window = 1
+    calls_before = len(model_router.get_provider("mock").call_history)
+    try:
+        response = await async_client.post("/v1/chat", json={
+            "session_id": "small-context-window-session",
+            "message": "A quick request.",
+        })
+    finally:
+        metadata.context_window = previous_window
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "ModelCapabilityMismatch"
+    assert response.json()["details"]["context_window"] == 1
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+
+@pytest.mark.asyncio
+async def test_selected_context_capabilities_constrain_model_routing(async_client):
+    from app.models.router import model_router
+
+    object_response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Image inspection requirement",
+        "content": "The selected context requires image understanding.",
+        "metadata_json": {"requires_vision": True},
+    })
+    assert object_response.status_code == 201
+    object_id = object_response.json()["id"]
+    calls_before = len(model_router.get_provider("mock").call_history)
+
+    incapable = await async_client.post("/v1/chat", json={
+        "session_id": "vision-context-incapable-session",
+        "project_name": "aura",
+        "message": "Analyze this context.",
+        "model_override": "mock:mock-default",
+        "context_object_ids": [object_id],
+    })
+    assert incapable.status_code == 422
+    assert incapable.json()["code"] == "ModelCapabilityMismatch"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+    capable = await async_client.post("/v1/chat", json={
+        "session_id": "vision-context-capable-session",
+        "project_name": "aura",
+        "message": "Analyze this context.",
+        "model_override": "mock:mock-pro",
+        "context_object_ids": [object_id],
+    })
+    assert capable.status_code == 200
+    assert model_router.get_provider("mock").call_history[-1].selected_model == "mock-pro"
+
+
+@pytest.mark.asyncio
+async def test_selected_context_tool_requirement_survives_empty_tool_registry(async_client, monkeypatch):
+    from app.models.router import model_router
+    from app.tools.registry import tool_registry
+
+    metadata = model_router.get_provider_metadata("mock")
+    assert metadata is not None
+    monkeypatch.setitem(metadata.tool_support, "mock-default", "unsupported")
+    monkeypatch.setattr(tool_registry, "get_tool_definitions", lambda: [])
+
+    selected = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Tool requirement",
+        "content": "Use the project code graph before proposing changes.",
+        "metadata_json": {"requires_tools": True},
+    })
+    assert selected.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "tool-context-empty-registry-session",
+        "project_name": "aura",
+        "message": "Inspect the selected context.",
+        "context_object_ids": [selected.json()["id"]],
+    })
+
+    assert response.status_code == 200
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert selected_model["payload"]["requires_tools"] is True
+    assert selected_model["payload"]["model"] != "mock-default"
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)

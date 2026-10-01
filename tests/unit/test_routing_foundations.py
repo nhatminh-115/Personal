@@ -1061,6 +1061,11 @@ async def test_delegation_runtime_lock_all_child_propagation(test_db_session: As
     assert snapshot["explicit_model_override"] == "mock:lock-model-target"
     assert snapshot["reasoning_policy"] == "fixed"
     assert snapshot["reasoning_effort"] == "high"
+    child_state = mock_graph.ainvoke.await_args.args[0]
+    child_routing = child_state["metadata"]["routing_context_dict"]
+    assert child_routing["explicit_model_override"] == "mock:lock-model-target"
+    assert child_routing["reasoning_policy"] == "fixed"
+    assert child_routing["reasoning_effort"] == "high"
 
 
 @pytest.mark.asyncio
@@ -1093,6 +1098,11 @@ async def test_delegation_model_lock_preserves_child_reasoning_route(test_db_ses
     assert child.routing_snapshot_json["explicit_model_override"] == "mock:locked"
     assert child.routing_snapshot_json["reasoning_policy"] == "adaptive"
     assert child.routing_snapshot_json["reasoning_effort"] == "medium"
+    child_state = mock_graph.ainvoke.await_args.args[0]
+    child_routing = child_state["metadata"]["routing_context_dict"]
+    assert child_routing["explicit_model_override"] == "mock:locked"
+    assert child_routing["reasoning_policy"] == "adaptive"
+    assert child_routing["reasoning_effort"] == "medium"
 
 
 @pytest.mark.asyncio

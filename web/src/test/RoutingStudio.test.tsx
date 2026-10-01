@@ -2,13 +2,15 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { RoutingConfirmationNotice } from '../components/routing/RoutingConfirmationNotice';
+import { RoutingStudio } from '../components/routing/RoutingStudio';
+import type { RoutingProfile } from '../types';
 
-const profile = {
+const profile: RoutingProfile = {
   id: 'system-balanced', name: 'System Balanced', version: 1, is_active: true, is_default: false,
   global_privacy_policy: 'public', global_fallback_policy: 'cloud_allowed', cost_preference: 'normal', latency_preference: 'normal',
   routes: { root: { reasoning: { policy: 'adaptive', effort: 'low', min_effort: 'low', max_effort: 'medium' } } },
 };
-const customProfile = {
+const customProfile: RoutingProfile = {
   ...profile,
   id: 'custom-profile', name: 'Custom profile', version: 3, is_default: true,
   routes: { root: { model_override: 'offline:kept-model', reasoning: { policy: 'adaptive', effort: 'medium', min_effort: 'low', max_effort: 'low' } } },
@@ -106,6 +108,56 @@ describe('Routing Studio v2', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/default', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ profile_id: null }) })));
   });
 
+  it('keeps session assignment unavailable before a live session exists', async () => {
+    const onClose = vi.fn();
+    render(<RoutingStudio
+      open
+      projectName="Project"
+      sessionId="local-only-session"
+      sessionAvailable={false}
+      demoThread={false}
+      effective={{ profile: customProfile, winning_scope: 'project' }}
+      catalog={{ providers: [] }}
+      onClose={onClose}
+      onSaved={vi.fn()}
+      onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    expect(within(screen.getByLabelText('Scope')).getByRole('option', { name: 'Session' })).toBeDisabled();
+    expect(screen.getByText('Session routing becomes available after this live chat has started.')).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/v1/routing/sessions/local-only-session'), expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('persists a session assignment only when a live session is available', async () => {
+    const onSaved = vi.fn();
+    render(<RoutingStudio
+      open
+      projectName="Project"
+      sessionId="live-session"
+      sessionAvailable
+      demoThread={false}
+      effective={{ profile: customProfile, winning_scope: 'project' }}
+      catalog={{ providers: [] }}
+      onClose={vi.fn()}
+      onSaved={onSaved}
+      onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'custom-profile' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/sessions/live-session', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ profile_id: 'custom-profile' }),
+    })));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
   it('renders preview fields instead of raw JSON', async () => {
     await openProject();
     fireEvent.click(screen.getByText(/System Balanced · system/i));
@@ -148,6 +200,42 @@ describe('Routing Studio v2', () => {
     fireEvent.click(screen.getByRole('button', { name: /System Balanced.*Built-in/i }));
     expect(confirm).toHaveBeenCalledWith('Discard unsaved routing profile changes?');
     expect(screen.getByLabelText('Profile name')).toHaveValue('Edited draft');
+  });
+
+  it('discards profile and assignment drafts directly and restores their saved values', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Unsaved rename' } });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'custom-profile' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Profile name')).toHaveValue('Custom profile');
+    expect(screen.getByLabelText('Assigned profile')).toHaveValue('system-balanced');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it('asks before closing Routing Studio with unsaved changes', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Unsaved rename' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Routing Studio' }));
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved routing profile changes?');
+    expect(screen.getByRole('dialog', { name: 'Routing Studio' })).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close Routing Studio' }));
+    expect(screen.queryByRole('dialog', { name: 'Routing Studio' })).not.toBeInTheDocument();
   });
 
   it('offers cloud routing cancellation or settings changes without a fake continue action', () => {

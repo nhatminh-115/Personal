@@ -12,6 +12,12 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     let chatPayload: any = null;
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/v1/workspace/projects/') && url.endsWith('/graph')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
+          id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
+          content: 'Keep the migration reversible.', metadata_json: {},
+        }] }) });
+      }
       if (url.includes('/v1/models')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       }
@@ -92,6 +98,12 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
       fireEvent.click(newChatBtn);
     });
 
+    // The live Context panel uses saved project graph objects and sends their IDs.
+    fireEvent.click(screen.getByText('Context').closest('button')!);
+    const contextItem = await screen.findByRole('button', { name: /Shared project constraint/i });
+    fireEvent.click(contextItem);
+    expect(contextItem).toHaveAttribute('aria-pressed', 'true');
+
     // Type prompt into textarea and send
     const textarea = screen.getByPlaceholderText(/Ask AURA in this chat…/i);
     fireEvent.change(textarea, { target: { value: 'Explain state persistence in AURA' } });
@@ -105,6 +117,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(chatPayload).not.toBeNull();
     expect(chatPayload.message).toBe('Explain state persistence in AURA');
     expect(chatPayload.session_id).toBeDefined();
+    expect(chatPayload.context_object_ids).toEqual(['workspace-note-1']);
 
     // Verify response rendered in v9.1 UI
     expect(await screen.findByText(/Live backend synthesis response for project architecture/i)).toBeInTheDocument();
