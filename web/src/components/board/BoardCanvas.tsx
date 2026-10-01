@@ -996,15 +996,17 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [clearSelection, deleteEdges, redo, selectedEdges, toast, undo]);
 
   useEffect(() => {
-    if (!focusNodeId || !instanceRef.current) return;
-    const node = instanceRef.current.getNode(focusNodeId);
+    if (!focusNodeId) return;
+    const node = nodes.find((item) => item.id === focusNodeId);
     if (!node) return;
-    const width = node.measured?.width ?? 300;
-    const height = node.measured?.height ?? 130;
-    instanceRef.current.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
-      zoom: compact ? 0.85 : 1,
-      duration: 450,
-    });
+    if (flowReady && instanceRef.current) {
+      const width = node.measured?.width ?? 300;
+      const height = node.measured?.height ?? 130;
+      instanceRef.current.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+        zoom: compact ? 0.85 : 1,
+        duration: 450,
+      });
+    }
     if (!node.selected) {
       setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
     }
