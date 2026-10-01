@@ -1560,3 +1560,86 @@ async def test_fallback_blocked_event_recorded_on_routing_rejection(test_db_sess
     assert ev.payload["policy"] == "none"
     assert ev.payload["error_type"] == "PrivacyBoundaryViolation"
     assert ev.payload["privacy_boundary"] == "local_only"
+
+
+def test_required_context_window_filters_known_short_model_before_selection():
+    policy = DeterministicRoutingPolicy()
+    metadata = {
+        "short": ProviderMetadata(
+            name="short",
+            models=["small"],
+            default_model="small",
+            context_window=4096,
+        ),
+        "long": ProviderMetadata(
+            name="long",
+            models=["large"],
+            default_model="large",
+            context_window=32768,
+        ),
+    }
+
+    selection = policy.select(
+        RoutingContext(required_context_window=12_000),
+        metadata,
+        default_provider="short",
+    )
+
+    assert selection.provider_name == "long"
+    assert selection.model_name == "large"
+    assert selection.context_window == 32_768
+
+
+def test_required_context_window_preserves_unknown_model_limits():
+    policy = DeterministicRoutingPolicy()
+    metadata = {
+        "short": ProviderMetadata(
+            name="short",
+            models=["small"],
+            default_model="small",
+            context_window=4096,
+        ),
+        "unknown": ProviderMetadata(
+            name="unknown",
+            models=["undiscovered-limit"],
+            default_model="undiscovered-limit",
+            context_window=None,
+        ),
+    }
+
+    selection = policy.select(
+        RoutingContext(required_context_window=12_000),
+        metadata,
+        default_provider="short",
+    )
+
+    assert selection.provider_name == "unknown"
+    assert selection.context_window is None
+
+
+def test_exact_model_override_rejects_known_insufficient_context_without_fallback():
+    policy = DeterministicRoutingPolicy()
+    metadata = {
+        "short": ProviderMetadata(
+            name="short",
+            models=["small"],
+            default_model="small",
+            context_window=4096,
+        ),
+        "long": ProviderMetadata(
+            name="long",
+            models=["large"],
+            default_model="large",
+            context_window=32768,
+        ),
+    }
+
+    with pytest.raises(ModelCapabilityMismatch, match="below the required"):
+        policy.select(
+            RoutingContext(
+                explicit_model_override="short:small",
+                required_context_window=12_000,
+            ),
+            metadata,
+            default_provider="long",
+        )
