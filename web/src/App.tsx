@@ -1325,6 +1325,19 @@ export default function App() {
     }
   }, [pushToast]);
 
+  const startStudyFromResearchClaim = useCallback(async (objectId: string, title: string, projectName: string) => {
+    try {
+      const session = await api.startStudySession(objectId, title, objectId, projectName);
+      setStudySessions((current) => [session, ...current]);
+      studySessionsLoaded.current = true;
+      setFocusedStudySessionId(session.id);
+      pushToast('Study session started', `${session.track_title} · linked to a verified Research finding.`);
+      handleSidebarNavigate('study');
+    } catch (error) {
+      pushToast('Study session was not started', executionErrorText(error));
+    }
+  }, [handleSidebarNavigate, pushToast]);
+
   const completeStudySession = useCallback(async (sessionId: string) => {
     try {
       const session = await api.completeStudySession(sessionId);
@@ -1861,6 +1874,7 @@ export default function App() {
             onOpenNote={handleOpenWorkspaceSearchNote}
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
             onOpenStudySession={handleOpenWorkspaceSearchStudySession}
+            onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
             onOpenFile={(result) => {
               if (!result.connection_id || !result.relative_path || !result.connection_name) return;
               const indexedFile: IndexedFolderFile = {

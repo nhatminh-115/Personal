@@ -23,6 +23,11 @@ def _study_session_response(item: WorkspaceObjectModel) -> StudySessionResponse:
         track_id=metadata.get("track_id", ""),
         track_title=item.title,
         material_id=metadata.get("material_id") if isinstance(metadata.get("material_id"), str) else None,
+        material_project_name=(
+            metadata.get("material_project_name")
+            if isinstance(metadata.get("material_project_name"), str)
+            else None
+        ),
         status=status_value,
         started_at=item.created_at,
         completed_at=datetime.fromisoformat(completed_at) if isinstance(completed_at, str) else None,
@@ -53,21 +58,32 @@ async def start_study_session(
     if not track_id or not track_title:
         raise HTTPException(status_code=422, detail="Study track ID and title must not be blank.")
     material_id = body.material_id.strip() if body.material_id else None
+    material_project_name = body.material_project_name.strip() if body.material_project_name else None
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
         material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
-        if (
-            material is None
-            or material.project_name is not None
-            or material.object_type != "file_reference"
-            or material.created_by != "user"
-            or material_metadata.get("collection") not in {"Study", "Research"}
-        ):
-            raise HTTPException(status_code=404, detail="Study material not found in the personal Library.")
-        # The reference is the durable identity; use its current canonical title
-        # and store the link on the Study object without copying file contents.
+        is_library_material = (
+            material is not None
+            and material.project_name is None
+            and material.object_type == "file_reference"
+            and material.created_by == "user"
+            and material_metadata.get("collection") in {"Study", "Research"}
+        )
+        is_verified_research_claim = (
+            material is not None
+            and material.project_name is not None
+            and material.project_name == material_project_name
+            and material.object_type == "research_claim"
+            and material.created_by == "research"
+            and material_metadata.get("verification_status") == "verified"
+        )
+        if not (is_library_material or is_verified_research_claim):
+            raise HTTPException(status_code=404, detail="Study source not found or not eligible.")
+        # The source object is the durable identity. Keep its canonical title and
+        # project scope without copying research or file contents.
         track_id = material.id
         track_title = material.title
+        material_project_name = material.project_name if is_verified_research_claim else None
     item = WorkspaceObjectModel(
         project_name=None,
         object_type="study_session",
@@ -78,6 +94,7 @@ async def start_study_session(
             "track_id": track_id,
             "status": "in_progress",
             **({"material_id": material_id} if material_id else {}),
+            **({"material_project_name": material_project_name} if material_project_name else {}),
         },
     )
     db.add(item)

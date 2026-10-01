@@ -92,4 +92,49 @@ async def test_study_session_rejects_non_study_library_material(async_client: As
         },
     )
     assert response.status_code == 404
-    assert response.json()["detail"] == "Study material not found in the personal Library."
+    assert response.json()["detail"] == "Study source not found or not eligible."
+
+
+@pytest.mark.asyncio
+async def test_study_session_can_link_only_verified_project_research_claims(async_client: AsyncClient, test_db_session):
+    from app.db.models import WorkspaceObjectModel
+
+    verified = WorkspaceObjectModel(
+        id="10000000-0000-4000-8000-000000000001",
+        project_name="research-project",
+        object_type="research_claim",
+        created_by="research",
+        title="A verified finding",
+        content="Supported by cited evidence.",
+        metadata_json={"verification_status": "verified"},
+    )
+    pending = WorkspaceObjectModel(
+        id="10000000-0000-4000-8000-000000000002",
+        project_name="research-project",
+        object_type="research_claim",
+        created_by="research",
+        title="An unverified finding",
+        content="This is still uncertain.",
+        metadata_json={"verification_status": "unsupported"},
+    )
+    test_db_session.add_all([verified, pending])
+    await test_db_session.commit()
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": verified.id,
+        "track_title": "Stale client title",
+        "material_id": verified.id,
+        "material_project_name": "research-project",
+    })
+    assert started.status_code == 201
+    assert started.json()["material_id"] == verified.id
+    assert started.json()["material_project_name"] == "research-project"
+    assert started.json()["track_title"] == verified.title
+
+    refused = await async_client.post("/v1/study/sessions", json={
+        "track_id": pending.id,
+        "track_title": pending.title,
+        "material_id": pending.id,
+        "material_project_name": "research-project",
+    })
+    assert refused.status_code == 404

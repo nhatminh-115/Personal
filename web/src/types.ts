@@ -321,6 +321,7 @@ export interface StudySessionRecord {
   track_id: string;
   track_title: string;
   material_id?: string | null;
+  material_project_name?: string | null;
   status: 'in_progress' | 'completed';
   started_at: string;
   completed_at?: string | null;
@@ -355,6 +356,7 @@ export interface WorkspaceSearchResult {
   excerpt: string;
   project_name: string | null;
   created_by: string;
+  verification_status?: string | null;
   updated_at: string;
   source?: 'workspace' | 'connected-folder';
   connection_id?: string;
