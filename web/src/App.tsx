@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BoardCanvas } from './components/board/BoardCanvas';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
 import { AutomationsView } from './components/global/AutomationsView';
@@ -69,6 +68,11 @@ import type {
   ReasoningEffort,
   RunRoutingDecision,
 } from './types';
+
+const BoardCanvas = lazy(async () => {
+  const module = await import('./components/board/BoardCanvas');
+  return { default: module.BoardCanvas };
+});
 
 type WorkspaceSurface =
   | 'global-home'
@@ -1299,22 +1303,24 @@ export default function App() {
         ) : null}
 
         {surface === 'workspace' && mode === 'board' && activeProject ? (
-          <BoardCanvas
-            key={activeProject.id}
-            boardKey={activeProject.id}
-            seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
-            seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
-            workspaceProjectName={workspaceGraphProjectName}
-            workspaceSessionIds={workspaceSessionIds}
-            showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'}
-            focusNodeId={focusNodeId}
-            onNodeFocus={handleBoardNodeFocus}
-            onToast={pushToast}
-            branchRequest={branchRequest}
-            executionExpanded={params.get('execution') === '1'}
-            onAskWithContext={handleBoardAskWithContext}
-            onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }}
-          />
+          <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
+            <BoardCanvas
+              key={activeProject.id}
+              boardKey={activeProject.id}
+              seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
+              seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
+              workspaceProjectName={workspaceGraphProjectName}
+              workspaceSessionIds={workspaceSessionIds}
+              showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'}
+              focusNodeId={focusNodeId}
+              onNodeFocus={handleBoardNodeFocus}
+              onToast={pushToast}
+              branchRequest={branchRequest}
+              executionExpanded={params.get('execution') === '1'}
+              onAskWithContext={handleBoardAskWithContext}
+              onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }}
+            />
+          </Suspense>
         ) : null}
 
         {surface === 'workspace' && mode === 'split' && activeProject ? (
@@ -1343,7 +1349,9 @@ export default function App() {
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
+              <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
+                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
+              </Suspense>
             </div>
           </div>
         ) : null}
