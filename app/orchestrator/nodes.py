@@ -231,7 +231,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     rc_dict = meta.get("routing_context_dict") or state.get("routing_context_dict")
     if rc_dict:
         routing_ctx = RoutingContext(**rc_dict)
-        routing_ctx.requires_tools = bool(tool_defs)
+        routing_ctx.requires_tools = routing_ctx.requires_tools or bool(tool_defs)
     else:
         # Fallback for older tests / runs without pre-resolved profiles
         routing_ctx = RoutingContext(

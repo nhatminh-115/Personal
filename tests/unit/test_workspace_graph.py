@@ -345,6 +345,38 @@ async def test_selected_context_capabilities_constrain_model_routing(async_clien
 
 
 @pytest.mark.asyncio
+async def test_selected_context_tool_requirement_survives_empty_tool_registry(async_client, monkeypatch):
+    from app.models.router import model_router
+    from app.tools.registry import tool_registry
+
+    metadata = model_router.get_provider_metadata("mock")
+    assert metadata is not None
+    monkeypatch.setitem(metadata.tool_support, "mock-default", "unsupported")
+    monkeypatch.setattr(tool_registry, "get_tool_definitions", lambda: [])
+
+    selected = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Tool requirement",
+        "content": "Use the project code graph before proposing changes.",
+        "metadata_json": {"requires_tools": True},
+    })
+    assert selected.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "tool-context-empty-registry-session",
+        "project_name": "aura",
+        "message": "Inspect the selected context.",
+        "context_object_ids": [selected.json()["id"]],
+    })
+
+    assert response.status_code == 200
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert selected_model["payload"]["requires_tools"] is True
+    assert selected_model["payload"]["model"] != "mock-default"
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)
