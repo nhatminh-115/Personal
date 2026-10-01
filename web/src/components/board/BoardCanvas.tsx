@@ -139,6 +139,7 @@ interface BoardCanvasProps {
   workspaceProjectName?: string | null;
   workspaceSessionIds?: string[];
   onAskWithContext?: (prompt: string, objectIds: string[]) => void | Promise<void>;
+  onContinueBranch?: (branchId: string) => void;
 }
 
 const densityOrder: NodeDensity[] = ['collapsed', 'compact', 'full'];
@@ -173,7 +174,7 @@ function workspaceObjectWrite(node: AuraFlowNode) {
   };
 }
 
-export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext }: BoardCanvasProps) {
+export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext, onContinueBranch }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
   const [executionNodes, setExecutionNodes] = useState<AuraFlowNode[]>([]);
@@ -626,9 +627,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onBridgeOption: updateBridgeOption,
           onBridgeSection: updateBridgeSection,
           onContinueMerge: continueMerge,
+          onContinueBranch: workspaceProjectName ? onContinueBranch : undefined,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, updateBridgeSection, workspaceProjectName],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, onContinueBranch, updateBridgeOption, updateBridgeSection, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(

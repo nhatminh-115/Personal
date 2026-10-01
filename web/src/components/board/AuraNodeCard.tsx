@@ -134,6 +134,14 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
           </button>
         </div>
       ) : null}
+
+      {data.workspaceObjectType === 'conversation_branch' && data.onContinueBranch ? (
+        <div className="aura-node__actions nodrag nopan">
+          <button type="button" onClick={() => data.onContinueBranch?.(id)}>
+            <GitBranch size={11} /> Continue in Chat
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

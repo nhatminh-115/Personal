@@ -22,6 +22,7 @@ export interface ProjectChatWorkspaceProps {
   onAttachRequest?: () => void;
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
+  onContextObjectIdsChange?: (threadId: string, objectIds: string[]) => void;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -47,6 +48,7 @@ export function ProjectChatWorkspace({
   onAttachRequest,
   onSendMessage,
   onStartLiveChat,
+  onContextObjectIdsChange,
   currentApproval,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
@@ -68,6 +70,7 @@ export function ProjectChatWorkspace({
     let active = true;
     void api.fetchWorkspaceGraph(project.name).then((graph) => {
       if (!active) return;
+      const includedIds = new Set(activeThread?.initialContextObjectIds ?? []);
       setLiveWorkspaceContext(graph.objects.map((object) => ({
         id: `workspace-${object.id}`,
         nodeId: object.id,
@@ -75,13 +78,13 @@ export function ProjectChatWorkspace({
         title: object.title || object.object_type.split('_').join(' '),
         detail: `${object.object_type.split('_').join(' ')} · saved in this project`,
         tokens: Math.max(1, Math.ceil(object.content.length / 4)),
-        included: false,
+        included: includedIds.has(object.id),
       })));
     }).catch(() => {
       if (active) setLiveWorkspaceContext([]);
     });
     return () => { active = false; };
-  }, [isLiveThread, project.name, activeThread?.id, activeThread?.messages.length]);
+  }, [isLiveThread, project.name, activeThread?.id, activeThread?.messages.length, activeThread?.initialContextObjectIds]);
 
   const demoContextItems = useMemo<AIContextItem[]>(() => {
     const files = libraryItems.filter((item) => item.projectLinks?.includes(project.id)).slice(0, 4).map((item, index) => ({
@@ -171,6 +174,7 @@ export function ProjectChatWorkspace({
             onAttachRequest={onAttachRequest}
             onSendMessage={onSendMessage}
             onStartLiveChat={onStartLiveChat}
+            onContextObjectIdsChange={onContextObjectIdsChange ? (ids) => onContextObjectIdsChange(activeThread.id, ids) : undefined}
             currentApproval={currentApproval}
             onApprovalDecision={onApprovalDecision}
             isLiveThread={activeThread.source === 'live' || Boolean(activeThread.sessionId)}
