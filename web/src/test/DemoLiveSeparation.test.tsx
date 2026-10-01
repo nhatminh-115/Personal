@@ -92,6 +92,7 @@ describe('Demo / Live Separation', () => {
     await act(async () => {
       fireEvent.change(textarea, { target: { value: draftText } });
     });
+    fireEvent.click(screen.getByRole('button', { name: /Code/i }));
 
     // Click "Start live chat" CTA button
     const ctaBtn = screen.getByText('Start live chat');
@@ -105,6 +106,8 @@ describe('Demo / Live Separation', () => {
     // The exact draft text was sent — NOT literal "Start live chat"
     expect(postCalls[0].body).toContain(draftText);
     expect(postCalls[0].body).not.toContain('Start live chat');
+    expect(JSON.parse(postCalls[0].body).task_type).toBe('coding');
+    expect(JSON.parse(postCalls[0].body).context_object_ids).toBeUndefined();
   });
 
   it('CTA with empty draft creates live thread WITHOUT calling backend', async () => {

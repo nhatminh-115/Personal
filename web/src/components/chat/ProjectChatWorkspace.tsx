@@ -21,7 +21,7 @@ export interface ProjectChatWorkspaceProps {
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
-  onStartLiveChat?: (text: string) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
