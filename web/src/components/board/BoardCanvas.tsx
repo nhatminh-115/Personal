@@ -193,6 +193,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const [flowReady, setFlowReady] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
+  const pendingInitialFit = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
   const nodesRef = useRef(nodes);
@@ -211,6 +213,27 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   viewportRef.current = viewport;
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
+
+  const fitInitialViewWhenReady = useCallback(() => {
+    const instance = pendingInitialFit.current;
+    const bounds = canvasRef.current?.getBoundingClientRect();
+    if (!instance || !bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    if (workspaceProjectName && viewportRef.current) {
+      pendingInitialFit.current = null;
+      return;
+    }
+    pendingInitialFit.current = null;
+    void instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 });
+  }, [compact, workspaceProjectName]);
+
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(fitInitialViewWhenReady);
+    observer.observe(element);
+    fitInitialViewWhenReady();
+    return () => observer.disconnect();
+  }, [fitInitialViewWhenReady]);
 
   const persistHistoryChange = useCallback((current: BoardSnapshot, target: BoardSnapshot) => {
     if (!workspaceProjectName || !workspaceReady.current) return;
@@ -1013,7 +1036,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [compact, focusNodeId, flowReady, nodes, setNodes]);
 
   return (
-    <div className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
+    <div ref={canvasRef} className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
       {showBranchLabels ? (
         <div className="board-branch-labels" aria-hidden="true">
           <span className="branch-label branch-label--a">A · TTT literature</span>
@@ -1070,7 +1093,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           instanceRef.current = instance;
           setFlowReady(true);
           if (!workspaceProjectName || !viewportRef.current) {
-            window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
+            window.setTimeout(() => {
+              pendingInitialFit.current = instance;
+              fitInitialViewWhenReady();
+            }, 80);
           }
         }}
         defaultViewport={viewport ?? undefined}
