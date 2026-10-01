@@ -7,6 +7,7 @@ interface WorkspaceSearchViewProps {
   loading: boolean;
   error: string | null;
   onOpenProject: (name: string, objectId: string) => void;
+  onOpenNote: (objectId: string) => void;
   onOpenFile: (result: WorkspaceSearchResult) => void;
 }
 
@@ -18,7 +19,7 @@ const TYPE_LABELS: Record<string, string> = {
   file_reference: 'Library reference',
 };
 
-export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenFile }: WorkspaceSearchViewProps) {
+export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenFile }: WorkspaceSearchViewProps) {
   return (
     <section className="workspace-search" aria-labelledby="workspace-search-title">
       <header className="workspace-search__header">
@@ -49,7 +50,8 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
               <div className="workspace-search__meta">
                 <span>{result.source === 'connected-folder' ? 'Connected file' : TYPE_LABELS[result.object_type] ?? result.object_type.replace(/_/g, ' ')}</span>
                 {result.source === 'connected-folder' ? <span>{result.connection_name} · {result.size?.toLocaleString()} B</span>
-                  : result.project_name ? <><span>{result.project_name}</span><button type="button" onClick={() => onOpenProject(result.project_name!, result.object_id)}>Open in Board <ArrowUpRight size={12} /></button></>
+                  : result.object_type === 'manual_note' ? <><span>Personal workspace</span><button type="button" onClick={() => onOpenNote(result.object_id)}>Open note <ArrowUpRight size={12} /></button></>
+                    : result.project_name ? <><span>{result.project_name}</span><button type="button" onClick={() => onOpenProject(result.project_name!, result.object_id)}>Open in Board <ArrowUpRight size={12} /></button></>
                     : <span>Personal workspace</span>}
                 <time dateTime={result.updated_at}>{new Date(result.updated_at).toLocaleDateString()}</time>
                 {result.source === 'connected-folder' ? <button type="button" onClick={() => onOpenFile(result)}>Open file <ArrowUpRight size={12} /></button> : null}
