@@ -180,16 +180,36 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
   }
 
   async function duplicate() {
-    if (!draft?.id) return;
+    if (!draft?.id || dirty) return;
     setBusy(true); setError('');
     try { const copy = await api.duplicateRoutingProfile(draft.id); setProfiles((items) => [...items, copy]); setSelectedId(copy.id ?? null); setDraft(copy); }
     catch (err) { setError(executionErrorText(err)); } finally { setBusy(false); }
   }
 
   async function remove() {
-    if (!draft?.id || readOnly || !window.confirm(`Delete “${draft.name}”?`)) return;
+    if (!draft?.id || readOnly) return;
+    const savedProfile = profiles.find((item) => item.id === draft.id);
+    if (!savedProfile) return;
+    const assignmentWarning = [scopeProfileId, sessionProfileId, defaultProfileId].includes(draft.id)
+      ? ' Any project, session, or default assignment using it will inherit the next available profile.'
+      : '';
+    const draftWarning = dirty ? ' Unsaved profile edits will also be discarded.' : '';
+    if (!window.confirm(`Delete “${savedProfile.name}”?${assignmentWarning}${draftWarning}`)) return;
     setBusy(true); setError('');
-    try { await api.deleteRoutingProfile(draft.id); const next = profiles.filter((item) => item.id !== draft.id); setProfiles(next); selectProfile(next[0]?.id ?? null, next[0]); onSaved(); }
+    try {
+      const deletedId = draft.id;
+      await api.deleteRoutingProfile(deletedId);
+      const next = profiles.filter((item) => item.id !== deletedId);
+      const fallback = next[0] ?? null;
+      setProfiles(next);
+      setSelectedId(fallback?.id ?? null);
+      setDraft(fallback);
+      setValidation(null);
+      if (scopeProfileId === deletedId) { setScopeProfileId('system-balanced'); setInitialAssignment('system-balanced'); }
+      if (sessionProfileId === deletedId) { setSessionProfileId('system-balanced'); setInitialSessionProfileId('system-balanced'); }
+      if (defaultProfileId === deletedId) { setDefaultProfileId('system-balanced'); setInitialDefaultProfileId('system-balanced'); }
+      onSaved();
+    }
     catch (err) { setError(executionErrorText(err)); } finally { setBusy(false); }
   }
 
@@ -274,7 +294,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
               <div className="routing-checkboxes">{[['Tools', previewTools, setPreviewTools], ['Vision', previewVision, setPreviewVision], ['Structured output', previewStructured, setPreviewStructured], ['Long context', previewLong, setPreviewLong]].map(([label, value, setter]) => <label key={String(label)}><input type="checkbox" checked={value as boolean} onChange={(e) => (setter as (v: boolean) => void)(e.target.checked)} />{label as string}</label>)}</div>
               {preview ? <div className="routing-preview-card" aria-label="Routing preview result"><div className="routing-section-head"><strong>{preview.provider}:{preview.model}</strong><span>{preview.profile_name} · v{preview.profile_version}</span></div><dl><div><dt>Reason</dt><dd>{preview.reason}</dd></div><div><dt>Reasoning</dt><dd>{preview.reasoning_effort ?? 'Unknown / provider fixed'}</dd></div><div><dt>Scope</dt><dd>{preview.winning_scope}</dd></div><div><dt>Route</dt><dd>{preview.role} · {preview.task_route ?? 'general'}</dd></div><div><dt>Privacy / fallback</dt><dd>{preview.privacy} / {preview.fallback}</dd></div></dl>{preview.warnings.map((warning) => <p className="routing-note" key={warning}>{warning}</p>)}</div> : null}
             </div>
-            <footer className="routing-studio__footer"><button type="button" className="secondary-button" disabled={busy || !draft.id} onClick={() => void duplicate()}>Duplicate</button><button type="button" className="secondary-button" disabled={busy || readOnly || !draft.id} onClick={() => void remove()}>Delete</button><span />{hasUnsavedChanges ? <button type="button" className="secondary-button" disabled={busy} onClick={discardChanges}>Discard</button> : null}<button type="button" className="primary-button" disabled={busy || profileErrors.length > 0 || (readOnly && !assignmentDirty) || (!dirty && !assignmentDirty)} onClick={() => void save()}>{busy ? 'Saving…' : assignmentDirty && !dirty ? 'Save assignment' : 'Save changes'}</button></footer>
+            <footer className="routing-studio__footer"><button type="button" className="secondary-button" disabled={busy || !draft.id || dirty} title={dirty ? 'Save or discard profile edits before duplicating.' : undefined} onClick={() => void duplicate()}>Duplicate</button><button type="button" className="secondary-button" disabled={busy || readOnly || !draft.id} onClick={() => void remove()}>Delete</button><span />{hasUnsavedChanges ? <button type="button" className="secondary-button" disabled={busy} onClick={discardChanges}>Discard</button> : null}<button type="button" className="primary-button" disabled={busy || profileErrors.length > 0 || (readOnly && !assignmentDirty) || (!dirty && !assignmentDirty)} onClick={() => void save()}>{busy ? 'Saving…' : assignmentDirty && !dirty ? 'Save assignment' : 'Save changes'}</button></footer>
           </> : <p>Loading routing profiles…</p>}
         </main>
       </div>
