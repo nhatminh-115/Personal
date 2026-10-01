@@ -36,7 +36,12 @@ import {
 } from './data/workspaceData';
 import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
 import { executionErrorText } from './lib/executionError';
-import { compiledContextTokenCount, contextProvenanceFromRunEvents } from './lib/contextProvenance';
+import {
+  compiledContextTokenCount,
+  compiledContextTokenCountFromManifest,
+  contextProvenanceFromManifest,
+  contextProvenanceFromRunEvents,
+} from './lib/contextProvenance';
 import {
   listDirectoryConnections,
   pickDirectoryConnection,
@@ -612,6 +617,16 @@ export default function App() {
     if (thread?.source === 'live' && thread.sessionId) {
       void api.fetchSession(thread.sessionId).then((detail) => {
         if (!detail?.messages?.length) return;
+        const hydratedMessages = detail.messages.map((message) => {
+          const manifest = message.context_manifest;
+          return {
+            ...message,
+            branch: message.branch ?? 'Root',
+            provenance: contextProvenanceFromManifest(manifest),
+            contextTokens: compiledContextTokenCountFromManifest(manifest),
+            contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
+          };
+        });
         setChatThreads((current) => current.map((t) => {
           if (t.id !== threadId) return t;
 
@@ -645,7 +660,7 @@ export default function App() {
           const merged: ChatMessage[] = [...t.messages];
           let appended = false;
 
-          for (const bm of detail.messages) {
+          for (const bm of hydratedMessages) {
             const key: OccKey = `${bm.role}::${bm.content}`;
             const n = (occurrenceCounter.get(key) ?? 0) + 1;
             occurrenceCounter.set(key, n);
@@ -653,9 +668,14 @@ export default function App() {
             const localMatch = localByOccurrence.get(`${key}::${n}`);
             if (localMatch) {
               // Adopt the backend canonical ID on the existing local message
-              if (localMatch.id !== bm.id && bm.id) {
-                merged[localMatch._localIdx] = { ...merged[localMatch._localIdx], id: bm.id };
-              }
+              const existing = merged[localMatch._localIdx];
+              merged[localMatch._localIdx] = {
+                ...existing,
+                id: bm.id ?? existing.id,
+                provenance: existing.provenance?.length ? existing.provenance : bm.provenance,
+                contextTokens: existing.contextTokens ?? bm.contextTokens,
+                contextObjectIds: existing.contextObjectIds?.length ? existing.contextObjectIds : bm.contextObjectIds,
+              };
             } else {
               // Genuinely new message from backend — append
               merged.push(bm);
@@ -664,7 +684,7 @@ export default function App() {
           }
 
           // Only update thread if something actually changed
-          const idChanged = detail.messages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
+          const idChanged = hydratedMessages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
           if (!appended && !idChanged) return t;
           return { ...t, messages: merged };
         }));

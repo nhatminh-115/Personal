@@ -182,7 +182,12 @@ export interface SessionDetail {
   title: string;
   created_at: string;
   updated_at: string;
-  messages: ChatMessage[];
+  messages: SessionMessage[];
+}
+
+export interface SessionMessage extends ChatMessage {
+  run_id?: string;
+  context_manifest?: CompiledContextManifest;
 }
 
 export interface WorkspaceObject {

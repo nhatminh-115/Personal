@@ -16,6 +16,11 @@ const BACKEND_MESSAGE = {
   content: 'Backend-hydrated response',
   branch: 'Root' as const,
   timestamp: '12:00',
+  run_id: 'hydrated-run-1',
+  context_manifest: {
+    estimated_tokens: 96,
+    objects: [{ object_id: 'hydrated-research-source', object_type: 'research_source', selected_by_user: true, source_object_ids: [] }],
+  },
 };
 
 describe('Session Hydration', () => {
@@ -73,6 +78,9 @@ describe('Session Hydration', () => {
     // Click the live thread
     const liveThreadBtn = screen.getByText('Live thread');
     await act(async () => { fireEvent.click(liveThreadBtn); });
+
+    expect(await screen.findByRole('button', { name: /Research source.*hydrated-research-source/i })).toBeInTheDocument();
+    expect(screen.getByText('0.1k context')).toBeInTheDocument();
 
     // /v1/sessions/live-sess-1 was called
     // Fix 1: use type-safe call[0] extraction instead of tuple destructure
