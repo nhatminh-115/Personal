@@ -246,6 +246,32 @@ async def test_workspace_context_compiler_rejects_unknown_privacy_classification
 
 
 @pytest.mark.asyncio
+async def test_workspace_context_compiler_aggregates_explicit_routing_requirements(test_db_session):
+    item = WorkspaceObjectModel(
+        id="vision-context-note", project_name="Atlas", object_type="manual_note", title="Image analysis",
+        content="Inspect the selected image.",
+        metadata_json={
+            "required_capabilities": ["vision", "code_graph"],
+            "requires_tools": True,
+            "requires_vision": True,
+            "requires_structured_output": True,
+            "requires_long_context": True,
+        },
+        created_by="user",
+    )
+    test_db_session.add(item)
+    await test_db_session.commit()
+
+    compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [item.id])
+
+    assert compiled.required_capabilities == ["code_graph", "vision"]
+    assert compiled.requires_tools is True
+    assert compiled.requires_vision is True
+    assert compiled.requires_structured_output is True
+    assert compiled.requires_long_context is True
+
+
+@pytest.mark.asyncio
 async def test_session_history_returns_newest_window_in_chronological_order(test_db_session):
     from datetime import datetime, timedelta, timezone
     from app.db.models import MessageModel

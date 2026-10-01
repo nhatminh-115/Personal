@@ -45,6 +45,11 @@ class CompiledWorkspaceContext(BaseModel):
     estimated_tokens: int = 0
     prompt_text: str = ""
     privacy_requirement: str | None = None
+    required_capabilities: list[str] = Field(default_factory=list)
+    requires_tools: bool = False
+    requires_vision: bool = False
+    requires_structured_output: bool = False
+    requires_long_context: bool = False
 
 
 class WorkspaceContextCompiler:
@@ -123,19 +128,49 @@ class WorkspaceContextCompiler:
         # Privacy classifications on selected objects and Bridge provenance
         # sources strengthen the route boundary for this turn.
         privacy_requirement: str | None = None
+        required_capabilities: set[str] = set()
+        capability_flags = {
+            "requires_tools": False,
+            "requires_vision": False,
+            "requires_structured_output": False,
+            "requires_long_context": False,
+        }
         privacy_object_ids = set(included)
         privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
         for object_id in privacy_object_ids:
             metadata = objects[object_id].metadata_json or {}
             classification = metadata.get("privacy_policy")
-            if classification is None:
-                continue
-            if not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER:
+            if classification is not None and (
+                not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
+            ):
                 raise ContextSelectionError(
                     "Selected workspace context has an unsupported privacy classification.",
                     {"object_id": object_id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
                 )
-            privacy_requirement = stricter_privacy_requirement(privacy_requirement, classification)
+            if isinstance(classification, str):
+                privacy_requirement = stricter_privacy_requirement(privacy_requirement, classification)
+            if object_id not in included:
+                continue
+            object_capabilities = metadata.get("required_capabilities", [])
+            if not isinstance(object_capabilities, list) or any(
+                not isinstance(capability, str) or not capability.strip()
+                for capability in object_capabilities
+            ):
+                raise ContextSelectionError(
+                    "Selected workspace context has invalid capability requirements.",
+                    {"object_id": object_id, "requirement": "required_capabilities"},
+                )
+            required_capabilities.update(capability.strip() for capability in object_capabilities)
+            for key in capability_flags:
+                value = metadata.get(key)
+                if value is None:
+                    continue
+                if not isinstance(value, bool):
+                    raise ContextSelectionError(
+                        "Selected workspace context has invalid capability requirements.",
+                        {"object_id": object_id, "requirement": key},
+                    )
+                capability_flags[key] = capability_flags[key] or value
 
         # Place explicitly linked sources before the bridges/sets that consume them.
         # Stable timestamp + id ordering resolves unrelated objects deterministically.
@@ -205,4 +240,6 @@ class WorkspaceContextCompiler:
             estimated_tokens=(len(prompt_text) + 3) // 4,
             prompt_text=prompt_text,
             privacy_requirement=privacy_requirement,
+            required_capabilities=sorted(required_capabilities),
+            **capability_flags,
         )

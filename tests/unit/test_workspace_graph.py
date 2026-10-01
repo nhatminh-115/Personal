@@ -306,6 +306,42 @@ async def test_known_model_context_window_blocks_before_provider_invocation(asyn
 
 
 @pytest.mark.asyncio
+async def test_selected_context_capabilities_constrain_model_routing(async_client):
+    from app.models.router import model_router
+
+    object_response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Image inspection requirement",
+        "content": "The selected context requires image understanding.",
+        "metadata_json": {"requires_vision": True},
+    })
+    assert object_response.status_code == 201
+    object_id = object_response.json()["id"]
+    calls_before = len(model_router.get_provider("mock").call_history)
+
+    incapable = await async_client.post("/v1/chat", json={
+        "session_id": "vision-context-incapable-session",
+        "project_name": "aura",
+        "message": "Analyze this context.",
+        "model_override": "mock:mock-default",
+        "context_object_ids": [object_id],
+    })
+    assert incapable.status_code == 422
+    assert incapable.json()["code"] == "ModelCapabilityMismatch"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+    capable = await async_client.post("/v1/chat", json={
+        "session_id": "vision-context-capable-session",
+        "project_name": "aura",
+        "message": "Analyze this context.",
+        "model_override": "mock:mock-pro",
+        "context_object_ids": [object_id],
+    })
+    assert capable.status_code == 200
+    assert model_router.get_provider("mock").call_history[-1].selected_model == "mock-pro"
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)
