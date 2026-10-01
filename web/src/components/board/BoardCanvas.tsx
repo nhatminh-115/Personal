@@ -192,6 +192,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [linkSource, setLinkSource] = useState<string | null>(null);
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const [flowReady, setFlowReady] = useState(false);
+  const [canvasSizeReady, setCanvasSizeReady] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const pendingInitialFit = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -215,9 +216,12 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
   const fitInitialViewWhenReady = useCallback(() => {
-    const instance = pendingInitialFit.current;
     const bounds = canvasRef.current?.getBoundingClientRect();
-    if (!instance || !bounds || bounds.width <= 0 || bounds.height <= 0) return;
+    const hasSize = Boolean(bounds && bounds.width > 0 && bounds.height > 0);
+    setCanvasSizeReady(hasSize);
+    if (!hasSize) return;
+    const instance = pendingInitialFit.current;
+    if (!instance) return;
     if (workspaceProjectName && viewportRef.current) {
       pendingInitialFit.current = null;
       return;
@@ -1022,7 +1026,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (!focusNodeId) return;
     const node = nodes.find((item) => item.id === focusNodeId);
     if (!node) return;
-    if (flowReady && instanceRef.current) {
+    if (flowReady && canvasSizeReady && instanceRef.current) {
       const width = node.measured?.width ?? 300;
       const height = node.measured?.height ?? 130;
       instanceRef.current.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
@@ -1033,7 +1037,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (!node.selected) {
       setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
     }
-  }, [compact, focusNodeId, flowReady, nodes, setNodes]);
+  }, [canvasSizeReady, compact, focusNodeId, flowReady, nodes, setNodes]);
 
   return (
     <div ref={canvasRef} className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
