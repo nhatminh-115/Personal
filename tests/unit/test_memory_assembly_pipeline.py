@@ -159,6 +159,15 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
     bridge = WorkspaceObjectModel(
         id="bridge", project_name="Atlas", object_type="context_bridge", title="Migration context",
         content="Use the selected constraint.", created_by="user",
+        metadata_json={
+            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
+            "bridge_sections": {
+                "conclusions": "Keep the migration reversible.",
+                "observations": "Disabled observation must not be sent.",
+                "failed": "",
+                "artifacts": "",
+            },
+        },
     )
     test_db_session.add_all([source, unrelated, other_project, bridge])
     await test_db_session.flush()
@@ -178,14 +187,23 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
 
     compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [bridge.id])
 
-    assert [item.object_id for item in compiled.objects] == [source.id, bridge.id]
-    assert [item.selected_by_user for item in compiled.objects] == [False, True]
+    assert [item.object_id for item in compiled.objects] == [bridge.id]
+    assert [item.selected_by_user for item in compiled.objects] == [True]
     assert compiled.objects[-1].source_object_ids == [source.id]
     assert "Keep the migration reversible." in compiled.prompt_text
+    assert "Disabled observation must not be sent." not in compiled.prompt_text
+    assert "Constraint" not in compiled.prompt_text
+    assert "source-note | type" not in compiled.prompt_text
     assert "Use the selected constraint." in compiled.prompt_text
     assert "This was not selected." not in compiled.prompt_text
     assert "Must never cross projects." not in compiled.prompt_text
     assert compiled.estimated_tokens == (len(compiled.prompt_text) + 3) // 4
+
+    # Explicitly selecting a linked source object still includes its exact content.
+    directly_selected = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [bridge.id, source.id])
+    assert any(item.object_id == source.id and item.selected_by_user for item in directly_selected.objects)
+    assert "Keep the migration reversible." in directly_selected.prompt_text
+    assert "Constraint" in directly_selected.prompt_text
 
 
 @pytest.mark.asyncio

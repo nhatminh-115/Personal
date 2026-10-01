@@ -171,6 +171,25 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
           </label>
         ))}
       </div>
+      <div className="bridge-sections nodrag nopan">
+        {([
+          ['conclusions', 'Conclusions'],
+          ['observations', 'Important observations'],
+          ['failed', 'Failed attempts'],
+          ['artifacts', 'Artifacts'],
+        ] as const).map(([key, label]) => options[key] ? (
+          <label className="bridge-section" key={key}>
+            <span>{label}</span>
+            <textarea
+              className="note-editor"
+              value={data.bridgeSections?.[key] ?? ''}
+              onChange={(event) => data.onBridgeSection?.(id, key, event.target.value)}
+              aria-label={`Context Bridge ${label}`}
+              placeholder={`Add selected ${label.toLowerCase()}…`}
+            />
+          </label>
+        ) : null)}
+      </div>
       <div className="bridge-note">
         <span>User note</span>
         <textarea

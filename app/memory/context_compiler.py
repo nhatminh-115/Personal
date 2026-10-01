@@ -11,6 +11,12 @@ from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
+BRIDGE_SECTION_LABELS = {
+    "conclusions": "Conclusions",
+    "observations": "Important observations",
+    "failed": "Failed attempts",
+    "artifacts": "Artifacts",
+}
 
 
 class CompiledContextObject(BaseModel):
@@ -83,6 +89,11 @@ class WorkspaceContextCompiler:
                 if source is None:
                     continue
                 linked_sources.setdefault(edge.target_object_id, []).append(edge.source_object_id)
+                # A bridge records its source links as provenance. Its handoff is
+                # composed from the explicitly enabled, user-authored sections;
+                # copying complete source objects would bypass that selection.
+                if objects[edge.target_object_id].object_type == "context_bridge":
+                    continue
                 if edge.source_object_id in included:
                     continue
                 included.add(source.id)
@@ -113,9 +124,24 @@ class WorkspaceContextCompiler:
         rendered: list[str] = []
         manifest: list[CompiledContextObject] = []
         for item in ordered:
+            content = item.content or ""
+            if item.object_type == "context_bridge":
+                metadata = item.metadata_json or {}
+                options = metadata.get("bridge_options")
+                sections = metadata.get("bridge_sections")
+                if isinstance(options, dict) and isinstance(sections, dict):
+                    selected_sections = [
+                        f"{label}:\n{sections[key]}"
+                        for key, label in BRIDGE_SECTION_LABELS.items()
+                        if options.get(key) is True
+                        and isinstance(sections.get(key), str)
+                        and sections[key].strip()
+                    ]
+                    if selected_sections:
+                        content = "\n\n".join(part for part in (content, *selected_sections) if part)
             rendered.append(
                 f"[Workspace object {item.id} | type: {item.object_type} | title: {item.title or '(untitled)'}]\n"
-                f"{item.content}"
+                f"{content}"
             )
             manifest.append(
                 CompiledContextObject(

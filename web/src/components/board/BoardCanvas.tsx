@@ -61,6 +61,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       ? object.metadata_json.source_titles.filter((item): item is string => typeof item === 'string')
       : [];
     const rawBridgeOptions = object.metadata_json.bridge_options as Record<string, unknown> | undefined;
+    const rawBridgeSections = object.metadata_json.bridge_sections as Record<string, unknown> | undefined;
     return {
       id: object.id,
       type: 'aura',
@@ -83,6 +84,12 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
           observations: typeof rawBridgeOptions?.observations === 'boolean' ? rawBridgeOptions.observations : true,
           failed: typeof rawBridgeOptions?.failed === 'boolean' ? rawBridgeOptions.failed : false,
           artifacts: typeof rawBridgeOptions?.artifacts === 'boolean' ? rawBridgeOptions.artifacts : false,
+        } : undefined,
+        bridgeSections: kind === 'bridge' ? {
+          conclusions: typeof rawBridgeSections?.conclusions === 'string' ? rawBridgeSections.conclusions : '',
+          observations: typeof rawBridgeSections?.observations === 'string' ? rawBridgeSections.observations : '',
+          failed: typeof rawBridgeSections?.failed === 'string' ? rawBridgeSections.failed : '',
+          artifacts: typeof rawBridgeSections?.artifacts === 'string' ? rawBridgeSections.artifacts : '',
         } : undefined,
         bridgeNote: object.content,
       },
@@ -146,6 +153,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutConflict = useRef(false);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
+  const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
@@ -221,6 +229,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   useEffect(() => () => {
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
     noteSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
+    bridgeSectionSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
   useEffect(() => {
@@ -274,19 +283,23 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (workspaceProjectName) {
         const node = nodesRef.current.find((item) => item.id === id);
         if (node?.data.manual || node?.data.kind === 'bridge') {
-          const previous = noteSaveTimers.current.get(id);
+          const timers = node.data.kind === 'bridge' ? bridgeSectionSaveTimers.current : noteSaveTimers.current;
+          const previous = timers.get(id);
           if (previous !== undefined) window.clearTimeout(previous);
           const timer = window.setTimeout(() => {
+            const latestNode = nodesRef.current.find((item) => item.id === id);
+            if (!latestNode) return;
             void api.updateWorkspaceObject(workspaceProjectName, id, {
-              title: node.data.title,
-              content: body,
-              metadata_json: node.data.kind === 'bridge' ? {
-                bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+              title: latestNode.data.title,
+              content: latestNode.data.kind === 'bridge' ? (latestNode.data.bridgeNote ?? body) : body,
+              metadata_json: latestNode.data.kind === 'bridge' ? {
+                bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+                bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
               } : {},
-            }).catch(() => toast(node.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
-            noteSaveTimers.current.delete(id);
+            }).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            timers.delete(id);
           }, 500);
-          noteSaveTimers.current.set(id, timer);
+          timers.set(id, timer);
         }
       }
     },
@@ -311,11 +324,51 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }),
       );
       if (workspaceProjectName && node?.data.kind === 'bridge') {
-        void api.updateWorkspaceObject(workspaceProjectName, id, {
-          title: node.data.title,
-          content: node.data.bridgeNote ?? node.data.body,
-          metadata_json: { bridge_options: bridgeOptions },
-        }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+        const previous = bridgeSectionSaveTimers.current.get(id);
+        if (previous !== undefined) window.clearTimeout(previous);
+        const timer = window.setTimeout(() => {
+          const latestNode = nodesRef.current.find((item) => item.id === id);
+          if (!latestNode || latestNode.data.kind !== 'bridge') return;
+          void api.updateWorkspaceObject(workspaceProjectName, id, {
+            title: latestNode.data.title,
+            content: latestNode.data.bridgeNote ?? latestNode.data.body,
+            metadata_json: {
+              bridge_options: latestNode.data.bridgeOptions ?? bridgeOptions,
+              bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+            },
+          }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+          bridgeSectionSaveTimers.current.delete(id);
+        }, 500);
+        bridgeSectionSaveTimers.current.set(id, timer);
+      }
+    },
+    [recordHistory, setNodes, toast, workspaceProjectName],
+  );
+
+  const updateBridgeSection = useCallback(
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => {
+      recordHistory();
+      setNodes((current) => current.map((node) => node.id === id ? {
+        ...node,
+        data: { ...node.data, bridgeSections: { ...(node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' }), [key]: value } },
+      } : node));
+      if (workspaceProjectName) {
+        const previous = bridgeSectionSaveTimers.current.get(id);
+        if (previous !== undefined) window.clearTimeout(previous);
+        const timer = window.setTimeout(() => {
+          const node = nodesRef.current.find((item) => item.id === id);
+          if (!node || node.data.kind !== 'bridge') return;
+          void api.updateWorkspaceObject(workspaceProjectName, id, {
+            title: node.data.title,
+            content: node.data.bridgeNote ?? node.data.body,
+            metadata_json: {
+              bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+              bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+            },
+          }).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          bridgeSectionSaveTimers.current.delete(id);
+        }, 500);
+        bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
     [recordHistory, setNodes, toast, workspaceProjectName],
@@ -418,10 +471,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onChangeBody: changeBody,
           onBridgeApply: workspaceProjectName ? undefined : applyBridge,
           onBridgeOption: updateBridgeOption,
+          onBridgeSection: updateBridgeSection,
           onContinueMerge: continueMerge,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, workspaceProjectName],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, updateBridgeSection, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(
@@ -524,7 +578,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           object_type: 'context_bridge',
           title: 'Context Bridge',
           content: '',
-          metadata_json: { bridge_options: bridgeOptions },
+          metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '' } },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);

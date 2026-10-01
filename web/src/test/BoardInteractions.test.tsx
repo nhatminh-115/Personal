@@ -48,6 +48,7 @@ describe('Board Prototype Interactions', () => {
   it('renders Context Bridge and triggers bridge options and apply', () => {
     const onBridgeApplyMock = vi.fn();
     const onBridgeOptionMock = vi.fn();
+    const onBridgeSectionMock = vi.fn();
     const onChangeBodyMock = vi.fn();
     const data: AuraNodeData = {
       kind: 'bridge',
@@ -62,8 +63,15 @@ describe('Board Prototype Interactions', () => {
         artifacts: false,
       },
       bridgeNote: 'Keep novelty hypothesis conservative',
+      bridgeSections: {
+        conclusions: 'The migration can be reversible.',
+        observations: '',
+        failed: '',
+        artifacts: '',
+      },
       onBridgeApply: onBridgeApplyMock,
       onBridgeOption: onBridgeOptionMock,
+      onBridgeSection: onBridgeSectionMock,
       onChangeBody: onChangeBodyMock,
     };
 
@@ -89,6 +97,10 @@ describe('Board Prototype Interactions', () => {
     expect(screen.getByText('Bridge A → C')).toBeInTheDocument();
     const handoffNote = screen.getByRole('textbox', { name: /Edit context bridge handoff note/i });
     expect(handoffNote).toHaveValue('Keep novelty hypothesis conservative');
+    const conclusions = screen.getByRole('textbox', { name: 'Context Bridge Conclusions' });
+    expect(conclusions).toHaveValue('The migration can be reversible.');
+    fireEvent.change(conclusions, { target: { value: 'Keep rollbacks available.' } });
+    expect(onBridgeSectionMock).toHaveBeenCalledWith('bridge-node-1', 'conclusions', 'Keep rollbacks available.');
     fireEvent.change(handoffNote, { target: { value: 'Keep the claim narrow.' } });
     expect(onChangeBodyMock).toHaveBeenCalledWith('bridge-node-1', 'Keep the claim narrow.');
 
