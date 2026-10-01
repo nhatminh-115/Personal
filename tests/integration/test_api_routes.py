@@ -37,6 +37,38 @@ async def test_direct_chat_turn(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_session_hydration_returns_sanitized_context_manifest(async_client: AsyncClient):
+    object_response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Migration constraint",
+        "content": "Keep the migration reversible.",
+    })
+    assert object_response.status_code == 201
+
+    chat_response = await async_client.post("/v1/chat", json={
+        "session_id": "session-context-hydration",
+        "project_name": "aura",
+        "message": "Plan the migration.",
+        "context_object_ids": [object_response.json()["id"]],
+    })
+    assert chat_response.status_code == 200
+
+    session_response = await async_client.get("/v1/sessions/session-context-hydration")
+    assert session_response.status_code == 200
+    assistant = next(message for message in session_response.json()["messages"] if message["role"] == "assistant")
+    assert assistant["run_id"] == chat_response.json()["run_id"]
+    manifest = assistant["context_manifest"]
+    assert manifest["objects"] == [{
+        "object_id": object_response.json()["id"],
+        "object_type": "manual_note",
+        "selected_by_user": True,
+        "source_object_ids": [],
+    }]
+    assert isinstance(manifest["estimated_tokens"], int)
+    assert "prompt_text" not in manifest
+
+
+@pytest.mark.asyncio
 async def test_approval_rejection_flow(async_client: AsyncClient):
     session_id = "test-reject-sess"
 

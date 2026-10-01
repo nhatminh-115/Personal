@@ -12,6 +12,10 @@ const OBJECT_LABELS: Record<string, string> = {
 
 export function contextProvenanceFromRunEvents(events: RunEvent[]): AIProvenanceItem[] {
   const manifest = [...events].reverse().find((event) => event.event_type === 'context_compiled')?.payload;
+  return contextProvenanceFromManifest(manifest);
+}
+
+export function contextProvenanceFromManifest(manifest: Record<string, any> | undefined): AIProvenanceItem[] {
   const objects = manifest?.objects;
   if (!Array.isArray(objects)) return [];
 
@@ -40,6 +44,10 @@ export function contextProvenanceFromRunEvents(events: RunEvent[]): AIProvenance
 
 export function compiledContextTokenCount(events: RunEvent[]): number | undefined {
   const manifest = [...events].reverse().find((event) => event.event_type === 'context_compiled')?.payload;
+  return compiledContextTokenCountFromManifest(manifest);
+}
+
+export function compiledContextTokenCountFromManifest(manifest: Record<string, any> | undefined): number | undefined {
   return typeof manifest?.estimated_tokens === 'number' && Number.isFinite(manifest.estimated_tokens)
     ? manifest.estimated_tokens
     : undefined;
