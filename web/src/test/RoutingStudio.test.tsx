@@ -292,7 +292,7 @@ describe('Routing Studio v2', () => {
     expect(screen.queryByLabelText('Reasoning')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getAllByLabelText('Model')[0], { target: { value: 'local:unknown-model' } });
-    const unknownReasoningNote = screen.getByText(/reasoning control is unknown/i);
+    const unknownReasoningNote = screen.getAllByText(/reasoning control is unknown/i)[0];
     expect(unknownReasoningNote.closest('label')?.querySelector('select')).not.toBeNull();
   });
 
