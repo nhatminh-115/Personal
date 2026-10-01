@@ -55,6 +55,7 @@ import type {
   ToastMessage,
   WorkspaceNoteRecord,
   StudySessionRecord,
+  WorkspaceLibraryReferenceRecord,
   WorkspaceMode,
   EffectiveRouting,
   ReasoningEffort,
@@ -156,6 +157,37 @@ function workspaceNoteFingerprint(note: WorkspaceNote): string {
   });
 }
 
+function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord): LibraryItem {
+  return {
+    id: record.id,
+    name: record.name,
+    kind: record.kind,
+    collection: record.collection,
+    detail: record.detail,
+    updated: noteUpdatedLabel(record.updated_at),
+    tags: record.tags,
+    projectLinks: record.project_names.map((name) => projects.find((project) => project.name === name)?.id ?? name),
+    source: 'imported',
+    syncState: 'synced',
+    size: record.size ?? undefined,
+    mimeType: record.mime_type ?? undefined,
+    blobKey: `local-${record.id}`,
+  };
+}
+
+function workspaceLibraryPayload(item: LibraryItem) {
+  return {
+    name: item.name,
+    kind: item.kind,
+    collection: item.collection,
+    detail: item.detail,
+    tags: item.tags,
+    project_names: (item.projectLinks ?? []).map((id) => projects.find((project) => project.id === id)?.name ?? id),
+    size: item.size,
+    mime_type: item.mimeType,
+  };
+}
+
 function loadLibrary(): LibraryItem[] {
   const stored = loadStored<LibraryItem[]>(STORAGE.library, []);
   if (!stored.length) return initialLibraryItems.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
@@ -215,6 +247,7 @@ export default function App() {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
+  const libraryLoaded = useRef(false);
   const [directoryConnections, setDirectoryConnections] = useState<DirectoryConnection[]>([]);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [filePreviews, setFilePreviews] = useState<Record<string, FilePreviewRecord>>({});
@@ -628,19 +661,24 @@ export default function App() {
   }, [activeConnectionId, openOrActivateTab, pushToast]);
 
   const removeLibraryItem = useCallback(async (item: LibraryItem) => {
-    if (item.source === 'imported' && item.blobKey) {
-      try { await deleteLocalFile(item.blobKey); } catch { /* metadata can still be removed */ }
+    try {
+      if (item.source === 'imported' && item.syncState === 'synced') await api.deleteWorkspaceLibraryReference(item.id);
+      if (item.source === 'imported' && item.blobKey) {
+        try { await deleteLocalFile(item.blobKey); } catch { /* stale local blobs do not prevent reference removal */ }
+      }
+      setLibraryItems((current) => current.filter((entry) => entry.id !== item.id));
+      pushToast('Removed from Library', item.source === 'imported' ? 'The saved reference and this browser’s indexed copy were removed. Original connected-folder files are untouched.' : 'The bundled Library reference was removed from this browser.');
+    } catch (error) {
+      pushToast('Could not remove Library reference', executionErrorText(error));
     }
-    setLibraryItems((current) => current.filter((entry) => entry.id !== item.id));
-    pushToast('Removed from Library', item.source === 'imported' ? 'The browser-local indexed copy was removed. Connected filesystem folders are untouched.' : 'The Library reference was removed from this prototype.');
   }, [pushToast]);
 
   const importFiles = useCallback(async (files: File[], projectId?: string) => {
     if (!files.length) return;
     const imported: LibraryItem[] = [];
     for (const file of files) {
-      const id = `local-${crypto.randomUUID()}`;
-      const blobKey = id;
+      const id = crypto.randomUUID();
+      const blobKey = `local-${id}`;
       try {
         await putLocalFile(blobKey, file);
         imported.push({
@@ -653,6 +691,7 @@ export default function App() {
           tags: ['local', 'imported'],
           projectLinks: projectId ? [projectId] : [],
           source: 'imported',
+          syncState: 'pending',
           size: file.size,
           mimeType: file.type || undefined,
           blobKey,
@@ -663,17 +702,36 @@ export default function App() {
     }
     if (imported.length) {
       setLibraryItems((current) => [...imported, ...current]);
-      pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, projectId ? 'Imported into Library and linked to this project.' : 'Stored in Personal Library on this browser.');
+      let savedCount = 0;
+      for (const item of imported) {
+        try {
+          await api.createWorkspaceLibraryReference({ id: item.id, ...workspaceLibraryPayload(item) });
+          savedCount += 1;
+          setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, syncState: 'synced' } : entry));
+        } catch (error) {
+          pushToast('File stays on this browser', `${item.name} could not sync its reference: ${executionErrorText(error)}`);
+        }
+      }
+      pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, `${savedCount} reference${savedCount === 1 ? '' : 's'} saved to the workspace graph; file contents remain in this browser.`);
     }
   }, [pushToast]);
 
-  const toggleProjectLink = useCallback((itemId: string, projectId: string) => {
-    setLibraryItems((current) => current.map((item) => {
-      if (item.id !== itemId) return item;
-      const links = item.projectLinks ?? [];
-      return { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
-    }));
-  }, []);
+  const toggleProjectLink = useCallback(async (itemId: string, projectId: string) => {
+    const item = libraryItems.find((entry) => entry.id === itemId);
+    if (!item) return;
+    const links = item.projectLinks ?? [];
+    const next = { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
+    if (item.source === 'imported' && item.syncState === 'synced') {
+      try {
+        const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next));
+        setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...workspaceLibraryFromRecord(saved), blobKey: item.blobKey } : entry));
+      } catch (error) {
+        pushToast('Project link was not saved', executionErrorText(error));
+      }
+      return;
+    }
+    setLibraryItems((current) => current.map((entry) => entry.id === item.id ? next : entry));
+  }, [libraryItems, pushToast]);
 
   const selectThread = useCallback((threadId: string) => {
     if (!activeProjectId) return;
@@ -1054,6 +1112,28 @@ export default function App() {
       ? { ...thread, initialContextObjectIds: [...new Set(objectIds)] }
       : thread));
   }, []);
+
+  useEffect(() => {
+    if (surface !== 'library' || libraryLoaded.current) return;
+    let active = true;
+    void api.fetchWorkspaceLibrary().then((records) => {
+      if (!active || !Array.isArray(records)) return;
+      setLibraryItems((current) => {
+        const currentById = new Map(current.map((item) => [item.id, item]));
+        const remoteItems = records.map((record) => {
+          const remote = workspaceLibraryFromRecord(record);
+          const local = currentById.get(remote.id);
+          return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+        });
+        const remoteIds = new Set(remoteItems.map((item) => item.id));
+        return [...remoteItems, ...current.filter((item) => item.source !== 'imported' || !remoteIds.has(item.id))];
+      });
+      libraryLoaded.current = true;
+    }).catch((error: unknown) => {
+      if (active) pushToast('Could not load Library references', executionErrorText(error));
+    });
+    return () => { active = false; };
+  }, [pushToast, surface]);
 
   const replaceWorkspaceNote = useCallback((previousId: string, nextNote: WorkspaceNote) => {
     const next = notesRef.current.map((item) => item.id === previousId ? nextNote : item);

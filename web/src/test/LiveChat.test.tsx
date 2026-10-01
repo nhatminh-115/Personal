@@ -116,7 +116,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Click Chats
-    const chatsBtn = screen.getByRole('button', { name: /Open project chats/i });
+    const chatsBtn = await screen.findByRole('button', { name: /Open project chats/i });
     await act(async () => {
       fireEvent.click(chatsBtn);
     });
@@ -272,7 +272,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     await act(async () => {
       fireEvent.click(projectButton);
     });
-    const chatsBtn = screen.getByRole('button', { name: /Open project chats/i });
+    const chatsBtn = await screen.findByRole('button', { name: /Open project chats/i });
     await act(async () => {
       fireEvent.click(chatsBtn);
     });
@@ -318,7 +318,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
     await act(async () => { render(<App />); });
     fireEvent.click(screen.getAllByText(/Stateful Architecture/i)[0]);
-    fireEvent.click(screen.getByRole('button', { name: /Open project chats/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Open project chats/i }));
     fireEvent.click(screen.getByTitle('New chat'));
     fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep this local' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
