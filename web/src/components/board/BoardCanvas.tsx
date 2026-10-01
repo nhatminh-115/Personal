@@ -77,7 +77,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         kind,
         eyebrow: researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : object.object_type === 'study_session' ? 'STUDY SESSION' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
         title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
-        body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
+        body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : object.object_type === 'study_session' ? 'Learning session linked to verified research.' : ''),
         summary: object.content.slice(0, 160),
         density: graph.layout.layout?.densities?.[object.id] ?? 'compact',
         manual: object.created_by === 'user' && kind === 'note',
