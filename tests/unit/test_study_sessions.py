@@ -131,6 +131,27 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert started.json()["material_project_name"] == "research-project"
     assert started.json()["track_title"] == verified.title
 
+    graph_response = await async_client.get("/v1/workspace/projects/research-project/graph")
+    assert graph_response.status_code == 200
+    graph = graph_response.json()
+    session_object = next(item for item in graph["objects"] if item["id"] == started.json()["id"])
+    assert session_object["object_type"] == "study_session"
+    provenance = [
+        edge for edge in graph["edges"]
+        if edge["source_object_id"] == verified.id
+        and edge["target_object_id"] == started.json()["id"]
+    ]
+    assert len(provenance) == 1
+    assert provenance[0]["relation_type"] == "studied_in"
+    assert provenance[0]["edge_family"] == "provenance"
+
+    from app.memory.context_compiler import WorkspaceContextCompiler
+    compiled = await WorkspaceContextCompiler(test_db_session).compile(
+        "research-project", [started.json()["id"]]
+    )
+    assert [item.object_id for item in compiled.objects] == [started.json()["id"]]
+    assert "A verified finding" in compiled.prompt_text
+
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
         "track_title": pending.title,

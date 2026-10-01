@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import StudySessionResponse, StudySessionWrite
-from app.db.models import WorkspaceObjectModel
+from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 from app.db.session import get_db
 
 router = APIRouter(prefix="/v1/study", tags=["Study"])
@@ -59,6 +59,7 @@ async def start_study_session(
         raise HTTPException(status_code=422, detail="Study track ID and title must not be blank.")
     material_id = body.material_id.strip() if body.material_id else None
     material_project_name = body.material_project_name.strip() if body.material_project_name else None
+    is_verified_research_claim = False
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
         material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
@@ -98,6 +99,22 @@ async def start_study_session(
         },
     )
     db.add(item)
+    await db.flush()
+    if is_verified_research_claim and material_project_name and material_id:
+        # Study is a user-owned workspace object. Link it into the source project graph
+        # and retain the verified research claim as first-class provenance.
+        db.add(WorkspaceObjectProjectLinkModel(
+            object_id=item.id,
+            project_name=material_project_name,
+        ))
+        db.add(WorkspaceEdgeModel(
+            project_name=material_project_name,
+            source_object_id=material_id,
+            target_object_id=item.id,
+            relation_type="studied_in",
+            edge_family="provenance",
+            created_by="user",
+        ))
     await db.commit()
     await db.refresh(item)
     return _study_session_response(item)
