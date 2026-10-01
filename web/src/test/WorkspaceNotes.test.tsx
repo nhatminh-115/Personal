@@ -55,4 +55,39 @@ describe('Persistent personal workspace Notes', () => {
       project_names: [],
     });
   });
+
+  it('opens a personal workspace search result directly in its saved note', async () => {
+    const note = {
+      id: 'searchable-note-1', title: 'Privacy boundary', body: 'Connected files stay on this device.',
+      tags: ['privacy'], project_names: [], pinned: false,
+      created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve([{
+        object_id: note.id, object_type: 'manual_note', title: note.title, excerpt: note.body,
+        project_name: null, created_by: 'user', updated_at: note.updated_at,
+      }]) } as Response);
+      if (url.endsWith('/v1/workspace/notes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.endsWith('/v1/sessions') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'privacy boundary' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('Privacy boundary')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open note' }));
+
+    expect(await screen.findByRole('heading', { name: 'Personal notes' })).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Privacy boundary')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Connected files stay on this device.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Novelty framing/i }));
+    fireEvent.change(screen.getByPlaceholderText('Write anything…'), { target: { value: 'Updated a different note.' } });
+    expect(screen.getByDisplayValue('Novelty framing')).toBeInTheDocument();
+  });
 });
+

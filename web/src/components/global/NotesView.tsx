@@ -1,22 +1,29 @@
 import { Link2, NotebookPen, Pin, Plus, Search, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectRecord, WorkspaceNote } from '../../data/workspaceData';
 
 interface NotesViewProps {
   projects: ProjectRecord[];
   notes: WorkspaceNote[];
+  focusNoteId?: string | null;
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
 }
 
-export function NotesView({ projects, notes, onNotesChange, onOpenProject }: NotesViewProps) {
+export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenProject }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
+  const appliedFocusNoteId = useRef<string | null>(null);
   useEffect(() => {
     if (activeId && notes.some((note) => note.id === activeId)) return;
     setActiveId(notes[0]?.id ?? null);
   }, [activeId, notes]);
+  useEffect(() => {
+    if (!focusNoteId || focusNoteId === appliedFocusNoteId.current || !notes.some((note) => note.id === focusNoteId)) return;
+    appliedFocusNoteId.current = focusNoteId;
+    setActiveId(focusNoteId);
+  }, [focusNoteId, notes]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return notes.filter((note) => !q || `${note.title} ${note.body} ${note.tags.join(' ')}`.toLowerCase().includes(q));
@@ -99,3 +106,4 @@ export function NotesView({ projects, notes, onNotesChange, onOpenProject }: Not
     </section>
   );
 }
+

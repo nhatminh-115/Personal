@@ -21,7 +21,7 @@ describe('WorkspaceSearchView', () => {
       mime_type: 'application/pdf',
     };
     const onOpenFile = vi.fn();
-    render(<WorkspaceSearchView query="study" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenFile={onOpenFile} />);
+    render(<WorkspaceSearchView query="study" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenFile={onOpenFile} />);
 
     expect(screen.getByText('Research / papers/study.pdf')).toBeInTheDocument();
     expect(screen.getByText('Connected file')).toBeInTheDocument();
@@ -37,10 +37,22 @@ describe('WorkspaceSearchView', () => {
       updated_at: '2026-10-01T12:00:00Z',
     };
     const onOpenProject = vi.fn();
-    render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
     expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'bridge-object-9');
+  });
+
+  it('opens a personal note in Notes', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'personal-note-7', object_type: 'manual_note', title: 'Local constraints',
+      excerpt: 'Do not upload external files.', project_name: null, created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onOpenNote = vi.fn();
+    render(<WorkspaceSearchView query="constraints" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={onOpenNote} onOpenFile={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open note' }));
+    expect(onOpenNote).toHaveBeenCalledWith('personal-note-7');
   });
 });
 
