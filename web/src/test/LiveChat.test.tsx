@@ -107,6 +107,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Type prompt into textarea and send
     const textarea = screen.getByPlaceholderText(/Ask AURA in this chat…/i);
     fireEvent.change(textarea, { target: { value: 'Explain state persistence in AURA' } });
+    fireEvent.click(screen.getByRole('button', { name: /Code/i }));
 
     const sendBtn = screen.getByRole('button', { name: /Send/i });
     await act(async () => {
@@ -118,6 +119,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(chatPayload.message).toBe('Explain state persistence in AURA');
     expect(chatPayload.session_id).toBeDefined();
     expect(chatPayload.context_object_ids).toEqual(['workspace-note-1']);
+    expect(chatPayload.task_type).toBe('coding');
 
     // Verify response rendered in v9.1 UI
     expect(await screen.findByText(/Live backend synthesis response for project architecture/i)).toBeInTheDocument();

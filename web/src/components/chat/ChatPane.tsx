@@ -39,7 +39,7 @@ export interface ChatPaneProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[]) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
   onStartLiveChat?: (text: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
@@ -68,8 +68,15 @@ const workModes: { id: AuraWorkMode; label: string; icon: typeof Sparkles }[] = 
 function routeForMode(mode: AuraWorkMode) {
   if (mode === 'research') return { specialist: 'Research Specialist', reasoning: 'High', label: 'Research · High' };
   if (mode === 'code') return { specialist: 'Coding Specialist', reasoning: 'High', label: 'Coding · High' };
-  if (mode === 'write') return { specialist: 'Writing Specialist', reasoning: 'Medium', label: 'Writing · Medium' };
+  if (mode === 'write') return { specialist: 'Writing task route', reasoning: 'Medium', label: 'Writing · Medium' };
   return { specialist: 'Adaptive Router', reasoning: 'Adaptive', label: 'Auto · Adaptive' };
+}
+
+function taskTypeForMode(mode: AuraWorkMode): 'research' | 'coding' | 'writing' | undefined {
+  if (mode === 'research') return 'research';
+  if (mode === 'code') return 'coding';
+  if (mode === 'write') return 'writing';
+  return undefined;
 }
 
 function mockExecution(mode: AuraWorkMode): ExecutionStep[] {
@@ -168,7 +175,11 @@ export function ChatPane({
       setContextOpen(false);
       setRunPhase('routing');
       try {
-        await onSendMessage(prompt, includedContext.map((item) => item.nodeId).filter((id): id is string => Boolean(id)));
+        await onSendMessage(
+          prompt,
+          includedContext.map((item) => item.nodeId).filter((id): id is string => Boolean(id)),
+          taskTypeForMode(workMode),
+        );
       } finally {
         setRunPhase(null);
       }
@@ -346,7 +357,7 @@ export function ChatPane({
       </div>
 
       <div className="chat-composer-wrap">
-        {runPhase ? <AIRunStrip phase={runPhase} specialist={activeRoute.specialist} onStop={stopRun} /> : null}
+        {runPhase ? <AIRunStrip phase={runPhase} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={stopRun} /> : null}
         <div className="chat-composer chat-composer--ai">
           {contextOpen ? (
             <AIContextPanel
@@ -365,7 +376,9 @@ export function ChatPane({
                 </button>
               ))}
             </div>
-            <span className="ai-route-preview"><Sparkles size={11} /> {activeRoute.specialist} · {activeRoute.reasoning}</span>
+            <span className="ai-route-preview"><Sparkles size={11} /> {isLiveThread
+              ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
+              : `${activeRoute.specialist} · ${activeRoute.reasoning}`}</span>
           </div>
 
           <textarea

@@ -709,7 +709,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string, contextObjectIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing') => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -753,6 +753,7 @@ export default function App() {
           activeThreadOverrides?.model,
           activeThreadOverrides?.reasoning,
           contextObjectIds,
+          taskType,
         );
 
         if (resp.user_message_id) {
