@@ -87,6 +87,129 @@ async def test_context_bridge_and_manual_note_are_user_authored_and_editable(asy
 
 
 @pytest.mark.asyncio
+async def test_personal_notes_persist_once_and_project_links_share_the_same_graph_object(async_client):
+    created = await async_client.post("/v1/workspace/notes", json={
+        "title": "Shared migration note",
+        "body": "Preserve the rollback path.",
+        "tags": ["migration", "migration"],
+        "project_names": ["aura", "transportability"],
+        "pinned": True,
+    })
+    assert created.status_code == 201
+    note = created.json()
+    assert note["tags"] == ["migration"]
+    assert note["pinned"] is True
+    assert note["project_names"] == ["aura", "transportability"]
+
+    personal_notes = (await async_client.get("/v1/workspace/notes")).json()
+    assert [item["id"] for item in personal_notes] == [note["id"]]
+    for project_name in note["project_names"]:
+        graph = (await async_client.get(f"/v1/workspace/projects/{project_name}/graph")).json()
+        linked = next(item for item in graph["objects"] if item["id"] == note["id"])
+        assert linked["project_name"] is None
+        assert linked["content"] == "Preserve the rollback path."
+
+    board_edit = await async_client.put(f"/v1/workspace/projects/aura/objects/{note['id']}", json={
+        "title": "Shared migration note",
+        "content": "Preserve the rollback path.",
+        "metadata_json": {"privacy_policy": "local_only", "tags": ["migration"], "pinned": True},
+    })
+    assert board_edit.status_code == 200
+
+    updated = await async_client.put(f"/v1/workspace/notes/{note['id']}", json={
+        "title": "Updated shared note",
+        "body": "Keep exact user-authored text.",
+        "tags": ["decision"],
+        "project_names": ["aura"],
+        "pinned": False,
+    })
+    assert updated.status_code == 200
+    assert updated.json()["project_names"] == ["aura"]
+    aura_graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    transport_graph = (await async_client.get("/v1/workspace/projects/transportability/graph")).json()
+    linked_note = next(item for item in aura_graph["objects"] if item["id"] == note["id"])
+    assert linked_note["content"] == "Keep exact user-authored text."
+    assert linked_note["metadata_json"]["privacy_policy"] == "local_only"
+    assert note["id"] not in {item["id"] for item in transport_graph["objects"]}
+
+
+@pytest.mark.asyncio
+async def test_project_context_can_select_a_personal_note_and_board_delete_only_unlinks(async_client):
+    from app.models.base import ModelRole
+    from app.models.router import model_router
+
+    created = await async_client.post("/v1/workspace/notes", json={
+        "title": "Deployment constraint",
+        "body": "Keep the migration reversible.",
+        "project_names": ["aura"],
+    })
+    assert created.status_code == 201
+    note_id = created.json()["id"]
+    board_edit = await async_client.put(f"/v1/workspace/projects/aura/objects/{note_id}", json={
+        "title": "Deployment constraint",
+        "content": "Keep the migration reversible.",
+        "metadata_json": {"privacy_policy": "local_only"},
+    })
+    assert board_edit.status_code == 200
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "personal-note-context-session",
+        "project_name": "aura",
+        "message": "Plan the rollout.",
+        "context_object_ids": [note_id],
+    })
+    assert response.status_code == 200
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert note_id in system_message.content
+    assert "Keep the migration reversible." in system_message.content
+
+    call_count = len(model_router.get_provider("mock").call_history)
+    blocked = await async_client.post("/v1/chat", json={
+        "session_id": "personal-note-cloud-boundary-session",
+        "project_name": "aura",
+        "message": "This local note must remain local.",
+        "model_override": "openai:gpt-4o",
+        "context_object_ids": [note_id],
+    })
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == call_count
+
+    unlinked = await async_client.post("/v1/workspace/notes", json={
+        "title": "Another personal note",
+        "body": "Not linked to this project.",
+    })
+    rejected_selection = await async_client.post("/v1/chat", json={
+        "session_id": "unlinked-personal-note-context-session",
+        "project_name": "aura",
+        "message": "Do not include an unlinked note.",
+        "context_object_ids": [unlinked.json()["id"]],
+    })
+    assert rejected_selection.status_code == 422
+    assert rejected_selection.json()["code"] == "ContextSelectionError"
+    assert len(model_router.get_provider("mock").call_history) == call_count
+
+    local_note = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Project note", "content": "Project-local object.",
+    })
+    relation = await async_client.post("/v1/workspace/projects/aura/edges", json={
+        "source_object_id": note_id,
+        "target_object_id": local_note.json()["id"],
+        "relation_type": "related_to",
+        "edge_family": "semantic",
+    })
+    assert relation.status_code == 201
+
+    deleted_from_project = await async_client.delete(f"/v1/workspace/projects/aura/objects/{note_id}")
+    assert deleted_from_project.status_code == 204
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert note_id not in {item["id"] for item in graph["objects"]}
+    assert note_id not in {object_id for edge in graph["edges"] for object_id in (edge["source_object_id"], edge["target_object_id"])}
+    remaining_notes = (await async_client.get("/v1/workspace/notes")).json()
+    assert note_id in {item["id"] for item in remaining_notes}
+
+
+@pytest.mark.asyncio
 async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revision(async_client):
     note = await async_client.post(
         "/v1/workspace/projects/aura/objects",

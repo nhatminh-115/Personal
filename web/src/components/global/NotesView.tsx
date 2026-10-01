@@ -1,5 +1,5 @@
 import { Link2, NotebookPen, Pin, Plus, Search, X } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { projects, type WorkspaceNote } from '../../data/workspaceData';
 
 interface NotesViewProps {
@@ -12,6 +12,10 @@ export function NotesView({ notes, onNotesChange, onOpenProject }: NotesViewProp
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
+  useEffect(() => {
+    if (activeId && notes.some((note) => note.id === activeId)) return;
+    setActiveId(notes[0]?.id ?? null);
+  }, [activeId, notes]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return notes.filter((note) => !q || `${note.title} ${note.body} ${note.tags.join(' ')}`.toLowerCase().includes(q));
@@ -25,7 +29,7 @@ export function NotesView({ notes, onNotesChange, onOpenProject }: NotesViewProp
 
   const createNote = () => {
     const id = `note-${Date.now()}`;
-    const next: WorkspaceNote = { id, title: 'Untitled note', body: '', updated: 'just now', tags: [], projectIds: [] };
+    const next: WorkspaceNote = { id, title: 'Untitled note', body: '', updated: 'just now', tags: [], projectIds: [], source: 'local' };
     onNotesChange([next, ...notes]);
     setActiveId(id);
     setCreating(false);

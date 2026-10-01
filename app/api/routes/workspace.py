@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import delete as sa_delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
@@ -15,6 +15,8 @@ from app.api.schemas import (
     WorkspaceGraphResponse,
     WorkspaceLayoutResponse,
     WorkspaceLayoutWrite,
+    WorkspaceNoteResponse,
+    WorkspaceNoteWrite,
     WorkspaceObjectCreate,
     WorkspaceObjectResponse,
     WorkspaceObjectUpdate,
@@ -28,6 +30,7 @@ from app.db.models import (
     WorkspaceEdgeModel,
     WorkspaceLayoutModel,
     WorkspaceObjectModel,
+    WorkspaceObjectProjectLinkModel,
 )
 from app.db.session import get_db
 from app.memory.base import MemoryService
@@ -140,17 +143,115 @@ async def _project_objects_by_ids(db: AsyncSession, project_name: str, ids: list
             WorkspaceObjectModel.id.in_(set(ids)),
         )
     )
-    return {item.id: item for item in result.scalars()}
+    objects = {item.id: item for item in result.scalars()}
+    linked = await db.execute(
+        select(WorkspaceObjectModel)
+        .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+        .where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "manual_note",
+            WorkspaceObjectProjectLinkModel.project_name == project_name,
+            WorkspaceObjectModel.id.in_(set(ids) - set(objects)),
+        )
+    )
+    objects.update({item.id: item for item in linked.scalars()})
+    return objects
+
+
+async def _workspace_note_responses(
+    db: AsyncSession,
+    items: list[WorkspaceObjectModel],
+) -> list[WorkspaceNoteResponse]:
+    ids = [item.id for item in items]
+    links = await db.execute(
+        select(WorkspaceObjectProjectLinkModel.object_id, WorkspaceObjectProjectLinkModel.project_name)
+        .where(WorkspaceObjectProjectLinkModel.object_id.in_(ids))
+        .order_by(WorkspaceObjectProjectLinkModel.project_name)
+    ) if ids else None
+    projects_by_note: dict[str, list[str]] = {object_id: [] for object_id in ids}
+    if links is not None:
+        for object_id, project_name in links:
+            projects_by_note[object_id].append(project_name)
+    responses: list[WorkspaceNoteResponse] = []
+    for item in items:
+        metadata = item.metadata_json or {}
+        tags = metadata.get("tags", [])
+        responses.append(WorkspaceNoteResponse(
+            id=item.id,
+            title=item.title,
+            body=item.content,
+            tags=[tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else [],
+            project_names=projects_by_note[item.id],
+            pinned=metadata.get("pinned") is True,
+            created_at=item.created_at,
+            updated_at=item.updated_at,
+        ))
+    return responses
+
+
+async def _workspace_note_response(db: AsyncSession, item: WorkspaceObjectModel) -> WorkspaceNoteResponse:
+    return (await _workspace_note_responses(db, [item]))[0]
+
+
+def _note_metadata(body: WorkspaceNoteWrite) -> dict[str, object]:
+    tags = list(dict.fromkeys(tag.strip() for tag in body.tags if tag.strip()))
+    if any(len(tag) > 64 for tag in tags):
+        raise HTTPException(status_code=422, detail="Note tags must be 64 characters or fewer.")
+    return {"tags": tags, "pinned": body.pinned}
+
+
+async def _sync_workspace_note_links(
+    db: AsyncSession,
+    item: WorkspaceObjectModel,
+    project_names: list[str],
+) -> None:
+    names = list(dict.fromkeys(name.strip() for name in project_names if name.strip()))
+    if any(len(name) > 128 for name in names):
+        raise HTTPException(status_code=422, detail="Project names must be 128 characters or fewer.")
+    result = await db.execute(
+        select(WorkspaceObjectProjectLinkModel).where(WorkspaceObjectProjectLinkModel.object_id == item.id)
+    )
+    existing = {link.project_name: link for link in result.scalars()}
+    removed = set(existing) - set(names)
+    for name in removed:
+        await db.execute(
+            sa_delete(WorkspaceEdgeModel).where(
+                WorkspaceEdgeModel.project_name == name,
+                (WorkspaceEdgeModel.source_object_id == item.id) | (WorkspaceEdgeModel.target_object_id == item.id),
+            )
+        )
+        await db.delete(existing[name])
+    for name in names:
+        if name not in existing:
+            db.add(WorkspaceObjectProjectLinkModel(object_id=item.id, project_name=name))
 
 
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
 async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_db)) -> WorkspaceGraphResponse:
     objects = await _get_project_objects(db, project_name)
+    linked_ids = await db.execute(
+        select(WorkspaceObjectProjectLinkModel.object_id).where(
+            WorkspaceObjectProjectLinkModel.project_name == project_name
+        )
+    )
+    personal_notes = await db.execute(
+        select(WorkspaceObjectModel).where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "manual_note",
+            WorkspaceObjectModel.id.in_(linked_ids.scalars().all()),
+        ).order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+    )
+    objects.extend(personal_notes.scalars())
+    object_ids = {item.id for item in objects}
     edge_result = await db.execute(
         select(WorkspaceEdgeModel)
         .where(WorkspaceEdgeModel.project_name == project_name)
         .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
     )
+    edges = [
+        edge for edge in edge_result.scalars()
+        if edge.source_object_id in object_ids and edge.target_object_id in object_ids
+    ]
     layout = await db.get(WorkspaceLayoutModel, project_name)
     session_result = await db.execute(select(SessionModel.id).where(SessionModel.project_name == project_name))
     session_ids = list(session_result.scalars())
@@ -206,7 +307,7 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
     return WorkspaceGraphResponse(
         project_name=project_name,
         objects=[_object_response(item) for item in objects],
-        edges=[_edge_response(edge) for edge in edge_result.scalars()],
+        edges=[_edge_response(edge) for edge in edges],
         layout=WorkspaceLayoutResponse(
             project_name=project_name,
             layout=layout.layout_json if layout else {},
@@ -215,6 +316,66 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
         ),
         execution_traces=execution_traces,
     )
+
+
+@router.get("/notes", response_model=list[WorkspaceNoteResponse])
+async def list_personal_workspace_notes(db: AsyncSession = Depends(get_db)) -> list[WorkspaceNoteResponse]:
+    result = await db.execute(
+        select(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "manual_note",
+            WorkspaceObjectModel.created_by == "user",
+        )
+        .order_by(WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id)
+    )
+    return await _workspace_note_responses(db, list(result.scalars()))
+
+
+@router.post("/notes", response_model=WorkspaceNoteResponse, status_code=status.HTTP_201_CREATED)
+async def create_personal_workspace_note(
+    body: WorkspaceNoteWrite,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceNoteResponse:
+    metadata = _note_metadata(body)
+    item = WorkspaceObjectModel(
+        project_name=None,
+        object_type="manual_note",
+        created_by="user",
+        title=body.title,
+        content=body.body,
+        metadata_json=metadata,
+    )
+    db.add(item)
+    await db.flush()
+    await _sync_workspace_note_links(db, item, body.project_names)
+    await db.commit()
+    await db.refresh(item)
+    return await _workspace_note_response(db, item)
+
+
+@router.put("/notes/{note_id}", response_model=WorkspaceNoteResponse)
+async def update_personal_workspace_note(
+    note_id: str,
+    body: WorkspaceNoteWrite,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceNoteResponse:
+    item = await db.get(WorkspaceObjectModel, note_id)
+    if (
+        item is None
+        or item.project_name is not None
+        or item.object_type != "manual_note"
+        or item.created_by != "user"
+    ):
+        raise HTTPException(status_code=404, detail="Personal workspace note not found.")
+    item.title = body.title
+    item.content = body.body
+    item.metadata_json = {**(item.metadata_json or {}), **_note_metadata(body)}
+    item.updated_at = datetime.now(timezone.utc)
+    await _sync_workspace_note_links(db, item, body.project_names)
+    await db.commit()
+    await db.refresh(item)
+    return await _workspace_note_response(db, item)
 
 
 @router.post("/projects/{project_name}/sessions/{session_id}", response_model=WorkspaceSessionResponse)
@@ -301,7 +462,7 @@ async def update_workspace_object(
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceObjectResponse:
     item = await db.get(WorkspaceObjectModel, object_id)
-    if item is None or item.project_name != project_name:
+    if item is None or object_id not in await _project_objects_by_ids(db, project_name, [object_id]):
         raise HTTPException(status_code=404, detail="Workspace object not found.")
     if item.created_by != "user" or item.object_type not in {"manual_note", "context_bridge"}:
         raise HTTPException(status_code=409, detail="Only user-authored notes and bridges can be edited.")
@@ -317,8 +478,20 @@ async def update_workspace_object(
 @router.delete("/projects/{project_name}/objects/{object_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workspace_object(project_name: str, object_id: str, db: AsyncSession = Depends(get_db)) -> None:
     item = await db.get(WorkspaceObjectModel, object_id)
-    if item is None or item.project_name != project_name:
+    if item is None or object_id not in await _project_objects_by_ids(db, project_name, [object_id]):
         raise HTTPException(status_code=404, detail="Workspace object not found.")
+    if item.project_name is None and item.object_type == "manual_note":
+        await db.execute(
+            sa_delete(WorkspaceEdgeModel).where(
+                WorkspaceEdgeModel.project_name == project_name,
+                (WorkspaceEdgeModel.source_object_id == object_id) | (WorkspaceEdgeModel.target_object_id == object_id),
+            )
+        )
+        link = await db.get(WorkspaceObjectProjectLinkModel, (object_id, project_name))
+        if link is not None:
+            await db.delete(link)
+        await db.commit()
+        return
     if item.created_by != "user" or item.object_type not in {"manual_note", "context_bridge", "context_set", "conversation_branch"}:
         raise HTTPException(status_code=409, detail="Only user-authored workspace objects can be deleted.")
     await db.delete(item)

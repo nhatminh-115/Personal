@@ -288,12 +288,12 @@ class ProjectRoutingAssignmentModel(Base):
 
 
 class WorkspaceObjectModel(Base):
-    """A durable, typed object that can be projected into workspace surfaces."""
+    """A durable typed object; null project_name denotes personal workspace scope."""
 
     __tablename__ = "workspace_objects"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
-    project_name: Mapped[str] = mapped_column(String(128), index=True)
+    project_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     session_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True, index=True)
     source_message_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("messages.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
     object_type: Mapped[str] = mapped_column(String(48), index=True)
@@ -303,6 +303,20 @@ class WorkspaceObjectModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class WorkspaceObjectProjectLinkModel(Base):
+    """Expose one personal workspace object in a project's graph and context."""
+
+    __tablename__ = "workspace_object_project_links"
+
+    object_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("workspace_objects.id", ondelete="CASCADE"), primary_key=True
+    )
+    project_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (Index("ix_workspace_object_project_links_project", "project_name"),)
 
 
 class WorkspaceEdgeModel(Base):

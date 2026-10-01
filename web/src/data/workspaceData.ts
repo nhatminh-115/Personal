@@ -238,6 +238,7 @@ export interface WorkspaceNote {
   tags: string[];
   projectIds: string[];
   pinned?: boolean;
+  source?: 'demo' | 'local' | 'live';
 }
 
 export const initialNotes: WorkspaceNote[] = [
@@ -249,6 +250,7 @@ export const initialNotes: WorkspaceNote[] = [
     tags: ['research', 'stateful'],
     projectIds: ['stateful'],
     pinned: true,
+    source: 'demo',
   },
   {
     id: 'note-aura-principle',
@@ -258,6 +260,7 @@ export const initialNotes: WorkspaceNote[] = [
     tags: ['aura', 'ux'],
     projectIds: ['aura'],
     pinned: true,
+    source: 'demo',
   },
   {
     id: 'note-paper-discussion',
@@ -266,6 +269,7 @@ export const initialNotes: WorkspaceNote[] = [
     updated: 'yesterday',
     tags: ['paper'],
     projectIds: ['transportability'],
+    source: 'demo',
   },
   {
     id: 'note-personal',
@@ -274,6 +278,7 @@ export const initialNotes: WorkspaceNote[] = [
     updated: 'today',
     tags: ['personal'],
     projectIds: [],
+    source: 'demo',
   },
 ];
 
