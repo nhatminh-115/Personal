@@ -45,6 +45,7 @@ class CompiledWorkspaceContext(BaseModel):
     estimated_tokens: int = 0
     prompt_text: str = ""
     privacy_requirement: str | None = None
+    privacy_sources: list[dict[str, str]] = Field(default_factory=list)
     required_capabilities: list[str] = Field(default_factory=list)
     requires_tools: bool = False
     requires_vision: bool = False
@@ -162,6 +163,7 @@ class WorkspaceContextCompiler:
         # Privacy classifications on selected objects and Bridge provenance
         # sources strengthen the route boundary for this turn.
         privacy_requirement: str | None = None
+        privacy_sources: list[dict[str, str]] = []
         required_capabilities: set[str] = set()
         capability_flags = {
             "requires_tools": False,
@@ -171,7 +173,7 @@ class WorkspaceContextCompiler:
         }
         privacy_object_ids = set(included)
         privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
-        for object_id in privacy_object_ids:
+        for object_id in sorted(privacy_object_ids):
             metadata = objects[object_id].metadata_json or {}
             classification = metadata.get("privacy_policy")
             if classification is not None and (
@@ -183,6 +185,7 @@ class WorkspaceContextCompiler:
                 )
             if isinstance(classification, str):
                 privacy_requirement = stricter_privacy_requirement(privacy_requirement, classification)
+                privacy_sources.append({"object_id": object_id, "privacy_policy": classification})
             if object_id not in included:
                 continue
             object_capabilities = metadata.get("required_capabilities", [])
@@ -274,6 +277,7 @@ class WorkspaceContextCompiler:
             estimated_tokens=(len(prompt_text) + 3) // 4,
             prompt_text=prompt_text,
             privacy_requirement=privacy_requirement,
+            privacy_sources=privacy_sources,
             required_capabilities=sorted(required_capabilities),
             **capability_flags,
         )
