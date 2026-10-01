@@ -291,7 +291,7 @@ describe('Routing Studio v2', () => {
     expect(screen.getByLabelText('Reasoning control')).toHaveValue('Fixed by model');
     expect(screen.queryByLabelText('Reasoning')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'local:unknown-model' } });
+    fireEvent.change(screen.getAllByLabelText('Model')[0], { target: { value: 'local:unknown-model' } });
     expect(screen.getByLabelText('Reasoning')).toBeInTheDocument();
     expect(screen.getByText(/reasoning control is unknown/i)).toBeInTheDocument();
   });
