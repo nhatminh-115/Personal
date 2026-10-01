@@ -360,9 +360,12 @@ async def create_workspace_edge(
 
 @router.delete("/projects/{project_name}/edges/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workspace_edge(project_name: str, edge_id: str, db: AsyncSession = Depends(get_db)) -> None:
+    await _lock_project_graph(db, project_name)
     edge = await db.get(WorkspaceEdgeModel, edge_id)
     if edge is None or edge.project_name != project_name:
         raise HTTPException(status_code=404, detail="Workspace edge not found.")
+    if edge.created_by != "user":
+        raise HTTPException(status_code=409, detail="Only user-created graph edges can be deleted.")
     await db.delete(edge)
     await db.commit()
 
