@@ -253,7 +253,11 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
           placeholder="Add a handoff note…"
         />
       </div>
-      {data.onBridgeApply ? (
+      {data.onUseWorkspaceContext ? (
+        <button className="node-primary-action nodrag nopan" type="button" onClick={() => data.onUseWorkspaceContext?.(id)}>
+          Use in Chat <ChevronRight size={12} />
+        </button>
+      ) : data.onBridgeApply ? (
         <button className="node-primary-action nodrag nopan" type="button" onClick={() => data.onBridgeApply?.(id)}>
           Apply to Branch C <ChevronRight size={12} />
         </button>
