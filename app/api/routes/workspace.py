@@ -37,7 +37,7 @@ router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
     "approval_requested", "approval_granted", "approval_rejected", "response_generated",
-    "run_completed", "run_failed", "run_cancelled",
+    "run_completed", "run_failed", "run_cancelled", "context_compiled",
 }
 
 
@@ -47,6 +47,26 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     tool_name = payload.get("tool") or payload.get("tool_name")
     step = payload.get("step")
+    raw_context_objects = payload.get("objects") if event.event_type == "context_compiled" else None
+    context_objects = []
+    if isinstance(raw_context_objects, list):
+        for item in raw_context_objects:
+            if not isinstance(item, dict):
+                continue
+            object_id = item.get("object_id")
+            object_type = item.get("object_type")
+            source_ids = item.get("source_object_ids", [])
+            selected = item.get("selected_by_user", False)
+            if not isinstance(object_id, str) or not isinstance(object_type, str):
+                continue
+            context_objects.append({
+                "object_id": object_id,
+                "object_type": object_type,
+                "selected_by_user": selected if isinstance(selected, bool) else False,
+                "source_object_ids": [value for value in source_ids if isinstance(value, str)]
+                if isinstance(source_ids, list) else [],
+            })
+    estimated_tokens = payload.get("estimated_tokens") if event.event_type == "context_compiled" else None
     return WorkspaceExecutionEventResponse(
         id=event.id,
         event_type=event.event_type,
@@ -64,6 +84,8 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
         error_category=result.get("error_category") if isinstance(result.get("error_category"), str) else None,
         risk_level=payload.get("risk_level") if isinstance(payload.get("risk_level"), str) else None,
         step=step if isinstance(step, int) and not isinstance(step, bool) else None,
+        context_objects=context_objects,
+        context_estimated_tokens=estimated_tokens if isinstance(estimated_tokens, int) and not isinstance(estimated_tokens, bool) else None,
     )
 
 

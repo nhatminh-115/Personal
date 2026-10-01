@@ -219,6 +219,13 @@ export interface WorkspaceExecutionEvent {
   error_category?: string | null;
   risk_level?: string | null;
   step?: number | null;
+  context_objects?: Array<{
+    object_id: string;
+    object_type: string;
+    selected_by_user: boolean;
+    source_object_ids: string[];
+  }>;
+  context_estimated_tokens?: number | null;
 }
 
 export interface WorkspaceExecutionTrace {

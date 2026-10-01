@@ -166,6 +166,13 @@ class WorkspaceLayoutResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class WorkspaceContextManifestItemResponse(BaseModel):
+    object_id: str
+    object_type: str
+    selected_by_user: bool = False
+    source_object_ids: List[str] = Field(default_factory=list)
+
+
 class WorkspaceExecutionEventResponse(BaseModel):
     id: str
     event_type: str
@@ -182,6 +189,8 @@ class WorkspaceExecutionEventResponse(BaseModel):
     error_category: Optional[str] = None
     risk_level: Optional[str] = None
     step: Optional[int] = None
+    context_objects: List[WorkspaceContextManifestItemResponse] = Field(default_factory=list)
+    context_estimated_tokens: Optional[int] = None
 
 
 class WorkspaceExecutionTraceResponse(BaseModel):

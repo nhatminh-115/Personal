@@ -30,6 +30,18 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
       return { title: 'Run failed', body: 'Execution ended with an error', chip: 'RUN' };
     case 'run_cancelled':
       return { title: 'Run cancelled', body: 'Execution was cancelled', chip: 'RUN' };
+    case 'context_compiled': {
+      const objects = event.context_objects ?? [];
+      const selectedCount = objects.filter((item) => item.selected_by_user).length;
+      const tokenEstimate = event.context_estimated_tokens === null || event.context_estimated_tokens === undefined
+        ? 'unknown token estimate'
+        : `about ${event.context_estimated_tokens} tokens`;
+      return {
+        title: `Context compiled · ${objects.length} object${objects.length === 1 ? '' : 's'}`,
+        body: `${selectedCount} selected · ${tokenEstimate}`,
+        chip: 'CONTEXT',
+      };
+    }
     case 'run_completed':
     default:
       return { title: 'Run completed', body: 'Execution finished', chip: 'RUN' };
@@ -100,6 +112,13 @@ export function projectExecutionGraph(
         },
       } as AuraFlowNode);
       if (index > 0) edges.push(executionEdge(`execution-link-${orderedEvents[index - 1].id}-${event.id}`, runEventNodes[index - 1], id));
+      if (event.event_type === 'context_compiled') {
+        for (const item of event.context_objects ?? []) {
+          if (workspaceNodeById.has(item.object_id)) {
+            edges.push(executionEdge(`execution-context-${item.object_id}-${event.id}`, item.object_id, id));
+          }
+        }
+      }
     });
 
     if (runEventNodes.length > 0 && trace.user_object_id && workspaceNodeById.has(trace.user_object_id)) {
