@@ -150,6 +150,42 @@ describe('Routing Studio v2', () => {
     expect(screen.getByLabelText('Profile name')).toHaveValue('Edited draft');
   });
 
+  it('discards profile and assignment drafts directly and restores their saved values', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Unsaved rename' } });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'custom-profile' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Profile name')).toHaveValue('Custom profile');
+    expect(screen.getByLabelText('Assigned profile')).toHaveValue('system-balanced');
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
+  });
+
+  it('asks before closing Routing Studio with unsaved changes', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Unsaved rename' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close Routing Studio' }));
+    expect(confirm).toHaveBeenCalledWith('Discard unsaved routing profile changes?');
+    expect(screen.getByRole('dialog', { name: 'Routing Studio' })).toBeInTheDocument();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Close Routing Studio' }));
+    expect(screen.queryByRole('dialog', { name: 'Routing Studio' })).not.toBeInTheDocument();
+  });
+
   it('offers cloud routing cancellation or settings changes without a fake continue action', () => {
     render(<RoutingConfirmationNotice proposal={{ provider: 'cloud', model: 'model-x' }} onCancel={vi.fn()} onOpenStudio={vi.fn()} onChangeRouting={vi.fn()} />);
     expect(screen.getByText(/Cloud routing requires confirmation/i)).toBeInTheDocument();
