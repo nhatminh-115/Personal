@@ -100,7 +100,9 @@ class CapabilityProviderRegistry:
             raise ValueError(f"Provider '{metadata.provider_id}' binds undeclared capabilities: {sorted(undeclared)}")
         if any(not names for names in bindings.values()):
             raise ValueError("Capability bindings must reference at least one canonical AURA tool.")
-        self._metadata[metadata.provider_id] = metadata
+        # Pydantic's frozen models can still contain mutable lists. Keep the
+        # inventory isolated from both registration inputs and read results.
+        self._metadata[metadata.provider_id] = metadata.model_copy(deep=True)
         self._capability_tools[metadata.provider_id] = bindings
 
     def register_provider(self, provider: CapabilityProvider) -> None:
@@ -115,10 +117,14 @@ class CapabilityProviderRegistry:
         self._capability_tools.pop(provider_id, None)
 
     def get(self, provider_id: str) -> Optional[CapabilityProviderMetadata]:
-        return self._metadata.get(provider_id)
+        metadata = self._metadata.get(provider_id)
+        return metadata.model_copy(deep=True) if metadata else None
 
     def list_providers(self) -> List[CapabilityProviderMetadata]:
-        return sorted(self._metadata.values(), key=lambda item: item.provider_id)
+        return [
+            metadata.model_copy(deep=True)
+            for metadata in sorted(self._metadata.values(), key=lambda item: item.provider_id)
+        ]
 
     def resolve_tools(
         self,

@@ -169,3 +169,30 @@ def test_native_or_external_provider_can_implement_the_typed_provider_boundary()
 
     registry.register_provider(LocalSearchProvider())
     assert registry.resolve_capabilities(["web_search.query"]) == ["research_search"]
+
+
+def test_provider_metadata_isolated_from_mutable_registration_and_read_models():
+    registry = ToolRegistry()
+    metadata = CapabilityProviderMetadata(
+        provider_id="test.immutable",
+        name="Immutable metadata",
+        capabilities=["test.read"],
+        data_touched=["workspace_files"],
+    )
+    registry.register_capability_provider(metadata, {"test.read": ["read_workspace_file"]})
+
+    metadata.capabilities.append("test.unregistered")
+    metadata.data_touched.append("secrets")
+    stored = registry.capability_providers.get("test.immutable")
+    assert stored is not None
+    assert stored.capabilities == ["test.read"]
+    assert stored.data_touched == ["workspace_files"]
+
+    stored.capabilities.append("test.read.unreviewed")
+    stored_list = registry.capability_providers.list_providers()
+    returned = next(item for item in stored_list if item.provider_id == "test.immutable")
+    returned.data_touched.append("secrets")
+    confirmed = registry.capability_providers.get("test.immutable")
+    assert confirmed is not None
+    assert confirmed.capabilities == ["test.read"]
+    assert confirmed.data_touched == ["workspace_files"]
