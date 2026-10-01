@@ -121,6 +121,11 @@ class MemoryService(ABC):
         pass
 
     @abstractmethod
+    async def get_profile_memories(self, limit: Optional[int] = None) -> List[MemoryModel]:
+        """Retrieve active profile records with their privacy metadata and provenance."""
+        pass
+
+    @abstractmethod
     async def get_all_profile_facts(self) -> Dict[str, str]:
         """Retrieve all known user profile preferences."""
         pass
