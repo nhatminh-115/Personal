@@ -230,8 +230,19 @@ export default function App() {
 
   const setActiveModelLock = useCallback((model: string | null) => {
     if (!activeThreadId) return;
-    setThreadRoutingOverrides((current) => ({ ...current, [activeThreadId]: { model, reasoning: current[activeThreadId]?.reasoning ?? null } }));
-  }, [activeThreadId]);
+    const [providerId, modelId] = model?.split(':') ?? [];
+    const reasoningSupport = catalog.providers
+      .find((provider) => provider.id === providerId)
+      ?.models.find((item) => item.id === modelId)?.reasoning_support;
+    const clearsReasoning = reasoningSupport === 'fixed_by_model' || reasoningSupport === 'unsupported';
+    setThreadRoutingOverrides((current) => ({
+      ...current,
+      [activeThreadId]: {
+        model,
+        reasoning: clearsReasoning ? null : current[activeThreadId]?.reasoning ?? null,
+      },
+    }));
+  }, [activeThreadId, catalog.providers]);
   const setActiveReasoningOverride = useCallback((reasoning: ReasoningEffort | null) => {
     if (!activeThreadId) return;
     setThreadRoutingOverrides((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning } }));

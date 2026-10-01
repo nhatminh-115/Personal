@@ -29,6 +29,7 @@ export function RoutingPopover({
     ? catalog.providers.find((provider) => provider.id === lockedParts[0])?.models.find((model) => model.id === lockedParts[1])
     : undefined;
   const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
+  const unsupportedReasoning = lockedModelInfo?.reasoning_support === 'unsupported';
   const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
 
   return (
@@ -47,10 +48,12 @@ export function RoutingPopover({
       </select>
       {lockedModel ? <button type="button" className="secondary-button routing-clear-lock" disabled={demoThread} onClick={() => onSetModel(null)}><Lock size={14} /> Clear model lock</button> : null}
       <label className="routing-control-label" htmlFor="routing-reasoning">Temporary reasoning</label>
-      <select id="routing-reasoning" value={reasoningOverride ?? ''} disabled={demoThread} onChange={(event) => onSetReasoning((event.target.value || null) as ReasoningEffort | null)}>
-        <option value="">Profile</option>
-        {fixedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>{reasoningOverride} · unavailable for fixed-by-model control</option> : <option disabled>Fixed by model</option> : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => <option key={effort} value={effort}>{effort[0].toUpperCase() + effort.slice(1)}</option>)}
+      <select id="routing-reasoning" value={reasoningOverride ?? ''} disabled={demoThread || fixedReasoning || unsupportedReasoning} onChange={(event) => onSetReasoning((event.target.value || null) as ReasoningEffort | null)}>
+        <option value="">{fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile'}</option>
+        {fixedReasoning || unsupportedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>{reasoningOverride} · unavailable for this model</option> : null : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => <option key={effort} value={effort}>{effort[0].toUpperCase() + effort.slice(1)}</option>)}
       </select>
+      {fixedReasoning ? <p className="routing-note">This exact model controls reasoning internally; temporary effort overrides are unavailable.</p> : null}
+      {unsupportedReasoning ? <p className="routing-note">This exact model does not support reasoning controls.</p> : null}
       {reasoningUnknown ? <p className="routing-note">Reasoning support for this exact model is unknown; the backend may reject a temporary effort request.</p> : null}
       {!sessionAvailable ? <p className="routing-note">Session routing becomes available after this live chat has started.</p> : null}
       <div className="popover__actions">

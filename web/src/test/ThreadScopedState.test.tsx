@@ -342,4 +342,41 @@ describe('Thread-Scoped Live State', () => {
     await selectThread('Thread A');
     expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('local:model-a');
   });
+
+  it.each(['fixed_by_model', 'unsupported'] as const)(
+    'clears a stale reasoning override when locking a model whose reasoning control is %s',
+    async (reasoningSupport) => {
+      const sentBodies: Record<string, unknown>[] = [];
+      global.fetch = makeFetch({
+        onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'model-a', label: 'Model A', reasoning_support: reasoningSupport, tool_support: 'supported' }] }] }),
+        onChat: (options) => {
+          sentBodies.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
+          return { run_id: 'run-A', session_id: 'sess-A', status: 'completed', response: 'Done', tool_results: [] };
+        },
+      });
+      await setupTwoLiveThreads();
+      await act(async () => { render(<App />); });
+      await openStatefulChats();
+      await selectThread('Thread A');
+
+      const reasoning = screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement;
+      fireEvent.change(reasoning, { target: { value: 'high' } });
+      expect(reasoning.value).toBe('high');
+
+      fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
+      fireEvent.change(screen.getByLabelText('Temporary exact model lock'), { target: { value: 'local:model-a' } });
+
+      await waitFor(() => expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe(''));
+      expect(screen.getByLabelText('Temporary reasoning') as HTMLSelectElement).toBeDisabled();
+
+      const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+      await act(async () => {
+        fireEvent.change(input, { target: { value: 'Use locked model' } });
+        fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
+      });
+      await waitFor(() => expect(sentBodies).toHaveLength(1));
+      expect(sentBodies[0].model_override).toBe('local:model-a');
+      expect(sentBodies[0]).not.toHaveProperty('reasoning_override');
+    },
+  );
 });
