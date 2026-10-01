@@ -168,6 +168,37 @@ describe('Routing Studio v2', () => {
     expect(screen.queryByText(/"provider"\s*:/)).not.toBeInTheDocument();
   });
 
+  it('shows actionable guidance for structured routing preview errors without exposing raw details', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+
+    const normalFetch = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/v1/routing/preview')) {
+        return Promise.resolve({
+          ok: false,
+          status: 403,
+          text: () => Promise.resolve(JSON.stringify({
+            error: 'PrivacyBoundaryViolation',
+            message: 'No local model is eligible.',
+            details: { raw: 'private router internals' },
+          })),
+        } as Response);
+      }
+      return normalFetch(input, init);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Preview (no model call)' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('No local model is eligible.');
+    expect(alert).toHaveTextContent('Review the profile scope and select a route that meets its privacy boundary.');
+    expect(alert).not.toHaveTextContent('PrivacyBoundaryViolation');
+    expect(alert).not.toHaveTextContent('private router internals');
+  });
+
   it('keeps System Balanced read-only, duplicable, and protected from deletion', async () => {
     await openProject();
     fireEvent.click(screen.getByText(/System Balanced · system/i));
