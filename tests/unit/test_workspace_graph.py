@@ -649,6 +649,31 @@ async def test_selected_context_tool_requirement_survives_empty_tool_registry(as
 
 
 @pytest.mark.asyncio
+async def test_project_memory_local_only_blocks_cloud_model_before_provider_call(async_client, test_db_session):
+    from app.memory.service import SQLMemoryService
+    from app.models.router import model_router
+
+    await SQLMemoryService(test_db_session).store_project_memory(
+        "aura",
+        "private-research",
+        "This project's research must stay on-device.",
+        metadata={"privacy_policy": "local_only"},
+    )
+    calls_before = len(model_router.get_provider("mock").call_history)
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "project-memory-local-only-session",
+        "project_name": "aura",
+        "message": "Summarize my project memory.",
+        "model_override": "openai:gpt-4o",
+    })
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)

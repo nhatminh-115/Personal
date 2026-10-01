@@ -4,8 +4,10 @@ import json
 from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
+from app.core.errors import ContextSelectionError
 from app.db.models import MemoryModel
 from app.memory.base import MemoryService, MemoryType
+from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER, stricter_privacy_requirement
 
 
 MAX_PROJECT_MEMORY_ITEMS = 24
@@ -23,6 +25,8 @@ class AssembledContext(BaseModel):
     profile_facts: Dict[str, str] = Field(default_factory=dict)
     project_facts: List[str] = Field(default_factory=list)
     project_memory_ids: List[str] = Field(default_factory=list)
+    project_fact_memory_ids: List[str] = Field(default_factory=list)
+    privacy_requirement: Optional[str] = None
 
     def format_for_system_prompt(self) -> str:
         """Format non-working memory context into a deterministic, human-readable system prompt section."""
@@ -34,9 +38,10 @@ class AssembledContext(BaseModel):
 
         if self.project_facts:
             proj_header = f"### Project Knowledge ({self.project_name}):" if self.project_name else "### Project Knowledge:"
+            fact_memory_ids = self.project_fact_memory_ids or self.project_memory_ids
             memories = [
                 {"memory_id": memory_id, "text": fact}
-                for memory_id, fact in zip(self.project_memory_ids, self.project_facts)
+                for memory_id, fact in zip(fact_memory_ids, self.project_facts)
             ]
             if len(memories) < len(self.project_facts):
                 memories.extend(
@@ -100,14 +105,28 @@ class ContextAssembler:
             seen_facts = set()
             project_memory_chars = 0
             for pm in proj_memories:
-                if pm.content in seen_facts:
+                already_included = pm.content in seen_facts
+                if not already_included and project_memory_chars + len(pm.content) > MAX_PROJECT_MEMORY_CHARS:
                     continue
-                if project_memory_chars + len(pm.content) > MAX_PROJECT_MEMORY_CHARS:
-                    continue
-                context.project_facts.append(pm.content)
+                metadata = pm.metadata_json if isinstance(pm.metadata_json, dict) else {}
+                classification = metadata.get("privacy_policy")
+                if classification is not None and (
+                    not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
+                ):
+                    raise ContextSelectionError(
+                        "Project memory has an unsupported privacy classification.",
+                        {"memory_id": pm.id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
+                    )
                 context.project_memory_ids.append(pm.id)
-                project_memory_chars += len(pm.content)
-                seen_facts.add(pm.content)
+                if isinstance(classification, str):
+                    context.privacy_requirement = stricter_privacy_requirement(
+                        context.privacy_requirement, classification
+                    )
+                if not already_included:
+                    context.project_facts.append(pm.content)
+                    context.project_fact_memory_ids.append(pm.id)
+                    project_memory_chars += len(pm.content)
+                    seen_facts.add(pm.content)
 
         # 4. Episodic Memory: Narrative records of recent milestones
         episodes = await self.mem_service.get_recent_episodes(session_id=session_id, limit=recent_episodes_limit)
@@ -121,11 +140,7 @@ class ContextAssembler:
 
             if store and embedding_router:
                 query_vec = await embedding_router.embed_query(user_message)
-                search_types = (
-                    [MemoryType.SEMANTIC.value, MemoryType.PROJECT.value]
-                    if project_name
-                    else [MemoryType.SEMANTIC.value]
-                )
+                search_types = [MemoryType.SEMANTIC.value]
                 matches = await store.search(
                     query_vector=query_vec,
                     limit=semantic_top_k,
@@ -136,11 +151,7 @@ class ContextAssembler:
                     embedding_model=embedding_router.current_model_name,
                     embedding_dim=embedding_router.current_dimension,
                 )
-                seen_semantic = set()
-                for mem, sim in matches:
-                    if mem.content not in seen_semantic and mem.content not in context.project_facts:
-                        context.semantic_items.append((mem.content, sim))
-                        seen_semantic.add(mem.content)
+                matches = list(matches)
             else:
                 raw_memories = await self.mem_service.search_semantic_memory(
                     query=user_message,
@@ -149,8 +160,32 @@ class ContextAssembler:
                     project_name=project_name,
                     is_active_only=True,
                 )
-                for mem in raw_memories:
-                    if mem.content not in context.project_facts:
-                        context.semantic_items.append((mem.content, 1.0))
+                matches = [(memory, 1.0) for memory in raw_memories]
+
+            seen_semantic = set()
+            semantic_memory_chars = 0
+            for mem, sim in matches:
+                if getattr(mem, "memory_type", MemoryType.SEMANTIC.value) != MemoryType.SEMANTIC.value:
+                    continue
+                if mem.content in seen_semantic or mem.content in context.project_facts:
+                    continue
+                if semantic_memory_chars + len(mem.content) > MAX_PROJECT_MEMORY_CHARS:
+                    continue
+                metadata = mem.metadata_json if isinstance(mem.metadata_json, dict) else {}
+                classification = metadata.get("privacy_policy")
+                if classification is not None and (
+                    not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
+                ):
+                    raise ContextSelectionError(
+                        "Semantic memory has an unsupported privacy classification.",
+                        {"memory_id": mem.id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
+                    )
+                if isinstance(classification, str):
+                    context.privacy_requirement = stricter_privacy_requirement(
+                        context.privacy_requirement, classification
+                    )
+                context.semantic_items.append((mem.content, sim))
+                semantic_memory_chars += len(mem.content)
+                seen_semantic.add(mem.content)
 
         return context

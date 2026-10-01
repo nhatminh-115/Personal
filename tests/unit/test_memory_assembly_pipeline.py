@@ -197,6 +197,96 @@ def test_project_memory_prompt_encoding_preserves_text_as_non_executable_referen
 
 
 @pytest.mark.asyncio
+async def test_project_memory_privacy_is_combined_without_losing_duplicate_provenance(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    first = await service.store_project_memory(
+        "Private Project", "summary", "Sensitive project fact", metadata={"privacy_policy": "internal"}
+    )
+    stricter_duplicate = await service.store_project_memory(
+        "Private Project", "summary-copy", "Sensitive project fact", metadata={"privacy_policy": "local_only"}
+    )
+
+    assembled = await assembler.assemble_context(
+        session_id="private-project-context",
+        user_message="Summarize this project.",
+        project_name="Private Project",
+    )
+
+    assert assembled.project_facts == ["Sensitive project fact"]
+    assert set(assembled.project_memory_ids) == {first.id, stricter_duplicate.id}
+    assert len(assembled.project_fact_memory_ids) == 1
+    assert assembled.project_fact_memory_ids[0] in {first.id, stricter_duplicate.id}
+    assert assembled.privacy_requirement == "local_only"
+
+
+@pytest.mark.asyncio
+async def test_excluded_oversized_project_memory_does_not_constrain_context_privacy(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    await service.store_project_memory(
+        "Bounded Privacy Project", "oversized", "x" * (MAX_PROJECT_MEMORY_CHARS + 1),
+        metadata={"privacy_policy": "unknown-policy"},
+    )
+
+    assembled = await assembler.assemble_context(
+        session_id="bounded-privacy-project-context",
+        user_message="Summarize this project.",
+        project_name="Bounded Privacy Project",
+    )
+
+    assert assembled.project_facts == []
+    assert assembled.project_memory_ids == []
+    assert assembled.privacy_requirement is None
+
+
+@pytest.mark.asyncio
+async def test_project_memory_cannot_bypass_bounds_through_semantic_search():
+    from unittest.mock import AsyncMock
+    from types import SimpleNamespace
+
+    excluded_project_memory = SimpleNamespace(
+        id="excluded-project-memory",
+        memory_type=MemoryType.PROJECT.value,
+        content="Must stay out of the bounded project-memory context.",
+        metadata_json={"privacy_policy": "local_only"},
+    )
+    included_semantic_memory = SimpleNamespace(
+        id="semantic-memory",
+        memory_type=MemoryType.SEMANTIC.value,
+        content="Relevant semantic memory.",
+        metadata_json={"privacy_policy": "internal"},
+    )
+    store = SimpleNamespace(search=AsyncMock(return_value=[
+        (excluded_project_memory, 0.99),
+        (included_semantic_memory, 0.9),
+    ]))
+    embedding_router = SimpleNamespace(
+        embed_query=AsyncMock(return_value=[0.1]),
+        current_model_name="mock",
+        current_dimension=1,
+    )
+    memory_service = SimpleNamespace(
+        get_session_messages=AsyncMock(return_value=[]),
+        get_all_profile_facts=AsyncMock(return_value={}),
+        get_project_memories=AsyncMock(return_value=[]),
+        get_recent_episodes=AsyncMock(return_value=[]),
+        store=store,
+        embedding_router=embedding_router,
+    )
+
+    assembled = await ContextAssembler(memory_service).assemble_context(
+        session_id="bounded-semantic-project-context",
+        user_message="Find relevant project information.",
+        project_name="AURA",
+    )
+
+    assert store.search.call_args.kwargs["memory_types"] == [MemoryType.SEMANTIC.value]
+    assert assembled.semantic_items == [("Relevant semantic memory.", 0.9)]
+    assert assembled.privacy_requirement == "internal"
+
+
+@pytest.mark.asyncio
 async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
     source = WorkspaceObjectModel(
         id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
