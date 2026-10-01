@@ -69,6 +69,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => void;
   onBridgeSection?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => void;
   onContinueMerge?: (id: string) => void;
+  onContinueBranch?: (id: string) => void;
 }
 
 export type AuraFlowNode = Node<AuraNodeData>;

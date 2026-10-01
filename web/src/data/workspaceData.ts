@@ -392,6 +392,7 @@ export interface ChatThreadRecord {
   messages: ChatMessage[];
   sessionId?: string;
   source?: 'demo' | 'live';
+  initialContextObjectIds?: string[];
 }
 
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {

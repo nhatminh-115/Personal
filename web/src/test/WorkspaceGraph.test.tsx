@@ -2,7 +2,9 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BoardCanvas } from '../components/board/BoardCanvas';
+import { ProjectChatWorkspace } from '../components/chat/ProjectChatWorkspace';
 import { api } from '../services/api';
+import { projects } from '../data/workspaceData';
 import type { AuraFlowNode, WorkspaceGraph, WorkspaceObject } from '../types';
 
 const savedGraph: WorkspaceGraph = {
@@ -189,6 +191,58 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(createObject).toHaveBeenCalledTimes(2));
     expect(createObject.mock.calls[1][1].id).toBe(createdId);
     expect(graph.objects.some((object) => object.id === createdId)).toBe(true);
+  });
+
+  it('offers a live chat action on saved branches and restores the selected branch context', async () => {
+    const branchId = 'branch-object-1';
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: branchId,
+        session_id: null,
+        source_message_id: null,
+        object_type: 'conversation_branch',
+        created_by: 'user',
+        title: 'Continue after the handoff',
+        content: 'Saved branch point.',
+      }],
+    };
+    const fetchBranchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-branch', project_name: projects[0].name });
+
+    const onContinueBranch = vi.fn();
+    const { rerender, container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="branch-live-action" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} onContinueBranch={onContinueBranch} />
+      </ReactFlowProvider>,
+    );
+    expect(await screen.findByText('Continue after the handoff')).toBeInTheDocument();
+    const continueButton = [...container.querySelectorAll('[data-id="branch-object-1"] button')]
+      .find((button) => button.textContent?.includes('Continue in Chat'))!;
+    fireEvent.click(continueButton);
+    expect(onContinueBranch).toHaveBeenCalledWith(branchId);
+
+    const thread = {
+      id: 'branch-live-thread', projectId: projects[0].id, title: 'Continue after the handoff',
+      summary: 'Live backend session', updated: 'just now', messages: [], sessionId: 'session-branch',
+      source: 'live' as const, initialContextObjectIds: [branchId],
+    };
+    rerender(
+      <ProjectChatWorkspace
+        project={projects[0]} threads={[thread]} activeThreadId={thread.id} libraryItems={[]} notes={[]}
+        onSelectThread={() => {}} onNewThread={() => {}} onUpdateMessages={() => {}}
+        onContextObjectIdsChange={(_, ids) => onContinueBranch('selected:' + ids.join(','))}
+      />,
+    );
+    await waitFor(() => expect(fetchBranchGraph).toHaveBeenCalledWith(projects[0].name));
+    fireEvent.click(screen.getByText('Context').closest('button')!);
+    await screen.findByText('Project objects');
+    await waitFor(() => expect(container.querySelectorAll('.ai-context-item')).toHaveLength(1));
+    const contextItem = container.querySelector<HTMLButtonElement>('.ai-context-item')!;
+    await waitFor(() => expect(contextItem).toHaveAttribute('aria-pressed', 'true'));
+    fireEvent.click(contextItem);
+    expect(onContinueBranch).toHaveBeenLastCalledWith('selected:');
   });
 
 });

@@ -864,6 +864,7 @@ export default function App() {
         messages: [],
         sessionId,
         source: 'live',
+        initialContextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
       };
       setChatThreads((current) => [thread, ...current]);
       setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
@@ -933,6 +934,12 @@ export default function App() {
     }
     await handleSendMessage(prompt, objectIds);
   }, [activeProject?.name, activeProjectId, activeThreadId, chatThreads, handleSendMessage, handleStartLiveChat, openOrActivateTab]);
+
+  const handleContextObjectIdsChange = useCallback((threadId: string, objectIds: string[]) => {
+    setChatThreads((current) => current.map((thread) => thread.id === threadId
+      ? { ...thread, initialContextObjectIds: [...new Set(objectIds)] }
+      : thread));
+  }, []);
 
   const handleApprovalDecision = useCallback(
     async (
@@ -1230,6 +1237,7 @@ export default function App() {
             onAttachRequest={openProjectFiles}
             onSendMessage={handleSendMessage}
             onStartLiveChat={handleStartLiveChat}
+            onContextObjectIdsChange={handleContextObjectIdsChange}
             currentApproval={activeThreadLive.approval}
             onApprovalDecision={handleApprovalDecision}
           />
@@ -1250,6 +1258,7 @@ export default function App() {
             branchRequest={branchRequest}
             executionExpanded={params.get('execution') === '1'}
             onAskWithContext={handleBoardAskWithContext}
+            onContinueBranch={(branchId) => { void handleStartLiveChat('', [branchId]); }}
           />
         ) : null}
 
@@ -1273,12 +1282,13 @@ export default function App() {
                 onAttachRequest={openProjectFiles}
                 onSendMessage={handleSendMessage}
                 onStartLiveChat={handleStartLiveChat}
+                onContextObjectIdsChange={handleContextObjectIdsChange}
                 currentApproval={activeThreadLive.approval}
                 onApprovalDecision={handleApprovalDecision}
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} />
+              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onContinueBranch={(branchId) => { void handleStartLiveChat('', [branchId]); }} />
             </div>
           </div>
         ) : null}

@@ -42,6 +42,7 @@ export interface ChatPaneProps {
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
+  onContextObjectIdsChange?: (objectIds: string[]) => void;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -117,6 +118,7 @@ export function ChatPane({
   onAttachRequest,
   onSendMessage,
   onStartLiveChat,
+  onContextObjectIdsChange,
   currentApproval,
   onApprovalDecision,
   isLiveThread = true,
@@ -363,7 +365,11 @@ export function ChatPane({
             <AIContextPanel
               items={contextItems}
               contextIsLive={contextIsLive}
-              onToggleItem={(id) => setContextItems((current) => current.map((item) => item.id === id ? { ...item, included: !item.included } : item))}
+              onToggleItem={(id) => setContextItems((current) => {
+                const next = current.map((item) => item.id === id ? { ...item, included: !item.included } : item);
+                if (contextIsLive) onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                return next;
+              })}
               onClose={() => setContextOpen(false)}
             />
           ) : null}
