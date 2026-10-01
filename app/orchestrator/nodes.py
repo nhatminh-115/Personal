@@ -96,7 +96,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                 event_type="context_compiled",
                 payload={
                     "project_name": compiled_context.project_name,
-                    "objects": [item.model_dump() for item in compiled_context.objects],
+                    "objects": [item.model_dump(exclude_none=True) for item in compiled_context.objects],
                     "estimated_tokens": compiled_context.estimated_tokens,
                     "character_count": len(compiled_context.prompt_text),
                 },

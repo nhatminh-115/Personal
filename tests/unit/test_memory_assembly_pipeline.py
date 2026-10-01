@@ -190,6 +190,12 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
     assert [item.object_id for item in compiled.objects] == [bridge.id]
     assert [item.selected_by_user for item in compiled.objects] == [True]
     assert compiled.objects[-1].source_object_ids == [source.id]
+    assert compiled.objects[-1].selected_sections == {
+        "conclusions": True,
+        "observations": False,
+        "failed": False,
+        "artifacts": False,
+    }
     assert "Keep the migration reversible." in compiled.prompt_text
     assert "Disabled observation must not be sent." not in compiled.prompt_text
     assert "Constraint" not in compiled.prompt_text

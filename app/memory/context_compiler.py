@@ -24,6 +24,7 @@ class CompiledContextObject(BaseModel):
     object_type: str
     selected_by_user: bool = False
     source_object_ids: list[str] = Field(default_factory=list)
+    selected_sections: dict[str, bool | None] | None = None
 
 
 class CompiledWorkspaceContext(BaseModel):
@@ -125,20 +126,29 @@ class WorkspaceContextCompiler:
         manifest: list[CompiledContextObject] = []
         for item in ordered:
             content = item.content or ""
+            section_selection: dict[str, bool] | None = None
             if item.object_type == "context_bridge":
                 metadata = item.metadata_json or {}
                 options = metadata.get("bridge_options")
                 sections = metadata.get("bridge_sections")
+                section_selection = (
+                    {
+                        key: options.get(key) if type(options.get(key)) is bool else None
+                        for key in BRIDGE_SECTION_LABELS
+                    }
+                    if isinstance(options, dict)
+                    else None
+                )
                 if isinstance(options, dict) and isinstance(sections, dict):
-                    selected_sections = [
+                    selected_content = [
                         f"{label}:\n{sections[key]}"
                         for key, label in BRIDGE_SECTION_LABELS.items()
-                        if options.get(key) is True
+                        if section_selection is not None and section_selection[key] is True
                         and isinstance(sections.get(key), str)
                         and sections[key].strip()
                     ]
-                    if selected_sections:
-                        content = "\n\n".join(part for part in (content, *selected_sections) if part)
+                    if selected_content:
+                        content = "\n\n".join(part for part in (content, *selected_content) if part)
             rendered.append(
                 f"[Workspace object {item.id} | type: {item.object_type} | title: {item.title or '(untitled)'}]\n"
                 f"{content}"
@@ -149,6 +159,7 @@ class WorkspaceContextCompiler:
                     object_type=item.object_type,
                     selected_by_user=item.id in roots,
                     source_object_ids=sorted(set(linked_sources.get(item.id, []))),
+                    selected_sections=section_selection,
                 )
             )
         prompt_text = "\n\n".join(rendered)

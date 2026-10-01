@@ -209,6 +209,64 @@ async def test_chat_compiles_selected_workspace_context_and_records_provenance(a
 
 
 @pytest.mark.asyncio
+async def test_chat_compiles_only_selected_bridge_sections_and_records_section_provenance(async_client):
+    from app.models.router import model_router
+    from app.models.base import ModelRole
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Source constraint", "content": "Full source text must stay out of Bridge context.",
+    })
+    assert source.status_code == 201
+    bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_bridge",
+        "title": "Selected migration handoff",
+        "content": "Keep rollback available.",
+        "metadata_json": {
+            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": True},
+            "bridge_sections": {
+                "conclusions": "Deploy in reversible stages.",
+                "observations": "Disabled observation must stay out.",
+                "failed": "",
+                "artifacts": "Migration checklist v2.",
+            },
+        },
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert bridge.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-compiled-context-session",
+        "project_name": "aura",
+        "message": "Continue the migration plan.",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+
+    assert response.status_code == 200
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert "Keep rollback available." in system_message.content
+    assert "Deploy in reversible stages." in system_message.content
+    assert "Migration checklist v2." in system_message.content
+    assert "Disabled observation must stay out." not in system_message.content
+    assert "Full source text must stay out of Bridge context." not in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert compiled_event["payload"]["objects"] == [{
+        "object_id": bridge.json()["id"],
+        "object_type": "context_bridge",
+        "selected_by_user": True,
+        "source_object_ids": [source.json()["id"]],
+        "selected_sections": {
+            "conclusions": True,
+            "observations": False,
+            "failed": False,
+            "artifacts": True,
+        },
+    }]
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)
