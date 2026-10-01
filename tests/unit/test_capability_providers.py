@@ -1,7 +1,9 @@
 """Typed capability-provider inventory and control-plane API invariants."""
 
 import sys
+
 import pytest
+from pydantic import ValidationError
 
 from app.capabilities.registry import (
     CapabilityProviderHealth,
@@ -54,6 +56,31 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.capabilities == ["research.library.search"]
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
     assert "sensitive-token" not in provider.model_dump_json()
+
+
+def test_mcp_capability_mappings_must_be_non_empty_and_inside_tool_allowlist():
+    with pytest.raises(ValidationError, match="included in allowed_tools"):
+        MCPServerConfig(
+            id="invalid-map",
+            name="Invalid map",
+            allowed_tools=["codegraph_symbol_search"],
+            capabilities_by_tool={"codegraph_analyze_impact": ["code_graph.impact"]},
+        )
+
+    with pytest.raises(ValidationError, match="non-empty capability names"):
+        MCPServerConfig(
+            id="empty-map",
+            name="Empty map",
+            capabilities_by_tool={"tool": []},
+        )
+
+    valid = MCPServerConfig(
+        id="valid-map",
+        name="Valid map",
+        allowed_tools=["codegraph_symbol_search"],
+        capabilities_by_tool={"codegraph_symbol_search": ["code_graph.query"]},
+    )
+    assert valid.capabilities_by_tool["codegraph_symbol_search"] == ["code_graph.query"]
 
 
 @pytest.mark.asyncio

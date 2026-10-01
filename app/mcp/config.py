@@ -2,7 +2,7 @@
 
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from app.capabilities.registry import (
     NetworkRequirement,
     PrivacyBoundary,
@@ -54,3 +54,27 @@ class MCPServerConfig(BaseModel):
     data_touched: Optional[List[str]] = None
     permissions: Optional[List[ProviderPermission]] = None
     approval_requirement: ProviderApprovalRequirement = ProviderApprovalRequirement.PER_TOOL_POLICY
+
+    @model_validator(mode="after")
+    def validate_capability_mappings(self) -> "MCPServerConfig":
+        """Reject capability mappings that cannot survive the configured allowlist."""
+        invalid_tools = [name for name in self.capabilities_by_tool if not name.strip()]
+        if invalid_tools:
+            raise ValueError("capabilities_by_tool keys must be non-empty MCP tool names.")
+        empty_capabilities = [
+            name for name, capabilities in self.capabilities_by_tool.items()
+            if not capabilities or any(not capability.strip() for capability in capabilities)
+        ]
+        if empty_capabilities:
+            raise ValueError(
+                "Each capabilities_by_tool entry must declare non-empty capability names: "
+                f"{sorted(empty_capabilities)}"
+            )
+        if self.allowed_tools is not None:
+            excluded = sorted(set(self.capabilities_by_tool) - set(self.allowed_tools))
+            if excluded:
+                raise ValueError(
+                    "Capability mappings must reference tools included in allowed_tools: "
+                    f"{excluded}"
+                )
+        return self
