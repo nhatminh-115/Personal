@@ -266,6 +266,16 @@ class RoutingProfileModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
+    __table_args__ = (
+        Index(
+            "uq_routing_profiles_single_default",
+            "is_default",
+            unique=True,
+            postgresql_where=text("is_default IS TRUE"),
+            sqlite_where=text("is_default = 1"),
+        ),
+    )
+
 
 class ProjectRoutingAssignmentModel(Base):
     """Assigns a RoutingProfile to a specific project_name namespace."""

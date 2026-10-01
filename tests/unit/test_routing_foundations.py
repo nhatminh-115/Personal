@@ -1186,7 +1186,7 @@ async def test_custom_default_is_unique_and_system_balanced_clears_defaults(test
 
     test_db_session.add_all([
         RoutingProfileModel(id="default-a", name="A", is_default=True),
-        RoutingProfileModel(id="default-b", name="B", is_default=True),
+        RoutingProfileModel(id="default-b", name="B", is_default=False),
     ])
     await test_db_session.commit()
 
@@ -1226,6 +1226,24 @@ async def test_profile_create_and_update_enforce_single_custom_default(test_db_s
         await _set_default_profile(test_db_session, "inactive-default")
     assert "inactive" in exc.value.detail.lower()
     await test_db_session.rollback()
+
+
+@pytest.mark.asyncio
+async def test_routing_profile_database_index_rejects_a_second_custom_default(test_db_session: AsyncSession):
+    from sqlalchemy.exc import IntegrityError
+
+    test_db_session.add(RoutingProfileModel(id="unique-default-a", name="A", is_default=True))
+    await test_db_session.commit()
+
+    test_db_session.add(RoutingProfileModel(id="unique-default-b", name="B", is_default=True))
+    with pytest.raises(IntegrityError):
+        await test_db_session.commit()
+    await test_db_session.rollback()
+
+    rows = (await test_db_session.execute(
+        select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True))
+    )).scalars().all()
+    assert [row.id for row in rows] == ["unique-default-a"]
 
 
 def test_adaptive_reasoning_clamps_to_model_max_support():
