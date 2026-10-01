@@ -287,6 +287,54 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
 
 
 @pytest.mark.asyncio
+async def test_merged_continuation_compiles_destination_branch_and_selected_context(async_client):
+    from app.models.router import model_router
+    from app.models.base import ModelRole
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Selected constraint",
+        "content": "Keep the migration reversible.",
+    })
+    destination = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "conversation_branch",
+        "title": "Existing destination branch",
+        "content": "The branch is investigating rollout sequencing.",
+    })
+    assert source.status_code == destination.status_code == 201
+
+    merged = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "conversation_branch",
+        "title": "Merged continuation from Existing destination branch",
+        "metadata_json": {"merged_into_branch_id": destination.json()["id"]},
+        "source_object_ids": [destination.json()["id"], source.json()["id"]],
+    })
+    assert merged.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "merged-continuation-context-session",
+        "project_name": "aura",
+        "message": "Continue with this merged context.",
+        "context_object_ids": [merged.json()["id"]],
+    })
+    assert response.status_code == 200
+
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert "Keep the migration reversible." in system_message.content
+    assert "The branch is investigating rollout sequencing." in system_message.content
+    assert "Merged continuation from Existing destination branch" in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}" )).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    compiled_objects = compiled_event["payload"]["objects"]
+    assert {item["object_id"] for item in compiled_objects} == {
+        source.json()["id"], destination.json()["id"], merged.json()["id"],
+    }
+    assert next(item for item in compiled_objects if item["object_id"] == merged.json()["id"])["selected_by_user"] is True
+
+
+@pytest.mark.asyncio
 async def test_known_model_context_window_blocks_before_provider_invocation(async_client):
     from app.models.router import model_router
 
