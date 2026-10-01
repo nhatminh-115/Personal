@@ -98,7 +98,7 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
         return pick(payload, (
             "agent_role", "task_type", "provider", "model", "profile_id", "profile_version",
             "winning_scope", "selection_reason", "privacy", "fallback_policy", "context_window",
-            "estimated_input_tokens", "reserved_output_tokens", "required_capabilities", "requires_tools",
+            "estimated_input_tokens", "reserved_output_tokens", "required_context_window", "required_capabilities", "requires_tools",
             "requires_vision", "requires_structured_output", "requires_long_context",
         ))
     if event_type == "reasoning_effort_selected":
