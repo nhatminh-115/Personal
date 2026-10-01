@@ -253,4 +253,28 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText(/No local model is eligible\. Privacy policy blocked this route/i)).toBeInTheDocument();
     expect(screen.getByText(/Review the profile scope and select a route that meets its privacy boundary/i)).toBeInTheDocument();
   });
+
+  it.each([
+    ['ModelCapabilityMismatch', 'Choose a compatible model or adjust the request requirements.'],
+    ['ReasoningControlUnsupported', 'Use Profile reasoning or choose a model with known support.'],
+    ['ModelUnavailable', 'AURA did not substitute another model.'],
+    ['NoEligibleRoute', 'Review the profile in Routing Studio.'],
+  ])('shows actionable guidance for %s without exposing raw error JSON', async (code, guidance) => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/chat')) return Promise.resolve({ ok: false, status: 400, text: () => Promise.resolve(JSON.stringify({ error: code, message: `Routing rejected: ${code}`, details: { internal: 'detail' } })) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getAllByText(/Stateful Architecture/i)[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Open project chats/i }));
+    fireEvent.click(screen.getByTitle('New chat'));
+    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Route this request' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
+    expect(await screen.findByText(new RegExp(`Routing rejected: ${code}`))).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(guidance))).toBeInTheDocument();
+    expect(screen.queryByText(/"internal"\s*:/)).not.toBeInTheDocument();
+  });
 });

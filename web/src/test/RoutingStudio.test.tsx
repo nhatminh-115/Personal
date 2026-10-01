@@ -13,22 +13,29 @@ const customProfile = {
   id: 'custom-profile', name: 'Custom profile', version: 3, is_default: true,
   routes: { root: { model_override: 'offline:kept-model', reasoning: { policy: 'adaptive', effort: 'medium', min_effort: 'low', max_effort: 'low' } } },
 };
+let projectRoutingProfile: string | null;
+let sessionRoutingProfile: string | null;
+let modelReasoningSupport: string;
 
 describe('Routing Studio v2', () => {
   beforeEach(() => {
     window.localStorage.clear();
     vi.restoreAllMocks();
+    projectRoutingProfile = null;
+    sessionRoutingProfile = null;
+    modelReasoningSupport = 'unknown';
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       let value: any = {};
-      if (url.includes('/v1/models')) value = { providers: [{ id: 'local', label: 'Local', kind: 'local', available: true, base_url: 'local', privacy_status: 'local', models: [{ id: 'installed-model', label: 'Installed model', capabilities: [], tool_support: 'unknown', reasoning_support: 'unknown' }] }] };
+      if (url.includes('/v1/models')) value = { providers: [{ id: 'local', label: 'Local', kind: 'local', available: true, base_url: 'local', privacy_status: 'local', models: [{ id: 'installed-model', label: 'Installed model', capabilities: [], tool_support: 'unknown', reasoning_support: modelReasoningSupport }] }] };
       else if (url.endsWith('/duplicate')) value = { ...profile, id: 'copy-profile', name: 'System Balanced (Copy)' };
       else if (url.endsWith('/validate')) value = { valid: true, profile_id: 'custom-profile', errors: [] };
       else if (url.endsWith('/v1/routing/profiles') && init?.method === 'POST') value = { ...profile, ...JSON.parse(String(init.body)), id: 'created-profile' };
+      else if (url.includes('/v1/routing/profiles/') && init?.method === 'PUT') value = { ...customProfile, ...JSON.parse(String(init.body)), id: 'custom-profile' };
       else if (url.includes('/v1/routing/profiles')) value = [profile, customProfile];
       else if (url.includes('/v1/routing/effective')) value = { profile, winning_scope: 'system' };
-      else if (url.includes('/v1/routing/assignments')) value = { project_name: 'Project', routing_profile_id: null };
-      else if (url.includes('/v1/routing/sessions/')) value = { session_id: 'session', routing_profile_id: null };
+      else if (url.includes('/v1/routing/assignments')) value = { project_name: 'Stateful Architecture', routing_profile_id: projectRoutingProfile };
+      else if (url.includes('/v1/routing/sessions/')) value = { session_id: 'session-live', routing_profile_id: sessionRoutingProfile };
       else if (url.endsWith('/v1/routing/default')) value = { status: 'success', routing_profile_id: null };
       else if (url.endsWith('/v1/routing/preview')) value = { provider: 'local', model: 'installed-model', reason: 'profile_match', reasoning_effort: 'medium', profile_id: 'system-balanced', profile_name: 'System Balanced', profile_version: 1, winning_scope: 'draft', privacy: 'public', fallback: 'cloud_allowed', role: 'root', task_route: 'root', warnings: [] };
       else if (url.includes('/v1/sessions')) value = [];
@@ -42,6 +49,13 @@ describe('Routing Studio v2', () => {
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
     await waitFor(() => expect(screen.getByText(/System Balanced · system/i)).toBeInTheDocument());
+  }
+
+  function seedLiveThread(messages: any[] = []) {
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([{
+      id: 'stateful-main', projectId: 'stateful', title: 'Live thread', summary: '', updated: 'now',
+      source: 'live', sessionId: 'session-live', messages,
+    }]));
   }
 
   it('shows live effective routing and starts without a model lock', async () => {
@@ -104,6 +118,69 @@ describe('Routing Studio v2', () => {
     fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'system-balanced' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/default', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ profile_id: null }) })));
+  });
+
+  it('resets project and session assignments through their backend endpoints', async () => {
+    projectRoutingProfile = 'custom-profile';
+    sessionRoutingProfile = 'custom-profile';
+    seedLiveThread([{ id: 'assistant-1', role: 'assistant', nodeId: 'a1', branch: 'Root', content: 'Started live chat', timestamp: 'now', status: 'Sent' }]);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'system-balanced' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/assignments/Stateful%20Architecture?profile_id=system-balanced', expect.objectContaining({ method: 'POST' })));
+
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'system-balanced' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/sessions/session-live', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ profile_id: null }) })));
+  });
+
+  it('keeps Session routing unavailable for a live chat before its first turn', async () => {
+    seedLiveThread();
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    expect(screen.getByRole('option', { name: /^Session$/ })).toBeDisabled();
+    expect(screen.getByText(/Session routing becomes available after this live chat has started/i)).toBeInTheDocument();
+    expect(global.fetch).not.toHaveBeenCalledWith('/v1/routing/sessions/session-live', expect.anything());
+  });
+
+  it('updates and deletes saved profiles through profile CRUD endpoints', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.click(screen.getByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Renamed profile' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/profiles/custom-profile', expect.objectContaining({ method: 'PUT' })));
+
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/profiles/custom-profile', expect.objectContaining({ method: 'DELETE' })));
+  });
+
+  it('renders unknown reasoning metadata without claiming provider control', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    expect(screen.getAllByText(/Model reasoning control is unknown/i).length).toBeGreaterThan(0);
+  });
+
+  it('renders fixed_by_model as read-only reasoning metadata', async () => {
+    modelReasoningSupport = 'fixed_by_model';
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getAllByLabelText('Model')[0], { target: { value: 'local:installed-model' } });
+    expect(screen.getByDisplayValue('Fixed by model')).toBeDisabled();
   });
 
   it('renders preview fields instead of raw JSON', async () => {

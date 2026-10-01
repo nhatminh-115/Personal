@@ -25,15 +25,17 @@ function makeFetch({
   onApprovalSubmit,
   onRunDetails,
   onRunResearch,
+  catalog,
 }: {
   onChat?: () => object;
   onApproval?: () => object;
   onApprovalSubmit?: () => object;
   onRunDetails?: () => object;
   onRunResearch?: () => object;
+  catalog?: object;
 } = {}) {
   return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
-    if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+    if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve(catalog ?? { providers: [] }) });
     if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     if (/\/v1\/sessions$/.test(url) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     if (url.match(/\/v1\/sessions\/[^/]+$/) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'sess', messages: [] }) });
@@ -299,5 +301,22 @@ describe('Thread-Scoped Live State', () => {
     expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('');
     await selectThread('Thread A');
     expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('high');
+  });
+
+  it('keeps temporary exact model locks isolated when switching live threads', async () => {
+    global.fetch = makeFetch({ catalog: { providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'installed', label: 'Installed', capabilities: [], tool_support: 'unknown', reasoning_support: 'unknown' }] }] } });
+    await setupTwoLiveThreads();
+    await act(async () => { render(<App />); });
+    await openStatefulChats();
+    await selectThread('Thread A');
+    fireEvent.click(screen.getByText('Routing…'));
+    const lock = screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement;
+    fireEvent.change(lock, { target: { value: 'local:installed' } });
+    expect(lock.value).toBe('local:installed');
+
+    await selectThread('Thread B');
+    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('');
+    await selectThread('Thread A');
+    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('local:installed');
   });
 });
