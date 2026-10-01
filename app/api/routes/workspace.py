@@ -4,7 +4,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import case, delete as sa_delete, func, or_, select, text
+from sqlalchemy import String, case, delete as sa_delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -93,6 +93,11 @@ async def search_workspace(
     filters = [or_(
         WorkspaceObjectModel.title.ilike(pattern, escape="\\"),
         WorkspaceObjectModel.content.ilike(pattern, escape="\\"),
+        (WorkspaceObjectModel.object_type == "file_reference") & or_(
+            WorkspaceObjectModel.metadata_json["detail"].as_string().ilike(pattern, escape="\\"),
+            WorkspaceObjectModel.metadata_json["collection"].as_string().ilike(pattern, escape="\\"),
+            WorkspaceObjectModel.metadata_json["tags"].cast(String).ilike(pattern, escape="\\"),
+        ),
     )]
     if project_name:
         personal_project_links = select(WorkspaceObjectProjectLinkModel.object_id).where(
@@ -118,14 +123,21 @@ async def search_workspace(
     response: list[WorkspaceSearchResult] = []
     for item in result.scalars():
         content = item.content or ""
-        match_at = content.casefold().find(normalized.casefold())
+        metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
+        searchable_content = content
+        if item.object_type == "file_reference" and normalized.casefold() not in searchable_content.casefold():
+            raw_tags = metadata.get("tags")
+            tags = [tag for tag in raw_tags if isinstance(tag, str)] if isinstance(raw_tags, list) else []
+            safe_metadata = [metadata.get("detail"), " ".join(tags), metadata.get("collection")]
+            searchable_content = next((value for value in safe_metadata if isinstance(value, str) and normalized.casefold() in value.casefold()), content)
+        match_at = searchable_content.casefold().find(normalized.casefold())
         if match_at >= 0:
             start = max(0, match_at - 70)
-            excerpt = ("…" if start else "") + content[start : match_at + len(normalized) + 110].strip()
-            if start + len(excerpt) < len(content):
+            excerpt = ("…" if start else "") + searchable_content[start : match_at + len(normalized) + 110].strip()
+            if start + len(excerpt) < len(searchable_content):
                 excerpt += "…"
         else:
-            excerpt = content[:180].strip() + ("…" if len(content) > 180 else "")
+            excerpt = searchable_content[:180].strip() + ("…" if len(searchable_content) > 180 else "")
         response.append(WorkspaceSearchResult(
             object_id=item.id,
             object_type=item.object_type,

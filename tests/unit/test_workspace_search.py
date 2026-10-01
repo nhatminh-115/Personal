@@ -69,3 +69,22 @@ async def test_workspace_search_treats_wildcards_literally_and_caps_results(asyn
     assert wildcard.json() == []
     blank = await async_client.get("/v1/workspace/search", params={"query": "   "})
     assert blank.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_workspace_search_indexes_library_reference_metadata_without_reading_files(async_client):
+    created = await async_client.post(
+        "/v1/workspace/library",
+        json={
+            "name": "architecture.pdf", "kind": "PDF", "collection": "Books",
+            "detail": "Graph systems reference", "tags": ["workspace-index"],
+        },
+    )
+    assert created.status_code == 201
+
+    result = await async_client.get("/v1/workspace/search", params={"query": "workspace-index"})
+    assert result.status_code == 200
+    assert len(result.json()) == 1
+    assert result.json()[0]["title"] == "architecture.pdf"
+    assert result.json()[0]["excerpt"] == "workspace-index"
+    assert "storage_location" not in result.text
