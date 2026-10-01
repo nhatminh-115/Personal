@@ -7,6 +7,10 @@ from app.db.models import MemoryModel
 from app.memory.base import MemoryService, MemoryType
 
 
+MAX_PROJECT_MEMORY_ITEMS = 24
+MAX_PROJECT_MEMORY_CHARS = 12_000
+
+
 class AssembledContext(BaseModel):
     """Structured, typed memory context assembled for an execution turn."""
 
@@ -17,6 +21,7 @@ class AssembledContext(BaseModel):
     semantic_items: List[Tuple[str, float]] = Field(default_factory=list)
     profile_facts: Dict[str, str] = Field(default_factory=dict)
     project_facts: List[str] = Field(default_factory=list)
+    project_memory_ids: List[str] = Field(default_factory=list)
 
     def format_for_system_prompt(self) -> str:
         """Format non-working memory context into a deterministic, human-readable system prompt section."""
@@ -73,12 +78,22 @@ class ContextAssembler:
 
         # 3. Project Memory: Strictly scoped to project_name if provided
         if project_name:
-            proj_memories = await self.mem_service.get_project_memories(project_name, is_active_only=True)
+            proj_memories = await self.mem_service.get_project_memories(
+                project_name,
+                is_active_only=True,
+                limit=MAX_PROJECT_MEMORY_ITEMS,
+            )
             seen_facts = set()
+            project_memory_chars = 0
             for pm in proj_memories:
-                if pm.content not in seen_facts:
-                    context.project_facts.append(pm.content)
-                    seen_facts.add(pm.content)
+                if pm.content in seen_facts:
+                    continue
+                if project_memory_chars + len(pm.content) > MAX_PROJECT_MEMORY_CHARS:
+                    continue
+                context.project_facts.append(pm.content)
+                context.project_memory_ids.append(pm.id)
+                project_memory_chars += len(pm.content)
+                seen_facts.add(pm.content)
 
         # 4. Episodic Memory: Narrative records of recent milestones
         episodes = await self.mem_service.get_recent_episodes(session_id=session_id, limit=recent_episodes_limit)

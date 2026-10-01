@@ -46,6 +46,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
 
     context_items = list(state.get("retrieved_context", []))
     messages = list(state.get("messages", []))
+    project_memory_ids: list[str] = []
 
     if mem_service:
         project_name = state.get("project_name")
@@ -58,6 +59,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             user_message=state.get("user_message", ""),
             project_name=project_name,
         )
+        project_memory_ids = assembled.project_memory_ids
 
         if not messages and assembled.working_messages:
             messages.extend(assembled.working_messages)
@@ -152,6 +154,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                 "context_count": len(context_items),
                 "history_length": len(messages),
                 "compiled_object_count": len(compiled_context.objects) if compiled_context else 0,
+                "project_memory_ids": project_memory_ids,
             },
         )
 
