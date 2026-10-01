@@ -1,20 +1,12 @@
 import { BookOpen, Braces, FileText, Network, NotebookPen, ScrollText, X } from 'lucide-react';
-import type { AIContextItem, ContextScope } from '../../types';
+import type { AIContextItem } from '../../types';
 
 interface AIContextPanelProps {
   items: AIContextItem[];
-  scope: ContextScope;
-  onScopeChange: (scope: ContextScope) => void;
+  contextIsLive: boolean;
   onToggleItem: (id: string) => void;
   onClose: () => void;
 }
-
-const scopes: { id: ContextScope; label: string }[] = [
-  { id: 'branch', label: 'Current branch' },
-  { id: 'project', label: 'Project' },
-  { id: 'selection', label: 'Selected objects' },
-  { id: 'library', label: 'Library' },
-];
 
 const iconByKind = {
   turn: ScrollText,
@@ -24,7 +16,7 @@ const iconByKind = {
   file: FileText,
 } as const;
 
-export function AIContextPanel({ items, scope, onScopeChange, onToggleItem, onClose }: AIContextPanelProps) {
+export function AIContextPanel({ items, contextIsLive, onToggleItem, onClose }: AIContextPanelProps) {
   const included = items.filter((item) => item.included);
   const tokens = included.reduce((sum, item) => sum + item.tokens, 0);
 
@@ -40,25 +32,13 @@ export function AIContextPanel({ items, scope, onScopeChange, onToggleItem, onCl
         </button>
       </div>
 
-      <div className="ai-context-scope" role="tablist" aria-label="Context scope">
-        {scopes.map((entry) => (
-          <button
-            type="button"
-            key={entry.id}
-            className={scope === entry.id ? 'is-active' : ''}
-            onClick={() => onScopeChange(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
-
       <div className="ai-context-summary">
         <span><Network size={13} /> {included.length} objects included</span>
-        <strong>{(tokens / 1000).toFixed(1)}k tokens</strong>
+        <strong>~{(tokens / 1000).toFixed(1)}k estimated tokens</strong>
       </div>
 
       <div className="ai-context-items">
+        {items.length === 0 ? <p className="ai-context-empty">{contextIsLive ? 'No saved workspace objects are available in this project yet.' : 'This demo uses illustrative context only.'}</p> : null}
         {items.map((item) => {
           const Icon = iconByKind[item.kind];
           return (
@@ -75,14 +55,14 @@ export function AIContextPanel({ items, scope, onScopeChange, onToggleItem, onCl
                 <strong>{item.title}</strong>
                 <small>{item.detail}</small>
               </span>
-              <em>{item.tokens >= 1000 ? `${(item.tokens / 1000).toFixed(1)}k` : item.tokens}</em>
+              <em>~{item.tokens >= 1000 ? `${(item.tokens / 1000).toFixed(1)}k` : item.tokens}</em>
             </button>
           );
         })}
       </div>
 
       <div className="ai-context-panel__foot">
-        <small>Explicit manifest only. Hidden chain-of-thought is never exposed.</small>
+        <small>{contextIsLive ? 'Only selected saved project objects are sent with this message. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
       </div>
     </div>
   );

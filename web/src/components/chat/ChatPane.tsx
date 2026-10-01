@@ -18,7 +18,6 @@ import type {
   ApprovalDetail,
   AuraWorkMode,
   ChatMessage,
-  ContextScope,
   ExecutionStep,
 } from '../../types';
 import { ApprovalCard } from '../approvals/ApprovalCard';
@@ -34,6 +33,7 @@ export interface ChatPaneProps {
   messages: ChatMessage[];
   onMessagesChange: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void;
   contextItems?: AIContextItem[];
+  contextIsLive?: boolean;
   focusedMessageId?: string | null;
   onMessageFocus?: (message: ChatMessage) => void;
   onBranchFromMessage?: (message: ChatMessage) => void;
@@ -63,19 +63,6 @@ const workModes: { id: AuraWorkMode; label: string; icon: typeof Sparkles }[] = 
   { id: 'research', label: 'Research', icon: Search },
   { id: 'code', label: 'Code', icon: Code2 },
   { id: 'write', label: 'Write', icon: Sparkles },
-];
-
-const scopeLabel: Record<ContextScope, string> = {
-  branch: 'Current branch',
-  project: 'Project',
-  selection: 'Selected',
-  library: 'Library',
-};
-
-const fallbackContext: AIContextItem[] = [
-  { id: 'ctx-root', kind: 'turn', title: 'Current thread', detail: 'conversation · ancestry', tokens: 2100, included: true, nodeId: 'root-answer' },
-  { id: 'ctx-note', kind: 'note', title: 'Linked project note', detail: 'manual note', tokens: 84, included: true, nodeId: 'note-ttt' },
-  { id: 'ctx-file', kind: 'file', title: 'Project files', detail: 'explicitly linked artifacts', tokens: 720, included: false },
 ];
 
 function routeForMode(mode: AuraWorkMode) {
@@ -115,6 +102,7 @@ export function ChatPane({
   messages,
   onMessagesChange,
   contextItems: suppliedContext,
+  contextIsLive = false,
   focusedMessageId,
   onMessageFocus,
   onBranchFromMessage,
@@ -129,15 +117,14 @@ export function ChatPane({
   const [openExecution, setOpenExecution] = useState<OpenExecution | null>(null);
   const [draft, setDraft] = useState('');
   const [workMode, setWorkMode] = useState<AuraWorkMode>('auto');
-  const [scope, setScope] = useState<ContextScope>('branch');
-  const [contextItems, setContextItems] = useState<AIContextItem[]>(() => (suppliedContext ?? fallbackContext).map((item) => ({ ...item })));
+  const [contextItems, setContextItems] = useState<AIContextItem[]>(() => (suppliedContext ?? []).map((item) => ({ ...item })));
   const [contextOpen, setContextOpen] = useState(false);
   const [runPhase, setRunPhase] = useState<RunPhase | null>(null);
   const timersRef = useRef<number[]>([]);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
-    setContextItems((suppliedContext ?? fallbackContext).map((item) => ({ ...item })));
+    setContextItems((suppliedContext ?? []).map((item) => ({ ...item })));
     setContextOpen(false);
   }, [threadTitle, suppliedContext]);
 
@@ -181,7 +168,7 @@ export function ChatPane({
       setContextOpen(false);
       setRunPhase('routing');
       try {
-        await onSendMessage(prompt);
+        await onSendMessage(prompt, includedContext.map((item) => item.nodeId).filter((id): id is string => Boolean(id)));
       } finally {
         setRunPhase(null);
       }
@@ -364,8 +351,7 @@ export function ChatPane({
           {contextOpen ? (
             <AIContextPanel
               items={contextItems}
-              scope={scope}
-              onScopeChange={setScope}
+              contextIsLive={contextIsLive}
               onToggleItem={(id) => setContextItems((current) => current.map((item) => item.id === id ? { ...item, included: !item.included } : item))}
               onClose={() => setContextOpen(false)}
             />
@@ -402,9 +388,9 @@ export function ChatPane({
                 <span className="composer-context__icon"><Layers3 size={13} /></span>
                 <span className="composer-context__copy">
                   <strong>Context</strong>
-                  <small>{scopeLabel[scope]}</small>
+                  <small>{contextIsLive ? 'Project objects' : 'Demo examples'}</small>
                 </span>
-                <span className="composer-context__stats">{includedContext.length} objects · {(contextTokens / 1000).toFixed(1)}k</span>
+                <span className="composer-context__stats">{includedContext.length} objects · ~{(contextTokens / 1000).toFixed(1)}k estimated tokens</span>
                 <ChevronDown className="composer-context__chevron" size={11} />
               </button>
             </div>
