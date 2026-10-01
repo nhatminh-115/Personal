@@ -153,6 +153,22 @@ class MemoryModel(Base):
     session: Mapped[Optional["SessionModel"]] = relationship("SessionModel", back_populates="memories")
 
 
+class PersonalNoteModel(Base):
+    """User-authored notes shared across the personal workspace."""
+
+    __tablename__ = "personal_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    project_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    project_names_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 class EventStatus(str, Enum):
     """Lifecycle statuses for event outbox processing."""
     PENDING = "pending"

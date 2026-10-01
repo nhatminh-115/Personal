@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ContextSelectionError
-from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
+from app.db.models import PersonalNoteModel, WorkspaceEdgeModel, WorkspaceObjectModel
 
 
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
@@ -34,23 +34,31 @@ class WorkspaceContextCompiler:
         self.db = db
         self.max_chars = max_chars
 
-    async def compile(self, project_name: str, selected_ids: list[str]) -> CompiledWorkspaceContext:
+    async def compile(
+        self,
+        project_name: str,
+        selected_ids: list[str],
+        personal_note_ids: list[str] | None = None,
+    ) -> CompiledWorkspaceContext:
         roots = list(dict.fromkeys(selected_ids))
-        if not roots:
+        note_roots = list(dict.fromkeys(personal_note_ids or []))
+        if not roots and not note_roots:
             return CompiledWorkspaceContext(project_name=project_name)
 
-        result = await self.db.execute(
-            select(WorkspaceObjectModel).where(
-                WorkspaceObjectModel.project_name == project_name,
-                WorkspaceObjectModel.id.in_(roots),
+        objects: dict[str, WorkspaceObjectModel] = {}
+        if roots:
+            result = await self.db.execute(
+                select(WorkspaceObjectModel).where(
+                    WorkspaceObjectModel.project_name == project_name,
+                    WorkspaceObjectModel.id.in_(roots),
+                )
             )
-        )
-        objects = {item.id: item for item in result.scalars()}
-        if len(objects) != len(roots):
-            raise ContextSelectionError(
-                "One or more selected workspace objects were not found in this project.",
-                {"project_name": project_name, "requested_count": len(roots)},
-            )
+            objects = {item.id: item for item in result.scalars()}
+            if len(objects) != len(roots):
+                raise ContextSelectionError(
+                    "One or more selected workspace objects were not found in this project.",
+                    {"project_name": project_name, "requested_count": len(roots)},
+                )
 
         included = set(roots)
         linked_sources: dict[str, list[str]] = {}
@@ -125,6 +133,32 @@ class WorkspaceContextCompiler:
                     source_object_ids=sorted(set(linked_sources.get(item.id, []))),
                 )
             )
+
+        if note_roots:
+            note_result = await self.db.execute(
+                select(PersonalNoteModel).where(PersonalNoteModel.id.in_(note_roots))
+            )
+            notes = {note.id: note for note in note_result.scalars()}
+            if len(notes) != len(note_roots) or any(
+                project_name not in (note.project_names_json or []) for note in notes.values()
+            ):
+                raise ContextSelectionError(
+                    "One or more selected personal notes are not linked to this project.",
+                    {"project_name": project_name, "requested_count": len(note_roots)},
+                )
+            for note_id in note_roots:
+                note = notes[note_id]
+                rendered.append(
+                    f"[Personal note {note.id} | title: {note.title or '(untitled)'}]\n"
+                    f"{note.body}"
+                )
+                manifest.append(
+                    CompiledContextObject(
+                        object_id=note.id,
+                        object_type="personal_note",
+                        selected_by_user=True,
+                    )
+                )
         prompt_text = "\n\n".join(rendered)
         if len(prompt_text) > self.max_chars:
             raise ContextSelectionError(

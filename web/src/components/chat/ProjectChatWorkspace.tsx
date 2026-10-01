@@ -19,8 +19,8 @@ export interface ProjectChatWorkspaceProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[]) => Promise<void>;
-  onStartLiveChat?: (text: string) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], personalNoteIds?: string[]) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], personalNoteIds?: string[]) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -65,13 +65,14 @@ export function ProjectChatWorkspace({
       tokens: 500 + index * 240,
       included: index < 2,
     }));
-    const projectNotes = notes.filter((note) => note.projectIds.includes(project.id)).slice(0, 2).map((note) => ({
+    const projectNotes = notes.filter((note) => note.projectIds.includes(project.id)).map((note) => ({
       id: `note-${note.id}`,
       kind: 'note' as const,
       title: note.title,
       detail: 'linked workspace note',
       tokens: Math.max(80, Math.round(note.body.length * 0.7)),
       included: true,
+      personalNoteId: note.id,
     }));
     const artifacts = projectArtifacts.filter((item) => item.projectId === project.id).slice(0, 2).map((item) => ({
       id: `artifact-${item.id}`,
