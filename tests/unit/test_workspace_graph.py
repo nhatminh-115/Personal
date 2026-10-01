@@ -141,6 +141,35 @@ async def test_live_conversation_messages_are_project_graph_objects(test_db_sess
 
 
 @pytest.mark.asyncio
+async def test_system_conversation_edges_are_immutable_but_user_edges_are_deletable(async_client, test_db_session):
+    service = SQLMemoryService(test_db_session)
+    session = await service.get_or_create_session("immutable-conversation-edge")
+    session.project_name = "aura"
+    await test_db_session.commit()
+    await service.save_message(session.id, "user", "Question")
+    await service.save_message(session.id, "assistant", "Answer")
+
+    from sqlalchemy import select
+    from app.db.models import WorkspaceEdgeModel
+
+    system_edge = (await test_db_session.execute(select(WorkspaceEdgeModel))).scalar_one()
+    denied = await async_client.delete(f"/v1/workspace/projects/aura/edges/{system_edge.id}")
+    assert denied.status_code == 409
+    assert (await test_db_session.get(WorkspaceEdgeModel, system_edge.id)) is not None
+
+    user_edge = await async_client.post("/v1/workspace/projects/aura/edges", json={
+        "source_object_id": system_edge.source_object_id,
+        "target_object_id": system_edge.target_object_id,
+        "relation_type": "annotates",
+        "edge_family": "semantic",
+    })
+    assert user_edge.status_code == 201
+    deleted = await async_client.delete(f"/v1/workspace/projects/aura/edges/{user_edge.json()['id']}")
+    assert deleted.status_code == 204
+    assert await test_db_session.get(WorkspaceEdgeModel, system_edge.id) is not None
+
+
+@pytest.mark.asyncio
 async def test_session_cannot_be_reassigned_to_another_project(async_client, test_db_session):
     service = SQLMemoryService(test_db_session)
     session = await service.get_or_create_session("project-bound-session")
