@@ -188,6 +188,114 @@ describe('Routing Studio v2', () => {
     expect(onSaved).toHaveBeenCalled();
   });
 
+  it('resets project assignment to System Balanced so routing inherits', async () => {
+    const defaultFetch = global.fetch as ReturnType<typeof vi.fn>;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url === '/v1/routing/assignments/Project') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ project_name: 'Project', routing_profile_id: 'custom-profile' }) } as Response);
+      }
+      return defaultFetch(input, init);
+    });
+
+    const onSaved = vi.fn();
+    render(<RoutingStudio
+      open projectName="Project" sessionAvailable={false} demoThread={false}
+      effective={{ profile: customProfile, winning_scope: 'project' }}
+      catalog={{ providers: [] }}
+      onClose={vi.fn()} onSaved={onSaved} onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'system-balanced' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    await waitFor(() => expect(calls.some(({ url, init }) =>
+      url === '/v1/routing/assignments/Project?profile_id=system-balanced' && init?.method === 'POST',
+    )).toBe(true));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('resets a live session assignment to inheritance with a null profile', async () => {
+    const defaultFetch = global.fetch as ReturnType<typeof vi.fn>;
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, init });
+      if (url === '/v1/routing/sessions/live-session' && !init?.method) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'live-session', routing_profile_id: 'custom-profile' }) } as Response);
+      }
+      return defaultFetch(input, init);
+    });
+
+    const onSaved = vi.fn();
+    render(<RoutingStudio
+      open projectName="Project" sessionId="live-session" sessionAvailable demoThread={false}
+      effective={{ profile: customProfile, winning_scope: 'session' }}
+      catalog={{ providers: [] }}
+      onClose={vi.fn()} onSaved={onSaved} onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
+    fireEvent.change(screen.getByLabelText('Assigned profile'), { target: { value: 'system-balanced' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
+
+    await waitFor(() => expect(calls.some(({ url, init }) =>
+      url === '/v1/routing/sessions/live-session'
+      && init?.method === 'PUT'
+      && init.body === JSON.stringify({ profile_id: null }),
+    )).toBe(true));
+    expect(onSaved).toHaveBeenCalled();
+  });
+
+  it('shows fixed-by-model controls truthfully and keeps unknown reasoning explicit', async () => {
+    const fixedProfile: RoutingProfile = {
+      ...customProfile,
+      id: 'fixed-profile',
+      name: 'Fixed model profile',
+      routes: {
+        root: {
+          model_override: 'local:fixed-model',
+          reasoning: { policy: 'fixed', effort: 'medium', min_effort: 'low', max_effort: 'high' },
+        },
+      },
+    };
+    const defaultFetch = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/v1/routing/profiles') {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([fixedProfile]) } as Response);
+      }
+      return defaultFetch(input, init);
+    });
+    render(<RoutingStudio
+      open projectName="Project" sessionAvailable={false} demoThread={false}
+      effective={{ profile: fixedProfile, winning_scope: 'project' }}
+      catalog={{ providers: [{
+        id: 'local', label: 'Local', kind: 'local', available: true, base_url: 'local', privacy_status: 'local',
+        models: [
+          { id: 'fixed-model', label: 'Fixed model', capabilities: [], tool_support: 'unknown', reasoning_support: 'fixed_by_model' },
+          { id: 'unknown-model', label: 'Unknown model', capabilities: [], tool_support: 'unknown', reasoning_support: 'unknown' },
+        ],
+      }] }}
+      onClose={vi.fn()} onSaved={vi.fn()} onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    expect(screen.getByLabelText('Reasoning control')).toHaveValue('Fixed by model');
+    expect(screen.queryByLabelText('Reasoning')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByLabelText('Model')[0], { target: { value: 'local:unknown-model' } });
+    const unknownReasoningNote = screen.getAllByText(/reasoning control is unknown/i)[0];
+    expect(unknownReasoningNote.closest('label')?.querySelector('select')).not.toBeNull();
+  });
+
   it('renders preview fields instead of raw JSON', async () => {
     await openProject();
     fireEvent.click(screen.getByText(/System Balanced · system/i));
