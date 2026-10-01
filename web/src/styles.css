@@ -1738,6 +1738,29 @@ input:focus-visible {
   border-top: 1px solid rgba(162, 188, 207, 0.07);
 }
 
+.aura-node__source-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #87cdd7;
+  text-decoration: none;
+}
+
+.aura-node__source-link:hover {
+  color: #b1edf2;
+}
+
+.research-node-meta {
+  display: block;
+  overflow: hidden;
+  margin-top: 6px;
+  color: #728894;
+  font-size: 9px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .context-lens__merge {
   grid-template-columns: auto minmax(180px, 1fr) auto;
   align-items: center;

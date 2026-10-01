@@ -8,6 +8,7 @@ import {
   Check,
   ChevronRight,
   Code2,
+  ExternalLink,
   FileText,
   GitMerge,
   Link2,
@@ -28,6 +29,17 @@ function updateGlow(event: ReactPointerEvent<HTMLDivElement>) {
   const rect = event.currentTarget.getBoundingClientRect();
   event.currentTarget.style.setProperty('--glow-x', `${event.clientX - rect.left}px`);
   event.currentTarget.style.setProperty('--glow-y', `${event.clientY - rect.top}px`);
+}
+
+function safeResearchSourceUrl(value: unknown): string | null {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== 'https:' && url.protocol !== 'http:') || url.username || url.password) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
 }
 
 const densityIcons: Record<NodeDensity, typeof Minimize2> = {
@@ -66,6 +78,21 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
   const DensityIcon = densityIcons[data.density];
   const isExecution = data.kind === 'execution';
   const displayText = data.density === 'collapsed' ? data.summary ?? data.body : data.density === 'compact' ? data.summary ?? data.body : data.body;
+  const researchMetadata = data.workspaceMetadata ?? {};
+  const sourceUrl = data.workspaceObjectType === 'research_source' ? safeResearchSourceUrl(researchMetadata.url) : null;
+  const researchDetails = data.workspaceObjectType === 'research_source'
+    ? [
+        typeof researchMetadata.canonical_id === 'string' ? researchMetadata.canonical_id : null,
+        typeof researchMetadata.year === 'number' ? String(researchMetadata.year) : null,
+        Array.isArray(researchMetadata.authors) && researchMetadata.authors.every((author) => typeof author === 'string')
+          ? researchMetadata.authors.join(', ') : null,
+      ].filter((value): value is string => Boolean(value))
+    : data.workspaceObjectType === 'research_evidence'
+      ? [
+          typeof researchMetadata.source_locator === 'string' ? researchMetadata.source_locator : null,
+          typeof researchMetadata.confidence === 'number' ? `${Math.round(researchMetadata.confidence * 100)}% confidence` : null,
+        ].filter((value): value is string => Boolean(value))
+      : [];
 
   return (
     <div
@@ -120,6 +147,10 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
         <p className="aura-node__body">{displayText}</p>
       )}
 
+      {researchDetails.length ? (
+        <small className="research-node-meta">{researchDetails.join(' · ')}</small>
+      ) : null}
+
       {data.chip ? (
         <div className="node-execution-chip">
           <Bot size={11} />
@@ -140,6 +171,20 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
           <button type="button" onClick={() => data.onUseWorkspaceContext?.(id)}>
             {data.workspaceObjectType === 'conversation_branch' ? <><GitBranch size={11} /> Continue in Chat</> : <>Use in Chat</>}
           </button>
+        </div>
+      ) : null}
+      {sourceUrl ? (
+        <div className="aura-node__actions nodrag nopan">
+          <a
+            className="aura-node__source-link"
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`Open source: ${data.title}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <ExternalLink size={11} /> Open source
+          </a>
         </div>
       ) : null}
     </div>

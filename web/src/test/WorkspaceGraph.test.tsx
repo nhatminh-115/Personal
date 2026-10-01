@@ -282,7 +282,8 @@ describe('Persistent workspace graph Board projection', () => {
     const graph: WorkspaceGraph = {
       ...savedGraph,
       objects: [
-        { ...savedGraph.objects[0], id: 'research-source-node', session_id: null, source_message_id: null, object_type: 'research_source', created_by: 'research', title: 'Durable Workflows', content: 'Workflow overview.', metadata_json: { canonical_id: 'doi:10.1000/workflows' } },
+        { ...savedGraph.objects[0], id: 'research-source-node', session_id: null, source_message_id: null, object_type: 'research_source', created_by: 'research', title: 'Durable Workflows', content: 'Workflow overview.', metadata_json: { canonical_id: 'doi:10.1000/workflows', authors: ['A. Researcher'], year: 2025, url: 'https://example.org/paper' } },
+        { ...savedGraph.objects[0], id: 'research-unsafe-source-node', session_id: null, source_message_id: null, object_type: 'research_source', created_by: 'research', title: 'Unsafe Link Record', content: 'Metadata URL must not become a script link.', metadata_json: { url: 'javascript:alert(1)' } },
         { ...savedGraph.objects[0], id: 'research-evidence-node', session_id: null, source_message_id: null, object_type: 'research_evidence', created_by: 'research', title: 'Evidence · Durable Workflows', content: 'Execution resumes from a persisted checkpoint.', metadata_json: { source_locator: 'Section 3' } },
         { ...savedGraph.objects[0], id: 'research-claim-node', session_id: null, source_message_id: null, object_type: 'research_claim', created_by: 'research', title: 'source_supported_fact · Durable state', content: 'Claim type: source_supported_fact\nVerification: verified\n\nDurable state resumes after restart.', metadata_json: { verification_status: 'verified' } },
       ],
@@ -305,7 +306,11 @@ describe('Persistent workspace graph Board projection', () => {
     expect(container.querySelector('[data-id="research-source-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH SOURCE');
     expect(container.querySelector('[data-id="research-evidence-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH EVIDENCE');
     expect(container.querySelector('[data-id="research-claim-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH CLAIM');
-    expect(container.querySelectorAll('[data-id^="research-"]')).toHaveLength(3);
+    expect(container.querySelector('[data-id="research-source-node"] .research-node-meta')).toHaveTextContent('doi:10.1000/workflows · 2025 · A. Researcher');
+    expect(container.querySelector<HTMLAnchorElement>('[data-id="research-source-node"] a[aria-label="Open source: Durable Workflows"]')).toHaveAttribute('href', 'https://example.org/paper');
+    expect(container.querySelector('[data-id="research-evidence-node"] .research-node-meta')).toHaveTextContent('Section 3');
+    expect(container.querySelector('[data-id="research-unsafe-source-node"] a[aria-label^="Open source:"]')).toBeNull();
+    expect(container.querySelectorAll('[data-id^="research-"]')).toHaveLength(4);
   });
 
 });
