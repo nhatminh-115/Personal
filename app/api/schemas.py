@@ -154,6 +154,10 @@ class WorkspaceEdgeCreate(BaseModel):
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkspaceEdgeBatchDelete(BaseModel):
+    edge_ids: List[str] = Field(min_length=1, max_length=100)
+
+
 class WorkspaceLayoutWrite(BaseModel):
     layout: Dict[str, Any]
     expected_revision: int = Field(ge=0)

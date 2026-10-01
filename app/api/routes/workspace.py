@@ -8,6 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
+    WorkspaceEdgeBatchDelete,
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
     WorkspaceExecutionEventResponse,
@@ -363,8 +364,36 @@ async def delete_workspace_edge(project_name: str, edge_id: str, db: AsyncSessio
     edge = await db.get(WorkspaceEdgeModel, edge_id)
     if edge is None or edge.project_name != project_name:
         raise HTTPException(status_code=404, detail="Workspace edge not found.")
+    if edge.created_by != "user":
+        raise HTTPException(status_code=409, detail="System-created workspace edges cannot be deleted.")
     await db.delete(edge)
     await db.commit()
+
+
+@router.post("/projects/{project_name}/edges/batch-delete", response_model=list[WorkspaceEdgeResponse])
+async def delete_workspace_edges(
+    project_name: str,
+    body: WorkspaceEdgeBatchDelete,
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceEdgeResponse]:
+    edge_ids = list(dict.fromkeys(body.edge_ids))
+    await _lock_project_graph(db, project_name)
+    result = await db.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == project_name,
+            WorkspaceEdgeModel.id.in_(edge_ids),
+        )
+    )
+    edges = list(result.scalars())
+    if len(edges) != len(edge_ids):
+        raise HTTPException(status_code=404, detail="One or more workspace edges were not found in this project.")
+    if any(edge.created_by != "user" for edge in edges):
+        raise HTTPException(status_code=409, detail="System-created workspace edges cannot be deleted.")
+    snapshots = [_edge_response(edge) for edge in edges]
+    for edge in edges:
+        await db.delete(edge)
+    await db.commit()
+    return snapshots
 
 
 @router.put("/projects/{project_name}/layout", response_model=WorkspaceLayoutResponse)

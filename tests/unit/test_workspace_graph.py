@@ -156,6 +156,77 @@ async def test_session_cannot_be_reassigned_to_another_project(async_client, tes
 
 
 @pytest.mark.asyncio
+async def test_system_created_reply_edge_cannot_be_deleted(async_client, test_db_session):
+    service = SQLMemoryService(test_db_session)
+    session = await service.get_or_create_session("protected-reply-session")
+    session.project_name = "aura"
+    await test_db_session.commit()
+    await service.save_message(session.id, "user", "Question", metadata={"run_id": "protected-reply-run"})
+    await service.save_message(session.id, "assistant", "Answer", metadata={"run_id": "protected-reply-run"})
+
+    from sqlalchemy import select
+    from app.db.models import WorkspaceEdgeModel
+
+    edge = (await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == "aura", WorkspaceEdgeModel.created_by == "system",
+        )
+    )).scalar_one()
+    response = await async_client.delete(f"/v1/workspace/projects/aura/edges/{edge.id}")
+
+    assert response.status_code == 409
+    still_exists = await test_db_session.get(WorkspaceEdgeModel, edge.id)
+    assert still_exists is not None
+
+
+@pytest.mark.asyncio
+async def test_batch_edge_delete_is_atomic_and_only_deletes_user_edges(async_client, test_db_session):
+    first = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "First", "content": "First note",
+    })
+    second = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Second", "content": "Second note",
+    })
+    third = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Third", "content": "Third note",
+    })
+    assert all(item.status_code == 201 for item in (first, second, third))
+
+    async def user_edge(source: str, target: str):
+        response = await async_client.post("/v1/workspace/projects/aura/edges", json={
+            "source_object_id": source, "target_object_id": target,
+            "relation_type": "related_to", "edge_family": "semantic",
+        })
+        assert response.status_code == 201
+        return response.json()["id"]
+
+    first_edge = await user_edge(first.json()["id"], second.json()["id"])
+    second_edge = await user_edge(second.json()["id"], third.json()["id"])
+    from app.db.models import WorkspaceEdgeModel
+    protected_edge = WorkspaceEdgeModel(
+        project_name="aura", source_object_id=first.json()["id"], target_object_id=third.json()["id"],
+        relation_type="reply", edge_family="context", created_by="system", metadata_json={},
+    )
+    test_db_session.add(protected_edge)
+    await test_db_session.commit()
+
+    rejected = await async_client.post("/v1/workspace/projects/aura/edges/batch-delete", json={
+        "edge_ids": [first_edge, protected_edge.id],
+    })
+    assert rejected.status_code == 409
+    assert await test_db_session.get(WorkspaceEdgeModel, first_edge) is not None
+    assert await test_db_session.get(WorkspaceEdgeModel, protected_edge.id) is not None
+
+    deleted = await async_client.post("/v1/workspace/projects/aura/edges/batch-delete", json={
+        "edge_ids": [first_edge, second_edge],
+    })
+    assert deleted.status_code == 200
+    assert {edge["id"] for edge in deleted.json()} == {first_edge, second_edge}
+    assert await test_db_session.get(WorkspaceEdgeModel, first_edge) is None
+    assert await test_db_session.get(WorkspaceEdgeModel, second_edge) is None
+
+
+@pytest.mark.asyncio
 async def test_chat_compiles_selected_workspace_context_and_records_provenance(async_client, test_db_session):
     from app.db.models import WorkspaceObjectModel
     from app.models.router import model_router

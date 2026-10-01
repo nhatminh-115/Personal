@@ -205,6 +205,13 @@ export const api = {
     await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
   },
 
+  async deleteWorkspaceEdges(projectName: string, edgeIds: string[]): Promise<WorkspaceEdge[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edge_ids: edgeIds }),
+    }));
+  },
+
   async putWorkspaceLayout(projectName: string, layout: Record<string, any>, expectedRevision: number): Promise<WorkspaceLayout> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },

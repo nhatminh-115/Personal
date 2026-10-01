@@ -20,6 +20,7 @@ import { ContextLensBar } from './ContextLensBar';
 import { SmartEdge } from './SmartEdge';
 import { ApiError, api } from '../../services/api';
 import { projectExecutionGraph } from './executionProjection';
+import { isWorkspaceEdgeDeletable } from './workspaceEdgePolicy';
 
 const nodeTypes = { aura: AuraNodeCard };
 const edgeTypes = { smart: SmartEdge };
@@ -93,7 +94,10 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     source: edge.source_object_id,
     target: edge.target_object_id,
     type: 'smoothstep',
-    data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
+    data: {
+      edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic',
+      createdBy: edge.created_by,
+    },
   }));
   const execution = projectExecutionGraph(graph.execution_traces ?? [], nodes);
   return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges };
@@ -428,18 +432,28 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     async (edgeIds: string[]) => {
       const ids = new Set(edgeIds);
       if (ids.size === 0) return;
+      const systemEdgeIds = new Set(edgesRef.current
+        .filter((edge) => ids.has(edge.id) && !isWorkspaceEdgeDeletable(edge))
+        .map((edge) => edge.id));
+      const deletableIds = new Set([...ids].filter((id) => !systemEdgeIds.has(id)));
+      if (deletableIds.size === 0) {
+        toast('System relation protected', 'AURA keeps conversation and execution provenance links intact.');
+        return;
+      }
       if (workspaceProjectName) {
-        const persisted = edgesRef.current.filter((edge) => ids.has(edge.id) && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'));
+        const persisted = edgesRef.current.filter((edge) => deletableIds.has(edge.id) && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'));
         try {
-          await Promise.all(persisted.map((edge) => api.deleteWorkspaceEdge(workspaceProjectName, edge.id)));
+          if (persisted.length > 0) await api.deleteWorkspaceEdges(workspaceProjectName, persisted.map((edge) => edge.id));
         } catch {
           toast('Link was not deleted', 'AURA could not update the saved workspace graph.');
           return;
         }
       }
       recordHistory();
-      setEdges((current) => current.filter((edge) => !ids.has(edge.id)));
-      toast(ids.size === 1 ? 'Link deleted' : `${ids.size} links deleted`, 'Ctrl+Z restores the removed relation.');
+      setEdges((current) => current.filter((edge) => !deletableIds.has(edge.id)));
+      const deletedCount = [...deletableIds].filter((id) => edgesRef.current.some((edge) => edge.id === id)).length;
+      const keptMessage = systemEdgeIds.size > 0 ? ' System-owned conversation links were kept.' : '';
+      toast(deletedCount === 1 ? 'Link deleted' : `${deletedCount} links deleted`, `Ctrl+Z restores the removed relation.${keptMessage}`);
     },
     [recordHistory, setEdges, toast, workspaceProjectName],
   );
@@ -461,8 +475,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         data: {
           ...edge.data,
           edgeKind: kind,
-          onDelete: isExecution ? undefined : (id: string) => deleteEdges([id]),
+          onDelete: isExecution || !isWorkspaceEdgeDeletable(edge) ? undefined : (id: string) => deleteEdges([id]),
         },
+        deletable: !isExecution && isWorkspaceEdgeDeletable(edge),
       };
     });
   }, [deleteEdges, edges, executionEdges, executionNodes, layers.execution, nodes]);

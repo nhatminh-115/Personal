@@ -86,17 +86,19 @@ export function SmartEdge({
             style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}
           >
             <span>{kindLabel[kind]}</span>
-            <button
-              type="button"
-              aria-label={`Delete ${kindLabel[kind].toLowerCase()}`}
-              title="Delete link · Del"
-              onClick={(event) => {
-                event.stopPropagation();
-                data?.onDelete?.(id);
-              }}
-            >
-              <Trash2 size={11} />
-            </button>
+            {data?.onDelete ? (
+              <button
+                type="button"
+                aria-label={`Delete ${kindLabel[kind].toLowerCase()}`}
+                title="Delete link · Del"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  data.onDelete?.(id);
+                }}
+              >
+                <Trash2 size={11} />
+              </button>
+            ) : null}
           </div>
         </EdgeLabelRenderer>
       ) : null}
