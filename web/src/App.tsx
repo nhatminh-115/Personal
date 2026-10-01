@@ -58,6 +58,7 @@ import type {
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
+  AutomationRecordResponse,
   WorkspaceMode,
   EffectiveRouting,
   ReasoningEffort,
@@ -286,6 +287,7 @@ export default function App() {
   const noteUpdateInFlight = useRef(new Set<string>());
   const savedNoteFingerprints = useRef(new Map<string, string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
+  const automationsLoaded = useRef(false);
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -1172,6 +1174,7 @@ export default function App() {
     return () => { active = false; };
   }, [pushToast]);
 
+
   useEffect(() => {
     if (surface !== 'library' || libraryLoaded.current) return;
     let active = true;
@@ -1427,13 +1430,71 @@ export default function App() {
     ]
   );
 
-  const runAutomation = useCallback((automation: AutomationRecord) => {
-    setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'running', lastRun: 'Running now…' } : item));
-    pushToast(`Running · ${automation.name}`, 'Prototype run only — no external actions are executed.');
-    window.setTimeout(() => {
-      setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'ready', lastRun: 'Completed just now' } : item));
-    }, 1600);
+  const automationFromRecord = useCallback((record: AutomationRecordResponse, catalog: ProjectRecord[]): AutomationRecord => {
+    const project = record.project_name
+      ? catalog.find((item) => item.name.toLowerCase() === record.project_name!.toLowerCase())
+      : undefined;
+    const seconds = record.interval_seconds;
+    const intervalLabel = seconds % 86400 === 0 ? `Every ${seconds / 86400} day${seconds / 86400 === 1 ? '' : 's'}`
+      : seconds % 3600 === 0 ? `Every ${seconds / 3600} hour${seconds / 3600 === 1 ? '' : 's'}`
+      : `Every ${Math.round(seconds / 60)} minutes`;
+    return {
+      id: record.id, name: record.name, description: record.description, instruction: record.instruction,
+      enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
+      trigger: intervalLabel, actions: ['Run through AURA'],
+      lastRun: record.last_run_at ? new Date(record.last_run_at).toLocaleString() : 'Never',
+      nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
+      lastRunAt: record.last_run_at, nextRunAt: record.next_run_at,
+      status: record.enabled ? 'ready' : 'paused', source: 'live',
+    };
+  }, []);
+
+  const createAutomation = useCallback(async (input: {
+    name: string; description: string; instruction: string; scope: 'global' | 'project';
+    project_name?: string; interval_seconds: number;
+  }) => {
+    const record = await api.createAutomation(input);
+    const item = automationFromRecord(record, projectCatalog);
+    setAutomations((current) => [item, ...current.filter((entry) => entry.id !== item.id)]);
+    return item;
+  }, [automationFromRecord, projectCatalog]);
+
+  const setAutomationEnabled = useCallback(async (automation: AutomationRecord, enabled: boolean) => {
+    if (automation.source !== 'live') return;
+    try {
+      const record = await api.setAutomationEnabled(automation.id, enabled);
+      const updated = automationFromRecord(record, projectCatalog);
+      setAutomations((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (error) {
+      pushToast('Could not update automation', executionErrorText(error));
+    }
+  }, [automationFromRecord, projectCatalog, pushToast]);
+
+  const runAutomation = useCallback(async (automation: AutomationRecord) => {
+    if (automation.source !== 'live' || !automation.enabled) return;
+    try {
+      const result = await api.runAutomation(automation.id);
+      pushToast(`Queued · ${automation.name}`, `AURA accepted the run (${result.event_id.slice(0, 8)}).`);
+    } catch (error) {
+      pushToast('Could not queue automation', executionErrorText(error));
+    }
   }, [pushToast]);
+
+  useEffect(() => {
+    if (surface !== 'automations' || automationsLoaded.current) return;
+    let active = true;
+    void api.fetchAutomations().then((records) => {
+      if (!active || !Array.isArray(records)) return;
+      setAutomations((current) => {
+        const examples = current.filter((item) => item.source !== 'live');
+        return [...records.map((record) => automationFromRecord(record, projectCatalog)), ...examples];
+      });
+      automationsLoaded.current = true;
+    }).catch((error: unknown) => {
+      if (active) pushToast('Could not load automations', executionErrorText(error));
+    });
+    return () => { active = false; };
+  }, [automationFromRecord, projectCatalog, pushToast, surface]);
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
@@ -1594,7 +1655,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => void startStudySession(trackId)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (

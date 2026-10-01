@@ -347,6 +347,26 @@ export interface WorkspaceProjectRecord {
   updated_at: string;
 }
 
+export interface AutomationRecordResponse {
+  id: string;
+  name: string;
+  description: string;
+  instruction: string;
+  enabled: boolean;
+  scope: 'global' | 'project';
+  project_name: string | null;
+  interval_seconds: number;
+  last_run_at: string | null;
+  next_run_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AutomationRunResponse {
+  event_id: string;
+  status: 'queued';
+}
+
 export interface CompiledContextObject {
   object_id: string;
   object_type: string;

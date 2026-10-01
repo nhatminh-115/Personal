@@ -22,7 +22,7 @@ function greeting() {
 export function GlobalHome({ projects, libraryItems, automations, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
   const recent = projects.slice(0, 3);
   const recentFiles = libraryItems.slice(0, 4);
-  const activeAutomations = automations.filter((item) => item.enabled).length;
+  const activeAutomations = automations.filter((item) => item.source === 'live' && item.enabled).length;
 
   return (
     <section className="global-home">

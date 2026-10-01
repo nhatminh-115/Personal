@@ -1,0 +1,133 @@
+"""Durable user automation definitions backed by the persistent scheduler."""
+
+import uuid
+from datetime import timedelta
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.schemas import AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.db.models import JobType, ScheduledJobModel, utc_now
+from app.db.session import get_db
+from app.events.bus import event_bus
+from app.events.types import AURAEvent, EventType
+
+router = APIRouter(prefix="/v1/automations", tags=["Automations"])
+
+
+class AutomationEnabledWrite(BaseModel):
+    enabled: bool
+
+
+def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
+    metadata = job.metadata_json or {}
+    try:
+        interval_seconds = int(float(job.schedule_expression))
+    except (TypeError, ValueError):
+        interval_seconds = 0
+    scope = metadata.get("scope")
+    return AutomationResponse(
+        id=job.id,
+        name=job.name,
+        description=metadata.get("description", ""),
+        instruction=metadata.get("instruction", ""),
+        enabled=job.is_active,
+        scope=scope if scope in {"global", "project"} else "global",
+        project_name=metadata.get("project_name") if isinstance(metadata.get("project_name"), str) else None,
+        interval_seconds=interval_seconds,
+        last_run_at=job.last_run_at,
+        next_run_at=job.next_run_at,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+
+
+@router.get("", response_model=list[AutomationResponse])
+async def list_automations(db: AsyncSession = Depends(get_db)) -> list[AutomationResponse]:
+    result = await db.execute(select(ScheduledJobModel).order_by(ScheduledJobModel.created_at.desc(), ScheduledJobModel.id))
+    return [_automation_response(job) for job in result.scalars() if (job.metadata_json or {}).get("kind") == "automation"]
+
+
+@router.post("", response_model=AutomationResponse, status_code=status.HTTP_201_CREATED)
+async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
+    name = body.name.strip()
+    instruction = body.instruction.strip()
+    if not name or not instruction:
+        raise HTTPException(status_code=422, detail="Automation name and instruction must not be blank.")
+    if body.scope == "project" and not (body.project_name or "").strip():
+        raise HTTPException(status_code=422, detail="Project-scoped automations require a project.")
+
+    now = utc_now()
+    job = ScheduledJobModel(
+        name=name,
+        job_type=JobType.RECURRING.value,
+        schedule_expression=str(body.interval_seconds),
+        payload_json={},
+        is_active=True,
+        next_run_at=now + timedelta(seconds=body.interval_seconds),
+        metadata_json={},
+    )
+    db.add(job)
+    await db.flush()
+    session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-automation-session:{job.id}"))
+    job.payload_json = {
+        "message": instruction,
+        "session_id": session_id,
+        "project_name": body.project_name.strip() if body.scope == "project" and body.project_name else None,
+        "automation_id": job.id,
+    }
+    job.metadata_json = {
+        "kind": "automation",
+        "description": body.description.strip(),
+        "instruction": instruction,
+        "scope": body.scope,
+        "project_name": body.project_name.strip() if body.scope == "project" and body.project_name else None,
+    }
+    await db.commit()
+    await db.refresh(job)
+    return _automation_response(job)
+
+
+@router.put("/{automation_id}", response_model=AutomationResponse)
+async def set_automation_enabled(
+    automation_id: str,
+    body: AutomationEnabledWrite,
+    db: AsyncSession = Depends(get_db),
+) -> AutomationResponse:
+    job = await db.get(ScheduledJobModel, automation_id)
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    was_enabled = job.is_active
+    job.is_active = body.enabled
+    job.locked_at = None
+    job.locked_by = None
+    if body.enabled and not was_enabled:
+        try:
+            interval = max(60, int(float(job.schedule_expression)))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=409, detail="Automation interval is invalid.")
+        job.next_run_at = utc_now() + timedelta(seconds=interval)
+    job.updated_at = utc_now()
+    await db.commit()
+    await db.refresh(job)
+    return _automation_response(job)
+
+
+@router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)
+async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationRunResponse:
+    job = await db.get(ScheduledJobModel, automation_id)
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    if not job.is_active:
+        raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
+    event = AURAEvent(
+        event_type=EventType.TIMER_FIRED.value,
+        source="automation",
+        payload={**(job.payload_json or {}), "manual": True},
+        correlation_id=job.id,
+        idempotency_key=f"automation-manual-{job.id}-{uuid.uuid4()}",
+    )
+    queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
+    return AutomationRunResponse(event_id=queued.id)
