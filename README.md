@@ -6,7 +6,13 @@
 
 ## Architecture Overview
 
-AURA is designed as a stateful, predictable operating process rather than an ephemeral completion chatbot. 
+AURA is designed as a stateful, predictable operating process rather than an ephemeral completion chatbot.
+
+The web app presents a persistent workspace with **Home, Library, Notes, Study,
+Automations, and Projects**. A project is one reusable workspace tab; its
+Overview, Chat, Board, Split, and Files are views within that project. Chat and
+Board share the persisted project conversation graph. External Library files
+are referenced and indexed rather than moved into an AURA-owned vault.
 
 ```
                                       +---------------------------------------------+
@@ -36,7 +42,7 @@ AURA is designed as a stateful, predictable operating process rather than an eph
 
 1. **Personal Orchestrator (LangGraph):**
    - Pure state machine compiling discrete nodes: `load_context` -> `reason` -> `route_decision` -> `execute_tool` -> `verify_result` -> `update_memory`.
-   - **Durable Interruption:** High-risk actions call `interrupt()`, persisting state to `AsyncSqliteSaver`. Restarts survive seamlessly; resumes happen via `Command(resume=...)` by `thread_id=run_id`.
+   - **Durable Interruption:** Approval-gated actions call `interrupt()`, persisting LangGraph state to `AsyncSqliteSaver`. AURA resumes through `Command(resume=...)` using the run ID as the graph thread ID.
    - **Canonical Message Schema:** True multi-turn conversation turns (`system`, `user`, `assistant(tool_calls=...)`, `tool(tool_call_id=...)`, `assistant`).
 
 2. **Multi-Tier Memory Architecture:**
@@ -64,8 +70,9 @@ AURA is designed as a stateful, predictable operating process rather than an eph
 ## Quickstart & Setup
 
 ### Prerequisites
-- Python 3.11+ (Python 3.12 recommended)
+- Python 3.12+
 - PostgreSQL with `pgvector` extension (or automatic local SQLite fallback for dev/testing)
+- Node.js and npm for the web app
 
 ### Installation
 ```powershell
@@ -73,8 +80,8 @@ AURA is designed as a stateful, predictable operating process rather than an eph
 git clone https://github.com/nhatminh-115/Personal.git aura
 cd aura
 
-# Create virtual environment
-python -m venv .venv
+# Create a Python 3.12 virtual environment
+py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
 # Install dependencies
@@ -82,13 +89,16 @@ pip install -e .
 ```
 
 ### Configuration
-Create or modify `.env`:
+Create or modify `.env` (the setting is named `DATABASE_URL`):
 ```env
-AURA_DATABASE_URL=sqlite+aiosqlite:///./aura.db
+DATABASE_URL=sqlite+aiosqlite:///./aura.db
 AURA_WORKSPACE_ROOT=./workspace
-DEFAULT_MODEL_PROVIDER=mock  # or openai
+MODEL_PROVIDER=mock  # or openai
 OPENAI_API_KEY=your-api-key-here
 ```
+
+For PostgreSQL, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL. The
+included Docker Compose file starts PostgreSQL and the API service.
 
 ---
 
@@ -99,6 +109,16 @@ Start the FastAPI application with Uvicorn:
 $env:PYTHONPATH="."
 uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
 ```
+
+Start the web app in a second terminal:
+```powershell
+cd web
+npm ci
+npm run dev
+```
+
+Open `http://localhost:5173`. Vite proxies `/v1` requests to the API at
+`http://127.0.0.1:8000`.
 
 Interactive OpenAPI documentation is available at:
 - Swagger UI: `http://localhost:8000/docs`
@@ -247,9 +267,10 @@ AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This re
    - Conservative candidate extraction pipeline with strict fact superseding and audit lineage (`is_active`, `supersedes_id`, `superseded_by_id`).
 
 2. **Model Context Protocol (MCP) Tool Bus:**
-   - Official Python MCP SDK v2 (`mcp>=2.0.0`) integration supporting `stdio` and `sse` transports.
-   - Dynamic tool discovery via `tools/list` and dispatch via `tools/call`.
-   - AURA local security policy overlay: external MCP tools require explicit approval by default; input validation via JSON schema.
+   - Official Python MCP SDK v2 (`mcp>=2.0.0`) integration supporting stdio, SSE, and Streamable HTTP; tools are discovered via `tools/list` and dispatched via `tools/call`.
+   - Capability mappings are explicit; undiscovered provider tools do not satisfy specialist capability requests.
+   - AURA applies a conservative risk policy to external MCP tools, validates inputs against JSON schema, and still applies per-tool permissions and approvals. Read-only and auto-approval behavior must be explicitly configured.
+   - See the [optional code graph provider guide](docs/capabilities/code-graph-providers.md) for setup boundaries and candidate notes.
    - Server-level crash and fault isolation: external server failures produce structured error results without crashing the orchestrator.
 
 3. **Isolated Docker Execution Sandbox:**
