@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.memory.service import SQLMemoryService
-from app.db.models import MessageModel, SessionModel
+from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
 
 
 @pytest.mark.asyncio
@@ -227,3 +227,46 @@ async def test_attaching_existing_live_session_backfills_canonical_message_graph
     assert len(graph["edges"]) == 1
     assert graph["edges"][0]["relation_type"] == "reply"
     assert (await async_client.post("/v1/workspace/projects/aura/sessions/missing-session")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async_client, test_db_session):
+    session = SessionModel(id="trace-session", title="Trace", metadata_json={}, project_name="aura")
+    run = RunModel(id="trace-run", session_id=session.id, status="completed", user_message="private user prompt")
+    user = WorkspaceObjectModel(
+        id="trace-user-object", project_name="aura", session_id=session.id, object_type="conversation_turn",
+        created_by="user", title="Question", content="private user prompt", metadata_json={"role": "user", "run_id": run.id},
+    )
+    assistant = WorkspaceObjectModel(
+        id="trace-answer-object", project_name="aura", session_id=session.id, object_type="conversation_turn",
+        created_by="assistant", title="Answer", content="private assistant response", metadata_json={"role": "assistant", "run_id": run.id},
+    )
+    events = [
+        RunEventModel(id="trace-model-event", run_id=run.id, event_type="model_selected", payload={
+            "agent_role": "root", "provider": "local", "model": "test-model", "prompt": "private prompt secret",
+        }),
+        RunEventModel(id="trace-tool-request", run_id=run.id, event_type="tool_requested", payload={
+            "tool": "workspace.read", "tool_call_id": "call-1", "arguments": {"path": "secret/path.txt"},
+        }),
+        RunEventModel(id="trace-tool-result", run_id=run.id, event_type="tool_executed", payload={
+            "tool": "workspace.read", "result": {"success": True, "output": "private tool output secret"},
+        }),
+        RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", payload={"text": "never expose"}),
+    ]
+    test_db_session.add_all([session, run, user, assistant, *events])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/aura/graph")
+    assert response.status_code == 200
+    graph = response.json()
+    [trace] = graph["execution_traces"]
+    assert trace["run_id"] == run.id
+    assert trace["user_object_id"] == user.id
+    assert trace["response_object_id"] == assistant.id
+    assert [event["event_type"] for event in trace["events"]] == ["model_selected", "tool_requested", "tool_executed"]
+    tool_result = next(event for event in trace["events"] if event["event_type"] == "tool_executed")
+    assert tool_result["tool_name"] == "workspace.read"
+    assert tool_result["success"] is True
+    serialized = response.text
+    for private_value in ("private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
+        assert private_value not in serialized

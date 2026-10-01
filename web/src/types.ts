@@ -203,11 +203,39 @@ export interface WorkspaceLayout {
   updated_at?: string | null;
 }
 
+export interface WorkspaceExecutionEvent {
+  id: string;
+  event_type: string;
+  created_at: string;
+  agent_role?: string | null;
+  specialist?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  tool_name?: string | null;
+  tool_call_id?: string | null;
+  child_run_id?: string | null;
+  status?: string | null;
+  success?: boolean | null;
+  error_category?: string | null;
+  risk_level?: string | null;
+  step?: number | null;
+}
+
+export interface WorkspaceExecutionTrace {
+  run_id: string;
+  parent_run_id?: string | null;
+  session_id: string;
+  user_object_id?: string | null;
+  response_object_id?: string | null;
+  events: WorkspaceExecutionEvent[];
+}
+
 export interface WorkspaceGraph {
   project_name: string;
   objects: WorkspaceObject[];
   edges: WorkspaceEdge[];
   layout: WorkspaceLayout;
+  execution_traces?: WorkspaceExecutionTrace[];
 }
 
 export interface ChatResponse {

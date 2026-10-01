@@ -38,4 +38,29 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith('AURA Project'));
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
+
+  it('renders backend execution provenance only when the execution layer is expanded', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      execution_traces: [{
+        run_id: 'run-1', session_id: 'session-1', response_object_id: 'turn-1',
+        events: [{
+          id: 'model-event', event_type: 'model_selected', created_at: '2026-10-01T00:00:00Z',
+          agent_role: 'root', provider: 'local', model: 'test-model',
+        }],
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="aura-project-trace" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} executionExpanded />
+      </ReactFlowProvider>,
+    );
+
+    expect((await screen.findAllByText('Root · test-model')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Provider: local').length).toBeGreaterThan(0);
+  });
+
 });

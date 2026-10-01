@@ -165,11 +165,39 @@ class WorkspaceLayoutResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class WorkspaceExecutionEventResponse(BaseModel):
+    id: str
+    event_type: str
+    created_at: datetime
+    agent_role: Optional[str] = None
+    specialist: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    tool_name: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    child_run_id: Optional[str] = None
+    status: Optional[str] = None
+    success: Optional[bool] = None
+    error_category: Optional[str] = None
+    risk_level: Optional[str] = None
+    step: Optional[int] = None
+
+
+class WorkspaceExecutionTraceResponse(BaseModel):
+    run_id: str
+    parent_run_id: Optional[str] = None
+    session_id: str
+    user_object_id: Optional[str] = None
+    response_object_id: Optional[str] = None
+    events: List[WorkspaceExecutionEventResponse] = Field(default_factory=list)
+
+
 class WorkspaceGraphResponse(BaseModel):
     project_name: str
     objects: List[WorkspaceObjectResponse]
     edges: List[WorkspaceEdgeResponse]
     layout: WorkspaceLayoutResponse
+    execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
 
 
 class WorkspaceSessionResponse(BaseModel):

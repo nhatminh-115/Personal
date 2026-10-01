@@ -19,6 +19,7 @@ import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
 import { SmartEdge } from './SmartEdge';
 import { ApiError, api } from '../../services/api';
+import { projectExecutionGraph } from './executionProjection';
 
 const nodeTypes = { aura: AuraNodeCard };
 const edgeTypes = { smart: SmartEdge };
@@ -94,7 +95,8 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     type: 'smoothstep',
     data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
   }));
-  return { nodes, edges };
+  const execution = projectExecutionGraph(graph.execution_traces ?? [], nodes);
+  return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges };
 }
 
 function layoutSnapshotFor(nodes: AuraFlowNode[], viewport: { x: number; y: number; zoom: number } | null) {
@@ -122,6 +124,8 @@ const densityOrder: NodeDensity[] = ['collapsed', 'compact', 'full'];
 export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
+  const [executionNodes, setExecutionNodes] = useState<AuraFlowNode[]>([]);
+  const [executionEdges, setExecutionEdges] = useState<AuraFlowEdge[]>([]);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     conversation: true,
@@ -167,6 +171,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   useEffect(() => {
     workspaceReady.current = false;
     layoutConflict.current = false;
+    setExecutionNodes([]);
+    setExecutionEdges([]);
     if (!workspaceProjectName) return;
     let cancelled = false;
     void Promise.all(workspaceSessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
@@ -174,7 +180,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       throw error;
     }))).then(() => api.fetchWorkspaceGraph(workspaceProjectName)).then(async (graph) => {
       if (cancelled) return;
-      const { nodes: nextNodes, edges: nextEdges } = mapWorkspaceGraph(graph);
+      const { nodes: nextNodes, edges: nextEdges, executionNodes: nextExecutionNodes, executionEdges: nextExecutionEdges } = mapWorkspaceGraph(graph);
       const savedViewport = graph.layout.layout?.viewport ?? null;
       let revision = graph.layout.revision;
       const persistedPositions = graph.layout.layout?.positions ?? {};
@@ -198,6 +204,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       layoutSnapshot.current = layoutSnapshotFor(nextNodes, savedViewport);
       setNodes(nextNodes);
       setEdges(nextEdges);
+      setExecutionNodes(nextExecutionNodes);
+      setExecutionEdges(nextExecutionEdges);
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
       if (savedViewport) {
@@ -332,6 +340,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           edgesRef.current = projected.edges;
           setNodes(projected.nodes);
           setEdges(projected.edges);
+          setExecutionNodes(projected.executionNodes);
+          setExecutionEdges(projected.executionEdges);
           toast('Branch point saved', 'The source turn is linked. Add a prompt before treating it as a live chat.');
         }).catch(() => toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.'));
         return;
@@ -398,7 +408,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const actionNodes = useMemo(
     () =>
-      nodes.map((node) => ({
+      [...nodes, ...(layers.execution ? executionNodes : [])].map((node) => ({
         ...node,
         hidden: !layers[node.data.layer],
         data: {
@@ -411,7 +421,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onContinueMerge: continueMerge,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, layers, nodes, updateBridgeOption, workspaceProjectName],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, updateBridgeOption, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(
@@ -435,8 +445,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   );
 
   const styledEdges = useMemo(() => {
-    const nodeMap = new Map(nodes.map((node) => [node.id, node]));
-    return edges.map((edge) => {
+    const nodeMap = new Map([...nodes, ...executionNodes].map((node) => [node.id, node]));
+    return [...edges, ...(layers.execution ? executionEdges : [])].map((edge) => {
       const kind = edge.data?.edgeKind ?? 'reply';
       const isContext = kind === 'context';
       const isExecution = kind === 'execution';
@@ -451,11 +461,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         data: {
           ...edge.data,
           edgeKind: kind,
-          onDelete: (id: string) => deleteEdges([id]),
+          onDelete: isExecution ? undefined : (id: string) => deleteEdges([id]),
         },
       };
     });
-  }, [deleteEdges, edges, layers.execution, nodes]);
+  }, [deleteEdges, edges, executionEdges, executionNodes, layers.execution, nodes]);
 
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
   const selectedEdges = useMemo(() => edges.filter((edge) => edge.selected), [edges]);
@@ -524,6 +534,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         edgesRef.current = projected.edges;
         setNodes(projected.nodes);
         setEdges(projected.edges);
+        setExecutionNodes(projected.executionNodes);
+        setExecutionEdges(projected.executionEdges);
         toast('Context Bridge saved', 'Selected source objects are linked. The bridge does not copy their full content.');
       } catch (error) {
         toast('Context Bridge was not saved', error instanceof ApiError && error.status === 409
@@ -574,6 +586,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         edgesRef.current = projected.edges;
         setNodes(projected.nodes);
         setEdges(projected.edges);
+        setExecutionNodes(projected.executionNodes);
+        setExecutionEdges(projected.executionEdges);
         toast('Context selection saved', 'Source objects are linked without changing their content or generating a summary.');
       } catch (error) {
         toast('Context selection was not saved', error instanceof ApiError && error.status === 409

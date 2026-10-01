@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import (
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
+    WorkspaceExecutionEventResponse,
+    WorkspaceExecutionTraceResponse,
     WorkspaceGraphResponse,
     WorkspaceLayoutResponse,
     WorkspaceLayoutWrite,
@@ -19,11 +21,50 @@ from app.api.schemas import (
     WorkspaceSessionResponse,
 )
 from app.api.dependencies import get_memory_service
-from app.db.models import WorkspaceEdgeModel, WorkspaceLayoutModel, WorkspaceObjectModel
+from app.db.models import (
+    RunEventModel,
+    RunModel,
+    SessionModel,
+    WorkspaceEdgeModel,
+    WorkspaceLayoutModel,
+    WorkspaceObjectModel,
+)
 from app.db.session import get_db
 from app.memory.base import MemoryService
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
+
+EXECUTION_GRAPH_EVENT_TYPES = {
+    "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
+    "approval_requested", "approval_granted", "approval_rejected", "response_generated",
+    "run_completed", "run_failed", "run_cancelled",
+}
+
+
+def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventResponse:
+    """Project only operational identifiers/status; never expose prompts, arguments, or results."""
+    payload = event.payload or {}
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    tool_name = payload.get("tool") or payload.get("tool_name")
+    step = payload.get("step")
+    return WorkspaceExecutionEventResponse(
+        id=event.id,
+        event_type=event.event_type,
+        created_at=event.created_at,
+        agent_role=payload.get("agent_role") if isinstance(payload.get("agent_role"), str) else None,
+        specialist=payload.get("specialist") if isinstance(payload.get("specialist"), str) else None,
+        provider=payload.get("provider") if isinstance(payload.get("provider"), str) else None,
+        model=payload.get("model") if isinstance(payload.get("model"), str) else None,
+        tool_name=tool_name if isinstance(tool_name, str) else None,
+        tool_call_id=payload.get("tool_call_id") if isinstance(payload.get("tool_call_id"), str) else None,
+        child_run_id=payload.get("child_run_id") if isinstance(payload.get("child_run_id"), str) else None,
+        status=(payload.get("status") if isinstance(payload.get("status"), str) else None)
+        or ("completed" if result.get("success") is True else "failed" if result.get("success") is False else None),
+        success=result.get("success") if isinstance(result.get("success"), bool) else None,
+        error_category=result.get("error_category") if isinstance(result.get("error_category"), str) else None,
+        risk_level=payload.get("risk_level") if isinstance(payload.get("risk_level"), str) else None,
+        step=step if isinstance(step, int) and not isinstance(step, bool) else None,
+    )
 
 
 async def _lock_project_graph(db: AsyncSession, project_name: str) -> None:
@@ -111,6 +152,57 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
         .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
     )
     layout = await db.get(WorkspaceLayoutModel, project_name)
+    session_result = await db.execute(select(SessionModel.id).where(SessionModel.project_name == project_name))
+    session_ids = list(session_result.scalars())
+    runs: list[RunModel] = []
+    if session_ids:
+        run_result = await db.execute(
+            select(RunModel)
+            .where(RunModel.session_id.in_(session_ids))
+            .order_by(RunModel.created_at.desc(), RunModel.id.desc())
+            .limit(100)
+        )
+        runs = list(run_result.scalars())
+
+    execution_traces: list[WorkspaceExecutionTraceResponse] = []
+    if runs:
+        run_ids = [run.id for run in runs]
+        event_result = await db.execute(
+            select(RunEventModel)
+            .where(
+                RunEventModel.run_id.in_(run_ids),
+                RunEventModel.event_type.in_(EXECUTION_GRAPH_EVENT_TYPES),
+            )
+            .order_by(RunEventModel.created_at.desc(), RunEventModel.id.desc())
+            .limit(3_000)
+        )
+        events_by_run: dict[str, list[WorkspaceExecutionEventResponse]] = {run_id: [] for run_id in run_ids}
+        for event in event_result.scalars():
+            events_by_run[event.run_id].append(_safe_execution_event(event))
+        for run_events in events_by_run.values():
+            run_events.reverse()
+
+        run_id_set = set(run_ids)
+        project_objects = [item for item in objects if item.metadata_json.get("run_id") in run_id_set]
+        turn_objects_by_run: dict[str, dict[str, str]] = {}
+        for item in project_objects:
+            run_id = item.metadata_json.get("run_id")
+            role = item.metadata_json.get("role")
+            if isinstance(run_id, str) and role in {"user", "assistant"}:
+                turn_objects_by_run.setdefault(run_id, {})[role] = item.id
+        for run in reversed(runs):
+            events = events_by_run[run.id]
+            if not events:
+                continue
+            turn_objects = turn_objects_by_run.get(run.id, {})
+            execution_traces.append(WorkspaceExecutionTraceResponse(
+                run_id=run.id,
+                parent_run_id=run.parent_run_id,
+                session_id=run.session_id,
+                user_object_id=turn_objects.get("user"),
+                response_object_id=turn_objects.get("assistant"),
+                events=events,
+            ))
     return WorkspaceGraphResponse(
         project_name=project_name,
         objects=[_object_response(item) for item in objects],
@@ -121,6 +213,7 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
             revision=layout.revision if layout else 0,
             updated_at=layout.updated_at if layout else None,
         ),
+        execution_traces=execution_traces,
     )
 
 
