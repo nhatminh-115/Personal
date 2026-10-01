@@ -1,5 +1,6 @@
 """Typed capability-provider inventory and control-plane API invariants."""
 
+import sys
 import pytest
 
 from app.capabilities.registry import (
@@ -53,6 +54,35 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.capabilities == ["research.library.search"]
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
     assert "sensitive-token" not in provider.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_mcp_capability_requires_discovery_of_its_declared_tool():
+    from app.capabilities.registry import UnresolvedCapabilitiesError
+
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    manager.register_server(MCPServerConfig(
+        id="graph-fixture",
+        name="Graph fixture",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        capabilities_by_tool={"codegraph_missing_impact": ["code_graph.impact"]},
+    ))
+
+    configured = registry.capability_providers.get("mcp.graph-fixture")
+    assert configured is not None and configured.health == CapabilityProviderHealth.UNKNOWN
+    assert registry.resolve_available_capabilities(["code_graph.impact"]) == []
+
+    await manager.discover_tools("graph-fixture")
+    discovered = registry.capability_providers.get("mcp.graph-fixture")
+    assert discovered is not None and discovered.health == CapabilityProviderHealth.DEGRADED
+    assert registry.resolve_available_capabilities(["code_graph.impact"]) == []
+    with pytest.raises(UnresolvedCapabilitiesError):
+        registry.resolve_capabilities(["code_graph.impact"])
+    await manager.disconnect_all()
 
 
 def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays_blocked():
