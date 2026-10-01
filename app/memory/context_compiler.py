@@ -11,12 +11,24 @@ from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
+PRIVACY_REQUIREMENT_ORDER = {"public": 0, "internal": 1, "confidential": 2, "local_only": 3}
 BRIDGE_SECTION_LABELS = {
     "conclusions": "Conclusions",
     "observations": "Important observations",
     "failed": "Failed attempts",
     "artifacts": "Artifacts",
 }
+
+
+def stricter_privacy_requirement(current: str | None, required: str | None) -> str | None:
+    """Return the stricter known policy without weakening an existing boundary."""
+    if required is None:
+        return current
+    if current is None:
+        return required
+    if current not in PRIVACY_REQUIREMENT_ORDER or required not in PRIVACY_REQUIREMENT_ORDER:
+        return current
+    return max((current, required), key=PRIVACY_REQUIREMENT_ORDER.__getitem__)
 
 
 class CompiledContextObject(BaseModel):
@@ -32,6 +44,7 @@ class CompiledWorkspaceContext(BaseModel):
     objects: list[CompiledContextObject] = Field(default_factory=list)
     estimated_tokens: int = 0
     prompt_text: str = ""
+    privacy_requirement: str | None = None
 
 
 class WorkspaceContextCompiler:
@@ -107,6 +120,23 @@ class WorkspaceContextCompiler:
                     next_expandable.append(source.id)
             expandable = list(dict.fromkeys(next_expandable))
 
+        # Privacy classifications on selected objects and Bridge provenance
+        # sources strengthen the route boundary for this turn.
+        privacy_requirement: str | None = None
+        privacy_object_ids = set(included)
+        privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
+        for object_id in privacy_object_ids:
+            metadata = objects[object_id].metadata_json or {}
+            classification = metadata.get("privacy_policy")
+            if classification is None:
+                continue
+            if not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER:
+                raise ContextSelectionError(
+                    "Selected workspace context has an unsupported privacy classification.",
+                    {"object_id": object_id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
+                )
+            privacy_requirement = stricter_privacy_requirement(privacy_requirement, classification)
+
         # Place explicitly linked sources before the bridges/sets that consume them.
         # Stable timestamp + id ordering resolves unrelated objects deterministically.
         ordered_ids: list[str] = []
@@ -174,4 +204,5 @@ class WorkspaceContextCompiler:
             objects=manifest,
             estimated_tokens=(len(prompt_text) + 3) // 4,
             prompt_text=prompt_text,
+            privacy_requirement=privacy_requirement,
         )

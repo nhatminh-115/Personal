@@ -231,6 +231,21 @@ async def test_workspace_context_compiler_rejects_missing_or_oversized_selection
 
 
 @pytest.mark.asyncio
+async def test_workspace_context_compiler_rejects_unknown_privacy_classification(test_db_session):
+    from app.core.errors import ContextSelectionError
+
+    item = WorkspaceObjectModel(
+        id="unknown-privacy-note", project_name="Atlas", object_type="manual_note", title="Note",
+        content="Classified content.", metadata_json={"privacy_policy": "secret-but-undefined"}, created_by="user",
+    )
+    test_db_session.add(item)
+    await test_db_session.commit()
+
+    with pytest.raises(ContextSelectionError, match="unsupported privacy classification"):
+        await WorkspaceContextCompiler(test_db_session).compile("Atlas", [item.id])
+
+
+@pytest.mark.asyncio
 async def test_session_history_returns_newest_window_in_chronological_order(test_db_session):
     from datetime import datetime, timedelta, timezone
     from app.db.models import MessageModel

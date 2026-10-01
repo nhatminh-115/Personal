@@ -215,6 +215,7 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
 
     source = await async_client.post("/v1/workspace/projects/aura/objects", json={
         "object_type": "manual_note", "title": "Source constraint", "content": "Full source text must stay out of Bridge context.",
+        "metadata_json": {"privacy_policy": "local_only"},
     })
     assert source.status_code == 201
     bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
@@ -252,6 +253,7 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
 
     run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
     compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert compiled_event["payload"]["privacy_requirement"] == "local_only"
     assert compiled_event["payload"]["objects"] == [{
         "object_id": bridge.json()["id"],
         "object_type": "context_bridge",
@@ -264,6 +266,20 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
             "artifacts": True,
         },
     }]
+    selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert selected_model["payload"]["privacy"] == "local_only"
+
+    calls_before_cloud_lock = len(model_router.get_provider("mock").call_history)
+    cloud_locked = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-privacy-cloud-lock-session",
+        "project_name": "aura",
+        "message": "This must stay local.",
+        "model_override": "openai:gpt-4o",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+    assert cloud_locked.status_code == 403
+    assert cloud_locked.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before_cloud_lock
 
 
 @pytest.mark.asyncio
