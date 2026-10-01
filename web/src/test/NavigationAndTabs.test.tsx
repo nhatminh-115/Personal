@@ -122,7 +122,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
 
     expect(await screen.findByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/Search%20Project/graph')));
-    expect(document.querySelector('[data-id="search-match-1"]')).toHaveClass('selected');
+    await waitFor(() => expect(document.querySelector('[data-id="search-match-1"]')).toHaveClass('selected'));
   });
 
   it('opening a project creates/reuses exactly one project tab', async () => {
