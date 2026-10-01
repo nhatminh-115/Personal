@@ -59,6 +59,7 @@ async def start_study_session(
         raise HTTPException(status_code=422, detail="Study track ID and title must not be blank.")
     material_id = body.material_id.strip() if body.material_id else None
     material_project_name = body.material_project_name.strip() if body.material_project_name else None
+    is_verified_research_claim = False
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
         material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
@@ -98,6 +99,7 @@ async def start_study_session(
         },
     )
     db.add(item)
+    await db.flush()
     if is_verified_research_claim and material_project_name and material_id:
         # Study is a user-owned workspace object. Link it into the source project graph
         # and retain the verified research claim as first-class provenance.
