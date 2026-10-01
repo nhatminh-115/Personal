@@ -4,6 +4,7 @@ import {
   ChatResponse,
   MemoryItem,
   ModelCatalog,
+  PersonalNoteRecord,
   ModelProbeResponse,
   ResearchInspectorData,
   RunDetail,
@@ -58,6 +59,30 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  async fetchPersonalNotes(): Promise<PersonalNoteRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/notes`));
+  },
+
+  async createPersonalNote(input: {
+    id?: string; title: string; body: string; tags: string[]; project_ids: string[]; project_names: string[]; pinned: boolean;
+  }): Promise<PersonalNoteRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/notes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async updatePersonalNote(noteId: string, input: {
+    title: string; body: string; tags: string[]; project_ids: string[]; project_names: string[]; pinned: boolean;
+  }): Promise<PersonalNoteRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/notes/${encodeURIComponent(noteId)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async deletePersonalNote(noteId: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/notes/${encodeURIComponent(noteId)}`, { method: 'DELETE' }));
+  },
+
   async fetchModels(): Promise<ModelCatalog> {
     const res = await fetch(`${BASE_URL}/v1/models`);
     return handleResponse<ModelCatalog>(res);
@@ -219,6 +244,7 @@ export const api = {
     modelOverride?: string | null,
     reasoningOverride?: ReasoningEffort | null,
     contextObjectIds: string[] = [],
+    personalNoteIds: string[] = [],
   ): Promise<ChatResponse> {
     const payload: Record<string, any> = {
       session_id: sessionId,
@@ -232,6 +258,7 @@ export const api = {
     }
     if (reasoningOverride) payload.reasoning_override = reasoningOverride;
     if (contextObjectIds.length > 0) payload.context_object_ids = [...new Set(contextObjectIds)];
+    if (personalNoteIds.length > 0) payload.personal_note_ids = [...new Set(personalNoteIds)];
 
     const res = await fetch(`${BASE_URL}/v1/chat`, {
       method: 'POST',

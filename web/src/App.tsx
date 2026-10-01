@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BoardCanvas } from './components/board/BoardCanvas';
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
@@ -51,6 +51,7 @@ import type {
   ExecutionStep,
   MemoryItem,
   ModelCatalog,
+  PersonalNoteRecord,
   ResearchInspectorData,
   RunDetail,
   SessionSummary,
@@ -77,6 +78,7 @@ type WorkspaceSurface =
 const STORAGE = {
   library: 'aura-v7-library',
   notes: 'aura-v7-notes',
+  notesMigration: 'aura-v8-notes-backend-migrated',
   automations: 'aura-v7-automations',
   chats: 'aura-v7-chats',
 };
@@ -114,6 +116,36 @@ function inferLibraryKind(file: File): LibraryKind {
   if (file.type.startsWith('image/')) return 'IMAGE';
   if (ext === 'txt' || file.type.startsWith('text/')) return 'TXT';
   return 'FILE';
+}
+
+function workspaceNoteFromRecord(note: PersonalNoteRecord): WorkspaceNote {
+  const updatedAt = new Date(note.updated_at);
+  const updated = Number.isNaN(updatedAt.getTime())
+    ? 'recently'
+    : updatedAt.toLocaleString();
+  return {
+    id: note.id,
+    title: note.title,
+    body: note.body,
+    updated,
+    tags: note.tags,
+    projectIds: note.project_ids,
+    pinned: note.pinned,
+  };
+}
+
+function personalNoteInput(note: WorkspaceNote) {
+  return {
+    title: note.title,
+    body: note.body,
+    tags: note.tags,
+    project_ids: note.projectIds,
+    project_names: note.projectIds.flatMap((projectId) => {
+      const project = projects.find((item) => item.id === projectId);
+      return project ? [project.name] : [];
+    }),
+    pinned: Boolean(note.pinned),
+  };
 }
 
 function stripExtension(name: string) {
@@ -176,6 +208,12 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const notesRef = useRef(notes);
+  const initialNotesRef = useRef(notes);
+  const notesTouchedRef = useRef(false);
+  const serverNoteIdsRef = useRef(new Set<string>());
+  const noteSaveTimersRef = useRef(new Map<string, number>());
+  notesRef.current = notes;
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
@@ -311,6 +349,77 @@ export default function App() {
     setToasts((current) => [...current, { id, title, detail }]);
     window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3200);
   }, []);
+
+  const schedulePersonalNoteSave = useCallback((note: WorkspaceNote) => {
+    const previous = noteSaveTimersRef.current.get(note.id);
+    if (previous !== undefined) window.clearTimeout(previous);
+    const timer = window.setTimeout(() => {
+      noteSaveTimersRef.current.delete(note.id);
+      const existing = serverNoteIdsRef.current.has(note.id);
+      const operation = existing
+        ? api.updatePersonalNote(note.id, personalNoteInput(note))
+        : api.createPersonalNote({ id: note.id, ...personalNoteInput(note) });
+      void operation.then((saved) => {
+        serverNoteIdsRef.current.add(saved.id);
+        const updatedLabel = workspaceNoteFromRecord(saved).updated;
+        notesRef.current = notesRef.current.map((item) => item.id === saved.id ? { ...item, updated: updatedLabel } : item);
+        setNotes(notesRef.current);
+      }).catch(() => {
+        pushToast('Note was not saved', 'Your local copy is still available. Check the AURA connection and edit the note to retry.');
+      });
+    }, 350);
+    noteSaveTimersRef.current.set(note.id, timer);
+  }, [pushToast]);
+
+  const handleNotesChange = useCallback((next: WorkspaceNote[]) => {
+    const previousById = new Map(notesRef.current.map((note) => [note.id, note]));
+    const changed = next.filter((note) => {
+      const previous = previousById.get(note.id);
+      return !previous || JSON.stringify(personalNoteInput(previous)) !== JSON.stringify(personalNoteInput(note));
+    });
+    notesTouchedRef.current = true;
+    notesRef.current = next;
+    setNotes(next);
+    changed.forEach(schedulePersonalNoteSave);
+  }, [schedulePersonalNoteSave]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.fetchPersonalNotes().then(async (stored) => {
+      if (cancelled) return;
+      const local = notesTouchedRef.current ? notesRef.current : initialNotesRef.current;
+      const storedIds = new Set(stored.map((note) => note.id));
+      const migrationComplete = window.localStorage.getItem(STORAGE.notesMigration) === 'complete';
+      const missing = migrationComplete ? [] : local.filter((note) => !storedIds.has(note.id));
+      const imported = await Promise.all(missing.map((note) => api.createPersonalNote({
+        id: note.id,
+        ...personalNoteInput(note),
+      })));
+      if (cancelled) return;
+      window.localStorage.setItem(STORAGE.notesMigration, 'complete');
+
+      const remoteRecords = [...stored, ...imported];
+      for (const note of remoteRecords) serverNoteIdsRef.current.add(note.id);
+      const byId = new Map(remoteRecords.map((note) => [note.id, workspaceNoteFromRecord(note)]));
+      if (notesTouchedRef.current) {
+        for (const note of notesRef.current) {
+          byId.set(note.id, note);
+          schedulePersonalNoteSave(note);
+        }
+      } else if (migrationComplete) {
+        for (const note of local.filter((item) => item.updated === 'just now')) {
+          byId.set(note.id, note);
+          schedulePersonalNoteSave(note);
+        }
+      }
+      const hydrated = [...byId.values()];
+      notesRef.current = hydrated;
+      setNotes(hydrated);
+    }).catch(() => {
+      if (!cancelled) pushToast('Notes are using the local copy', 'AURA could not reach the Notes service. Changes will retry when you edit a note.');
+    });
+    return () => { cancelled = true; };
+  }, [pushToast, schedulePersonalNoteSave]);
 
   const applyTab = useCallback((tab: AppTab) => {
     setActiveTabId(tab.id);
@@ -712,7 +821,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string, contextObjectIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], personalNoteIds: string[] = []) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -740,6 +849,7 @@ export default function App() {
         nodeId: `live-user-node-${nonce}`,
         content: text,
         contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
+        personalNoteIds: personalNoteIds.length > 0 ? [...new Set(personalNoteIds)] : undefined,
         timestamp: 'just now',
         created_at: new Date().toISOString(),
         status: 'Sent',
@@ -756,6 +866,7 @@ export default function App() {
           activeThreadOverrides?.model,
           activeThreadOverrides?.reasoning,
           contextObjectIds,
+          personalNoteIds,
         );
 
         if (resp.user_message_id) {
@@ -847,7 +958,7 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string, contextObjectIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], personalNoteIds: string[] = []) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
       const id = `${activeProjectId}-live-${Date.now()}`;
@@ -880,13 +991,13 @@ export default function App() {
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, personalNoteIds: personalNoteIds.length > 0 ? [...new Set(personalNoteIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, personalNoteIds);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);
@@ -1185,7 +1296,7 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
-        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={setNotes} onOpenProject={openProject} /> : null}
+        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={handleNotesChange} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} · prototype timer/activity is mocked.`)} /> : null}
         {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}

@@ -19,6 +19,11 @@ class ChatRequest(BaseModel):
         max_length=50,
         description="Explicit project workspace objects to compile into this turn's context",
     )
+    personal_note_ids: List[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Linked personal notes explicitly included in this turn's context",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -164,6 +169,29 @@ class WorkspaceLayoutResponse(BaseModel):
     layout: Dict[str, Any] = Field(default_factory=dict)
     revision: int
     updated_at: Optional[datetime] = None
+
+
+class PersonalNoteWrite(BaseModel):
+    title: str = Field(default="", max_length=255)
+    body: str = Field(default="", max_length=100_000)
+    tags: List[str] = Field(default_factory=list, max_length=32)
+    project_ids: List[str] = Field(default_factory=list, max_length=100)
+    project_names: List[str] = Field(default_factory=list, max_length=100)
+    pinned: bool = False
+
+
+class PersonalNoteCreate(PersonalNoteWrite):
+    id: Optional[str] = Field(default=None, min_length=1, max_length=36)
+
+
+class PersonalNoteUpdate(PersonalNoteWrite):
+    pass
+
+
+class PersonalNoteResponse(PersonalNoteWrite):
+    id: str
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkspaceExecutionEventResponse(BaseModel):

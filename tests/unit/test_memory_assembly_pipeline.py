@@ -1,7 +1,7 @@
 """Unit tests for Milestone 2B Context Assembler and Memory Candidate Pipeline."""
 
 import pytest
-from app.db.models import MemoryModel, WorkspaceEdgeModel, WorkspaceObjectModel
+from app.db.models import MemoryModel, PersonalNoteModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryType
 from app.memory.context import AssembledContext, ContextAssembler
 from app.memory.context_compiler import WorkspaceContextCompiler
@@ -204,6 +204,35 @@ async def test_workspace_context_compiler_rejects_missing_or_oversized_selection
         await compiler.compile("Atlas", ["missing-id"])
     with pytest.raises(ContextSelectionError):
         await compiler.compile("Atlas", [item.id])
+
+
+@pytest.mark.asyncio
+async def test_workspace_context_compiler_includes_only_selected_project_linked_personal_notes(test_db_session):
+    from app.core.errors import ContextSelectionError
+
+    linked = PersonalNoteModel(
+        id="linked-note", title="Release constraint", body="Keep rollback available.",
+        tags_json=["release"], project_ids_json=["atlas"], project_names_json=["Atlas"], pinned=False,
+    )
+    unlinked = PersonalNoteModel(
+        id="unlinked-note", title="Private note", body="Do not leak this.",
+        tags_json=[], project_ids_json=["titan"], project_names_json=["Titan"], pinned=False,
+    )
+    test_db_session.add_all([linked, unlinked])
+    await test_db_session.commit()
+
+    compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [], [linked.id])
+    assert compiled.prompt_text == "[Personal note linked-note | title: Release constraint]\nKeep rollback available."
+    assert [item.model_dump() for item in compiled.objects] == [{
+        "object_id": linked.id,
+        "object_type": "personal_note",
+        "selected_by_user": True,
+        "source_object_ids": [],
+    }]
+    assert "Do not leak this." not in compiled.prompt_text
+
+    with pytest.raises(ContextSelectionError):
+        await WorkspaceContextCompiler(test_db_session).compile("Atlas", [], [unlinked.id])
 
 
 @pytest.mark.asyncio

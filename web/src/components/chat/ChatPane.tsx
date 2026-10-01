@@ -39,9 +39,9 @@ export interface ChatPaneProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[]) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], personalNoteIds?: string[]) => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
-  onStartLiveChat?: (text: string) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], personalNoteIds?: string[]) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -181,7 +181,10 @@ export function ChatPane({
       setContextOpen(false);
       setRunPhase('routing');
       try {
-        await onSendMessage(prompt);
+        const includedPersonalNoteIds = includedContext
+          .filter((item) => item.kind === 'note' && item.personalNoteId)
+          .map((item) => item.personalNoteId!);
+        await onSendMessage(prompt, undefined, includedPersonalNoteIds);
       } finally {
         setRunPhase(null);
       }
@@ -263,7 +266,12 @@ export function ChatPane({
               <button
                 className="demo-start-live-button"
                 type="button"
-                onClick={() => { void onStartLiveChat(draft.trim()); }}
+                onClick={() => {
+                  const includedPersonalNoteIds = includedContext
+                    .filter((item) => item.kind === 'note' && item.personalNoteId)
+                    .map((item) => item.personalNoteId!);
+                  void onStartLiveChat(draft.trim(), undefined, includedPersonalNoteIds);
+                }}
               >
                 Start live chat
               </button>
