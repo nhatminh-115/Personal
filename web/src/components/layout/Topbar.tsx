@@ -16,6 +16,7 @@ interface TopbarProps {
   effectiveRouting: EffectiveRouting | null;
   catalog: ModelCatalog;
   sessionAvailable: boolean;
+  demoThread: boolean;
   lockedModel: string | null;
   reasoningOverride: ReasoningEffort | null;
   onSetModelLock: (value: string | null) => void;
@@ -41,6 +42,7 @@ export function Topbar({
   effectiveRouting,
   catalog,
   sessionAvailable,
+  demoThread,
   lockedModel,
   reasoningOverride,
   onSetModelLock,
@@ -57,6 +59,7 @@ export function Topbar({
     ? catalog.providers.find((provider) => provider.id === lockedParts[0])?.models.find((model) => model.id === lockedParts[1])
     : undefined;
   const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
+  const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
 
   return (
     <header className="topbar">
@@ -106,6 +109,7 @@ export function Topbar({
               effective={effectiveRouting}
               catalog={catalog}
               sessionAvailable={sessionAvailable}
+              demoThread={demoThread}
               lockedModel={lockedModel}
               reasoningOverride={reasoningOverride}
               onSetModel={onSetModelLock}
@@ -117,7 +121,7 @@ export function Topbar({
         ) : null}
 
         {inProject ? (
-          <select aria-label="Temporary reasoning override" className="topbar-reasoning-select" value={reasoningOverride ?? ''} title={fixedReasoning ? 'The locked model controls reasoning internally.' : undefined} onChange={(event) => onSetReasoningOverride((event.target.value || null) as ReasoningEffort | null)}>
+        <select aria-label="Temporary reasoning override" className="topbar-reasoning-select" value={reasoningOverride ?? ''} disabled={demoThread} title={demoThread ? 'Start a live chat to use temporary reasoning overrides.' : fixedReasoning ? 'The locked model controls reasoning internally.' : reasoningUnknown ? 'Reasoning support for this exact model is unknown; the backend may reject an override.' : undefined} onChange={(event) => onSetReasoningOverride((event.target.value || null) as ReasoningEffort | null)}>
             <option value="">Reasoning: Profile</option>
             {fixedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>Reasoning: {reasoningOverride} · unavailable</option> : <option disabled>Reasoning: fixed by model</option> : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => <option key={value} value={value}>Reasoning: {value[0].toUpperCase() + value.slice(1)}</option>)}
           </select>

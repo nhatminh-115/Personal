@@ -235,4 +235,22 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Verify resumed response rendered
     expect(await screen.findByText(/Resumed and finished after approval/i)).toBeInTheDocument();
   });
+
+  it('shows concise routing guidance for a structured privacy boundary error', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/chat')) return Promise.resolve({ ok: false, status: 403, text: () => Promise.resolve(JSON.stringify({ error: 'PrivacyBoundaryViolation', message: 'No local model is eligible.', details: { privacy: 'local_only' } })) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getAllByText(/Stateful Architecture/i)[0]);
+    fireEvent.click(screen.getByRole('button', { name: /Open project chats/i }));
+    fireEvent.click(screen.getByTitle('New chat'));
+    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep this local' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
+    expect(await screen.findByText(/No local model is eligible\. Privacy policy blocked this route/i)).toBeInTheDocument();
+    expect(screen.getByText(/Review the profile scope and select a route that meets its privacy boundary/i)).toBeInTheDocument();
+  });
 });

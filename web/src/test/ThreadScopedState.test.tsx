@@ -284,4 +284,20 @@ describe('Thread-Scoped Live State', () => {
     // A's run ID must not appear in B's view
     expect(screen.queryByText(/run-A-unique-9999/i)).not.toBeInTheDocument();
   });
+
+  it('keeps temporary reasoning overrides isolated when switching live threads', async () => {
+    global.fetch = makeFetch();
+    await setupTwoLiveThreads();
+    await act(async () => { render(<App />); });
+    await openStatefulChats();
+    await selectThread('Thread A');
+    const reasoning = screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement;
+    fireEvent.change(reasoning, { target: { value: 'high' } });
+    expect(reasoning.value).toBe('high');
+
+    await selectThread('Thread B');
+    expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('');
+    await selectThread('Thread A');
+    expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('high');
+  });
 });

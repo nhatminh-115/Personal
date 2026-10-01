@@ -255,10 +255,24 @@ export interface EffectiveRouting {
   project_name?: string | null;
 }
 export interface RoutingDecision {
-  provider_name: string;
-  model_name: string;
+  provider: string;
+  model: string;
   reason: string;
-  reasoning_effort_selected?: string | null;
+  reasoning_effort?: string | null;
+  profile_id?: string | null;
+  profile_name: string;
+  profile_version: number;
+  winning_scope: WinningScope;
+  privacy: RoutingPrivacy;
+  fallback: RoutingFallback;
+  role: string;
+  task_route?: string | null;
+  warnings: string[];
+}
+export interface RoutingProfileValidation {
+  valid: boolean;
+  profile_id: string;
+  errors: string[];
 }
 export interface RunRoutingDecision {
   run_id: string;

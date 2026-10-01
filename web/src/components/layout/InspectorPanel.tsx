@@ -95,7 +95,7 @@ export function InspectorPanel({
             <div className="inspector-kpi">
               <span>Routing Profile</span>
               <strong>{effectiveRouting?.profile.name ?? 'Routing unavailable'} · {effectiveRouting?.winning_scope ?? '—'}</strong>
-              <small>{runDetail ? 'Persisted routing decisions · No model invocation' : 'Effective profile before the next run'}</small>
+              <small>{runDetail || routingData?.length ? 'Persisted routing decisions · No model invocation' : 'Effective profile before the next run'}</small>
             </div>
             {routingData?.length ? routingData.map((decision) => <section className="inspector-group" key={decision.run_id}>
               <h4>{decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'} routing</h4>

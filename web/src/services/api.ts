@@ -12,6 +12,7 @@ import {
   EffectiveRouting,
   RoutingDecision,
   RoutingProfile,
+  RoutingProfileValidation,
   RunRoutingDecision,
   ReasoningEffort,
 } from '../types';
@@ -93,6 +94,17 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
   },
 
+  async validateRoutingProfile(id: string): Promise<RoutingProfileValidation> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/validate`, { method: 'POST' }));
+  },
+
+  async setDefaultRoutingProfile(profileId: string | null): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/routing/default`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile_id: profileId }),
+    }));
+  },
+
   async deleteRoutingProfile(id: string): Promise<void> {
     await handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
@@ -117,6 +129,10 @@ export const api = {
     await handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileId }),
     }));
+  },
+
+  async fetchSessionRouting(sessionId: string): Promise<{ session_id: string; routing_profile_id: string | null }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`));
   },
 
   async fetchRoutingPreview(input: {

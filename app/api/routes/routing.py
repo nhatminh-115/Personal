@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.api.dependencies import get_db, get_model_router
 from app.db.models import RoutingProfileModel, ProjectRoutingAssignmentModel, SessionModel
@@ -16,7 +16,6 @@ from app.models.routing_resolver import (
     resolve_routing_profile,
     apply_routing_profile_to_context,
 )
-from app.models.routing_policy import ModelSelection
 from app.models.router import ModelRouter
 from app.models.base import RoutingContext
 
@@ -24,6 +23,10 @@ router = APIRouter(prefix="/v1/routing", tags=["Routing"])
 
 
 class SessionAssignmentRequest(BaseModel):
+    profile_id: Optional[str] = None
+
+
+class DefaultProfileRequest(BaseModel):
     profile_id: Optional[str] = None
 
 
@@ -35,6 +38,40 @@ class RoutingPreviewRequest(BaseModel):
     message_override: Optional[str] = None
     reasoning_override: Optional[str] = None
     profile_draft: Optional[RoutingProfile] = None
+
+
+class RoutingPreviewResponse(BaseModel):
+    provider: str
+    model: str
+    reason: str
+    reasoning_effort: Optional[str] = None
+    profile_id: Optional[str] = None
+    profile_name: str
+    profile_version: int
+    winning_scope: str
+    privacy: str
+    fallback: str
+    role: str
+    task_route: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
+
+
+async def _set_default_profile(db: AsyncSession, profile_id: Optional[str]) -> None:
+    """Set the sole custom default, or clear custom defaults for System Balanced."""
+    if profile_id and profile_id != "system-balanced":
+        result = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
+        profile = result.scalar_one_or_none()
+        if profile is None:
+            raise HTTPException(status_code=404, detail="Routing profile not found")
+        if not profile.is_active:
+            raise HTTPException(status_code=400, detail="An inactive routing profile cannot be the default.")
+    await db.execute(update(RoutingProfileModel).values(is_default=False))
+    if profile_id and profile_id != "system-balanced":
+        await db.execute(
+            update(RoutingProfileModel)
+            .where(RoutingProfileModel.id == profile_id)
+            .values(is_default=True)
+        )
 
 
 @router.get("/profiles", response_model=List[RoutingProfile])
@@ -74,7 +111,7 @@ async def create_routing_profile(profile: RoutingProfile, db: AsyncSession = Dep
         name=profile.name,
         version=profile.version,
         is_active=profile.is_active,
-        is_default=profile.is_default,
+        is_default=False,
         global_privacy_policy=profile.global_privacy_policy.value if hasattr(profile.global_privacy_policy, "value") else str(profile.global_privacy_policy),
         global_fallback_policy=profile.global_fallback_policy.value if hasattr(profile.global_fallback_policy, "value") else str(profile.global_fallback_policy),
         cost_preference=profile.cost_preference,
@@ -82,6 +119,9 @@ async def create_routing_profile(profile: RoutingProfile, db: AsyncSession = Dep
         routes_json={"routes": {k: v.model_dump(mode="json") for k, v in profile.routes.items()}},
     )
     db.add(db_profile)
+    if profile.is_default:
+        await db.flush()
+        await _set_default_profile(db, profile.id)
     await db.commit()
     await db.refresh(db_profile)
     return model_to_routing_profile(db_profile)
@@ -102,7 +142,7 @@ async def update_routing_profile(profile_id: str, profile_update: RoutingProfile
     db_profile.version = db_profile.version + 1
     db_profile.name = profile_update.name
     db_profile.is_active = profile_update.is_active
-    db_profile.is_default = profile_update.is_default
+    db_profile.is_default = False
     
     # Requirement 18: Update canonical columns
     db_profile.global_privacy_policy = profile_update.global_privacy_policy.value if hasattr(profile_update.global_privacy_policy, "value") else str(profile_update.global_privacy_policy)
@@ -111,6 +151,8 @@ async def update_routing_profile(profile_id: str, profile_update: RoutingProfile
     db_profile.latency_preference = profile_update.latency_preference
     db_profile.routes_json = {"routes": {k: v.model_dump(mode="json") for k, v in profile_update.routes.items()}}
     
+    if profile_update.is_default:
+        await _set_default_profile(db, profile_id)
     await db.commit()
     await db.refresh(db_profile)
     return model_to_routing_profile(db_profile)
@@ -187,6 +229,17 @@ async def validate_routing_profile(profile_id: str, db: AsyncSession = Depends(g
     return {"valid": len(errors) == 0, "profile_id": profile_id, "errors": errors}
 
 
+@router.put("/default")
+async def set_default_routing_profile(req: DefaultProfileRequest, db: AsyncSession = Depends(get_db)):
+    """Atomically select the sole custom default or fall back to System Balanced."""
+    await _set_default_profile(db, req.profile_id)
+    await db.commit()
+    return {
+        "status": "success",
+        "routing_profile_id": None if req.profile_id == "system-balanced" else req.profile_id,
+    }
+
+
 @router.get("/effective")
 async def get_effective_routing(
     session_id: Optional[str] = Query(None),
@@ -203,7 +256,7 @@ async def get_effective_routing(
     }
 
 
-@router.post("/preview", response_model=ModelSelection)
+@router.post("/preview", response_model=RoutingPreviewResponse)
 async def preview_routing_decision(
     req: RoutingPreviewRequest,
     db: AsyncSession = Depends(get_db),
@@ -228,7 +281,26 @@ async def preview_routing_decision(
     )
     # Zero model invocation: select_model_for_task only
     _, selection = router_instance.select_model_for_task(ctx)
-    return selection
+    warnings: List[str] = []
+    selected_model = selection.model_name
+    metadata = router_instance.get_provider_metadata(selection.provider_name)
+    if metadata and metadata.reasoning_support.get(selected_model) in (None, "unknown"):
+        warnings.append("Reasoning control metadata is unknown for the selected model.")
+    return RoutingPreviewResponse(
+        provider=selection.provider_name,
+        model=selection.model_name,
+        reason=selection.reason,
+        reasoning_effort=selection.reasoning_effort_selected,
+        profile_id=profile.id,
+        profile_name=profile.name,
+        profile_version=profile.version,
+        winning_scope=winning_scope,
+        privacy=ctx.privacy_requirement.value,
+        fallback=ctx.fallback_policy.value,
+        role=req.role,
+        task_route=ctx.task_type or req.role,
+        warnings=warnings,
+    )
 
 
 @router.post("/assignments/{project_name}")
