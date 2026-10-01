@@ -191,6 +191,7 @@ async def test_chat_compiles_selected_workspace_context_and_records_provenance(a
     assert compiled_event["payload"]["objects"] == [{
         "object_id": selected.id,
         "object_type": "manual_note",
+        "selected_by_user": True,
         "source_object_ids": [],
     }]
     assert compiled_event["payload"]["estimated_tokens"] > 0

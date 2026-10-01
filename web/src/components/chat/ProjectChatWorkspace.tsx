@@ -19,7 +19,7 @@ export interface ProjectChatWorkspaceProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[]) => Promise<void>;
   onStartLiveChat?: (text: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (

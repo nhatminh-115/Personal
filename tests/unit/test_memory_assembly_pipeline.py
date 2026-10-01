@@ -179,6 +179,7 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
     compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [bridge.id])
 
     assert [item.object_id for item in compiled.objects] == [source.id, bridge.id]
+    assert [item.selected_by_user for item in compiled.objects] == [False, True]
     assert compiled.objects[-1].source_object_ids == [source.id]
     assert "Keep the migration reversible." in compiled.prompt_text
     assert "Use the selected constraint." in compiled.prompt_text

@@ -114,11 +114,12 @@ interface BoardCanvasProps {
   branchRequest?: { nodeId: string; nonce: number } | null;
   workspaceProjectName?: string | null;
   workspaceSessionIds?: string[];
+  onAskWithContext?: (prompt: string, objectIds: string[]) => void | Promise<void>;
 }
 
 const densityOrder: NodeDensity[] = ['collapsed', 'compact', 'full'];
 
-export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS }: BoardCanvasProps) {
+export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
@@ -616,6 +617,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const askSelected = useCallback(
     (prompt: string) => {
+      if (workspaceProjectName && onAskWithContext) {
+        void onAskWithContext(prompt, selectedNodes.map((node) => node.id));
+        return;
+      }
       recordHistory();
       const anchor = getSelectionAnchor();
       const id = `lens-answer-${idRef.current++}`;
@@ -646,7 +651,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setEdges((current) => [...current, ...answerEdges]);
       toast('AURA answered from the lens', 'The generated node is mock content based on selected objects.');
     },
-    [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast],
+    [getSelectionAnchor, onAskWithContext, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName],
   );
 
   const autoLayout = useCallback(() => {

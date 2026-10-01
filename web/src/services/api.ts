@@ -217,7 +217,8 @@ export const api = {
     message: string,
     projectName?: string,
     modelOverride?: string | null,
-    reasoningOverride?: ReasoningEffort | null
+    reasoningOverride?: ReasoningEffort | null,
+    contextObjectIds: string[] = [],
   ): Promise<ChatResponse> {
     const payload: Record<string, any> = {
       session_id: sessionId,
@@ -230,6 +231,7 @@ export const api = {
       payload.model_override = modelOverride;
     }
     if (reasoningOverride) payload.reasoning_override = reasoningOverride;
+    if (contextObjectIds.length > 0) payload.context_object_ids = [...new Set(contextObjectIds)];
 
     const res = await fetch(`${BASE_URL}/v1/chat`, {
       method: 'POST',

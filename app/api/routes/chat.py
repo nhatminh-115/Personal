@@ -55,7 +55,7 @@ async def chat_endpoint(
     context_object_ids = list(dict.fromkeys(req.context_object_ids))
     if context_object_ids and not req.project_name:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="context_object_ids require a project_name scope.",
         )
 
@@ -213,7 +213,7 @@ async def chat_endpoint(
             if isinstance(e, RoutingConfirmationRequired):
                 code, http_status = "RoutingConfirmationRequired", status.HTTP_409_CONFLICT
             elif isinstance(e, ContextSelectionError):
-                code, http_status = "ContextSelectionError", status.HTTP_422_UNPROCESSABLE_ENTITY
+                code, http_status = "ContextSelectionError", status.HTTP_422_UNPROCESSABLE_CONTENT
             elif isinstance(e, PrivacyBoundaryViolation):
                 code, http_status = "PrivacyBoundaryViolation", status.HTTP_403_FORBIDDEN
             elif isinstance(e, ModelUnavailable):

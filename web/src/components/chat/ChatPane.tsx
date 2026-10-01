@@ -39,7 +39,7 @@ export interface ChatPaneProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[]) => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
   onStartLiveChat?: (text: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
@@ -316,6 +316,7 @@ export function ChatPane({
 
               <div className="chat-message__status-row">
                 {message.status ? <span>{message.status}</span> : null}
+                {message.contextObjectIds?.length ? <span>{message.contextObjectIds.length} selected context object{message.contextObjectIds.length === 1 ? '' : 's'}</span> : null}
                 {message.role === 'assistant' ? (
                   <div className="chat-message__footer">
                     {message.executionLabel && message.execution ? (

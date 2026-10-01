@@ -712,7 +712,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, contextObjectIds: string[] = []) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -739,6 +739,7 @@ export default function App() {
         branch: 'Root',
         nodeId: `live-user-node-${nonce}`,
         content: text,
+        contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
         timestamp: 'just now',
         created_at: new Date().toISOString(),
         status: 'Sent',
@@ -754,6 +755,7 @@ export default function App() {
           activeProject?.name || undefined,
           activeThreadOverrides?.model,
           activeThreadOverrides?.reasoning,
+          contextObjectIds,
         );
 
         if (resp.user_message_id) {
@@ -845,7 +847,7 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string) => {
+    async (text: string, contextObjectIds: string[] = []) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
       const id = `${activeProjectId}-live-${Date.now()}`;
@@ -878,13 +880,13 @@ export default function App() {
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);
@@ -915,6 +917,24 @@ export default function App() {
     },
     [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
   );
+
+  const handleBoardAskWithContext = useCallback(async (prompt: string, objectIds: string[]) => {
+    const currentThread = chatThreads.find((thread) => thread.id === activeThreadId);
+    openOrActivateTab({
+      id: `project-${activeProjectId}`,
+      title: activeProject?.name ?? 'Project',
+      subtitle: 'Chat',
+      kind: 'project',
+      surface: 'workspace',
+      projectId: activeProjectId,
+      mode: 'chat',
+    });
+    if (currentThread?.source === 'demo' || !currentThread?.sessionId) {
+      await handleStartLiveChat(prompt, objectIds);
+      return;
+    }
+    await handleSendMessage(prompt, objectIds);
+  }, [activeProject?.name, activeProjectId, activeThreadId, chatThreads, handleSendMessage, handleStartLiveChat, openOrActivateTab]);
 
   const handleApprovalDecision = useCallback(
     async (
@@ -1231,6 +1251,7 @@ export default function App() {
             onToast={pushToast}
             branchRequest={branchRequest}
             executionExpanded={params.get('execution') === '1'}
+            onAskWithContext={handleBoardAskWithContext}
           />
         ) : null}
 
@@ -1259,7 +1280,7 @@ export default function App() {
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} />
+              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} />
             </div>
           </div>
         ) : null}

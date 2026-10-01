@@ -16,6 +16,7 @@ MAX_COMPILED_OBJECTS = 200
 class CompiledContextObject(BaseModel):
     object_id: str
     object_type: str
+    selected_by_user: bool = False
     source_object_ids: list[str] = Field(default_factory=list)
 
 
@@ -120,6 +121,7 @@ class WorkspaceContextCompiler:
                 CompiledContextObject(
                     object_id=item.id,
                     object_type=item.object_type,
+                    selected_by_user=item.id in roots,
                     source_object_ids=sorted(set(linked_sources.get(item.id, []))),
                 )
             )

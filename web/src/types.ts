@@ -100,6 +100,7 @@ export interface ChatMessage {
   routeLabel?: string;
   reasoningLabel?: string;
   contextTokens?: number;
+  contextObjectIds?: string[];
   provenance?: AIProvenanceItem[];
   tool_calls?: any[];
   tool_call_id?: string;

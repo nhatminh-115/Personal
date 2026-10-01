@@ -27,8 +27,6 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
     { turns: 0, notes: 0, papers: 0, code: 0 },
   );
 
-  const estimatedTokens = (nodes.length * 2.07).toFixed(1);
-
   return (
     <div className="context-lens">
       <div className="context-lens__main">
@@ -89,7 +87,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
             <small>{counts.notes} note</small>
             <small>{counts.papers} papers</small>
             <small>{counts.code} code result</small>
-            <strong>Estimated context: {estimatedTokens}k tokens</strong>
+            <strong>Ask AURA includes only selected objects and their explicit context links.</strong>
           </div>
         </div>
       ) : null}
