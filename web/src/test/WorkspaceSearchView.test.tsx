@@ -55,6 +55,20 @@ describe('WorkspaceSearchView', () => {
     expect(onOpenNote).toHaveBeenCalledWith('personal-note-7');
   });
 
+  it('keeps a project Board note in its project graph', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'board-note-3', object_type: 'manual_note', title: 'Board note',
+      excerpt: 'Project-specific finding.', project_name: 'AURA Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onOpenProject = vi.fn();
+    const onOpenNote = vi.fn();
+    render(<WorkspaceSearchView query="finding" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenFile={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'board-note-3');
+    expect(onOpenNote).not.toHaveBeenCalled();
+  });
+
   it('opens a personal Library reference in its Library list', () => {
     const result: WorkspaceSearchResult = {
       object_id: 'library-item-5', object_type: 'file_reference', title: 'Methods paper',
