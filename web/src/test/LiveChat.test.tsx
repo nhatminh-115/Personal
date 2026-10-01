@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -145,7 +145,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
-    expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected');
+    await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
   });
 
   it('handles waiting_for_approval and resumes after decision is submitted', async () => {
