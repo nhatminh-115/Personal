@@ -409,6 +409,7 @@ export function InspectorPanel({
                 <h4>{role} · {runId.slice(0, 12)}</h4>
                 <div className="inspector-row"><span>Estimated tokens</span><strong>{typeof manifest.estimated_tokens === 'number' ? manifest.estimated_tokens.toLocaleString() : 'Unknown'}</strong></div>
                 <div className="inspector-row"><span>Privacy</span><strong>{manifest.privacy_requirement ?? 'Unclassified'}</strong></div>
+                {manifest.privacy_sources?.length ? <div className="inspector-row"><span>Privacy sources</span><strong>{manifest.privacy_sources.map((source) => `${source.object_id} · ${source.privacy_policy}`).join(' | ')}</strong></div> : null}
                 {typeof manifest.character_count === 'number' ? <div className="inspector-row"><span>Compiled size</span><strong>{manifest.character_count.toLocaleString()} characters</strong></div> : null}
                 {requirements.length ? <div className="inspector-row"><span>Requirements</span><strong>{[...new Set(requirements)].join(' · ')}</strong></div> : null}
                 <div className="context-blocks">
