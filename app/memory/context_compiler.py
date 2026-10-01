@@ -160,7 +160,45 @@ class WorkspaceContextCompiler:
                     next_expandable.append(source.id)
             expandable = list(dict.fromkeys(next_expandable))
 
-        # Privacy classifications on selected objects and Bridge provenance
+        # Provenance sources contribute privacy metadata and inspectable IDs,
+        # but their content is not implicitly included as context.
+        provenance_edge_result = await self.db.execute(
+            select(WorkspaceEdgeModel)
+            .where(
+                WorkspaceEdgeModel.project_name == project_name,
+                WorkspaceEdgeModel.edge_family == "provenance",
+                WorkspaceEdgeModel.target_object_id.in_(included),
+            )
+            .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+        )
+        provenance_sources: dict[str, list[str]] = {}
+        provenance_edges = list(provenance_edge_result.scalars())
+        provenance_source_ids = {edge.source_object_id for edge in provenance_edges}
+        missing_provenance_ids = provenance_source_ids - set(objects)
+        if missing_provenance_ids:
+            project_source_result = await self.db.execute(
+                select(WorkspaceObjectModel).where(
+                    WorkspaceObjectModel.id.in_(missing_provenance_ids),
+                    WorkspaceObjectModel.project_name == project_name,
+                )
+            )
+            objects.update({item.id: item for item in project_source_result.scalars()})
+            linked_source_result = await self.db.execute(
+                select(WorkspaceObjectModel)
+                .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+                .where(
+                    WorkspaceObjectModel.project_name.is_(None),
+                    WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+                    WorkspaceObjectProjectLinkModel.project_name == project_name,
+                    WorkspaceObjectModel.id.in_(missing_provenance_ids - set(objects)),
+                )
+            )
+            objects.update({item.id: item for item in linked_source_result.scalars()})
+        for edge in provenance_edges:
+            if edge.source_object_id in objects:
+                provenance_sources.setdefault(edge.target_object_id, []).append(edge.source_object_id)
+
+        # Privacy classifications on selected objects and explicit provenance
         # sources strengthen the route boundary for this turn.
         privacy_requirement: str | None = None
         privacy_sources: list[dict[str, str]] = []
@@ -173,6 +211,7 @@ class WorkspaceContextCompiler:
         }
         privacy_object_ids = set(included)
         privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
+        privacy_object_ids.update(source_id for source_ids in provenance_sources.values() for source_id in source_ids)
         for object_id in sorted(privacy_object_ids):
             metadata = objects[object_id].metadata_json or {}
             classification = metadata.get("privacy_policy")
@@ -260,7 +299,9 @@ class WorkspaceContextCompiler:
                     object_id=item.id,
                     object_type=item.object_type,
                     selected_by_user=item.id in roots,
-                    source_object_ids=sorted(set(linked_sources.get(item.id, []))),
+                    source_object_ids=sorted(set(
+                        linked_sources.get(item.id, []) + provenance_sources.get(item.id, [])
+                    )),
                     selected_sections=section_selection,
                 )
             )
