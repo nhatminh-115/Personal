@@ -82,6 +82,16 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
             ))
         else:
             safe.pop("capability_requirements", None)
+        raw_privacy_sources = payload.get("privacy_sources")
+        if isinstance(raw_privacy_sources, list):
+            safe["privacy_sources"] = [
+                {"object_id": item["object_id"], "privacy_policy": item["privacy_policy"]}
+                for item in raw_privacy_sources
+                if isinstance(item, dict)
+                and isinstance(item.get("object_id"), str)
+                and isinstance(item.get("privacy_policy"), str)
+                and item["privacy_policy"] in PRIVACY_REQUIREMENT_ORDER
+            ]
         safe["objects"] = safe_objects
         return safe
     if event_type == "model_selected":
