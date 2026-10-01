@@ -56,7 +56,8 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
   const nodes: AuraFlowNode[] = graph.objects.map((object, index) => {
     const role = object.metadata_json.role;
     const researchObject = object.object_type.startsWith('research_');
-    const kind = object.object_type === 'manual_note' || object.object_type === 'study_session' ? 'note'
+    const kind = object.object_type === 'manual_note' ? 'note'
+      : object.object_type === 'study_session' ? 'paper'
       : object.object_type === 'file_reference' ? 'file'
       : object.object_type === 'context_bridge' ? 'bridge'
         : object.object_type === 'context_set' ? 'merge'
