@@ -1,22 +1,11 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
-import { AutomationsView } from './components/global/AutomationsView';
-import { GlobalHome } from './components/global/GlobalHome';
-import { LibraryView } from './components/global/LibraryView';
-import { ConnectedFolderView } from './components/global/ConnectedFolderView';
-import { FilePreviewView, type FilePreviewRecord } from './components/global/FilePreviewView';
-import { NotesView } from './components/global/NotesView';
-import { ProjectsView } from './components/global/ProjectsView';
-import { StudyView } from './components/global/StudyView';
-import { ProjectFilesView } from './components/home/ProjectFilesView';
-import { ProjectHome } from './components/home/ProjectHome';
-import { InspectorPanel } from './components/layout/InspectorPanel';
+import type { FilePreviewRecord } from './components/global/FilePreviewView';
 import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
 import { WorkspaceChrome, type AuraTab } from './components/layout/WorkspaceChrome';
 import { ToastStack } from './components/ui/ToastStack';
-import { RoutingStudio } from './components/routing/RoutingStudio';
 import { RoutingConfirmationNotice } from './components/routing/RoutingConfirmationNotice';
 import { initialNodes } from './data/mockData';
 import { makeProjectBoard } from './data/projectBoards';
@@ -73,6 +62,18 @@ const BoardCanvas = lazy(async () => {
   const module = await import('./components/board/BoardCanvas');
   return { default: module.BoardCanvas };
 });
+const AutomationsView = lazy(() => import('./components/global/AutomationsView').then((module) => ({ default: module.AutomationsView })));
+const GlobalHome = lazy(() => import('./components/global/GlobalHome').then((module) => ({ default: module.GlobalHome })));
+const LibraryView = lazy(() => import('./components/global/LibraryView').then((module) => ({ default: module.LibraryView })));
+const ConnectedFolderView = lazy(() => import('./components/global/ConnectedFolderView').then((module) => ({ default: module.ConnectedFolderView })));
+const FilePreviewView = lazy(() => import('./components/global/FilePreviewView').then((module) => ({ default: module.FilePreviewView })));
+const NotesView = lazy(() => import('./components/global/NotesView').then((module) => ({ default: module.NotesView })));
+const ProjectsView = lazy(() => import('./components/global/ProjectsView').then((module) => ({ default: module.ProjectsView })));
+const StudyView = lazy(() => import('./components/global/StudyView').then((module) => ({ default: module.StudyView })));
+const ProjectFilesView = lazy(() => import('./components/home/ProjectFilesView').then((module) => ({ default: module.ProjectFilesView })));
+const ProjectHome = lazy(() => import('./components/home/ProjectHome').then((module) => ({ default: module.ProjectHome })));
+const InspectorPanel = lazy(() => import('./components/layout/InspectorPanel').then((module) => ({ default: module.InspectorPanel })));
+const RoutingStudio = lazy(() => import('./components/routing/RoutingStudio').then((module) => ({ default: module.RoutingStudio })));
 
 type WorkspaceSurface =
   | 'global-home'
@@ -156,6 +157,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
+  const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
   const [routingConfirmation, setRoutingConfirmation] = useState<{ provider?: string; model?: string } | null>(null);
   const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
@@ -225,6 +227,12 @@ export default function App() {
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [threadRoutingOverrides, setThreadRoutingOverrides] = useState<Record<string, { model: string | null; reasoning: ReasoningEffort | null }>>({});
+
+  const openRoutingStudio = () => {
+    setRoutingOpen(false);
+    setRoutingStudioLoaded(true);
+    setRoutingStudioOpen(true);
+  };
   const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
   /**
    * approvalOrigins — typed binding: approval.id → originatingThreadId.
@@ -1168,31 +1176,33 @@ export default function App() {
         reasoningOverride={activeThreadOverrides?.reasoning ?? null}
         onSetModelLock={setActiveModelLock}
         onSetReasoningOverride={setActiveReasoningOverride}
-        onOpenRoutingStudio={() => { setRoutingOpen(false); setRoutingStudioOpen(true); }}
+        onOpenRoutingStudio={openRoutingStudio}
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((value) => !value)}
         onOpenAura={() => setAuraOpen(true)}
       />
-      <RoutingStudio
-        open={routingStudioOpen}
-        projectName={activeProject?.name ?? ''}
-        sessionId={activeThread?.sessionId}
-        sessionAvailable={sessionAvailable}
-        demoThread={activeThread?.source === 'demo'}
-        effective={effectiveRouting}
-        catalog={catalog}
-        onClose={() => setRoutingStudioOpen(false)}
-        onSaved={() => {
-          if (activeProject?.name) void api.fetchEffectiveRouting(activeProject.name, sessionAvailable ? activeThread?.sessionId : undefined).then(setEffectiveRouting).catch(() => {});
-        }}
-        onSetModelLock={setActiveModelLock}
-        onRefreshModels={async () => { try { setCatalog(await api.refreshModels()); } catch (error) { pushToast('Model discovery failed', executionErrorText(error)); } }}
-      />
+      {routingStudioLoaded ? <Suspense fallback={null}>
+        <RoutingStudio
+          open={routingStudioOpen}
+          projectName={activeProject?.name ?? ''}
+          sessionId={activeThread?.sessionId}
+          sessionAvailable={sessionAvailable}
+          demoThread={activeThread?.source === 'demo'}
+          effective={effectiveRouting}
+          catalog={catalog}
+          onClose={() => setRoutingStudioOpen(false)}
+          onSaved={() => {
+            if (activeProject?.name) void api.fetchEffectiveRouting(activeProject.name, sessionAvailable ? activeThread?.sessionId : undefined).then(setEffectiveRouting).catch(() => {});
+          }}
+          onSetModelLock={setActiveModelLock}
+          onRefreshModels={async () => { try { setCatalog(await api.refreshModels()); } catch (error) { pushToast('Model discovery failed', executionErrorText(error)); } }}
+        />
+      </Suspense> : null}
       {routingConfirmation ? <RoutingConfirmationNotice
         proposal={routingConfirmation}
         onCancel={() => setRoutingConfirmation(null)}
-        onOpenStudio={() => { setRoutingConfirmation(null); setRoutingStudioOpen(true); }}
-        onChangeRouting={() => { setRoutingConfirmation(null); setActiveModelLock(null); setRoutingStudioOpen(true); }}
+        onOpenStudio={() => { setRoutingConfirmation(null); openRoutingStudio(); }}
+        onChangeRouting={() => { setRoutingConfirmation(null); setActiveModelLock(null); openRoutingStudio(); }}
       /> : null}
 
       <WorkspaceChrome
@@ -1209,6 +1219,7 @@ export default function App() {
       />
 
       <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}`}>
+        <Suspense fallback={<div className="workspace-loading" role="status">Loading workspace…</div>}>
         {surface === 'global-home' ? (
           <GlobalHome
             libraryItems={libraryItems}
@@ -1355,19 +1366,22 @@ export default function App() {
             </div>
           </div>
         ) : null}
+        </Suspense>
       </main>
 
       {inspectorOpen ? (
-        <InspectorPanel
-          selectedNode={selectedNode}
-          runDetail={activeThreadLive.runDetail}
-          effectiveRouting={effectiveRouting}
-          routingData={activeThreadLive.routingData}
-          researchData={activeThreadLive.researchData}
-          memories={memories}
-          onClose={() => setInspectorOpen(false)}
-          onContextSelect={openBoardNode}
-        />
+        <Suspense fallback={<aside className="inspector-panel inspector-panel--loading" role="status">Loading Inspector…</aside>}>
+          <InspectorPanel
+            selectedNode={selectedNode}
+            runDetail={activeThreadLive.runDetail}
+            effectiveRouting={effectiveRouting}
+            routingData={activeThreadLive.routingData}
+            researchData={activeThreadLive.researchData}
+            memories={memories}
+            onClose={() => setInspectorOpen(false)}
+            onContextSelect={openBoardNode}
+          />
+        </Suspense>
       ) : null}
       {auraOpen ? (
         <AuraCommandPalette
