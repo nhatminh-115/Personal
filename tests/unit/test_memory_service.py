@@ -52,6 +52,20 @@ async def test_episodic_memory(test_db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_archived_episodes_are_not_returned_for_context(test_db_session: AsyncSession):
+    mem_service = SQLMemoryService(test_db_session)
+    session_id = "sess-archived-epi"
+
+    archived = await mem_service.record_episodic_memory(session_id, "Archived context.")
+    active = await mem_service.record_episodic_memory(session_id, "Current context.")
+    await mem_service.archive_memory(archived.id)
+
+    episodes = await mem_service.get_recent_episodes(session_id=session_id)
+
+    assert [episode.id for episode in episodes] == [active.id]
+
+
+@pytest.mark.asyncio
 async def test_profile_memory(test_db_session: AsyncSession):
     mem_service = SQLMemoryService(test_db_session)
 
