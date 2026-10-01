@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ArrowRight, BookOpenText, Play } from 'lucide-react';
 import type { LibraryItem } from '../../data/workspaceData';
 import type { StudySessionRecord } from '../../types';
@@ -10,16 +11,22 @@ interface StudyViewProps {
   onStartSession: (item: LibraryItem) => void;
   sessions: StudySessionRecord[];
   onCompleteSession: (sessionId: string) => void;
+  focusSessionId?: string | null;
 }
 
 function isStudyMaterial(item: LibraryItem) {
   return item.collection === 'Study' || item.collection === 'Research';
 }
 
-export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession }: StudyViewProps) {
+export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const materialIds = new Set(materials.map((item) => item.id));
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
+
+  useEffect(() => {
+    if (!focusSessionId) return;
+    document.getElementById(`study-session-${focusSessionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [focusSessionId, sessions, libraryItems]);
 
   return (
     <section className="study-view">
@@ -54,11 +61,22 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                     <strong>Open material</strong><ArrowRight size={12} />
                   </button>
                 </div>
-                {activeSession ? (
-                  <button className="study-start-button" type="button" onClick={() => onCompleteSession(activeSession.id)}>
-                    <Play size={13} /> Mark session complete
-                  </button>
-                ) : canStartSession ? (
+                {itemSessions.length ? (
+                  <div className="study-session-list" aria-label={`${item.name} sessions`}>
+                    {itemSessions.map((session) => (
+                      <article
+                        id={`study-session-${session.id}`}
+                        key={session.id}
+                        className={`study-session-row${session.id === focusSessionId ? ' is-focused' : ''}`}
+                        tabIndex={-1}
+                      >
+                        <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
+                        {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
+                      </article>
+                    ))}
+                  </div>
+                ) : null}
+                {activeSession ? null : canStartSession ? (
                   <button className="study-start-button" type="button" onClick={() => onStartSession(item)}>
                     <Play size={13} /> Start short session
                   </button>
