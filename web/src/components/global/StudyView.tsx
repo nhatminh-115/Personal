@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpenText, Clock3, Play, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpenText, Check, Clock3, Play, Sparkles } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { studyTracks, type LibraryItem } from '../../data/workspaceData';
 import type { StudySessionRecord } from '../../types';
@@ -72,7 +72,7 @@ export function StudyView({ libraryItems, sessions, sessionsUnavailable = false,
                 onClick={() => currentSession ? void onCompleteSession(currentSession.id) : void onStartSession(track.id)}
                 disabled={!currentSession && Boolean(activeSession)}
               >
-                {currentSession ? <><Play size={13} /> Finish session · {formatDuration(elapsed)}</> : <><Play size={13} /> Start short session</>}
+                {currentSession ? <><Check size={13} /> Finish session · {formatDuration(elapsed)}</> : <><Play size={13} /> Start short session</>}
               </button>
             </article>
           );
