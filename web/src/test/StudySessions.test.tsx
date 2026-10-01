@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StudyView } from '../components/global/StudyView';
 import type { LibraryItem } from '../data/workspaceData';
@@ -31,7 +31,7 @@ describe('Study sessions use shared Library materials', () => {
       id: 'study-session-1', track_id: studyMaterial.id, track_title: studyMaterial.name,
       material_id: studyMaterial.id, status: 'in_progress', started_at: '2026-10-02T00:00:00Z',
     }]} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Mark session complete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
     expect(onCompleteSession).toHaveBeenCalledWith('study-session-1');
   });
 
@@ -69,4 +69,25 @@ describe('Study sessions use shared Library materials', () => {
     expect(screen.getByText('German A1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Mark complete' })).toBeInTheDocument();
   });
+  it('scrolls to the exact session opened from workspace search', async () => {
+    const sessionId = 'study-session-search-target';
+    render(<StudyView
+      libraryItems={[studyMaterial]}
+      sessions={[{
+        id: sessionId, track_id: studyMaterial.id, track_title: studyMaterial.name,
+        material_id: studyMaterial.id, status: 'completed', started_at: '2026-10-02T00:00:00Z',
+      }]}
+      focusSessionId={sessionId}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+    />);
+
+    const row = document.getElementById(`study-session-${sessionId}`);
+    expect(row).toHaveTextContent('Completed');
+    expect(row).toHaveClass('is-focused');
+    await waitFor(() => expect(row?.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }));
+  });
+
 });

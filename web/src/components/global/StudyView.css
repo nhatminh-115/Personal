@@ -68,3 +68,38 @@
   color: #87aab7;
   cursor: pointer;
 }
+
+.study-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.study-session-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(149, 179, 197, .08);
+  border-radius: 8px;
+  color: #8299a3;
+  font-size: 8px;
+  scroll-margin: 18px;
+}
+
+.study-session-row.is-focused {
+  border-color: rgba(94, 210, 224, .55);
+  background: rgba(66, 178, 193, .08);
+}
+
+.study-session-row span {
+  flex: 1;
+}
+
+.study-session-row button {
+  border: 0;
+  background: transparent;
+  color: #87aab7;
+  cursor: pointer;
+}

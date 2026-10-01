@@ -273,6 +273,7 @@ export default function App() {
   const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
   const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
   const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
+  const [focusedStudySessionId, setFocusedStudySessionId] = useState<string | null>(null);
   const workspaceSearchRequest = useRef(0);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
@@ -1615,6 +1616,11 @@ export default function App() {
     handleSidebarNavigate('library');
   };
 
+  const handleOpenWorkspaceSearchStudySession = (objectId: string) => {
+    setFocusedStudySessionId(objectId);
+    handleSidebarNavigate('study');
+  };
+
   const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
   const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
 
@@ -1738,7 +1744,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
@@ -1854,6 +1860,7 @@ export default function App() {
             onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenNote={handleOpenWorkspaceSearchNote}
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
+            onOpenStudySession={handleOpenWorkspaceSearchStudySession}
             onOpenFile={(result) => {
               if (!result.connection_id || !result.relative_path || !result.connection_name) return;
               const indexedFile: IndexedFolderFile = {
