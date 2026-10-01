@@ -278,4 +278,34 @@ describe('Persistent workspace graph Board projection', () => {
     expect(createObject).not.toHaveBeenCalled();
   });
 
+  it('projects Research Specialist sources, evidence, claims, and provenance into the shared Board', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [
+        { ...savedGraph.objects[0], id: 'research-source-node', session_id: null, source_message_id: null, object_type: 'research_source', created_by: 'research', title: 'Durable Workflows', content: 'Workflow overview.', metadata_json: { canonical_id: 'doi:10.1000/workflows' } },
+        { ...savedGraph.objects[0], id: 'research-evidence-node', session_id: null, source_message_id: null, object_type: 'research_evidence', created_by: 'research', title: 'Evidence · Durable Workflows', content: 'Execution resumes from a persisted checkpoint.', metadata_json: { source_locator: 'Section 3' } },
+        { ...savedGraph.objects[0], id: 'research-claim-node', session_id: null, source_message_id: null, object_type: 'research_claim', created_by: 'research', title: 'source_supported_fact · Durable state', content: 'Claim type: source_supported_fact\nVerification: verified\n\nDurable state resumes after restart.', metadata_json: { verification_status: 'verified' } },
+      ],
+      edges: [
+        { id: 'research-source-evidence', project_name: projects[0].name, source_object_id: 'research-source-node', target_object_id: 'research-evidence-node', relation_type: 'contains_evidence', edge_family: 'provenance', created_by: 'research', metadata_json: {}, created_at: '2026-10-01T00:00:00Z' },
+        { id: 'research-evidence-claim', project_name: projects[0].name, source_object_id: 'research-evidence-node', target_object_id: 'research-claim-node', relation_type: 'supports_claim', edge_family: 'provenance', created_by: 'research', metadata_json: {}, created_at: '2026-10-01T00:00:00Z' },
+      ],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-research', project_name: projects[0].name });
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="research-shared-graph" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} workspaceSessionIds={['session-research']} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('Durable Workflows')).toBeInTheDocument();
+    expect(screen.getByText('Evidence · Durable Workflows')).toBeInTheDocument();
+    expect(screen.getByText('source_supported_fact · Durable state')).toBeInTheDocument();
+    expect(container.querySelector('[data-id="research-source-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH SOURCE');
+    expect(container.querySelector('[data-id="research-evidence-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH EVIDENCE');
+    expect(container.querySelector('[data-id="research-claim-node"] .aura-node__eyebrow')).toHaveTextContent('RESEARCH CLAIM');
+    expect(container.querySelectorAll('[data-id^="research-"]')).toHaveLength(3);
+  });
+
 });

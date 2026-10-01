@@ -1,6 +1,7 @@
 """Unit tests for Milestone 2B Context Assembler and Memory Candidate Pipeline."""
 
 import pytest
+from sqlalchemy import select
 from app.db.models import MemoryModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryType
 from app.memory.context import AssembledContext, ContextAssembler
@@ -10,6 +11,14 @@ from app.memory.embeddings.router import EmbeddingRouter
 from app.memory.pipeline import MemoryCandidate, MemoryCandidatePipeline
 from app.memory.stores.factory import create_semantic_store
 from app.memory.service import SQLMemoryService
+from app.research.models import (
+    ClaimType,
+    EvidenceItem,
+    ResearchClaim,
+    ResearchSource,
+    ResearchState,
+    SourceStatus,
+)
 
 
 @pytest.fixture
@@ -269,6 +278,72 @@ async def test_workspace_context_compiler_aggregates_explicit_routing_requiremen
     assert compiled.requires_vision is True
     assert compiled.requires_structured_output is True
     assert compiled.requires_long_context is True
+
+
+@pytest.mark.asyncio
+async def test_research_artifacts_persist_as_selectable_provenance_objects(test_db_session):
+    from app.research.workspace import persist_research_workspace_objects
+
+    state = ResearchState(
+        sources={
+            "source-good": ResearchSource(
+                source_id="source-good", canonical_id="doi:10.1000/good", title="Durable Workflows",
+                abstract="Durable workflow overview.", status=SourceStatus.INSPECTED,
+            ),
+            "source-rejected": ResearchSource(
+                source_id="source-rejected", canonical_id="doi:10.1000/rejected", title="Rejected Source",
+                status=SourceStatus.REJECTED,
+            ),
+        },
+        evidence={
+            "evidence-good": EvidenceItem(
+                evidence_id="evidence-good", source_id="source-good", source_title="Durable Workflows",
+                source_locator="Section 3", extracted_text="The workflow resumes from a persisted checkpoint.", confidence=0.93,
+            ),
+            "evidence-rejected": EvidenceItem(
+                evidence_id="evidence-rejected", source_id="source-rejected", source_title="Rejected Source",
+                source_locator="Page 1", extracted_text="This rejected source must not be projected.",
+            ),
+        },
+        claims=[ResearchClaim(
+            claim_id="claim-resume", claim_text="A checkpoint can resume workflow execution.",
+            claim_type=ClaimType.SOURCE_SUPPORTED_FACT, evidence_ids=["evidence-good"],
+            verification_status="verified",
+        )],
+    )
+
+    first_ids = await persist_research_workspace_objects(
+        test_db_session, child_run_id="research-run-1", project_name="Atlas", state=state,
+    )
+    await test_db_session.commit()
+    second_ids = await persist_research_workspace_objects(
+        test_db_session, child_run_id="research-run-1", project_name="Atlas", state=state,
+    )
+    await test_db_session.commit()
+
+    assert first_ids == second_ids
+    objects = (await test_db_session.execute(
+        select(WorkspaceObjectModel).where(WorkspaceObjectModel.project_name == "Atlas")
+    )).scalars().all()
+    assert {item.object_type for item in objects} == {"research_source", "research_evidence", "research_claim"}
+    assert len(objects) == 3
+    assert all(item.created_by == "research" for item in objects)
+    claim = next(item for item in objects if item.object_type == "research_claim")
+    evidence = next(item for item in objects if item.object_type == "research_evidence")
+    assert "Verification: verified" in claim.content
+    assert claim.metadata_json["evidence_object_ids"] == [evidence.id]
+    assert "rejected source must not be projected" not in " ".join(item.content for item in objects)
+
+    edges = (await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(WorkspaceEdgeModel.project_name == "Atlas")
+    )).scalars().all()
+    assert {(edge.edge_family, edge.relation_type) for edge in edges} == {
+        ("provenance", "contains_evidence"), ("provenance", "supports_claim"),
+    }
+    compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [claim.id])
+    assert [item.object_id for item in compiled.objects] == [claim.id]
+    assert "A checkpoint can resume workflow execution." in compiled.prompt_text
+    assert "workflow resumes from a persisted checkpoint" not in compiled.prompt_text
 
 
 @pytest.mark.asyncio

@@ -55,10 +55,14 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
   const positions = graph.layout.layout?.positions ?? {};
   const nodes: AuraFlowNode[] = graph.objects.map((object, index) => {
     const role = object.metadata_json.role;
+    const researchObject = object.object_type.startsWith('research_');
     const kind = object.object_type === 'manual_note' ? 'note'
       : object.object_type === 'context_bridge' ? 'bridge'
         : object.object_type === 'context_set' ? 'merge'
+          : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
+            : object.object_type === 'research_claim' ? 'answer'
           : object.object_type === 'conversation_branch' || role === 'user' ? 'user' : 'answer';
+    const verification = String(object.metadata_json.verification_status ?? '');
     const mergeItems = Array.isArray(object.metadata_json.source_titles)
       ? object.metadata_json.source_titles.filter((item): item is string => typeof item === 'string')
       : [];
@@ -70,14 +74,14 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       position: positions[object.id] ?? { x: 120 + (index % 3) * 390, y: 100 + Math.floor(index / 3) * 210 },
       data: {
         kind,
-        eyebrow: object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
+        eyebrow: researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
         title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
         body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
         summary: object.content.slice(0, 160),
         density: graph.layout.layout?.densities?.[object.id] ?? 'compact',
         manual: object.created_by === 'user' && kind === 'note',
-        accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
-        layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
+        accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : researchObject && verification === 'verified' ? 'green' : researchObject ? 'cyan' : 'purple',
+        layer: kind === 'note' || kind === 'bridge' || kind === 'merge' || researchObject ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
         workspaceObjectType: object.object_type,
         workspaceCreatedBy: object.created_by,

@@ -467,6 +467,17 @@ class DelegationRuntime:
 
                 artifacts_dict["research_result"] = research_result.model_dump()
                 summary = dynamic_synthesis
+
+                project_name = r_state.goal.project_name if r_state.goal else None
+                if project_name:
+                    from app.research.workspace import persist_research_workspace_objects
+
+                    await persist_research_workspace_objects(
+                        db,
+                        child_run_id=child_run_id,
+                        project_name=project_name,
+                        state=r_state,
+                    )
             elif final_state.get("research_state"):
                 artifacts_dict["research_state"] = final_state["research_state"]
 
