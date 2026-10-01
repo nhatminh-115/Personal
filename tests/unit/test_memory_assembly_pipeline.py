@@ -197,6 +197,49 @@ def test_project_memory_prompt_encoding_preserves_text_as_non_executable_referen
 
 
 @pytest.mark.asyncio
+async def test_project_memory_privacy_is_combined_without_losing_duplicate_provenance(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    first = await service.store_project_memory(
+        "Private Project", "summary", "Sensitive project fact", metadata={"privacy_policy": "internal"}
+    )
+    stricter_duplicate = await service.store_project_memory(
+        "Private Project", "summary-copy", "Sensitive project fact", metadata={"privacy_policy": "local_only"}
+    )
+
+    assembled = await assembler.assemble_context(
+        session_id="private-project-context",
+        user_message="Summarize this project.",
+        project_name="Private Project",
+    )
+
+    assert assembled.project_facts == ["Sensitive project fact"]
+    assert assembled.project_memory_ids == [first.id, stricter_duplicate.id]
+    assert assembled.project_fact_memory_ids == [first.id]
+    assert assembled.privacy_requirement == "local_only"
+
+
+@pytest.mark.asyncio
+async def test_excluded_oversized_project_memory_does_not_constrain_context_privacy(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    await service.store_project_memory(
+        "Bounded Privacy Project", "oversized", "x" * (MAX_PROJECT_MEMORY_CHARS + 1),
+        metadata={"privacy_policy": "unknown-policy"},
+    )
+
+    assembled = await assembler.assemble_context(
+        session_id="bounded-privacy-project-context",
+        user_message="Summarize this project.",
+        project_name="Bounded Privacy Project",
+    )
+
+    assert assembled.project_facts == []
+    assert assembled.project_memory_ids == []
+    assert assembled.privacy_requirement is None
+
+
+@pytest.mark.asyncio
 async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
     source = WorkspaceObjectModel(
         id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
