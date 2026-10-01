@@ -845,7 +845,7 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string, contextObjectIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing') => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
       const id = `${activeProjectId}-live-${Date.now()}`;
@@ -884,7 +884,7 @@ export default function App() {
         try {
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);

@@ -41,7 +41,7 @@ export interface ChatPaneProps {
   onAttachRequest?: () => void;
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
-  onStartLiveChat?: (text: string) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -261,7 +261,7 @@ export function ChatPane({
               <button
                 className="demo-start-live-button"
                 type="button"
-                onClick={() => { void onStartLiveChat(draft.trim()); }}
+                onClick={() => { void onStartLiveChat(draft.trim(), [], taskTypeForMode(workMode)); }}
               >
                 Start live chat
               </button>
