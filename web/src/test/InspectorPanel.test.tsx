@@ -190,6 +190,7 @@ describe('InspectorPanel Component', () => {
           estimated_tokens: 128,
           character_count: 511,
           privacy_requirement: 'confidential',
+          privacy_sources: [{ object_id: 'selected-bridge', privacy_policy: 'local_only' }],
           required_capabilities: ['code_graph.read'],
           capability_requirements: { requires_tools: true, requires_vision: false },
           objects: [
@@ -209,6 +210,7 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('128')).toBeInTheDocument();
     expect(screen.getByText('3 compiled objects across the run tree')).toBeInTheDocument();
     expect(screen.getByText('confidential')).toBeInTheDocument();
+    expect(screen.getByText('selected-bridge · local_only')).toBeInTheDocument();
     expect(screen.getByText('code_graph.read · tools')).toBeInTheDocument();
     expect(screen.getByText('selected-context-set')).toBeInTheDocument();
     expect(screen.getByText('Provenance links: source-note-1')).toBeInTheDocument();
