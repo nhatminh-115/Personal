@@ -346,12 +346,13 @@ export interface AutomationRecord {
   actions: string[];
   lastRun: string;
   nextRun: string;
-  status: 'ready' | 'running' | 'paused';
+  status: 'ready' | 'queued' | 'running' | 'waiting_for_approval' | 'completed' | 'failed' | 'paused';
   source?: 'demo' | 'live';
   instruction?: string;
   intervalSeconds?: number;
   lastRunAt?: string | null;
   nextRunAt?: string | null;
+  latestExecution?: { eventId: string; runId: string; queuedAt: string; status: string; retryCount: number } | null;
 }
 
 export const initialAutomations: AutomationRecord[] = [

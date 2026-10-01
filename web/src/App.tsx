@@ -1438,14 +1438,17 @@ export default function App() {
     const intervalLabel = seconds % 86400 === 0 ? `Every ${seconds / 86400} day${seconds / 86400 === 1 ? '' : 's'}`
       : seconds % 3600 === 0 ? `Every ${seconds / 3600} hour${seconds / 3600 === 1 ? '' : 's'}`
       : `Every ${Math.round(seconds / 60)} minutes`;
+    const latest = record.latest_execution;
+    const lastAt = latest?.queued_at ?? record.last_run_at;
     return {
       id: record.id, name: record.name, description: record.description, instruction: record.instruction,
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
       trigger: intervalLabel, actions: ['Run through AURA'],
-      lastRun: record.last_run_at ? new Date(record.last_run_at).toLocaleString() : 'Never',
+      lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
       nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
       lastRunAt: record.last_run_at, nextRunAt: record.next_run_at,
-      status: record.enabled ? 'ready' : 'paused', source: 'live',
+      latestExecution: latest ? { eventId: latest.event_id, runId: latest.run_id, queuedAt: latest.queued_at, status: latest.status, retryCount: latest.retry_count } : null,
+      status: record.enabled ? latest?.status as AutomationRecord['status'] ?? 'ready' : 'paused', source: 'live',
     };
   }, []);
 
@@ -1474,11 +1477,17 @@ export default function App() {
     if (automation.source !== 'live' || !automation.enabled) return;
     try {
       const result = await api.runAutomation(automation.id);
+      void api.fetchAutomations().then((records) => {
+        const updated = records.find((record) => record.id === automation.id);
+        if (updated?.latest_execution?.event_id !== result.event_id) return;
+        const item = automationFromRecord(updated, projectCatalog);
+        setAutomations((current) => current.map((entry) => entry.id === item.id ? item : entry));
+      }).catch(() => {});
       pushToast(`Queued · ${automation.name}`, `AURA accepted the run (${result.event_id.slice(0, 8)}).`);
     } catch (error) {
       pushToast('Could not queue automation', executionErrorText(error));
     }
-  }, [pushToast]);
+  }, [automationFromRecord, projectCatalog, pushToast]);
 
   useEffect(() => {
     if (surface !== 'automations' || automationsLoaded.current) return;
@@ -1495,6 +1504,20 @@ export default function App() {
     });
     return () => { active = false; };
   }, [automationFromRecord, projectCatalog, pushToast, surface]);
+
+  const hasAutomationInFlight = automations.some((item) => item.source === 'live' && ['queued', 'running'].includes(item.latestExecution?.status ?? ''));
+  useEffect(() => {
+    if (surface !== 'automations' || !automationsLoaded.current || !hasAutomationInFlight) return;
+    const timer = window.setInterval(() => {
+      void api.fetchAutomations().then((records) => {
+        setAutomations((current) => {
+          const examples = current.filter((item) => item.source !== 'live');
+          return [...records.map((record) => automationFromRecord(record, projectCatalog)), ...examples];
+        });
+      }).catch(() => {});
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [automationFromRecord, hasAutomationInFlight, projectCatalog, surface]);
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
