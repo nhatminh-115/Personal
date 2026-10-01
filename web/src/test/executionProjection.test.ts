@@ -12,9 +12,12 @@ const traces: WorkspaceExecutionTrace[] = [
     run_id: 'root-run', session_id: 'session', user_object_id: 'user', response_object_id: 'answer',
     events: [
       { id: 'root-model', event_type: 'model_selected', created_at: '2026-10-01T00:00:00Z', agent_role: 'root', provider: 'local', model: 'safe-model' },
-      { id: 'delegate-start', event_type: 'delegation_started', created_at: '2026-10-01T00:00:01Z', specialist: 'research', child_run_id: 'child-run' },
-      { id: 'delegate-end', event_type: 'delegation_completed', created_at: '2026-10-01T00:00:04Z', specialist: 'research', child_run_id: 'child-run' },
-      { id: 'root-done', event_type: 'run_completed', created_at: '2026-10-01T00:00:05Z' },
+      { id: 'reasoning', event_type: 'reasoning_effort_selected', created_at: '2026-10-01T00:00:01Z', reasoning_policy: 'adaptive', selected_effort: 'high' },
+      { id: 'fallback', event_type: 'fallback_considered', created_at: '2026-10-01T00:00:02Z', fallback_policy: 'local_only', primary_provider: 'cloud', selected_provider: 'ollama' },
+      { id: 'fallback-blocked', event_type: 'fallback_blocked', created_at: '2026-10-01T00:00:03Z', fallback_policy: 'ask_before_cloud', privacy_boundary: 'confidential', error_type: 'RoutingConfirmationRequired', proposed_provider: 'cloud-provider', proposed_model: 'exact-model' },
+      { id: 'delegate-start', event_type: 'delegation_started', created_at: '2026-10-01T00:00:04Z', specialist: 'research', child_run_id: 'child-run' },
+      { id: 'delegate-end', event_type: 'delegation_completed', created_at: '2026-10-01T00:00:07Z', specialist: 'research', child_run_id: 'child-run' },
+      { id: 'root-done', event_type: 'run_completed', created_at: '2026-10-01T00:00:08Z' },
     ],
   },
   {
@@ -31,9 +34,15 @@ describe('execution trace projection', () => {
     const projection = projectExecutionGraph(traces, workspaceNodes);
     const links = new Set(projection.edges.map(({ source, target }) => `${source}->${target}`));
     expect(links).toContain('user->execution-root-model');
+    expect(links).toContain('execution-root-model->execution-reasoning');
     expect(links).toContain('execution-root-done->answer');
     expect(links).toContain('execution-delegate-start->execution-tool-request');
     expect(links).toContain('execution-tool-result->execution-delegate-end');
+    expect(projection.nodes.find((node) => node.id === 'execution-reasoning')?.data.body).toBe('Policy: adaptive');
+    expect(projection.nodes.find((node) => node.id === 'execution-fallback')?.data.body)
+      .toBe('local_only · primary cloud · selected ollama');
+    expect(projection.nodes.find((node) => node.id === 'execution-fallback-blocked')?.data.body)
+      .toContain('proposed cloud-provider:exact-model');
     expect(projection.nodes.every((node) => node.draggable === false && node.selectable === false && node.connectable === false)).toBe(true);
     expect(projection.edges.every((edge) => edge.selectable === false && edge.deletable === false)).toBe(true);
   });

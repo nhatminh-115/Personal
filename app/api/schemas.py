@@ -182,6 +182,15 @@ class WorkspaceExecutionEventResponse(BaseModel):
     error_category: Optional[str] = None
     risk_level: Optional[str] = None
     step: Optional[int] = None
+    reasoning_policy: Optional[str] = None
+    selected_effort: Optional[str] = None
+    fallback_policy: Optional[str] = None
+    primary_provider: Optional[str] = None
+    selected_provider: Optional[str] = None
+    privacy_boundary: Optional[str] = None
+    error_type: Optional[str] = None
+    proposed_provider: Optional[str] = None
+    proposed_model: Optional[str] = None
 
 
 class WorkspaceExecutionTraceResponse(BaseModel):

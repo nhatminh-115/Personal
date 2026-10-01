@@ -6,6 +6,27 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
       const role = event.agent_role === 'root' ? 'Root' : event.agent_role ? `${event.agent_role} specialist` : 'Agent';
       return { title: `${role} · ${event.model ?? 'model selected'}`, body: event.provider ? `Provider: ${event.provider}` : 'Route selected', chip: 'ROUTER' };
     }
+    case 'reasoning_effort_selected':
+      return {
+        title: `Reasoning · ${event.selected_effort ?? 'not reported'}`,
+        body: event.reasoning_policy ? `Policy: ${event.reasoning_policy}` : 'Reasoning policy selected',
+        chip: 'REASONING',
+      };
+    case 'fallback_considered':
+      return {
+        title: 'Fallback policy considered',
+        body: [event.fallback_policy, event.primary_provider ? `primary ${event.primary_provider}` : null, event.selected_provider ? `selected ${event.selected_provider}` : null]
+          .filter(Boolean).join(' · ') || 'Fallback policy evaluated',
+        chip: 'FALLBACK',
+      };
+    case 'fallback_blocked':
+      return {
+        title: 'Fallback blocked',
+        body: [event.fallback_policy, event.privacy_boundary, event.error_type,
+          event.proposed_provider && event.proposed_model ? `proposed ${event.proposed_provider}:${event.proposed_model}` : null]
+          .filter(Boolean).join(' · ') || 'Policy blocked fallback',
+        chip: 'FALLBACK',
+      };
     case 'delegation_started':
       return { title: `Delegate · ${event.specialist ?? 'specialist'}`, body: 'Child runtime started', chip: 'SPECIALIST' };
     case 'delegation_completed':
