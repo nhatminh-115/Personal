@@ -12,6 +12,7 @@ export type AuraNodeKind =
   | 'merge'
   | 'execution-result'
   | 'paper'
+  | 'file'
   | 'code-result'
   | 'execution';
 
@@ -198,7 +199,7 @@ export interface SessionMessage extends ChatMessage {
 
 export interface WorkspaceObject {
   id: string;
-  project_name: string;
+  project_name: string | null;
   session_id?: string | null;
   source_message_id?: string | null;
   object_type: string;
@@ -322,6 +323,20 @@ export interface StudySessionRecord {
   status: 'in_progress' | 'completed';
   started_at: string;
   completed_at?: string | null;
+}
+
+export interface WorkspaceLibraryReferenceRecord {
+  id: string;
+  name: string;
+  kind: 'HTML' | 'PDF' | 'MD' | 'CSV' | 'TXT' | 'JSON' | 'IMAGE' | 'FILE';
+  collection: 'Study' | 'Books' | 'Research' | 'Reference';
+  detail: string;
+  tags: string[];
+  project_names: string[];
+  size?: number | null;
+  mime_type?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CompiledContextObject {

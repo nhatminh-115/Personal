@@ -57,6 +57,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     const role = object.metadata_json.role;
     const researchObject = object.object_type.startsWith('research_');
     const kind = object.object_type === 'manual_note' ? 'note'
+      : object.object_type === 'file_reference' ? 'file'
       : object.object_type === 'context_bridge' ? 'bridge'
         : object.object_type === 'context_set' ? 'merge'
           : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
@@ -81,7 +82,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         density: graph.layout.layout?.densities?.[object.id] ?? 'compact',
         manual: object.created_by === 'user' && kind === 'note',
         accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : researchObject && verification === 'verified' ? 'green' : researchObject ? 'cyan' : 'purple',
-        layer: kind === 'note' || kind === 'bridge' || kind === 'merge' || researchObject ? 'knowledge' : 'conversation',
+        layer: kind === 'note' || kind === 'file' || kind === 'bridge' || kind === 'merge' || researchObject ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
         workspaceObjectType: object.object_type,
         workspaceCreatedBy: object.created_by,

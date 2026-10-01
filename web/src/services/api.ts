@@ -21,6 +21,7 @@ import {
   WorkspaceNoteRecord,
   WorkspaceObject,
   StudySessionRecord,
+  WorkspaceLibraryReferenceRecord,
 } from '../types';
 
 export class ApiError extends Error {
@@ -203,6 +204,28 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
     }));
+  },
+
+  async fetchWorkspaceLibrary(): Promise<WorkspaceLibraryReferenceRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`));
+  },
+
+  async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }));
+  },
+
+  async updateWorkspaceLibraryReference(id: string, input: Omit<WorkspaceLibraryReferenceRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }));
+  },
+
+  async deleteWorkspaceLibraryReference(id: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, { method: 'DELETE' }));
   },
 
   async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {

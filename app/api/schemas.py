@@ -176,6 +176,32 @@ class StudySessionResponse(BaseModel):
     completed_at: Optional[datetime] = None
 
 
+class WorkspaceLibraryReferenceWrite(BaseModel):
+    id: Optional[UUID] = None
+    name: str = Field(min_length=1, max_length=255)
+    kind: Literal["HTML", "PDF", "MD", "CSV", "TXT", "JSON", "IMAGE", "FILE"]
+    collection: Literal["Study", "Books", "Research", "Reference"]
+    detail: str = Field(default="", max_length=500)
+    tags: List[str] = Field(default_factory=list, max_length=32)
+    project_names: List[str] = Field(default_factory=list, max_length=64)
+    size: Optional[int] = Field(default=None, ge=0)
+    mime_type: Optional[str] = Field(default=None, max_length=255)
+
+
+class WorkspaceLibraryReferenceResponse(BaseModel):
+    id: str
+    name: str
+    kind: str
+    collection: str
+    detail: str
+    tags: List[str]
+    project_names: List[str]
+    size: Optional[int] = None
+    mime_type: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WorkspaceEdgeResponse(BaseModel):
     id: str
     project_name: str

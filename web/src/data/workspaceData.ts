@@ -117,6 +117,7 @@ export interface LibraryItem {
   href?: string;
   projectLinks?: string[];
   source?: 'bundled' | 'imported';
+  syncState?: 'pending' | 'synced';
   size?: number;
   mimeType?: string;
   blobKey?: string;
