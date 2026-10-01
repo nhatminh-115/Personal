@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api, ApiError } from '../../services/api';
+import { api } from '../../services/api';
+import { executionErrorText } from '../../lib/executionError';
 import type { EffectiveRouting, ModelCatalog, ReasoningEffort, RoutingDecision, RoutingFallback, RoutingPrivacy, RoutingProfile, RoutingRoute, RoutingProfileValidation } from '../../types';
 
 const ROLES = ['root', 'research', 'coding', 'writing'];
@@ -166,7 +167,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
       if (scope === 'project') setInitialAssignment(assignedId);
       setValidation(null);
       onSaved();
-    } catch (err) { setError(err instanceof ApiError ? `${err.code ? `${err.code}: ` : ''}${err.message}` : (err as Error).message); }
+    } catch (err) { setError(executionErrorText(err)); }
     finally { setBusy(false); }
   }
 
@@ -174,7 +175,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     if (!draft?.id || dirty) return;
     setBusy(true); setError('');
     try { setValidation(await api.validateRoutingProfile(draft.id)); }
-    catch (err) { setError(err instanceof ApiError ? `${err.code ? `${err.code}: ` : ''}${err.message}` : (err as Error).message); }
+    catch (err) { setError(executionErrorText(err)); }
     finally { setBusy(false); }
   }
 
@@ -182,14 +183,14 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     if (!draft?.id) return;
     setBusy(true); setError('');
     try { const copy = await api.duplicateRoutingProfile(draft.id); setProfiles((items) => [...items, copy]); setSelectedId(copy.id ?? null); setDraft(copy); }
-    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    catch (err) { setError(executionErrorText(err)); } finally { setBusy(false); }
   }
 
   async function remove() {
     if (!draft?.id || readOnly || !window.confirm(`Delete “${draft.name}”?`)) return;
     setBusy(true); setError('');
     try { await api.deleteRoutingProfile(draft.id); const next = profiles.filter((item) => item.id !== draft.id); setProfiles(next); selectProfile(next[0]?.id ?? null, next[0]); onSaved(); }
-    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
+    catch (err) { setError(executionErrorText(err)); } finally { setBusy(false); }
   }
 
   async function previewRoute() {
@@ -211,7 +212,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
           required_capabilities: previewCapabilities.split(',').map((value) => value.trim()).filter(Boolean),
         },
       }));
-    } catch (err) { const e = err as ApiError; setError(`${e.code ? `${e.code}: ` : ''}${e.message}`); }
+    } catch (err) { setError(executionErrorText(err)); }
     finally { setBusy(false); }
   }
 
@@ -221,7 +222,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     try {
       const result = await api.probeModel(providerId, modelId);
       setProbeResults((current) => ({ ...current, [key]: result.tool_support }));
-    } catch (err) { setError((err as Error).message); }
+    } catch (err) { setError(executionErrorText(err)); }
     finally { setBusy(false); }
   }
 
