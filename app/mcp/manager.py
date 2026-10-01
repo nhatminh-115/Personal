@@ -46,14 +46,17 @@ class MCPClientManager:
 
     def register_server(self, config: MCPServerConfig) -> None:
         """Register an MCP server configuration."""
-        self._servers[config.id] = config
+        # Configs contain mutable collections even when callers treat them as
+        # immutable. Keep manager policy isolated from registration inputs.
+        stored_config = config.model_copy(deep=True)
+        self._servers[stored_config.id] = stored_config
         self._sync_provider_metadata(
-            config,
-            CapabilityProviderHealth.UNKNOWN if config.enabled else CapabilityProviderHealth.DISABLED,
+            stored_config,
+            CapabilityProviderHealth.UNKNOWN if stored_config.enabled else CapabilityProviderHealth.DISABLED,
         )
         logger.info(
-            f"Registered MCP server '{config.id}' (transport: {config.transport.value})",
-            extra={"server_id": config.id, "transport": config.transport.value},
+            f"Registered MCP server '{stored_config.id}' (transport: {stored_config.transport.value})",
+            extra={"server_id": stored_config.id, "transport": stored_config.transport.value},
         )
 
     def unregister_server(self, server_id: str) -> None:
@@ -108,11 +111,12 @@ class MCPClientManager:
 
     def get_server_config(self, server_id: str) -> Optional[MCPServerConfig]:
         """Retrieve server configuration by ID."""
-        return self._servers.get(server_id)
+        config = self._servers.get(server_id)
+        return config.model_copy(deep=True) if config else None
 
     def list_servers(self) -> List[MCPServerConfig]:
         """List all configured MCP servers."""
-        return list(self._servers.values())
+        return [config.model_copy(deep=True) for config in self._servers.values()]
 
     SAFE_ENV_VARS = {
         "PATH",

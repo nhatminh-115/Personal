@@ -83,6 +83,43 @@ def test_mcp_capability_mappings_must_be_non_empty_and_inside_tool_allowlist():
     assert valid.capabilities_by_tool["codegraph_symbol_search"] == ["code_graph.query"]
 
 
+def test_mcp_manager_isolates_registered_config_from_mutable_callers():
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    config = MCPServerConfig(
+        id="isolated-config",
+        name="Isolated config",
+        allowed_tools=["read_document"],
+        env={"TOKEN": "initial"},
+        headers={"Authorization": "initial"},
+        capabilities_by_tool={"read_document": ["research.library.read"]},
+    )
+    manager.register_server(config)
+
+    config.enabled = False
+    config.allowed_tools.append("delete_document")
+    config.env["TOKEN"] = "changed"
+    config.capabilities_by_tool["read_document"].append("workspace.files.write")
+
+    fetched = manager.get_server_config("isolated-config")
+    assert fetched is not None
+    assert fetched.enabled is True
+    assert fetched.allowed_tools == ["read_document"]
+    assert fetched.env == {"TOKEN": "initial"}
+    assert fetched.capabilities_by_tool == {"read_document": ["research.library.read"]}
+
+    fetched.enabled = False
+    fetched.headers["Authorization"] = "read-mutation"
+    listed = manager.list_servers()[0]
+    listed.allowed_tools.append("delete_document")
+
+    confirmed = manager.get_server_config("isolated-config")
+    assert confirmed is not None
+    assert confirmed.enabled is True
+    assert confirmed.allowed_tools == ["read_document"]
+    assert confirmed.headers == {"Authorization": "initial"}
+
+
 @pytest.mark.asyncio
 async def test_mcp_capability_requires_discovery_of_its_declared_tool():
     from app.capabilities.registry import UnresolvedCapabilitiesError
