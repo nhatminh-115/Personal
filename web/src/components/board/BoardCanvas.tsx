@@ -422,6 +422,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const changeBody = useCallback(
     (id: string, body: string) => {
+      const existingNode = nodesRef.current.find((item) => item.id === id);
+      const timers = existingNode?.data.kind === 'bridge' ? bridgeSectionSaveTimers.current : noteSaveTimers.current;
+      if (workspaceProjectName && (existingNode?.data.manual || existingNode?.data.kind === 'bridge') && !timers.has(id)) recordHistory();
       setNodes((current) => current.map((node) => (node.id === id ? {
         ...node,
         data: { ...node.data, body, ...(node.data.kind === 'bridge' ? { bridgeNote: body } : {}) },
@@ -450,12 +453,12 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }
       }
     },
-    [setNodes, toast, workspaceProjectName],
+    [recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const updateBridgeOption = useCallback(
     (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
-      recordHistory();
+      if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       const node = nodesRef.current.find((item) => item.id === id);
       const bridgeOptions = {
         ...(node?.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false }),
@@ -495,7 +498,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const updateBridgeSection = useCallback(
     (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => {
-      recordHistory();
+      if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       setNodes((current) => current.map((node) => node.id === id ? {
         ...node,
         data: { ...node.data, bridgeSections: { ...(node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' }), [key]: value } },

@@ -138,6 +138,12 @@ describe('Persistent workspace graph Board projection', () => {
       content: 'Updated internal wording.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
     })), { timeout: 2000 });
+
+    fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
+    await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('AURA Project', 'classified-note', expect.objectContaining({
+      content: 'Keep this internal.',
+      metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
+    })));
   });
 
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
