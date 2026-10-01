@@ -202,6 +202,20 @@ class WorkspaceLibraryReferenceResponse(BaseModel):
     updated_at: datetime
 
 
+class WorkspaceProjectWrite(BaseModel):
+    id: Optional[UUID] = None
+    name: str = Field(min_length=1, max_length=128)
+    subtitle: str = Field(default="", max_length=255)
+
+
+class WorkspaceProjectResponse(BaseModel):
+    id: str
+    name: str
+    subtitle: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class WorkspaceEdgeResponse(BaseModel):
     id: str
     project_name: str

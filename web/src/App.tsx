@@ -21,6 +21,7 @@ import {
   type ChatThreadRecord,
   type LibraryItem,
   type LibraryKind,
+  type ProjectRecord,
   type WorkspaceNote,
 } from './data/workspaceData';
 import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
@@ -56,6 +57,7 @@ import type {
   WorkspaceNoteRecord,
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
+  WorkspaceProjectRecord,
   WorkspaceMode,
   EffectiveRouting,
   ReasoningEffort,
@@ -124,25 +126,25 @@ function noteUpdatedLabel(value: string): string {
   return new Date(timestamp).toLocaleDateString();
 }
 
-function workspaceNoteFromRecord(record: WorkspaceNoteRecord): WorkspaceNote {
+function workspaceNoteFromRecord(record: WorkspaceNoteRecord, projectCatalog: ProjectRecord[] = projects): WorkspaceNote {
   return {
     id: record.id,
     title: record.title,
     body: record.body,
     updated: noteUpdatedLabel(record.updated_at),
     tags: record.tags,
-    projectIds: record.project_names.map((name) => projects.find((project) => project.name === name)?.id ?? name),
+    projectIds: record.project_names.map((name) => projectCatalog.find((project) => project.name === name)?.id ?? name),
     pinned: record.pinned,
     source: 'live',
   };
 }
 
-function workspaceNotePayload(note: WorkspaceNote): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'> {
+function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord[] = projects): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'> {
   return {
     title: note.title,
     body: note.body,
     tags: note.tags,
-    project_names: note.projectIds.map((id) => projects.find((project) => project.id === id)?.name ?? id),
+    project_names: note.projectIds.map((id) => projectCatalog.find((project) => project.id === id)?.name ?? id),
     pinned: note.pinned === true,
   };
 }
@@ -157,7 +159,7 @@ function workspaceNoteFingerprint(note: WorkspaceNote): string {
   });
 }
 
-function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord): LibraryItem {
+function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord, projectCatalog: ProjectRecord[] = projects): LibraryItem {
   return {
     id: record.id,
     name: record.name,
@@ -166,7 +168,7 @@ function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord): Li
     detail: record.detail,
     updated: noteUpdatedLabel(record.updated_at),
     tags: record.tags,
-    projectLinks: record.project_names.map((name) => projects.find((project) => project.name === name)?.id ?? name),
+    projectLinks: record.project_names.map((name) => projectCatalog.find((project) => project.name === name)?.id ?? name),
     source: 'imported',
     syncState: 'synced',
     size: record.size ?? undefined,
@@ -175,16 +177,32 @@ function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord): Li
   };
 }
 
-function workspaceLibraryPayload(item: LibraryItem) {
+function workspaceLibraryPayload(item: LibraryItem, projectCatalog: ProjectRecord[] = projects) {
   return {
     name: item.name,
     kind: item.kind,
     collection: item.collection,
     detail: item.detail,
     tags: item.tags,
-    project_names: (item.projectLinks ?? []).map((id) => projects.find((project) => project.id === id)?.name ?? id),
+    project_names: (item.projectLinks ?? []).map((id) => projectCatalog.find((project) => project.id === id)?.name ?? id),
     size: item.size,
     mime_type: item.mimeType,
+  };
+}
+
+function projectFromRecord(record: WorkspaceProjectRecord, index: number): ProjectRecord {
+  const accents: ProjectRecord['accent'][] = ['cyan', 'purple', 'amber', 'green'];
+  return {
+    id: record.id,
+    name: record.name,
+    subtitle: record.subtitle || 'Personal project workspace',
+    status: 'active',
+    accent: accents[index % accents.length],
+    updated: noteUpdatedLabel(record.updated_at),
+    meta: 'New project · 0 chats',
+    thesis: 'No project thesis added yet.',
+    next: 'Start a chat or add a file to build project context.',
+    source: 'user',
   };
 }
 
@@ -233,6 +251,7 @@ export default function App() {
   const [surface, setSurface] = useState<WorkspaceSurface>('global-home');
   const [activeNav, setActiveNav] = useState<SidebarDestination | null>('home');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
+  const [projectCreateRequest, setProjectCreateRequest] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
@@ -248,6 +267,7 @@ export default function App() {
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
   const libraryLoaded = useRef(false);
+  const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
   const [directoryConnections, setDirectoryConnections] = useState<DirectoryConnection[]>([]);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [filePreviews, setFilePreviews] = useState<Record<string, FilePreviewRecord>>({});
@@ -276,7 +296,23 @@ export default function App() {
     return map;
   });
 
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
+  const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
+  const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
+
+  useEffect(() => {
+    if (!userProjects.length) return;
+    const idByName = new Map(userProjects.map((project) => [project.name, project.id]));
+    setLibraryItems((current) => current.map((item) => ({
+      ...item,
+      projectLinks: item.projectLinks?.map((id) => idByName.get(id) ?? id),
+    })));
+    const normalizedNotes = notesRef.current.map((note) => ({
+      ...note,
+      projectIds: note.projectIds.map((id) => idByName.get(id) ?? id),
+    }));
+    notesRef.current = normalizedNotes;
+    setNotes(normalizedNotes);
+  }, [userProjects]);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
   const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
   const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
@@ -510,12 +546,24 @@ export default function App() {
   }, []);
 
   const openProject = useCallback((projectId: string) => {
-    const project = projects.find((item) => item.id === projectId);
+    const project = projectCatalog.find((item) => item.id === projectId);
     if (!project) return;
     setInspectorOpen(false);
     setRoutingOpen(false);
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
-  }, [openOrActivateTab]);
+  }, [openOrActivateTab, projectCatalog]);
+
+  const createProject = useCallback(async (input: { name: string; subtitle: string }) => {
+    if (projectCatalog.some((project) => project.name.toLowerCase() === input.name.toLowerCase())) {
+      throw new Error('A project with this name already exists.');
+    }
+    const record = await api.createWorkspaceProject({ id: crypto.randomUUID(), ...input });
+    const project = projectFromRecord(record, userProjects.length);
+    setUserProjects((current) => [...current.filter((item) => item.id !== project.id), project]);
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId: project.id });
+  }, [openOrActivateTab, projectCatalog, userProjects.length]);
 
   const openProjectChats = useCallback(() => {
     if (!activeProjectId || !activeProject) return;
@@ -536,13 +584,13 @@ export default function App() {
 
   const openBoardNode = useCallback((nodeId: string) => {
     const projectId = activeProjectId ?? 'stateful';
-    const project = projects.find((item) => item.id === projectId);
+    const project = projectCatalog.find((item) => item.id === projectId);
     if (!project) return;
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId, mode: 'board' });
     setFocusNodeId(nodeId);
     const node = initialNodes.find((item) => item.id === nodeId);
     if (node) setSelectedNode(node);
-  }, [activeProjectId, openOrActivateTab]);
+  }, [activeProjectId, openOrActivateTab, projectCatalog]);
 
   const projectRootNodeId = useCallback(() => activeProjectId === 'stateful' ? 'root-answer' : activeProjectId ? `${activeProjectId}-root-answer` : 'root-answer', [activeProjectId]);
 
@@ -705,7 +753,7 @@ export default function App() {
       let savedCount = 0;
       for (const item of imported) {
         try {
-          await api.createWorkspaceLibraryReference({ id: item.id, ...workspaceLibraryPayload(item) });
+          await api.createWorkspaceLibraryReference({ id: item.id, ...workspaceLibraryPayload(item, projectCatalog) });
           savedCount += 1;
           setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, syncState: 'synced' } : entry));
         } catch (error) {
@@ -714,7 +762,7 @@ export default function App() {
       }
       pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, `${savedCount} reference${savedCount === 1 ? '' : 's'} saved to the workspace graph; file contents remain in this browser.`);
     }
-  }, [pushToast]);
+  }, [projectCatalog, pushToast]);
 
   const toggleProjectLink = useCallback(async (itemId: string, projectId: string) => {
     const item = libraryItems.find((entry) => entry.id === itemId);
@@ -723,15 +771,15 @@ export default function App() {
     const next = { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
     if (item.source === 'imported' && item.syncState === 'synced') {
       try {
-        const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next));
-        setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...workspaceLibraryFromRecord(saved), blobKey: item.blobKey } : entry));
+        const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next, projectCatalog));
+        setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...workspaceLibraryFromRecord(saved, projectCatalog), blobKey: item.blobKey } : entry));
       } catch (error) {
         pushToast('Project link was not saved', executionErrorText(error));
       }
       return;
     }
     setLibraryItems((current) => current.map((entry) => entry.id === item.id ? next : entry));
-  }, [libraryItems, pushToast]);
+  }, [libraryItems, projectCatalog, pushToast]);
 
   const selectThread = useCallback((threadId: string) => {
     if (!activeProjectId) return;
@@ -1114,6 +1162,17 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    void api.fetchWorkspaceProjects().then((records) => {
+      if (!active || !Array.isArray(records)) return;
+      setUserProjects(records.map(projectFromRecord));
+    }).catch((error: unknown) => {
+      if (active) pushToast('Could not load projects', executionErrorText(error));
+    });
+    return () => { active = false; };
+  }, [pushToast]);
+
+  useEffect(() => {
     if (surface !== 'library' || libraryLoaded.current) return;
     let active = true;
     void api.fetchWorkspaceLibrary().then((records) => {
@@ -1121,7 +1180,7 @@ export default function App() {
       setLibraryItems((current) => {
         const currentById = new Map(current.map((item) => [item.id, item]));
         const remoteItems = records.map((record) => {
-          const remote = workspaceLibraryFromRecord(record);
+          const remote = workspaceLibraryFromRecord(record, projectCatalog);
           const local = currentById.get(remote.id);
           return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
         });
@@ -1133,7 +1192,7 @@ export default function App() {
       if (active) pushToast('Could not load Library references', executionErrorText(error));
     });
     return () => { active = false; };
-  }, [pushToast, surface]);
+  }, [projectCatalog, pushToast, surface]);
 
   const replaceWorkspaceNote = useCallback((previousId: string, nextNote: WorkspaceNote) => {
     const next = notesRef.current.map((item) => item.id === previousId ? nextNote : item);
@@ -1156,8 +1215,8 @@ export default function App() {
       }
       noteUpdateInFlight.current.add(latest.id);
       const sentFingerprint = workspaceNoteFingerprint(latest);
-      void api.updateWorkspaceNote(latest.id, workspaceNotePayload(latest)).then((record) => {
-        const saved = workspaceNoteFromRecord(record);
+      void api.updateWorkspaceNote(latest.id, workspaceNotePayload(latest, projectCatalog)).then((record) => {
+        const saved = workspaceNoteFromRecord(record, projectCatalog);
         savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
         const current = notesRef.current.find((item) => item.id === saved.id);
         if (!current) return;
@@ -1171,14 +1230,14 @@ export default function App() {
       });
     }, 500);
     noteSyncTimers.current.set(note.id, timer);
-  }, [pushToast, replaceWorkspaceNote]);
+  }, [projectCatalog, pushToast, replaceWorkspaceNote]);
 
   const persistLocalWorkspaceNote = useCallback((note: WorkspaceNote) => {
     if (note.source !== 'local' || noteCreateInFlight.current.has(note.id)) return;
     noteCreateInFlight.current.add(note.id);
     const submittedFingerprint = workspaceNoteFingerprint(note);
-    void api.createWorkspaceNote(workspaceNotePayload(note)).then((record) => {
-      const saved = workspaceNoteFromRecord(record);
+    void api.createWorkspaceNote(workspaceNotePayload(note, projectCatalog)).then((record) => {
+      const saved = workspaceNoteFromRecord(record, projectCatalog);
       savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
       const latest = notesRef.current.find((item) => item.id === note.id);
       if (!latest) return;
@@ -1198,7 +1257,7 @@ export default function App() {
     }).finally(() => {
       noteCreateInFlight.current.delete(note.id);
     });
-  }, [pushToast, queueWorkspaceNoteUpdate, replaceWorkspaceNote]);
+  }, [projectCatalog, pushToast, queueWorkspaceNoteUpdate, replaceWorkspaceNote]);
 
   const handleWorkspaceNotesChange = useCallback((next: WorkspaceNote[]) => {
     notesRef.current = next;
@@ -1214,7 +1273,7 @@ export default function App() {
     let active = true;
     void api.fetchWorkspaceNotes().then((records) => {
       if (!active || !Array.isArray(records)) return;
-      const liveNotes = records.map(workspaceNoteFromRecord);
+      const liveNotes = records.map((record) => workspaceNoteFromRecord(record, projectCatalog));
       savedNoteFingerprints.current = new Map(liveNotes.map((note) => [note.id, workspaceNoteFingerprint(note)]));
       const localNotes = notesRef.current.filter((note) => note.source !== 'live');
       const next = [...liveNotes, ...localNotes];
@@ -1227,7 +1286,7 @@ export default function App() {
       pushToast('Could not load saved Notes', executionErrorText(error));
     });
     return () => { active = false; };
-  }, [persistLocalWorkspaceNote, pushToast, surface]);
+  }, [persistLocalWorkspaceNote, projectCatalog, pushToast, surface]);
 
   useEffect(() => {
     if (surface !== 'study' || studySessionsLoaded.current) return;
@@ -1405,7 +1464,7 @@ export default function App() {
     const normalized = trimmed.toLowerCase();
     if (normalized.includes('library')) { handleSidebarNavigate('library'); return; }
     if (normalized.includes('home')) { handleSidebarNavigate('home'); return; }
-    const matchingProject = projects.find((project) => project.name.toLowerCase().includes(normalized) || normalized.includes(project.name.toLowerCase()));
+    const matchingProject = projectCatalog.find((project) => project.name.toLowerCase().includes(normalized) || normalized.includes(project.name.toLowerCase()));
     if (matchingProject) { openProject(matchingProject.id); return; }
     const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
     if (matchingConnection) { openConnection(matchingConnection); return; }
@@ -1418,6 +1477,7 @@ export default function App() {
   return (
     <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <Sidebar
+        projects={projectCatalog}
         collapsed={sidebarCollapsed}
         active={activeNav}
         activeProjectId={activeProjectId}
@@ -1425,7 +1485,7 @@ export default function App() {
         onCollapsedChange={setSidebarCollapsed}
         onNavigate={handleSidebarNavigate}
         onProjectOpen={openProject}
-        onNewProject={() => pushToast('New project', 'Project creation UI is the one remaining mocked shell action in v7.')}
+        onNewProject={() => { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }}
       />
 
       <Topbar
@@ -1492,6 +1552,7 @@ export default function App() {
         <Suspense fallback={<div className="workspace-loading" role="status">Loading workspace…</div>}>
         {surface === 'global-home' ? (
           <GlobalHome
+            projects={projectCatalog}
             libraryItems={libraryItems}
             automations={automations}
             noteCount={notes.length}
@@ -1507,6 +1568,7 @@ export default function App() {
 
         {surface === 'library' ? (
           <LibraryView
+            projects={projectCatalog}
             items={libraryItems}
             connections={directoryConnections}
             directoryPickerSupported={supportsDirectoryPicker()}
@@ -1530,13 +1592,14 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
-        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => void startStudySession(trackId)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
-        {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
-        {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
+        {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (
           <ProjectHome
+            projects={projectCatalog}
             projectId={activeProject.id}
             chatCount={projectThreads.length}
             fileCount={projectFileCount}

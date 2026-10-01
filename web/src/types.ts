@@ -339,6 +339,14 @@ export interface WorkspaceLibraryReferenceRecord {
   updated_at: string;
 }
 
+export interface WorkspaceProjectRecord {
+  id: string;
+  name: string;
+  subtitle: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CompiledContextObject {
   object_id: string;
   object_type: string;

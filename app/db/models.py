@@ -287,6 +287,19 @@ class ProjectRoutingAssignmentModel(Base):
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 
+class WorkspaceProjectModel(Base):
+    """User-created project directory entries; built-in demo projects remain client-side."""
+
+    __tablename__ = "workspace_projects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    name_key: Mapped[str] = mapped_column(String(128), unique=True)
+    subtitle: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
 class WorkspaceObjectModel(Base):
     """A durable typed object; null project_name denotes personal workspace scope."""
 

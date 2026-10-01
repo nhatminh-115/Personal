@@ -1,18 +1,19 @@
 import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
 import { useState } from 'react';
-import { projects, type AutomationRecord } from '../../data/workspaceData';
+import type { AutomationRecord, ProjectRecord } from '../../data/workspaceData';
 
 interface AutomationsViewProps {
+  projects: ProjectRecord[];
   automations: AutomationRecord[];
   onAutomationsChange: (items: AutomationRecord[]) => void;
   onRunNow: (automation: AutomationRecord) => void;
 }
 
-export function AutomationsView({ automations, onAutomationsChange, onRunNow }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, onAutomationsChange, onRunNow }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [scope, setScope] = useState<'global' | 'project'>('global');
-  const [projectId, setProjectId] = useState(projects[0].id);
+  const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
 
   const toggle = (id: string) => {
     onAutomationsChange(automations.map((item) => item.id === id ? { ...item, enabled: !item.enabled, status: item.enabled ? 'paused' : 'ready', nextRun: item.enabled ? 'Paused' : item.nextRun === 'Paused' ? 'Next scheduled run' : item.nextRun } : item));

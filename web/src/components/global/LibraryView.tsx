@@ -20,12 +20,13 @@ import {
   X,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { projects, type LibraryItem } from '../../data/workspaceData';
+import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 import type { DirectoryConnection } from '../../lib/folderConnections';
 
 type LibraryViewMode = 'list' | 'grid';
 
 interface LibraryViewProps {
+  projects: ProjectRecord[];
   items: LibraryItem[];
   connections: DirectoryConnection[];
   directoryPickerSupported: boolean;
@@ -57,6 +58,7 @@ function formatSize(size?: number) {
 }
 
 export function LibraryView({
+  projects,
   items: libraryItems,
   connections,
   directoryPickerSupported,

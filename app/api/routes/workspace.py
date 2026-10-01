@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete as sa_delete, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
@@ -17,6 +18,8 @@ from app.api.schemas import (
     WorkspaceLayoutWrite,
     WorkspaceLibraryReferenceResponse,
     WorkspaceLibraryReferenceWrite,
+    WorkspaceProjectResponse,
+    WorkspaceProjectWrite,
     WorkspaceNoteResponse,
     WorkspaceNoteWrite,
     WorkspaceObjectCreate,
@@ -33,11 +36,44 @@ from app.db.models import (
     WorkspaceLayoutModel,
     WorkspaceObjectModel,
     WorkspaceObjectProjectLinkModel,
+    WorkspaceProjectModel,
 )
 from app.db.session import get_db
 from app.memory.base import MemoryService
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
+
+
+@router.get("/projects", response_model=list[WorkspaceProjectResponse])
+async def list_workspace_projects(db: AsyncSession = Depends(get_db)) -> list[WorkspaceProjectResponse]:
+    result = await db.execute(
+        select(WorkspaceProjectModel).order_by(WorkspaceProjectModel.created_at, WorkspaceProjectModel.id)
+    )
+    return [WorkspaceProjectResponse.model_validate(item, from_attributes=True) for item in result.scalars()]
+
+
+@router.post("/projects", response_model=WorkspaceProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_workspace_project(
+    body: WorkspaceProjectWrite,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceProjectResponse:
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Project name must not be blank.")
+    project = WorkspaceProjectModel(
+        **({"id": str(body.id)} if body.id else {}),
+        name=name,
+        name_key=name.casefold(),
+        subtitle=body.subtitle.strip(),
+    )
+    db.add(project)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="A project with this name or ID already exists.") from exc
+    await db.refresh(project)
+    return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
 
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
