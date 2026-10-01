@@ -149,6 +149,42 @@ async def test_mcp_capability_requires_discovery_of_its_declared_tool():
     await manager.disconnect_all()
 
 
+@pytest.mark.asyncio
+async def test_discovered_mcp_capability_reaches_coding_runtime_and_executes():
+    from app.delegation.registry import specialist_registry
+    from app.delegation.runtime import DelegationRuntime
+
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    manager.register_server(MCPServerConfig(
+        id="graph-fixture",
+        name="Graph fixture",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        read_only=True,
+        allowed_tools=["read_metric"],
+        capabilities_by_tool={"read_metric": ["code_graph.query"]},
+    ))
+
+    discovered = await manager.discover_tools("graph-fixture")
+    runtime = DelegationRuntime(base_tool_registry=registry)
+    coding = specialist_registry.get("coding")
+    assert coding is not None
+    scoped = runtime._resolve_specialist_tools(coding)
+    tool_name = "mcp_graph-fixture_read_metric"
+    assert tool_name in scoped
+    assert registry.capability_providers.get("mcp.graph-fixture").health == CapabilityProviderHealth.HEALTHY
+
+    adapter = next(tool for tool in discovered if tool.name == tool_name)
+    result = await adapter.execute({"metric_name": "graph_nodes"})
+    assert result.success is True
+    assert "graph_nodes" in result.output
+
+    await manager.disconnect_all()
+
+
 def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays_blocked():
     from app.delegation.registry import specialist_registry
     from app.tools.registry import tool_registry
