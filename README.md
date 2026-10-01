@@ -286,6 +286,8 @@ AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This re
 ---
 
 ## Architecture Decision Records (ADRs)
+- [Current Runtime Architecture](docs/architecture/current-runtime.md)
+- [Phase 0/1 System Architecture Baseline](docs/architecture/system.md)
 - [ADR-001: LangGraph Orchestration Runtime](docs/architecture/adr/ADR-001-langgraph-orchestration.md)
 - [ADR-002: PostgreSQL + pgvector for Long-Term Memory](docs/architecture/adr/ADR-002-postgresql-pgvector-memory.md)
 - [ADR-003: Provider-Neutral Model Interface](docs/architecture/adr/ADR-003-provider-neutral-model-interface.md)

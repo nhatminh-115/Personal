@@ -1,8 +1,12 @@
-# AURA System Architecture Specification
+# AURA System Architecture Specification (Phase 0/1 Baseline)
+
+> Historical baseline: this document captures the original Phase 0/1 design.
+> For the current runtime, persistence boundaries, routing, workspace graph,
+> and capability providers, see [Current Runtime Architecture](current-runtime.md).
 
 ## Document Overview
 - **Project Codename:** AURA (Adaptive User Runtime Agent)
-- **Status:** Approved / Active
+- **Status:** Historical baseline; current implementation is documented in [current-runtime.md](current-runtime.md)
 - **Version:** 1.0.0 (Phase 0 & 1 Baseline)
 - **Author:** Lead Systems Architect & Implementation Engineer
 
