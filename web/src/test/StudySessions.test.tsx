@@ -90,4 +90,26 @@ describe('Study sessions use shared Library materials', () => {
     await waitFor(() => expect(row?.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }));
   });
 
+
+  it('focuses a searched legacy session whose Library material is no longer present', async () => {
+    const sessionId = 'legacy-search-target';
+    render(<StudyView
+      libraryItems={[]}
+      sessions={[{
+        id: sessionId, track_id: 'removed-material', track_title: 'Archived notes',
+        status: 'completed', started_at: '2026-10-02T00:00:00Z',
+      }]}
+      focusSessionId={sessionId}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+    />);
+
+    const row = document.getElementById(`study-session-${sessionId}`);
+    expect(row).toHaveTextContent('Archived notes');
+    expect(row).toHaveClass('is-focused');
+    await waitFor(() => expect(row?.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }));
+  });
+
 });
