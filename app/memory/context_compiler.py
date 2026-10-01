@@ -82,7 +82,7 @@ class WorkspaceContextCompiler:
             .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
             .where(
                 WorkspaceObjectModel.project_name.is_(None),
-                WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference"}),
+                WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
                 WorkspaceObjectProjectLinkModel.project_name == project_name,
                 WorkspaceObjectModel.id.in_(set(roots) - set(objects)),
             )
@@ -129,7 +129,7 @@ class WorkspaceContextCompiler:
                     .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
                     .where(
                         WorkspaceObjectModel.project_name.is_(None),
-                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference"}),
+                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
                         WorkspaceObjectProjectLinkModel.project_name == project_name,
                         WorkspaceObjectModel.id.in_(candidate_ids - set(objects)),
                     )
