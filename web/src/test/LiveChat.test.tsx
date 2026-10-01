@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -15,17 +15,17 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
       if (url.includes('/v1/workspace/projects/') && url.endsWith('/graph')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
           id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
-          content: 'Keep the migration reversible.', metadata_json: {},
+          content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user', session_id: null, source_message_id: null,
         }, {
           id: 'research-source-1', object_type: 'research_source', title: 'Durable execution paper',
-          content: 'A paper abstract.', metadata_json: {},
+          content: 'A paper abstract.', metadata_json: {}, created_by: 'research', session_id: null, source_message_id: null,
         }, {
           id: 'research-evidence-1', object_type: 'research_evidence', title: 'Checkpoint evidence',
-          content: 'Execution resumes from a checkpoint.', metadata_json: {},
+          content: 'Execution resumes from a checkpoint.', metadata_json: {}, created_by: 'research', session_id: null, source_message_id: null,
         }, {
           id: 'research-claim-1', object_type: 'research_claim', title: 'Restartability claim',
-          content: 'Verified claim text.', metadata_json: { verification_status: 'verified' },
-        }] }) });
+          content: 'Verified claim text.', metadata_json: { verification_status: 'verified' }, created_by: 'research', session_id: null, source_message_id: null,
+        }], edges: [], layout: { project_name: 'AURA', layout: {}, revision: 0 }, execution_traces: [] }) });
       }
       if (url.includes('/v1/models')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
@@ -90,7 +90,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Open project chat
-    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0];
+    const projectButton = screen.getAllByText(/^AURA$/i).find((item) => item.closest('.project-card'))!;
     await act(async () => {
       fireEvent.click(projectButton);
     });
@@ -109,10 +109,10 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
-    const contextItem = await screen.findByRole('button', { name: /Shared project constraint/i });
-    expect(await screen.findByRole('button', { name: /Durable execution paper.*research source/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Checkpoint evidence.*research evidence/i })).toBeInTheDocument();
-    const claimItem = await screen.findByRole('button', { name: /Restartability claim.*research claim.*verified/i });
+    const contextItem = (await screen.findByText('Shared project constraint')).closest<HTMLButtonElement>('.ai-context-item')!;
+    expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
+    expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
+    const claimItem = (await screen.findByText('Restartability claim')).closest<HTMLButtonElement>('.ai-context-item')!;
     fireEvent.click(claimItem);
     expect(claimItem).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(contextItem);
@@ -140,6 +140,12 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // Verify execution badge
     expect(await screen.findByText(/AURA · 2 steps/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Context').closest('button')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
+    expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
+    expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
   });
 
   it('handles waiting_for_approval and resumes after decision is submitted', async () => {

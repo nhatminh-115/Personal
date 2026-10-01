@@ -191,6 +191,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   });
   const [linkSource, setLinkSource] = useState<string | null>(null);
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  const [flowReady, setFlowReady] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
@@ -995,17 +996,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [clearSelection, deleteEdges, redo, selectedEdges, toast, undo]);
 
   useEffect(() => {
-    if (!focusNodeId || !instanceRef.current) return;
-    const node = instanceRef.current.getNode(focusNodeId);
+    if (!focusNodeId) return;
+    const node = nodes.find((item) => item.id === focusNodeId);
     if (!node) return;
-    const width = node.measured?.width ?? 300;
-    const height = node.measured?.height ?? 130;
-    instanceRef.current.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
-      zoom: compact ? 0.85 : 1,
-      duration: 450,
-    });
-    setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
-  }, [compact, focusNodeId, setNodes]);
+    if (flowReady && instanceRef.current) {
+      const width = node.measured?.width ?? 300;
+      const height = node.measured?.height ?? 130;
+      instanceRef.current.setCenter(node.position.x + width / 2, node.position.y + height / 2, {
+        zoom: compact ? 0.85 : 1,
+        duration: 450,
+      });
+    }
+    if (!node.selected) {
+      setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
+    }
+  }, [compact, focusNodeId, flowReady, nodes, setNodes]);
 
   return (
     <div className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
@@ -1063,6 +1068,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }}
         onInit={(instance) => {
           instanceRef.current = instance;
+          setFlowReady(true);
           if (!workspaceProjectName || !viewportRef.current) {
             window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
           }
