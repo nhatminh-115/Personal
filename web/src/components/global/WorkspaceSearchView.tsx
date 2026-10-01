@@ -51,7 +51,7 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
               <div className="workspace-search__meta">
                 <span>{result.source === 'connected-folder' ? 'Connected file' : TYPE_LABELS[result.object_type] ?? result.object_type.replace(/_/g, ' ')}</span>
                 {result.source === 'connected-folder' ? <span>{result.connection_name} · {result.size?.toLocaleString()} B</span>
-                  : result.object_type === 'manual_note' ? <><span>Personal workspace</span><button type="button" onClick={() => onOpenNote(result.object_id)}>Open note <ArrowUpRight size={12} /></button></>
+                  : result.object_type === 'manual_note' && !result.project_name ? <><span>Personal workspace</span><button type="button" onClick={() => onOpenNote(result.object_id)}>Open note <ArrowUpRight size={12} /></button></>
                     : result.object_type === 'file_reference' ? <><span>Library</span><button type="button" onClick={() => onOpenLibraryItem(result.object_id)}>Open in Library <ArrowUpRight size={12} /></button></>
                     : result.project_name ? <><span>{result.project_name}</span><button type="button" onClick={() => onOpenProject(result.project_name!, result.object_id)}>Open in Board <ArrowUpRight size={12} /></button></>
                     : <span>Personal workspace</span>}
