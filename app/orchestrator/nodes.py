@@ -46,6 +46,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
 
     context_items = list(state.get("retrieved_context", []))
     messages = list(state.get("messages", []))
+    profile_memory_ids: dict[str, str] = {}
     project_memory_ids: list[str] = []
     semantic_memory_ids: list[list[str]] = []
     episode_memory_ids: list[str] = []
@@ -62,6 +63,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             user_message=state.get("user_message", ""),
             project_name=project_name,
         )
+        profile_memory_ids = assembled.profile_memory_ids
         project_memory_ids = assembled.project_memory_ids
         semantic_memory_ids = assembled.semantic_memory_ids
         episode_memory_ids = assembled.episode_memory_ids
@@ -172,6 +174,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                 "context_count": len(context_items),
                 "history_length": len(messages),
                 "compiled_object_count": len(compiled_context.objects) if compiled_context else 0,
+                "profile_memory_ids": profile_memory_ids,
                 "project_memory_ids": project_memory_ids,
                 "project_memory_privacy": memory_privacy_requirement,
                 "memory_privacy_requirement": memory_privacy_requirement,
