@@ -355,6 +355,12 @@ export interface WorkspaceSearchResult {
   project_name: string | null;
   created_by: string;
   updated_at: string;
+  source?: 'workspace' | 'connected-folder';
+  connection_id?: string;
+  connection_name?: string;
+  relative_path?: string;
+  size?: number;
+  mime_type?: string;
 }
 
 export interface AutomationRecordResponse {

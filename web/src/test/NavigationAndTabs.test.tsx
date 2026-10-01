@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 import * as folderConn from '../lib/folderConnections';
@@ -68,6 +68,35 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(await screen.findByText('A saved finding')).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/search?query=unique+omnibox+search'));
     expect(screen.getByRole('button', { name: /^AURA$/i })).toBeInTheDocument();
+  });
+
+  it('merges indexed connected-folder metadata and opens the original file on demand', async () => {
+    const indexedFile: folderConn.IndexedFolderFile = {
+      connectionId: 'folder-1', connectionName: 'Research', relativePath: 'papers/overview.pdf',
+      name: 'overview.pdf', size: 512, lastModified: 1760000000000, mimeType: 'application/pdf',
+    };
+    vi.spyOn(folderConn, 'searchDirectoryIndexes').mockResolvedValue([indexedFile]);
+    const openFile = vi.spyOn(folderConn, 'openIndexedFolderFile').mockResolvedValue(new File(['contents'], 'overview.pdf', { type: 'application/pdf' }));
+    const originalCreateObjectURL = URL.createObjectURL;
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:aura-folder-file') });
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory') || url.includes('/v1/workspace/notes') || url.includes('/v1/workspace/library')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'overview.pdf' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('Research / papers/overview.pdf')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open file' }));
+    await waitFor(() => expect(openFile).toHaveBeenCalledWith(indexedFile));
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
   });
 
   it('opening a project creates/reuses exactly one project tab', async () => {

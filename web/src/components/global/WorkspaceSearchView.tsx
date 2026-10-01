@@ -7,6 +7,7 @@ interface WorkspaceSearchViewProps {
   loading: boolean;
   error: string | null;
   onOpenProject: (name: string) => void;
+  onOpenFile: (result: WorkspaceSearchResult) => void;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -17,7 +18,7 @@ const TYPE_LABELS: Record<string, string> = {
   file_reference: 'Library reference',
 };
 
-export function WorkspaceSearchView({ query, results, loading, error, onOpenProject }: WorkspaceSearchViewProps) {
+export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenFile }: WorkspaceSearchViewProps) {
   return (
     <section className="workspace-search" aria-labelledby="workspace-search-title">
       <header className="workspace-search__header">
@@ -35,7 +36,7 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
         <div className="workspace-search__empty">
           <Search size={22} />
           <h2>No matches yet</h2>
-          <p>Try another phrase. AURA searches saved chats, notes, research, context bridges, and indexed Library references.</p>
+          <p>Try another phrase. AURA searches saved workspace objects, Library references, and file names from connected folders you have indexed.</p>
         </div>
       ) : null}
       <div className="workspace-search__results" aria-live="polite">
@@ -46,9 +47,12 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
               <h2>{result.title}</h2>
               <p>{result.excerpt || 'No text preview is available for this object.'}</p>
               <div className="workspace-search__meta">
-                <span>{TYPE_LABELS[result.object_type] ?? result.object_type.replace(/_/g, ' ')}</span>
-                {result.project_name ? <button type="button" onClick={() => onOpenProject(result.project_name!)}>{result.project_name}<ArrowUpRight size={12} /></button> : <span>Personal workspace</span>}
+                <span>{result.source === 'connected-folder' ? 'Connected file' : TYPE_LABELS[result.object_type] ?? result.object_type.replace(/_/g, ' ')}</span>
+                {result.source === 'connected-folder' ? <span>{result.connection_name} · {result.size?.toLocaleString()} B</span>
+                  : result.project_name ? <button type="button" onClick={() => onOpenProject(result.project_name!)}>{result.project_name}<ArrowUpRight size={12} /></button>
+                    : <span>Personal workspace</span>}
                 <time dateTime={result.updated_at}>{new Date(result.updated_at).toLocaleDateString()}</time>
+                {result.source === 'connected-folder' ? <button type="button" onClick={() => onOpenFile(result)}>Open file <ArrowUpRight size={12} /></button> : null}
               </div>
             </div>
           </article>

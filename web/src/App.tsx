@@ -39,7 +39,10 @@ import {
   pickDirectoryConnection,
   removeDirectoryConnection,
   supportsDirectoryPicker,
+  openIndexedFolderFile,
+  searchDirectoryIndexes,
   type DirectoryConnection,
+  type IndexedFolderFile,
 } from './lib/folderConnections';
 import { api, ApiError } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
@@ -1562,10 +1565,34 @@ export default function App() {
     const requestId = ++workspaceSearchRequest.current;
     setWorkspaceSearch({ query: trimmed, results: [], loading: true, error: null });
     openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
-    void api.searchWorkspace(trimmed, activeProject?.name).then((results) => {
-      if (workspaceSearchRequest.current === requestId) setWorkspaceSearch({ query: trimmed, results, loading: false, error: null });
-    }).catch((error: unknown) => {
-      if (workspaceSearchRequest.current === requestId) setWorkspaceSearch({ query: trimmed, results: [], loading: false, error: executionErrorText(error) });
+    void Promise.allSettled([
+      api.searchWorkspace(trimmed, activeProject?.name),
+      activeProject ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(trimmed),
+    ]).then(([workspace, folderFiles]) => {
+      if (workspaceSearchRequest.current !== requestId) return;
+      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value] : [];
+      if (folderFiles.status === 'fulfilled') {
+        results.push(...folderFiles.value.map((file) => ({
+          object_id: `external:${file.connectionId}:${file.relativePath}`,
+          object_type: 'file_reference',
+          title: file.name,
+          excerpt: `${file.connectionName} / ${file.relativePath}`,
+          project_name: null,
+          created_by: 'external',
+          updated_at: new Date(file.lastModified).toISOString(),
+          source: 'connected-folder' as const,
+          connection_id: file.connectionId,
+          connection_name: file.connectionName,
+          relative_path: file.relativePath,
+          size: file.size,
+          mime_type: file.mimeType,
+        })));
+      }
+      const errors = [
+        ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
+        ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
+      ];
+      setWorkspaceSearch({ query: trimmed, results, loading: false, error: errors.length ? errors.join(' ') : null });
     });
   };
 
@@ -1807,6 +1834,20 @@ export default function App() {
             onOpenProject={(name) => {
               const project = projectCatalog.find((item) => item.name === name);
               if (project) openProject(project.id);
+            }}
+            onOpenFile={(result) => {
+              if (!result.connection_id || !result.relative_path || !result.connection_name) return;
+              const indexedFile: IndexedFolderFile = {
+                connectionId: result.connection_id,
+                connectionName: result.connection_name,
+                relativePath: result.relative_path,
+                name: result.title,
+                size: result.size ?? 0,
+                lastModified: Date.parse(result.updated_at) || 0,
+                mimeType: result.mime_type ?? '',
+              };
+              void openIndexedFolderFile(indexedFile).then((file) => handleConnectedFile(file, `${result.connection_name} / ${result.relative_path}`))
+                .catch((error: unknown) => pushToast('Could not open connected file', executionErrorText(error)));
             }}
           />
         ) : null}
