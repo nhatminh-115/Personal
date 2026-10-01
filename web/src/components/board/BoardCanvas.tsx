@@ -56,7 +56,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
   const nodes: AuraFlowNode[] = graph.objects.map((object, index) => {
     const role = object.metadata_json.role;
     const researchObject = object.object_type.startsWith('research_');
-    const kind = object.object_type === 'manual_note' ? 'note'
+    const kind = object.object_type === 'manual_note' || object.object_type === 'study_session' ? 'note'
       : object.object_type === 'file_reference' ? 'file'
       : object.object_type === 'context_bridge' ? 'bridge'
         : object.object_type === 'context_set' ? 'merge'
@@ -75,7 +75,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       position: positions[object.id] ?? { x: 120 + (index % 3) * 390, y: 100 + Math.floor(index / 3) * 210 },
       data: {
         kind,
-        eyebrow: researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
+        eyebrow: researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : object.object_type === 'study_session' ? 'STUDY SESSION' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
         title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
         body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
         summary: object.content.slice(0, 160),
