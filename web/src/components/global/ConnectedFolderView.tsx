@@ -18,7 +18,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ensureReadPermission,
+  getDirectoryIndexSnapshot,
   getDirectoryConnectionHandle,
+  indexDirectoryConnection,
   type AuraFileSystemDirectoryHandle,
   type AuraFileSystemFileHandle,
   type AuraFileSystemHandle,
@@ -56,6 +58,30 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
   const [loading, setLoading] = useState(true);
   const [permissionBlocked, setPermissionBlocked] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const [indexSnapshot, setIndexSnapshot] = useState<{ indexedAt: number; fileCount: number; truncated: boolean } | null>(null);
+  const [indexing, setIndexing] = useState(false);
+  const [indexProgress, setIndexProgress] = useState(0);
+  const [indexError, setIndexError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getDirectoryIndexSnapshot(connection.id).then((snapshot) => { if (active) setIndexSnapshot(snapshot); });
+    return () => { active = false; };
+  }, [connection.id]);
+
+  const indexForSearch = useCallback(async () => {
+    setIndexing(true);
+    setIndexError(null);
+    setIndexProgress(0);
+    try {
+      const snapshot = await indexDirectoryConnection(connection, setIndexProgress);
+      setIndexSnapshot(snapshot);
+    } catch (error) {
+      setIndexError((error as Error)?.message ?? 'AURA could not index this folder.');
+    } finally {
+      setIndexing(false);
+    }
+  }, [connection]);
 
   const loadDirectory = useCallback(async () => {
     setLoading(true);
@@ -127,9 +153,18 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
         </div>
         <div className="folder-explorer-actions">
           <button className="secondary-button" type="button" onClick={() => setRefreshNonce((value) => value + 1)}><RefreshCw size={15} /> Refresh</button>
+          <button className="secondary-button" type="button" disabled={indexing} onClick={() => void indexForSearch()}><Search size={15} /> {indexing ? `Indexing ${indexProgress.toLocaleString()}…` : indexSnapshot ? 'Refresh search index' : 'Index filenames'}</button>
           <button className="danger-quiet-button" type="button" onClick={() => onDisconnect(connection)}><Unplug size={15} /> Disconnect</button>
         </div>
       </header>
+
+      <div className="folder-index-status" role="status">
+        {indexing ? `Indexing file names and metadata (${indexProgress.toLocaleString()} found)…`
+          : indexSnapshot ? `${indexSnapshot.fileCount.toLocaleString()} file names indexed for workspace search · updated ${new Date(indexSnapshot.indexedAt).toLocaleString()}${indexSnapshot.truncated ? ' · scan limit reached' : ''}`
+            : 'This folder is not indexed for workspace search yet.'}
+        <span>File contents stay in the original folder.</span>
+      </div>
+      {indexError ? <div className="folder-index-error" role="alert">{indexError}</div> : null}
 
       <div className="explorer-command-row">
         <div className="explorer-nav-buttons">

@@ -6057,3 +6057,6 @@ html {
 .workspace-search__empty h2 { margin: 2px 0 0; color: #afc0c7; font-size: 15px; }
 .workspace-search__empty p { max-width: 470px; margin: 0; color: #758b96; font-size: 11px; line-height: 1.6; }
 .workspace-search__notice { margin-top: 18px; padding: 12px 14px; border: 1px solid rgba(203,126,116,.2); border-radius: 8px; color: #d8a39a; background: rgba(123,58,52,.12); font-size: 12px; }
+.folder-index-status { display: flex; flex-wrap: wrap; gap: 5px 10px; padding: 8px 18px; border-bottom: 1px solid rgba(149,179,197,.07); color: #6e8792; font-size: 10px; }
+.folder-index-status span { color: #536a75; }
+.folder-index-error { margin: 10px 18px; padding: 9px 11px; border: 1px solid rgba(203,126,116,.2); border-radius: 7px; color: #d8a39a; background: rgba(123,58,52,.12); font-size: 11px; }

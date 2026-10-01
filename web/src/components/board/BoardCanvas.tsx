@@ -196,6 +196,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [canvasSizeReady, setCanvasSizeReady] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const pendingInitialFit = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
+  const initialFitTimer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
@@ -403,6 +404,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [workspaceProjectName, workspaceSessionIds, setEdges, setNodes, toast]);
 
   useEffect(() => () => {
+    if (initialFitTimer.current !== null) window.clearTimeout(initialFitTimer.current);
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
     noteSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
     bridgeSectionSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -1098,7 +1100,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           instanceRef.current = instance;
           setFlowReady(true);
           if (!workspaceProjectName || !viewportRef.current) {
-            window.setTimeout(() => {
+            if (initialFitTimer.current !== null) window.clearTimeout(initialFitTimer.current);
+            initialFitTimer.current = window.setTimeout(() => {
+              initialFitTimer.current = null;
               pendingInitialFit.current = instance;
               fitInitialViewWhenReady();
             }, 80);
