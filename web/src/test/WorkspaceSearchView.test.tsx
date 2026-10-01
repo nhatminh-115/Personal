@@ -21,7 +21,7 @@ describe('WorkspaceSearchView', () => {
       mime_type: 'application/pdf',
     };
     const onOpenFile = vi.fn();
-    render(<WorkspaceSearchView query="study" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenFile={onOpenFile} />);
+    render(<WorkspaceSearchView query="study" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={onOpenFile} />);
 
     expect(screen.getByText('Research / papers/study.pdf')).toBeInTheDocument();
     expect(screen.getByText('Connected file')).toBeInTheDocument();
@@ -37,7 +37,7 @@ describe('WorkspaceSearchView', () => {
       updated_at: '2026-10-01T12:00:00Z',
     };
     const onOpenProject = vi.fn();
-    render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
     expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'bridge-object-9');
@@ -49,7 +49,7 @@ describe('WorkspaceSearchView', () => {
       excerpt: 'Do not upload external files.', project_name: null, created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
     };
     const onOpenNote = vi.fn();
-    render(<WorkspaceSearchView query="constraints" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="constraints" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open note' }));
     expect(onOpenNote).toHaveBeenCalledWith('personal-note-7');
@@ -62,7 +62,7 @@ describe('WorkspaceSearchView', () => {
     };
     const onOpenProject = vi.fn();
     const onOpenNote = vi.fn();
-    render(<WorkspaceSearchView query="finding" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="finding" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
     expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'board-note-3');
@@ -76,7 +76,7 @@ describe('WorkspaceSearchView', () => {
     };
     const onOpenProject = vi.fn();
     const onOpenLibraryItem = vi.fn();
-    render(<WorkspaceSearchView query="architecture" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="architecture" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
     expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'project-file-4');
@@ -89,7 +89,7 @@ describe('WorkspaceSearchView', () => {
       excerpt: 'Research · Imported PDF', project_name: null, created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
     };
     const onOpenLibraryItem = vi.fn();
-    render(<WorkspaceSearchView query="methods" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenFile={() => {}} />);
+    render(<WorkspaceSearchView query="methods" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Library' }));
     expect(onOpenLibraryItem).toHaveBeenCalledWith('library-item-5');
