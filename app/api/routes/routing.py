@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text, update
+from sqlalchemy import delete as sa_delete, select, text, update
 
 from app.api.dependencies import get_db, get_model_router
 from app.db.models import RoutingProfileModel, ProjectRoutingAssignmentModel, SessionModel
@@ -175,7 +175,20 @@ async def delete_routing_profile(profile_id: str, db: AsyncSession = Depends(get
     db_profile = result.scalar_one_or_none()
     if not db_profile:
         raise HTTPException(status_code=404, detail="Routing profile not found")
-        
+
+    # Assignments intentionally do not use foreign keys so profiles can be
+    # portable across stores. Clear every reference in the same transaction
+    # before deleting, so callers immediately inherit the next routing scope.
+    await db.execute(
+        sa_delete(ProjectRoutingAssignmentModel).where(
+            ProjectRoutingAssignmentModel.routing_profile_id == profile_id
+        )
+    )
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.routing_profile_id == profile_id)
+        .values(routing_profile_id=None)
+    )
     await db.delete(db_profile)
     await db.commit()
     return {"status": "success", "deleted_profile_id": profile_id}
