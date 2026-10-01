@@ -87,6 +87,7 @@ class RoutingContext(BaseModel):
     requires_vision: bool = False
     requires_structured_output: bool = False
     requires_long_context: bool = False
+    required_context_window: int | None = Field(default=None, ge=1)
     
     # Reasoning Policy fields
     reasoning_effort: ReasoningEffort | None = None
