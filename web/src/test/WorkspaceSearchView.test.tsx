@@ -107,5 +107,22 @@ describe('WorkspaceSearchView', () => {
     expect(onOpenStudySession).toHaveBeenCalledWith('study-session-12');
   });
 
+
+  it('offers a Study session only for verified project research claims', () => {
+    const verified: WorkspaceSearchResult = {
+      object_id: 'verified-claim-1', object_type: 'research_claim', title: 'Verified finding',
+      excerpt: 'Supported by cited evidence.', project_name: 'Research Project', created_by: 'research',
+      verification_status: 'verified', updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onStudyResearchClaim = vi.fn();
+    const { rerender } = render(<WorkspaceSearchView query="finding" results={[verified]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onStudyResearchClaim={onStudyResearchClaim} onOpenFile={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Study verified finding' }));
+    expect(onStudyResearchClaim).toHaveBeenCalledWith('verified-claim-1', 'Verified finding', 'Research Project');
+
+    rerender(<WorkspaceSearchView query="finding" results={[{ ...verified, verification_status: 'unsupported' }]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onStudyResearchClaim={onStudyResearchClaim} onOpenFile={() => {}} />);
+    expect(screen.queryByRole('button', { name: 'Study verified finding' })).not.toBeInTheDocument();
+  });
+
 });
 
