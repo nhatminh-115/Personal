@@ -58,6 +58,7 @@ import type {
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
+  WorkspaceSearchResult,
   AutomationRecordResponse,
   WorkspaceMode,
   EffectiveRouting,
@@ -77,6 +78,7 @@ const FilePreviewView = lazy(() => import('./components/global/FilePreviewView')
 const NotesView = lazy(() => import('./components/global/NotesView').then((module) => ({ default: module.NotesView })));
 const ProjectsView = lazy(() => import('./components/global/ProjectsView').then((module) => ({ default: module.ProjectsView })));
 const StudyView = lazy(() => import('./components/global/StudyView').then((module) => ({ default: module.StudyView })));
+const WorkspaceSearchView = lazy(() => import('./components/global/WorkspaceSearchView').then((module) => ({ default: module.WorkspaceSearchView })));
 const ProjectFilesView = lazy(() => import('./components/home/ProjectFilesView').then((module) => ({ default: module.ProjectFilesView })));
 const ProjectHome = lazy(() => import('./components/home/ProjectHome').then((module) => ({ default: module.ProjectHome })));
 const InspectorPanel = lazy(() => import('./components/layout/InspectorPanel').then((module) => ({ default: module.InspectorPanel })));
@@ -84,6 +86,7 @@ const RoutingStudio = lazy(() => import('./components/routing/RoutingStudio').th
 
 type WorkspaceSurface =
   | 'global-home'
+  | 'search-results'
   | 'library'
   | 'notes'
   | 'study'
@@ -265,6 +268,8 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
+  const workspaceSearchRequest = useRef(0);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
   const libraryLoaded = useRef(false);
@@ -1521,6 +1526,7 @@ export default function App() {
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
+    : surface === 'search-results' ? 'Workspace Search'
     : surface === 'library' ? 'Library'
     : surface === 'notes' ? 'Notes'
     : surface === 'study' ? 'Study'
@@ -1531,6 +1537,7 @@ export default function App() {
     : 'Home';
 
   const locationValue = surface === 'global-home' ? 'aura://home'
+    : surface === 'search-results' ? `aura://search?q=${encodeURIComponent(workspaceSearch.query)}`
     : surface === 'library' ? 'aura://library'
     : surface === 'folder-viewer' ? `folder://${activeConnection?.name ?? 'connected'}`
     : surface === 'file-viewer' ? activeFilePreview?.virtualPath ?? 'aura://file'
@@ -1552,7 +1559,14 @@ export default function App() {
     if (matchingProject) { openProject(matchingProject.id); return; }
     const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
     if (matchingConnection) { openConnection(matchingConnection); return; }
-    pushToast('Workspace search', `Searching AURA for “${trimmed}” is mocked in v8; Ctrl/⌘ K still opens Ask AURA.`);
+    const requestId = ++workspaceSearchRequest.current;
+    setWorkspaceSearch({ query: trimmed, results: [], loading: true, error: null });
+    openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
+    void api.searchWorkspace(trimmed, activeProject?.name).then((results) => {
+      if (workspaceSearchRequest.current === requestId) setWorkspaceSearch({ query: trimmed, results, loading: false, error: null });
+    }).catch((error: unknown) => {
+      if (workspaceSearchRequest.current === requestId) setWorkspaceSearch({ query: trimmed, results: [], loading: false, error: executionErrorText(error) });
+    });
   };
 
   const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
@@ -1782,6 +1796,19 @@ export default function App() {
               </Suspense>
             </div>
           </div>
+        ) : null}
+
+        {surface === 'search-results' ? (
+          <WorkspaceSearchView
+            query={workspaceSearch.query}
+            results={workspaceSearch.results}
+            loading={workspaceSearch.loading}
+            error={workspaceSearch.error}
+            onOpenProject={(name) => {
+              const project = projectCatalog.find((item) => item.name === name);
+              if (project) openProject(project.id);
+            }}
+          />
         ) : null}
         </Suspense>
       </main>

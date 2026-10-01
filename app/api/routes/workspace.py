@@ -3,8 +3,8 @@
 from collections import defaultdict, deque
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete as sa_delete, select, text
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import case, delete as sa_delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.api.schemas import (
     WorkspaceLibraryReferenceWrite,
     WorkspaceProjectResponse,
     WorkspaceProjectWrite,
+    WorkspaceSearchResult,
     WorkspaceNoteResponse,
     WorkspaceNoteWrite,
     WorkspaceObjectCreate,
@@ -74,6 +75,67 @@ async def create_workspace_project(
         raise HTTPException(status_code=409, detail="A project with this name or ID already exists.") from exc
     await db.refresh(project)
     return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
+
+
+@router.get("/search", response_model=list[WorkspaceSearchResult])
+async def search_workspace(
+    query: str = Query(min_length=1, max_length=200),
+    project_name: str | None = Query(default=None, max_length=128),
+    limit: int = Query(default=25, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceSearchResult]:
+    """Search persisted workspace object titles and text without exposing metadata blobs."""
+    normalized = " ".join(query.split())
+    if not normalized:
+        raise HTTPException(status_code=422, detail="Search query must not be blank.")
+    escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    pattern = f"%{escaped}%"
+    filters = [or_(
+        WorkspaceObjectModel.title.ilike(pattern, escape="\\"),
+        WorkspaceObjectModel.content.ilike(pattern, escape="\\"),
+    )]
+    if project_name:
+        personal_project_links = select(WorkspaceObjectProjectLinkModel.object_id).where(
+            WorkspaceObjectProjectLinkModel.project_name == project_name
+        )
+        filters.append(or_(
+            WorkspaceObjectModel.project_name == project_name,
+            WorkspaceObjectModel.project_name.is_(None) & WorkspaceObjectModel.id.in_(personal_project_links),
+        ))
+    normalized_lower = normalized.lower()
+    rank = case(
+        (func.lower(WorkspaceObjectModel.title) == normalized_lower, 0),
+        (func.lower(WorkspaceObjectModel.title).like(f"{escaped.lower()}%", escape="\\"), 1),
+        (func.lower(WorkspaceObjectModel.title).like(pattern.lower(), escape="\\"), 2),
+        else_=3,
+    )
+    result = await db.execute(
+        select(WorkspaceObjectModel)
+        .where(*filters)
+        .order_by(rank, WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id)
+        .limit(limit)
+    )
+    response: list[WorkspaceSearchResult] = []
+    for item in result.scalars():
+        content = item.content or ""
+        match_at = content.casefold().find(normalized.casefold())
+        if match_at >= 0:
+            start = max(0, match_at - 70)
+            excerpt = ("…" if start else "") + content[start : match_at + len(normalized) + 110].strip()
+            if start + len(excerpt) < len(content):
+                excerpt += "…"
+        else:
+            excerpt = content[:180].strip() + ("…" if len(content) > 180 else "")
+        response.append(WorkspaceSearchResult(
+            object_id=item.id,
+            object_type=item.object_type,
+            title=item.title or "(untitled)",
+            excerpt=excerpt,
+            project_name=item.project_name,
+            created_by=item.created_by,
+            updated_at=item.updated_at,
+        ))
+    return response
 
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",

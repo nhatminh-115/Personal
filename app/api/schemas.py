@@ -216,6 +216,16 @@ class WorkspaceProjectResponse(BaseModel):
     updated_at: datetime
 
 
+class WorkspaceSearchResult(BaseModel):
+    object_id: str
+    object_type: str
+    title: str
+    excerpt: str
+    project_name: Optional[str] = None
+    created_by: str
+    updated_at: datetime
+
+
 class AutomationWrite(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(default="", max_length=500)
