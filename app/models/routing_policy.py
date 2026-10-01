@@ -117,6 +117,14 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             # Hard capability and boundary checks on explicit override:
             # A user choosing an exact model/provider override must not bypass hard capability constraints.
             # NO fallback is permitted on failure.
+            required_window = getattr(context, "required_context_window", None)
+            model_window = selected_context_window(meta, target_model)
+            if required_window is not None and model_window is not None and model_window < required_window:
+                raise ModelCapabilityMismatch(
+                    f"Explicit override model '{target_model}' context window ({model_window}) is below "
+                    f"the required {required_window} tokens."
+                )
+
             privacy = getattr(context, "privacy_requirement", None) or PrivacyPolicy.PUBLIC
             if privacy in (PrivacyPolicy.CONFIDENTIAL, PrivacyPolicy.LOCAL_ONLY):
                 if meta.privacy_status not in ("local", "airgap"):
@@ -314,6 +322,17 @@ class DeterministicRoutingPolicy(RoutingPolicy):
             candidates = [(p, mod, m) for p, mod, m in candidates if "long_context" in m.capabilities]
             if not candidates:
                 raise ModelCapabilityMismatch("No eligible provider found satisfying long_context capability.")
+
+        required_window = getattr(context, "required_context_window", None)
+        if required_window is not None:
+            candidates = [
+                (p, mod, m) for p, mod, m in candidates
+                if selected_context_window(m, mod) is None or selected_context_window(m, mod) >= required_window
+            ]
+            if not candidates:
+                raise ModelCapabilityMismatch(
+                    f"No eligible model has a known context window of at least {required_window} tokens."
+                )
 
         # 4. Fallback Policy Assessment (Requirement 9)
         fallback_policy = getattr(context, "fallback_policy", None) or FallbackPolicy.CLOUD_ALLOWED

@@ -197,7 +197,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
 
 def _estimate_prompt_tokens(messages: list[ChatMessage], tool_defs: list[Any]) -> int:
     """Conservative character-based estimate used only when an actual limit is known."""
-    message_chars = sum(len(message.content) for message in messages)
+    message_chars = sum(len(message.model_dump_json()) for message in messages)
     tool_chars = sum(len(tool.model_dump_json()) for tool in tool_defs)
     return (message_chars + tool_chars + 2) // 3 + (len(messages) * 8) + (len(tool_defs) * 16)
 
@@ -282,6 +282,14 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             requires_tools=bool(tool_defs) or bool(meta.get("requires_tools") or delegation.get("requires_tools")),
         )
 
+    reserved_output_tokens = 2048
+    estimated_input_tokens = _estimate_prompt_tokens(chat_messages, tool_defs)
+    measured_context_requirement = estimated_input_tokens + reserved_output_tokens
+    routing_ctx.required_context_window = max(
+        routing_ctx.required_context_window or 0,
+        measured_context_requirement,
+    )
+
     try:
         provider, selection = router.select_model_for_task(routing_ctx)
     except Exception as exc:
@@ -310,12 +318,11 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
         messages=chat_messages,
         tools=tool_defs,
         temperature=0.0,
+        max_tokens=reserved_output_tokens,
         routing_context=routing_ctx,
         selected_model=selection.model_name,
         selected_reasoning=selection.reasoning_effort_selected,
     )
-    estimated_input_tokens = _estimate_prompt_tokens(chat_messages, tool_defs)
-
     if trace_service:
         agent_role = delegation.get("specialist_name") or ("root" if not delegation else "specialist")
         await trace_service.record_event(
@@ -336,6 +343,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
                 "context_window": selection.context_window,
                 "estimated_input_tokens": estimated_input_tokens,
                 "reserved_output_tokens": model_req.max_tokens,
+                "required_context_window": routing_ctx.required_context_window,
                 "required_capabilities": routing_ctx.required_capabilities,
                 "requires_tools": routing_ctx.requires_tools,
                 "requires_vision": routing_ctx.requires_vision,

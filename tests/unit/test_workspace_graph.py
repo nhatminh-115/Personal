@@ -564,19 +564,27 @@ async def test_known_model_context_window_blocks_before_provider_invocation(asyn
     metadata = model_router.get_provider_metadata("mock")
     assert metadata is not None
     previous_window = metadata.context_window
+    model = metadata.default_model
+    previous_model_window = metadata.model_context_windows.get(model)
     metadata.context_window = 1
+    metadata.model_context_windows[model] = 1
     calls_before = len(model_router.get_provider("mock").call_history)
     try:
         response = await async_client.post("/v1/chat", json={
             "session_id": "small-context-window-session",
             "message": "A quick request.",
+            "model_override": f"mock:{model}",
         })
     finally:
         metadata.context_window = previous_window
+        if previous_model_window is None:
+            metadata.model_context_windows.pop(model, None)
+        else:
+            metadata.model_context_windows[model] = previous_model_window
 
     assert response.status_code == 422
     assert response.json()["code"] == "ModelCapabilityMismatch"
-    assert response.json()["details"]["context_window"] == 1
+    assert "context window (1)" in response.json()["message"]
     assert len(model_router.get_provider("mock").call_history) == calls_before
 
 
