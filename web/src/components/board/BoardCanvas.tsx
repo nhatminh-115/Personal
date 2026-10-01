@@ -191,6 +191,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   });
   const [linkSource, setLinkSource] = useState<string | null>(null);
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  const [flowReady, setFlowReady] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
@@ -1004,8 +1005,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       zoom: compact ? 0.85 : 1,
       duration: 450,
     });
-    setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
-  }, [compact, focusNodeId, setNodes]);
+    if (!node.selected) {
+      setNodes((current) => current.map((item) => ({ ...item, selected: item.id === focusNodeId })));
+    }
+  }, [compact, focusNodeId, flowReady, nodes, setNodes]);
 
   return (
     <div className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
@@ -1063,6 +1066,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }}
         onInit={(instance) => {
           instanceRef.current = instance;
+          setFlowReady(true);
           if (!workspaceProjectName || !viewportRef.current) {
             window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
           }
