@@ -23,6 +23,8 @@ import {
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
+  AutomationRecordResponse,
+  AutomationRunResponse,
 } from '../types';
 
 export class ApiError extends Error {
@@ -220,6 +222,33 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
+  },
+
+  async fetchAutomations(): Promise<AutomationRecordResponse[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations`));
+  },
+
+  async createAutomation(input: {
+    name: string;
+    description: string;
+    instruction: string;
+    scope: 'global' | 'project';
+    project_name?: string;
+    interval_seconds: number;
+  }): Promise<AutomationRecordResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async setAutomationEnabled(id: string, enabled: boolean): Promise<AutomationRecordResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+    }));
+  },
+
+  async runAutomation(id: string): Promise<AutomationRunResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/run`, { method: 'POST' }));
   },
 
   async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {

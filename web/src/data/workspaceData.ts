@@ -341,11 +341,17 @@ export interface AutomationRecord {
   enabled: boolean;
   scope: AutomationScope;
   projectId?: string;
+  projectName?: string;
   trigger: string;
   actions: string[];
   lastRun: string;
   nextRun: string;
   status: 'ready' | 'running' | 'paused';
+  source?: 'demo' | 'live';
+  instruction?: string;
+  intervalSeconds?: number;
+  lastRunAt?: string | null;
+  nextRunAt?: string | null;
 }
 
 export const initialAutomations: AutomationRecord[] = [
@@ -361,6 +367,7 @@ export const initialAutomations: AutomationRecord[] = [
     lastRun: '14 papers · 3 retained',
     nextRun: 'Mon · 08:00',
     status: 'ready',
+    source: 'demo',
   },
   {
     id: 'auto-study',
@@ -373,6 +380,7 @@ export const initialAutomations: AutomationRecord[] = [
     lastRun: 'TOEIC + German updated',
     nextRun: 'Today · 20:30',
     status: 'ready',
+    source: 'demo',
   },
   {
     id: 'auto-benchmark',
@@ -386,6 +394,7 @@ export const initialAutomations: AutomationRecord[] = [
     lastRun: 'quality −8% at 16k',
     nextRun: 'Paused',
     status: 'paused',
+    source: 'demo',
   },
 ];
 

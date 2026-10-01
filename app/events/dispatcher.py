@@ -36,7 +36,9 @@ class EventToAgentBridge:
             return None
 
         session_id = payload.get("session_id") or f"proactive-{event.event_type.replace('.', '-')}"
-        run_id = str(uuid.uuid4())
+        # Outbox delivery is at-least-once. Tie the orchestration run to the
+        # event so a retry after a process restart cannot create duplicate runs.
+        run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
         project_name = payload.get("project_name")
 
         logger.info(
@@ -45,6 +47,14 @@ class EventToAgentBridge:
         )
 
         async with self.session_factory() as db:
+            existing_run = await db.get(RunModel, run_id)
+            if existing_run is not None:
+                logger.info(
+                    "Skipping duplicate event delivery for an existing run",
+                    extra={"run_id": run_id, "event_id": event.id},
+                )
+                return {"run_id": run_id, "execution_status": existing_run.status}
+
             mem_service = SQLMemoryService(db)
             approval_service = ApprovalService(db)
             trace_service = TraceService(db)

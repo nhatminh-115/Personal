@@ -216,6 +216,35 @@ class WorkspaceProjectResponse(BaseModel):
     updated_at: datetime
 
 
+class AutomationWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=500)
+    instruction: str = Field(min_length=1, max_length=20_000)
+    scope: Literal["global", "project"] = "global"
+    project_name: Optional[str] = Field(default=None, max_length=128)
+    interval_seconds: int = Field(ge=60, le=31_536_000)
+
+
+class AutomationResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    instruction: str
+    enabled: bool
+    scope: Literal["global", "project"]
+    project_name: Optional[str] = None
+    interval_seconds: int
+    last_run_at: Optional[datetime] = None
+    next_run_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+
+class AutomationRunResponse(BaseModel):
+    event_id: str
+    status: Literal["queued"] = "queued"
+
+
 class WorkspaceEdgeResponse(BaseModel):
     id: str
     project_name: str
