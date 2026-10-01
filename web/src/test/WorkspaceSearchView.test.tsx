@@ -29,4 +29,18 @@ describe('WorkspaceSearchView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open file' }));
     expect(onOpenFile).toHaveBeenCalledWith(result);
   });
+
+  it('opens a persisted project object in its Board', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'bridge-object-9', object_type: 'context_bridge', title: 'Experiment handoff',
+      excerpt: 'Carry forward only verified outcomes.', project_name: 'AURA Project', created_by: 'user',
+      updated_at: '2026-10-01T12:00:00Z',
+    };
+    const onOpenProject = vi.fn();
+    render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenFile={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'bridge-object-9');
+  });
 });
+

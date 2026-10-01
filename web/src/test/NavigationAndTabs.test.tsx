@@ -99,6 +99,32 @@ describe('Navigation and Workspace Shell Invariants', () => {
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
   });
 
+  it('opens a persisted search match at its node in the project Board', async () => {
+    const project = { id: 'search-project', name: 'Search Project', subtitle: 'Indexed workspace', created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' };
+    const object = { id: 'search-match-1', project_name: project.name, session_id: null, source_message_id: null, object_type: 'context_bridge', created_by: 'user', title: 'Bridge match', content: '', metadata_json: { bridge_options: { conclusions: true }, bridge_sections: { conclusions: 'Keep this conclusion.' } }, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z' };
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve([{ object_id: object.id, object_type: object.object_type, title: object.title, excerpt: 'Keep this conclusion.', project_name: project.name, created_by: 'user', updated_at: object.updated_at }]) });
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ project_name: project.name, objects: [object], edges: [], layout: { project_name: project.name, layout: {}, revision: 0, updated_at: null }, execution_traces: [] }) });
+      if (url.includes('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([project]) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory') || url.includes('/v1/workspace/notes') || url.includes('/v1/workspace/library')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'bridge match unique' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('Bridge match')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+
+    expect(await screen.findByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/Search%20Project/graph')));
+    expect(document.querySelector('[data-id="search-match-1"]')).toHaveClass('selected');
+  });
+
   it('opening a project creates/reuses exactly one project tab', async () => {
     await act(async () => {
       render(<App />);
@@ -270,3 +296,4 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(screen.getByText(/Folder connections need Chrome or Edge/i)).toBeInTheDocument();
   });
 });
+

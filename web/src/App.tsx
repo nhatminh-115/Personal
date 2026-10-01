@@ -326,7 +326,7 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
   const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
   const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
-  const workspaceGraphProjectName = activeProject && projectThreads.some((thread) => thread.source === 'live') ? activeProject.name : null;
+  const workspaceGraphProjectName = activeProject && (activeProject.source === 'user' || projectThreads.some((thread) => thread.source === 'live')) ? activeProject.name : null;
   const workspaceSessionIds = useMemo(() => projectThreads
     .filter((thread) => thread.source === 'live' && thread.sessionId)
     .map((thread) => thread.sessionId!), [projectThreads]);
@@ -1596,6 +1596,15 @@ export default function App() {
     });
   };
 
+  const handleOpenWorkspaceSearchResult = (projectName: string, objectId: string) => {
+    const project = projectCatalog.find((item) => item.name === projectName);
+    if (!project) return;
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    setFocusNodeId(objectId);
+    openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: project.id, mode: 'board' });
+  };
+
   const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
   const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
 
@@ -1831,10 +1840,7 @@ export default function App() {
             results={workspaceSearch.results}
             loading={workspaceSearch.loading}
             error={workspaceSearch.error}
-            onOpenProject={(name) => {
-              const project = projectCatalog.find((item) => item.name === name);
-              if (project) openProject(project.id);
-            }}
+            onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenFile={(result) => {
               if (!result.connection_id || !result.relative_path || !result.connection_name) return;
               const indexedFile: IndexedFolderFile = {
@@ -1885,3 +1891,4 @@ export default function App() {
     </div>
   );
 }
+
