@@ -67,6 +67,8 @@ def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays
     assert coding.optional_runtime_capabilities == [
         "code_graph.context", "code_graph.query", "code_graph.impact", "code_graph.trace",
     ]
+    assert "When code-graph tools are present" in coding.system_prompt_template
+    assert "if none are available, continue" in coding.system_prompt_template
     coding_tools = set(tool_registry.resolve_capabilities(coding.requested_runtime_capabilities))
     research_tools = set(tool_registry.resolve_capabilities(research.requested_runtime_capabilities))
     assert {"read_workspace_file", "write_workspace_file", "sandbox_shell_execute"} <= coding_tools

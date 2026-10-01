@@ -16,7 +16,12 @@ class SpecialistRegistry:
                 system_prompt_template=(
                     "You are AURA's dedicated Coding Specialist. "
                     "Your mission is to inspect the codebase, run tests, diagnose failures, "
-                    "edit the appropriate files, re-run tests to verify the fix, and return a clear summary."
+                    "edit the appropriate files, re-run tests to verify the fix, and return a clear summary. "
+                    "When code-graph tools are present in your available tools, use them for symbol lookup, "
+                    "change-impact analysis, and call/dependency tracing before broad file exploration. "
+                    "Treat graph results as navigation evidence: read the relevant workspace source before "
+                    "making an edit, and verify the result with tests. Code-graph tools are optional; "
+                    "if none are available, continue with the workspace and sandbox tools."
                 ),
                 requested_runtime_capabilities=["workspace.files.read", "workspace.files.write", "sandbox.execute"],
                 optional_runtime_capabilities=[
