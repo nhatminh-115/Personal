@@ -26,7 +26,10 @@ export function ResponseProvenance({ route, reasoning, contextTokens, items = []
             <button
               key={item.id}
               type="button"
-              onClick={() => item.nodeId && onFocusObject?.(item.nodeId)}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (item.nodeId) onFocusObject?.(item.nodeId);
+              }}
               className={item.kind === 'artifact' ? 'is-artifact' : ''}
               title={item.detail}
             >
