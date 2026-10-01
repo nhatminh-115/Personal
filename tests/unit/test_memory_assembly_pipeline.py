@@ -240,6 +240,52 @@ async def test_excluded_oversized_project_memory_does_not_constrain_context_priv
 
 
 @pytest.mark.asyncio
+async def test_project_memory_cannot_bypass_bounds_through_semantic_search():
+    from unittest.mock import AsyncMock
+    from types import SimpleNamespace
+
+    excluded_project_memory = SimpleNamespace(
+        id="excluded-project-memory",
+        memory_type=MemoryType.PROJECT.value,
+        content="Must stay out of the bounded project-memory context.",
+        metadata_json={"privacy_policy": "local_only"},
+    )
+    included_semantic_memory = SimpleNamespace(
+        id="semantic-memory",
+        memory_type=MemoryType.SEMANTIC.value,
+        content="Relevant semantic memory.",
+        metadata_json={"privacy_policy": "internal"},
+    )
+    store = SimpleNamespace(search=AsyncMock(return_value=[
+        (excluded_project_memory, 0.99),
+        (included_semantic_memory, 0.9),
+    ]))
+    embedding_router = SimpleNamespace(
+        embed_query=AsyncMock(return_value=[0.1]),
+        current_model_name="mock",
+        current_dimension=1,
+    )
+    memory_service = SimpleNamespace(
+        get_session_messages=AsyncMock(return_value=[]),
+        get_all_profile_facts=AsyncMock(return_value={}),
+        get_project_memories=AsyncMock(return_value=[]),
+        get_recent_episodes=AsyncMock(return_value=[]),
+        store=store,
+        embedding_router=embedding_router,
+    )
+
+    assembled = await ContextAssembler(memory_service).assemble_context(
+        session_id="bounded-semantic-project-context",
+        user_message="Find relevant project information.",
+        project_name="AURA",
+    )
+
+    assert store.search.call_args.kwargs["memory_types"] == [MemoryType.SEMANTIC.value]
+    assert assembled.semantic_items == [("Relevant semantic memory.", 0.9)]
+    assert assembled.privacy_requirement == "internal"
+
+
+@pytest.mark.asyncio
 async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
     source = WorkspaceObjectModel(
         id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
