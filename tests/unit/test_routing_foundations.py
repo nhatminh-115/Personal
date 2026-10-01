@@ -20,6 +20,8 @@ from app.db.models import (
     RunEventModel,
     RunModel,
     SessionModel,
+    WorkspaceEdgeModel,
+    WorkspaceObjectModel,
 )
 from app.models.base import (
     ChatMessage,
@@ -1025,6 +1027,62 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
     assert routing_ctx_dict["privacy_requirement"] == "local_only"
     assert routing_ctx_dict["fallback_policy"] == "none"
     assert routing_ctx_dict["explicit_model_override"] == "mock:research-model"
+
+
+@pytest.mark.asyncio
+async def test_research_child_completion_projects_artifacts_into_workspace_graph(test_db_session: AsyncSession, monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    from app.delegation.runtime import DelegationRuntime
+    from app.delegation.types import DelegationRequest
+    from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchGoal, ResearchSource, ResearchState, SourceStatus
+
+    session_id, parent_id = str(uuid.uuid4()), str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id, project_name="Atlas"))
+    test_db_session.add(RunModel(id=parent_id, session_id=session_id, user_message="Research the checkpoint design."))
+    await test_db_session.commit()
+
+    state = ResearchState(
+        goal=ResearchGoal(goal_id="goal-graph", user_query="Research the checkpoint design.", project_name="Atlas"),
+        sources={"source-graph": ResearchSource(
+            source_id="source-graph", canonical_id="doi:10.1000/graph", title="Checkpointed Workflows",
+            abstract="A paper about durable workflows.", status=SourceStatus.INSPECTED,
+        )},
+        evidence={"evidence-graph": EvidenceItem(
+            evidence_id="evidence-graph", source_id="source-graph", source_title="Checkpointed Workflows",
+            source_locator="Section 2", extracted_text="Workflow state resumes from a persisted checkpoint.",
+        )},
+        claims=[ResearchClaim(
+            claim_id="claim-graph", claim_text="The paper identifies a research gap in interactive restartability.",
+            claim_type=ClaimType.SOURCE_SUPPORTED_FACT, evidence_ids=["evidence-graph"],
+            verification_status="verified",
+        )],
+    )
+    mock_graph = AsyncMock()
+    mock_graph.aget_state.return_value = MagicMock(next=None, values={})
+    mock_graph.ainvoke.return_value = {
+        "messages": [{"role": "assistant", "content": "Research completed."}],
+        "research_state": state.to_dict(),
+        "execution_status": "completed",
+    }
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
+
+    result = await DelegationRuntime().delegate(DelegationRequest(
+        specialist_name="research",
+        task_description="Research the checkpoint design.",
+        parent_run_id=parent_id,
+        session_id=session_id,
+        context={"project_name": "Atlas"},
+    ), db=test_db_session)
+
+    objects = (await test_db_session.execute(
+        select(WorkspaceObjectModel).where(WorkspaceObjectModel.project_name == "Atlas")
+    )).scalars().all()
+    assert {item.object_type for item in objects} == {"research_source", "research_evidence", "research_claim"}
+    assert len(objects) == 3
+    assert all(item.metadata_json["research_run_id"] == result.child_run_id for item in objects)
+    assert {edge.relation_type for edge in (await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(WorkspaceEdgeModel.project_name == "Atlas")
+    )).scalars().all()} == {"contains_evidence", "supports_claim"}
 
 
 @pytest.mark.asyncio

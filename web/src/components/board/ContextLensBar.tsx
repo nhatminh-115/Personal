@@ -22,13 +22,15 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
 
   const counts = nodes.reduce(
     (acc, node) => {
-      if (node.data.kind === 'paper') acc.papers += 1;
+      if (node.data.workspaceObjectType === 'research_claim') acc.claims += 1;
+      else if (node.data.workspaceObjectType === 'research_evidence') acc.evidence += 1;
+      else if (node.data.kind === 'paper') acc.papers += 1;
       else if (node.data.kind === 'note') acc.notes += 1;
       else if (node.data.kind === 'code-result') acc.code += 1;
       else acc.turns += 1;
       return acc;
     },
-    { turns: 0, notes: 0, papers: 0, code: 0 },
+    { turns: 0, notes: 0, papers: 0, evidence: 0, claims: 0, code: 0 },
   );
 
   return (
@@ -103,10 +105,12 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
           </div>
           <div className="context-manifest">
             <span>Context:</span>
-            <small>{counts.turns} conversation turns</small>
-            <small>{counts.notes} note</small>
-            <small>{counts.papers} papers</small>
-            <small>{counts.code} code result</small>
+            <small>{counts.turns} conversation {counts.turns === 1 ? 'turn' : 'turns'}</small>
+            <small>{counts.notes} note{counts.notes === 1 ? '' : 's'}</small>
+            <small>{counts.papers} paper{counts.papers === 1 ? '' : 's'}</small>
+            <small>{counts.evidence} research evidence {counts.evidence === 1 ? 'item' : 'items'}</small>
+            <small>{counts.claims} research claim{counts.claims === 1 ? '' : 's'}</small>
+            <small>{counts.code} code result{counts.code === 1 ? '' : 's'}</small>
             <strong>Ask AURA includes only selected objects and their explicit context links.</strong>
           </div>
         </div>

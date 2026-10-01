@@ -71,4 +71,28 @@ describe('Context Lens actions', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Create a branch before merging selected context into it.');
     expect(screen.queryByRole('button', { name: 'Create merged continuation' })).not.toBeInTheDocument();
   });
+
+  it('counts persisted Research sources, evidence, and claims truthfully in the manifest', () => {
+    const researchNodes = [
+      { id: 'paper-1', data: { kind: 'paper', title: 'Paper', workspaceObjectType: 'research_source' } },
+      { id: 'evidence-1', data: { kind: 'paper', title: 'Evidence', workspaceObjectType: 'research_evidence' } },
+      { id: 'claim-1', data: { kind: 'answer', title: 'Claim', workspaceObjectType: 'research_claim' } },
+    ] as AuraFlowNode[];
+    render(<ContextLensBar
+      nodes={researchNodes}
+      onAsk={vi.fn()}
+      onCreateNote={vi.fn()}
+      onCreateBridge={vi.fn()}
+      onCreateBranch={vi.fn()}
+      onSaveContextSet={vi.fn()}
+      mergeTargets={[]}
+      onMergeInto={vi.fn()}
+      onClear={vi.fn()}
+    />);
+    fireEvent.click(screen.getByRole('button', { name: /Ask AURA/i }));
+    expect(screen.getByText('1 paper')).toBeInTheDocument();
+    expect(screen.getByText('1 research evidence item')).toBeInTheDocument();
+    expect(screen.getByText('1 research claim')).toBeInTheDocument();
+    expect(screen.getByText('0 conversation turns')).toBeInTheDocument();
+  });
 });
