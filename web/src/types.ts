@@ -42,6 +42,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   running?: boolean;
   messageId?: string;
   workspaceObjectType?: string;
+  workspaceCreatedBy?: string;
   workspaceMetadata?: Record<string, unknown>;
   layer: LayerKey;
   from?: string;
@@ -73,6 +74,10 @@ export interface AuraNodeData extends Record<string, unknown> {
 export type AuraFlowNode = Node<AuraNodeData>;
 export type AuraFlowEdge = Edge<{
   edgeKind?: 'reply' | 'context' | 'semantic' | 'execution';
+  workspaceCreatedBy?: string;
+  relationType?: string;
+  edgeFamily?: WorkspaceEdge['edge_family'];
+  workspaceMetadata?: Record<string, unknown>;
   onDelete?: (id: string) => void;
 }>;
 

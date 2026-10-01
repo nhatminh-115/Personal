@@ -365,6 +365,38 @@ async def test_chat_task_type_selects_the_assigned_profile_task_route(async_clie
 
 
 @pytest.mark.asyncio
+async def test_user_workspace_object_can_be_restored_with_its_stable_id(async_client):
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Undo source", "content": "Keep this exact source."
+    })
+    object_id = "11111111-1111-4111-8111-111111111111"
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "id": object_id,
+        "object_type": "context_bridge",
+        "title": "Restorable handoff",
+        "content": "Selected only.",
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert created.status_code == 201
+    assert created.json()["id"] == object_id
+
+    deleted = await async_client.delete(f"/v1/workspace/projects/aura/objects/{object_id}")
+    assert deleted.status_code == 204
+
+    restored = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "id": object_id,
+        "object_type": "context_bridge",
+        "title": "Restorable handoff",
+        "content": "Selected only.",
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert restored.status_code == 201
+    assert restored.json()["id"] == object_id
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert any(edge["target_object_id"] == object_id and edge["relation_type"] == "bridges_to" for edge in graph["edges"])
+
+
+@pytest.mark.asyncio
 async def test_known_model_context_window_blocks_before_provider_invocation(async_client):
     from app.models.router import model_router
 

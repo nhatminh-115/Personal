@@ -173,6 +173,7 @@ export const api = {
   },
 
   async createWorkspaceObject(projectName: string, input: {
+    id?: string;
     object_type: 'manual_note' | 'context_bridge' | 'context_set' | 'conversation_branch';
     title: string;
     content: string;
@@ -182,6 +183,10 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
+  },
+
+  async deleteWorkspaceObject(projectName: string, objectId: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, { method: 'DELETE' }));
   },
 
   async updateWorkspaceObject(projectName: string, objectId: string, input: {
