@@ -66,6 +66,11 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
     }]
     assert isinstance(manifest["estimated_tokens"], int)
     assert "prompt_text" not in manifest
+    routing = assistant["routing_provenance"]
+    assert routing["provider"] == "mock"
+    assert routing["model"] == "mock-default"
+    assert routing["role"] == "root"
+    assert isinstance(routing["reasoning_effort"], str)
 
 
 @pytest.mark.asyncio

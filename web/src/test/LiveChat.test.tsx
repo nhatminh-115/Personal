@@ -87,7 +87,13 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
                 {
                   id: 'ev-2',
                   event_type: 'model_selected',
-                  payload: { model_id: 'model-c' },
+                  payload: { model_id: 'model-c', provider: 'mock', model: 'model-c', agent_role: 'root' },
+                  created_at: new Date().toISOString(),
+                },
+                {
+                  id: 'ev-reasoning',
+                  event_type: 'reasoning_effort_selected',
+                  payload: { selected_effort: 'medium' },
                   created_at: new Date().toISOString(),
                 },
               ],
@@ -152,13 +158,15 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // Verify response rendered in v9.1 UI
     expect(await screen.findByText(/Live backend synthesis response for project architecture/i)).toBeInTheDocument();
+    expect(screen.getByText('mock:model-c')).toBeInTheDocument();
+    expect(screen.getByText('Reasoning · Medium')).toBeInTheDocument();
 
     // The live response reuses the persisted context manifest and focuses the exact Research object on Board.
     expect(screen.getByText('0.2k context')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Research claim.*research-claim-1/i })).toBeInTheDocument();
 
     // Verify execution badge
-    expect(await screen.findByText(/AURA · 3 steps/i)).toBeInTheDocument();
+    expect(await screen.findByText(/AURA · 4 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Context').closest('button')!);
     fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
