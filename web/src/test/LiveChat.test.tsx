@@ -10,6 +10,8 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
   it('sends chat request to /v1/chat and renders completed response with real execution events', async () => {
     let chatPayload: any = null;
+    const consoleError = vi.spyOn(console, 'error');
+    const consoleWarn = vi.spyOn(console, 'warn');
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('/v1/workspace/projects/') && url.endsWith('/graph')) {
@@ -179,6 +181,8 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     fireEvent.click(screen.getByRole('button', { name: /Research claim.*research-claim-1/i }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
+    expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/Received NaN/);
+    expect(consoleWarn.mock.calls.flat().join(' ')).not.toMatch(/Received NaN/);
   });
 
   it('handles waiting_for_approval and resumes after decision is submitted', async () => {
