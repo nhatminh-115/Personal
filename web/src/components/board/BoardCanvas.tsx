@@ -152,7 +152,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const historyBusy = useRef(false);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
-  const noteRestorePayloads = useRef<Map<string, { object_type: 'manual_note'; title: string; content: string }>>(new Map());
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
@@ -291,60 +290,78 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const changeBody = useCallback(
     (id: string, body: string) => {
+      const node = nodesRef.current.find((item) => item.id === id);
+      if (!node || (!node.data.manual && node.data.kind !== 'bridge')) return;
+      const previousBody = node.data.kind === 'bridge' ? node.data.bridgeNote ?? node.data.body : node.data.body;
+      if (previousBody === body) return;
+      const bridgeOptions = node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false };
+      const saveBody = async (content: string) => {
+        if (!workspaceProjectName) return;
+        const current = nodesRef.current.find((item) => item.id === id) ?? node;
+        await api.updateWorkspaceObject(workspaceProjectName, id, {
+          title: current.data.title,
+          content,
+          metadata_json: current.data.kind === 'bridge' ? { bridge_options: current.data.bridgeOptions ?? bridgeOptions } : {},
+        });
+      };
+      const cancelPendingSave = () => {
+        const timer = noteSaveTimers.current.get(id);
+        if (timer !== undefined) window.clearTimeout(timer);
+        noteSaveTimers.current.delete(id);
+      };
+      recordHistory(workspaceProjectName ? {
+        undo: async () => { cancelPendingSave(); await saveBody(previousBody); },
+        redo: async () => { cancelPendingSave(); await saveBody(body); },
+      } : undefined);
       setNodes((current) => current.map((node) => (node.id === id ? {
         ...node,
         data: { ...node.data, body, ...(node.data.kind === 'bridge' ? { bridgeNote: body } : {}) },
       } : node)));
       if (workspaceProjectName) {
-        const node = nodesRef.current.find((item) => item.id === id);
-        if (node?.data.manual || node?.data.kind === 'bridge') {
-          if (node.data.manual) {
-            const restorePayload = noteRestorePayloads.current.get(id);
-            if (restorePayload) restorePayload.content = body;
-          }
-          const previous = noteSaveTimers.current.get(id);
-          if (previous !== undefined) window.clearTimeout(previous);
-          const timer = window.setTimeout(() => {
-            void api.updateWorkspaceObject(workspaceProjectName, id, {
-              title: node.data.title,
-              content: body,
-              metadata_json: node.data.kind === 'bridge' ? {
-                bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
-              } : {},
-            }).catch(() => toast(node.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
-            noteSaveTimers.current.delete(id);
-          }, 500);
-          noteSaveTimers.current.set(id, timer);
-        }
+        cancelPendingSave();
+        const timer = window.setTimeout(() => {
+          void saveBody(body).catch(() => toast(node.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          noteSaveTimers.current.delete(id);
+        }, 500);
+        noteSaveTimers.current.set(id, timer);
       }
     },
-    [setNodes, toast, workspaceProjectName],
+    [recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const updateBridgeOption = useCallback(
     (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
-      recordHistory();
       const node = nodesRef.current.find((item) => item.id === id);
+      if (!node) return;
+      const previousOptions = node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false };
       const bridgeOptions = {
-        ...(node?.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false }),
+        ...previousOptions,
         [key]: value,
       };
-      setNodes((current) =>
-        current.map((node) => {
-          if (node.id !== id) return node;
-          return {
-            ...node,
-            data: { ...node.data, bridgeOptions: { ...bridgeOptions, [key]: value } },
-          };
-        }),
-      );
-      if (workspaceProjectName && node?.data.kind === 'bridge') {
-        void api.updateWorkspaceObject(workspaceProjectName, id, {
-          title: node.data.title,
-          content: node.data.bridgeNote ?? node.data.body,
-          metadata_json: { bridge_options: bridgeOptions },
-        }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+      const persistOptions = async (options: typeof bridgeOptions) => {
+        const current = nodesRef.current.find((item) => item.id === id) ?? node;
+        await api.updateWorkspaceObject(workspaceProjectName!, id, {
+          title: current.data.title,
+          content: current.data.bridgeNote ?? current.data.body,
+          metadata_json: { bridge_options: options },
+        });
+      };
+      if (workspaceProjectName && node.data.kind === 'bridge') {
+        void persistOptions(bridgeOptions).then(() => {
+          recordHistory({
+            undo: async () => { await persistOptions(previousOptions); },
+            redo: async () => { await persistOptions(bridgeOptions); },
+          });
+          setNodes((current) => current.map((item) => item.id === id
+            ? { ...item, data: { ...item.data, bridgeOptions } }
+            : item));
+        }).catch(() => toast('Bridge options were not saved', 'The saved selection was left unchanged.'));
+        return;
       }
+      recordHistory();
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data: { ...item.data, bridgeOptions } }
+        : item));
     },
     [recordHistory, setNodes, toast, workspaceProjectName],
   );
@@ -528,7 +545,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           id = created.id;
           const objectId = id;
           const restorePayload = { ...noteInput };
-          noteRestorePayloads.current.set(objectId, restorePayload);
           recordHistory({
             undo: async () => {
               const timer = noteSaveTimers.current.get(objectId);
@@ -582,15 +598,42 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     const bridgeOptions = { conclusions: true, observations: true, failed: false, artifacts: false };
     if (workspaceProjectName) {
       try {
-        await api.createWorkspaceObject(workspaceProjectName, {
+        const sourceObjectIds = selectedNodes.map((node) => node.id);
+        const created = await api.createWorkspaceObject(workspaceProjectName, {
           object_type: 'context_bridge',
           title: 'Context Bridge',
           content: '',
           metadata_json: { bridge_options: bridgeOptions },
-          source_object_ids: selectedNodes.map((node) => node.id),
+          source_object_ids: sourceObjectIds,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        const bridgeEdges = graph.edges.filter((edge) => edge.target_object_id === created.id).map((edge) => ({
+          id: edge.id,
+          source_object_id: edge.source_object_id,
+          target_object_id: edge.target_object_id,
+          relation_type: edge.relation_type,
+          edge_family: edge.edge_family,
+          metadata_json: edge.metadata_json,
+        }));
+        recordHistory({
+          undo: async () => { await api.deleteWorkspaceObject(workspaceProjectName, created.id); },
+          redo: async () => {
+            await api.createWorkspaceObject(workspaceProjectName, {
+              id: created.id,
+              object_type: 'context_bridge',
+              title: created.title,
+              content: created.content,
+              metadata_json: created.metadata_json,
+            });
+            try {
+              await api.restoreWorkspaceEdges(workspaceProjectName, bridgeEdges);
+            } catch (error) {
+              await api.deleteWorkspaceObject(workspaceProjectName, created.id);
+              throw error;
+            }
+          },
+        });
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
