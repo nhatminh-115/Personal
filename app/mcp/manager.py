@@ -80,7 +80,9 @@ class MCPClientManager:
         capability_tools: Dict[str, List[str]] = {}
         for mcp_tool_name, capabilities in config.capabilities_by_tool.items():
             canonical_name = f"mcp_{config.id}_{mcp_tool_name}"
-            if discovered_tool_names is not None and canonical_name not in discovered_tool_names:
+            # A declaration is configuration only. Bind it to runtime capabilities
+            # after tools/list confirms that the provider actually exposes it.
+            if discovered_tool_names is None or canonical_name not in discovered_tool_names:
                 continue
             for capability in capabilities:
                 capability_tools.setdefault(capability, []).append(canonical_name)

@@ -19,6 +19,12 @@ class SpecialistRegistry:
                     "edit the appropriate files, re-run tests to verify the fix, and return a clear summary."
                 ),
                 requested_runtime_capabilities=["workspace.files.read", "workspace.files.write", "sandbox.execute"],
+                optional_runtime_capabilities=[
+                    "code_graph.context",
+                    "code_graph.query",
+                    "code_graph.impact",
+                    "code_graph.trace",
+                ],
                 max_steps=10,
                 timeout_seconds=120.0,
                 preferred_model_capabilities=["code", "reasoning"],

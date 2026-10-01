@@ -125,6 +125,29 @@ class CapabilityProviderRegistry:
         capabilities: Iterable[str],
         allowed_tool_names: Optional[Iterable[str]] = None,
     ) -> List[str]:
+        resolved, missing = self._resolve_tools(capabilities, allowed_tool_names)
+        if missing:
+            raise UnresolvedCapabilitiesError(missing)
+        return resolved
+
+    def resolve_available_tools(
+        self,
+        capabilities: Iterable[str],
+        allowed_tool_names: Optional[Iterable[str]] = None,
+    ) -> List[str]:
+        """Resolve only capabilities currently backed by an enabled provider.
+
+        Intended for explicitly optional runtime capabilities. Required capability
+        resolution must continue to use :meth:`resolve_tools` and fail closed.
+        """
+        resolved, _missing = self._resolve_tools(capabilities, allowed_tool_names)
+        return resolved
+
+    def _resolve_tools(
+        self,
+        capabilities: Iterable[str],
+        allowed_tool_names: Optional[Iterable[str]],
+    ) -> tuple[List[str], List[str]]:
         requested = list(dict.fromkeys(capabilities))
         allowed = set(allowed_tool_names) if allowed_tool_names is not None else None
         resolved: List[str] = []
@@ -149,9 +172,7 @@ class CapabilityProviderRegistry:
                 continue
             for names in matches:
                 resolved.extend(names)
-        if missing:
-            raise UnresolvedCapabilitiesError(missing)
-        return list(dict.fromkeys(resolved))
+        return list(dict.fromkeys(resolved)), missing
 
 
 class UnresolvedCapabilitiesError(ValueError):

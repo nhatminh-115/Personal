@@ -51,6 +51,7 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.privacy_boundary == PrivacyBoundary.UNKNOWN
     assert provider.network_requirement == NetworkRequirement.UNKNOWN
     assert provider.capabilities == ["research.library.search"]
+    assert registry.resolve_available_capabilities(["research.library.search"]) == []
     assert "sensitive-token" not in provider.model_dump_json()
 
 
@@ -63,6 +64,9 @@ def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays
     research = specialist_registry.get("research")
     assert coding is not None and coding.allowed_tools == []
     assert research is not None and research.allowed_tools == []
+    assert coding.optional_runtime_capabilities == [
+        "code_graph.context", "code_graph.query", "code_graph.impact", "code_graph.trace",
+    ]
     coding_tools = set(tool_registry.resolve_capabilities(coding.requested_runtime_capabilities))
     research_tools = set(tool_registry.resolve_capabilities(research.requested_runtime_capabilities))
     assert {"read_workspace_file", "write_workspace_file", "sandbox_shell_execute"} <= coding_tools
@@ -70,6 +74,53 @@ def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays
 
     with pytest.raises(UnresolvedCapabilitiesError):
         tool_registry.resolve_capabilities(["browser.control"])
+
+
+def test_optional_code_graph_tools_are_exposed_only_when_a_provider_is_available():
+    from app.delegation.registry import specialist_registry
+    from app.delegation.runtime import DelegationRuntime
+    from app.tools.registry import ToolRegistry
+
+    registry = ToolRegistry()
+    coding = specialist_registry.get("coding")
+    assert coding is not None
+    runtime = DelegationRuntime(base_tool_registry=registry)
+
+    required = set(registry.resolve_capabilities(coding.requested_runtime_capabilities))
+    assert set(runtime._resolve_specialist_tools(coding)) == required
+    assert registry.resolve_available_capabilities(coding.optional_runtime_capabilities) == []
+
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id="mcp.codegraph",
+            name="CodeGraph MCP",
+            health=CapabilityProviderHealth.UNKNOWN,
+            capabilities=["code_graph.context", "code_graph.impact"],
+            privacy_boundary=PrivacyBoundary.LOCAL,
+            network_requirement=NetworkRequirement.UNKNOWN,
+        ),
+        {
+            "code_graph.context": ["read_workspace_file"],
+            "code_graph.impact": ["list_workspace_files"],
+        },
+    )
+
+    exposed = set(runtime._resolve_specialist_tools(coding))
+    assert required <= exposed
+    assert {"read_workspace_file", "list_workspace_files"} <= exposed
+    assert registry.resolve_available_capabilities(["code_graph.trace"]) == []
+
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id="mcp.disabled",
+            name="Disabled provider",
+            enabled=False,
+            health=CapabilityProviderHealth.DISABLED,
+            capabilities=["code_graph.trace"],
+        ),
+        {"code_graph.trace": ["read_workspace_file"]},
+    )
+    assert registry.resolve_available_capabilities(["code_graph.trace"]) == []
 
 
 def test_native_or_external_provider_can_implement_the_typed_provider_boundary():

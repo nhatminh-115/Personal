@@ -68,6 +68,33 @@ def test_abstract_capabilities_resolve_only_to_explicit_provider_bindings():
         raise AssertionError("A concrete tool ceiling must not silently erase a requested capability.")
 
 
+def test_optional_capability_resolution_respects_tool_ceiling_and_provider_health():
+    registry = ToolRegistry()
+    metadata = CapabilityProviderMetadata(
+        provider_id="test.graph",
+        name="Test graph",
+        capabilities=["code_graph.context", "code_graph.impact"],
+        health=CapabilityProviderHealth.UNKNOWN,
+    )
+    registry.register_capability_provider(
+        metadata,
+        {
+            "code_graph.context": ["read_workspace_file"],
+            "code_graph.impact": ["list_workspace_files"],
+        },
+    )
+    assert registry.resolve_available_capabilities(
+        ["code_graph.context", "code_graph.impact", "code_graph.trace"],
+        allowed_tool_names=["read_workspace_file"],
+    ) == ["read_workspace_file"]
+
+    registry.register_capability_provider(
+        metadata.model_copy(update={"health": CapabilityProviderHealth.UNAVAILABLE}),
+        {"code_graph.context": ["read_workspace_file"]},
+    )
+    assert registry.resolve_available_capabilities(["code_graph.context"]) == []
+
+
 def test_native_provider_metadata_keeps_unknown_environment_facts_unknown():
     registry = ToolRegistry()
     research = registry.capability_providers.get("aura.research")

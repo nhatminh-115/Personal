@@ -12,6 +12,7 @@ class SpecialistDefinition(BaseModel):
     system_prompt_template: str
     allowed_tools: List[str] = Field(default_factory=list, description="Optional concrete-tool ceiling applied after capability resolution.")
     requested_runtime_capabilities: List[str] = Field(default_factory=list)
+    optional_runtime_capabilities: List[str] = Field(default_factory=list)
     max_steps: int = 10
     timeout_seconds: float = 60.0
     preferred_model_capabilities: List[str] = Field(default_factory=lambda: ["code"])
