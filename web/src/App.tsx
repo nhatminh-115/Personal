@@ -22,7 +22,6 @@ import { RoutingConfirmationNotice } from './components/routing/RoutingConfirmat
 import { initialNodes } from './data/mockData';
 import { makeProjectBoard } from './data/projectBoards';
 import {
-  initialAutomations,
   initialChatThreads,
   initialLibraryItems,
   initialNotes,
@@ -77,7 +76,6 @@ type WorkspaceSurface =
 const STORAGE = {
   library: 'aura-v7-library',
   notes: 'aura-v7-notes',
-  automations: 'aura-v7-automations',
   chats: 'aura-v7-chats',
 };
 
@@ -135,6 +133,26 @@ function executionErrorText(error: unknown): string {
   return (error as Error)?.message || 'Execution failed';
 }
 
+function automationFromDto(dto: Awaited<ReturnType<typeof api.fetchAutomations>>[number]): AutomationRecord {
+  const project = projects.find((item) => item.name === dto.project_name);
+  const status = dto.last_run_status;
+  return {
+    id: dto.id,
+    name: dto.name,
+    description: dto.description,
+    prompt: dto.message,
+    enabled: dto.is_active,
+    scope: dto.project_name ? 'project' : 'global',
+    projectId: project?.id,
+    trigger: dto.interval_seconds === 604_800 ? 'Every week' : dto.interval_seconds === 86_400 ? 'Every day' : `Every ${Math.round(dto.interval_seconds / 3600)} hours`,
+    intervalSeconds: dto.interval_seconds,
+    actions: [],
+    lastRun: dto.last_run_at ? `${status ?? 'queued'} · ${new Date(dto.last_run_at).toLocaleString()}` : 'Never',
+    nextRun: new Date(dto.next_run_at).toLocaleString(),
+    status: !dto.is_active ? 'paused' : !status && dto.last_run_at ? 'queued' : status === 'running' || status === 'waiting_for_approval' ? 'running' : 'ready',
+  };
+}
+
 interface AppTab extends AuraTab {
   surface: WorkspaceSurface;
   projectId?: string | null;
@@ -176,7 +194,9 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
-  const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
+  const [automations, setAutomations] = useState<AutomationRecord[]>([]);
+  const [automationsLoading, setAutomationsLoading] = useState(true);
+  const [automationError, setAutomationError] = useState<string | null>(null);
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
@@ -201,7 +221,18 @@ export default function App() {
 
   useEffect(() => window.localStorage.setItem(STORAGE.library, JSON.stringify(libraryItems)), [libraryItems]);
   useEffect(() => window.localStorage.setItem(STORAGE.notes, JSON.stringify(notes)), [notes]);
-  useEffect(() => window.localStorage.setItem(STORAGE.automations, JSON.stringify(automations)), [automations]);
+  useEffect(() => {
+    let cancelled = false;
+    void api.fetchAutomations().then((items) => {
+      if (!cancelled) {
+        setAutomations(items.map(automationFromDto));
+        setAutomationError(null);
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setAutomationError(executionErrorText(error));
+    }).finally(() => { if (!cancelled) setAutomationsLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => window.localStorage.setItem(STORAGE.chats, JSON.stringify(chatThreads)), [chatThreads]);
   useEffect(() => {
     let cancelled = false;
@@ -1026,12 +1057,54 @@ export default function App() {
     ]
   );
 
-  const runAutomation = useCallback((automation: AutomationRecord) => {
-    setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'running', lastRun: 'Running now…' } : item));
-    pushToast(`Running · ${automation.name}`, 'Prototype run only — no external actions are executed.');
-    window.setTimeout(() => {
-      setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'ready', lastRun: 'Completed just now' } : item));
-    }, 1600);
+  const createAutomation = useCallback(async (draft: { name: string; description: string; prompt: string; scope: 'global' | 'project'; projectId: string; intervalSeconds: number }) => {
+    try {
+      const project = draft.scope === 'project' ? projects.find((item) => item.id === draft.projectId) : undefined;
+      const created = await api.createAutomation({
+        name: draft.name.trim(),
+        description: draft.description.trim(),
+        message: draft.prompt.trim(),
+        project_name: project?.name,
+        interval_seconds: draft.intervalSeconds,
+      });
+      setAutomations((current) => [automationFromDto(created), ...current]);
+      setAutomationError(null);
+      pushToast('Automation saved', 'Its first scheduled run will use local-only routing.');
+    } catch (error) {
+      setAutomationError(executionErrorText(error));
+      throw error;
+    }
+  }, [pushToast]);
+
+  const toggleAutomation = useCallback(async (automation: AutomationRecord) => {
+    try {
+      const updated = await api.setAutomationActive(automation.id, !automation.enabled);
+      setAutomations((current) => current.map((item) => item.id === updated.id ? automationFromDto(updated) : item));
+      setAutomationError(null);
+    } catch (error) {
+      setAutomationError(executionErrorText(error));
+    }
+  }, []);
+
+  const deleteAutomation = useCallback(async (automation: AutomationRecord) => {
+    try {
+      await api.deleteAutomation(automation.id);
+      setAutomations((current) => current.filter((item) => item.id !== automation.id));
+      setAutomationError(null);
+    } catch (error) {
+      setAutomationError(executionErrorText(error));
+    }
+  }, []);
+
+  const runAutomation = useCallback(async (automation: AutomationRecord) => {
+    try {
+      await api.runAutomation(automation.id);
+      setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'queued', lastRun: 'Queued · waiting for local runtime' } : item));
+      setAutomationError(null);
+      pushToast(`Queued · ${automation.name}`, 'AURA will run this routine with local-only model routing.');
+    } catch (error) {
+      setAutomationError(executionErrorText(error));
+    }
   }, [pushToast]);
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
@@ -1187,7 +1260,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView notes={notes} onNotesChange={setNotes} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} · prototype timer/activity is mocked.`)} /> : null}
-        {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
+        {surface === 'automations' ? <AutomationsView automations={automations} loading={automationsLoading} error={automationError} onCreate={createAutomation} onToggle={toggleAutomation} onDelete={deleteAutomation} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
 
         {surface === 'project-overview' && activeProject ? (

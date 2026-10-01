@@ -5869,3 +5869,6 @@ html {
   overflow-x: auto;
   max-height: 140px;
 }
+.automation-create-modal textarea { width: 100%; min-height: 120px; resize: vertical; border: 1px solid rgba(149,179,197,.075); border-radius: 8px; background: #0b1219; color: #9bafb7; padding: 9px; outline: 0; font: inherit; font-size: 13px; line-height: 1.5; }
+.automation-empty { padding: 22px; border: 1px dashed rgba(149,179,197,.12); border-radius: 10px; color: #718792; font-size: 12px; }
+.automation-card__footer { gap: 12px; flex-wrap: wrap; }
