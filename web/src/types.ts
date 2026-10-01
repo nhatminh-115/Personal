@@ -293,6 +293,24 @@ export interface RunEvent {
   created_at: string;
 }
 
+export interface CompiledContextObject {
+  object_id: string;
+  object_type: string;
+  selected_by_user?: boolean;
+  source_object_ids?: string[];
+  selected_sections?: Record<string, boolean | null> | null;
+}
+
+export interface CompiledContextManifest {
+  project_name?: string;
+  objects?: CompiledContextObject[];
+  estimated_tokens?: number;
+  character_count?: number;
+  privacy_requirement?: string | null;
+  required_capabilities?: string[];
+  capability_requirements?: Record<string, boolean>;
+}
+
 export interface RunDetail {
   id: string;
   session_id: string;
@@ -366,6 +384,7 @@ export interface RunRoutingDecision {
   snapshot: Record<string, any>;
   model_selection?: Record<string, any> | null;
   reasoning_selection?: Record<string, any> | null;
+  context_manifest?: CompiledContextManifest | null;
   fallback_events: Array<{ event_type: string; payload: Record<string, any> }>;
 }
 

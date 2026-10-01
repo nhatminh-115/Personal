@@ -860,8 +860,10 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     test_db_session.add(RunModel(id=parent_id, session_id=session_id, user_message="root", routing_snapshot_json={"role": "root", "profile_id": "p", "winning_scope": "project"}))
     test_db_session.add(RunModel(id=child_id, session_id=session_id, parent_run_id=parent_id, user_message="child", routing_snapshot_json={"role": "research", "profile_id": "p", "winning_scope": "project"}))
     test_db_session.add(RunEventModel(run_id=parent_id, event_type="model_selected", payload={"provider": "local", "model": "root-model", "agent_role": "root"}))
+    test_db_session.add(RunEventModel(run_id=parent_id, event_type="context_compiled", payload={"estimated_tokens": 64, "objects": [{"object_id": "root-note", "object_type": "manual_note", "selected_by_user": True}]}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="model_selected", payload={"provider": "local", "model": "research-model", "agent_role": "research"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="reasoning_effort_selected", payload={"selected_effort": "high"}))
+    test_db_session.add(RunEventModel(run_id=child_id, event_type="context_compiled", payload={"estimated_tokens": 128, "objects": [{"object_id": "research-bridge", "object_type": "context_bridge", "selected_by_user": True}]}))
     await test_db_session.commit()
 
     response = await async_client.get(f"/v1/runs/{parent_id}/routing")
@@ -872,6 +874,10 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert child["parent_run_id"] == parent_id
     assert child["model_selection"]["model"] == "research-model"
     assert child["reasoning_selection"]["selected_effort"] == "high"
+    assert child["context_manifest"]["estimated_tokens"] == 128
+    assert child["context_manifest"]["objects"][0]["object_id"] == "research-bridge"
+    parent = next(item for item in decisions if item["run_id"] == parent_id)
+    assert parent["context_manifest"]["objects"][0]["object_id"] == "root-note"
 
 
 @pytest.mark.asyncio
