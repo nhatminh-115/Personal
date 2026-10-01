@@ -292,8 +292,8 @@ describe('Routing Studio v2', () => {
     expect(screen.queryByLabelText('Reasoning')).not.toBeInTheDocument();
 
     fireEvent.change(screen.getAllByLabelText('Model')[0], { target: { value: 'local:unknown-model' } });
-    expect(screen.getByLabelText('Reasoning')).toBeInTheDocument();
-    expect(screen.getByText(/reasoning control is unknown/i)).toBeInTheDocument();
+    const unknownReasoningNote = screen.getByText(/reasoning control is unknown/i);
+    expect(unknownReasoningNote.closest('label')?.querySelector('select')).not.toBeNull();
   });
 
   it('renders preview fields instead of raw JSON', async () => {
