@@ -1,11 +1,49 @@
 """Durable shared workspace graph API invariants."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.memory.service import SQLMemoryService
 from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
+from app.core.errors import ContextSelectionError
+from app.memory.context_compiler import MAX_COMPILED_OBJECTS, WorkspaceContextCompiler
+
+
+@pytest.mark.asyncio
+async def test_context_compiler_rejects_excess_roots_before_database_reads():
+    db = AsyncMock()
+
+    with pytest.raises(ContextSelectionError) as error:
+        await WorkspaceContextCompiler(db).compile(
+            "aura", [f"selected-{index}" for index in range(MAX_COMPILED_OBJECTS + 1)]
+        )
+
+    assert error.value.details["object_limit"] == MAX_COMPILED_OBJECTS
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_context_compiler_rejects_excess_provenance_edges_before_loading_sources():
+    db = AsyncMock()
+    root = SimpleNamespace(id="context-root", object_type="context_set")
+    root_result, linked_result, edge_result = (MagicMock() for _ in range(3))
+    root_result.scalars.return_value = [root]
+    linked_result.scalars.return_value = []
+    edge_result.scalars.return_value = [
+        SimpleNamespace(source_object_id=f"source-{index}", target_object_id=root.id)
+        for index in range(MAX_COMPILED_OBJECTS + 1)
+    ]
+    db.execute.side_effect = [root_result, linked_result, edge_result]
+
+    with pytest.raises(ContextSelectionError) as error:
+        await WorkspaceContextCompiler(db).compile("aura", [root.id])
+
+    assert error.value.details["object_limit"] == MAX_COMPILED_OBJECTS
+    assert db.execute.await_count == 3
+
 
 
 @pytest.mark.asyncio

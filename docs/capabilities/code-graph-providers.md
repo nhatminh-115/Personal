@@ -23,6 +23,10 @@ not used to infer capabilities from a server name. Unavailable or undiscovered
 providers contribute no tools, while required capabilities continue to fail
 closed. Tool risk, permission, and approval policy is still enforced by AURA.
 
+## Dogfood status
+
+Live CodeGraph dogfood is pending external installation and workspace setup. Do not install or download CodeGraph automatically, and do not describe it as live-verified until the documented run evidence exists. This pending setup blocks only CodeGraph dogfooding; independent AURA milestones continue.
+
 ## Candidate review
 
 The candidate review is a fit check for an optional MCP boundary, not a claim
