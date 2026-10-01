@@ -100,6 +100,7 @@ export interface ChatMessage {
   routeLabel?: string;
   reasoningLabel?: string;
   contextTokens?: number;
+  contextObjectIds?: string[];
   provenance?: AIProvenanceItem[];
   tool_calls?: any[];
   tool_call_id?: string;
@@ -169,12 +170,82 @@ export interface SessionDetail {
   messages: ChatMessage[];
 }
 
+export interface WorkspaceObject {
+  id: string;
+  project_name: string;
+  session_id?: string | null;
+  source_message_id?: string | null;
+  object_type: string;
+  created_by: string;
+  title: string;
+  content: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceEdge {
+  id: string;
+  project_name: string;
+  source_object_id: string;
+  target_object_id: string;
+  relation_type: string;
+  edge_family: 'semantic' | 'context' | 'execution' | 'provenance';
+  created_by: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface WorkspaceLayout {
+  project_name: string;
+  layout: Record<string, any>;
+  revision: number;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceExecutionEvent {
+  id: string;
+  event_type: string;
+  created_at: string;
+  agent_role?: string | null;
+  specialist?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  tool_name?: string | null;
+  tool_call_id?: string | null;
+  child_run_id?: string | null;
+  status?: string | null;
+  success?: boolean | null;
+  error_category?: string | null;
+  risk_level?: string | null;
+  step?: number | null;
+}
+
+export interface WorkspaceExecutionTrace {
+  run_id: string;
+  parent_run_id?: string | null;
+  session_id: string;
+  user_object_id?: string | null;
+  response_object_id?: string | null;
+  events: WorkspaceExecutionEvent[];
+}
+
+export interface WorkspaceGraph {
+  project_name: string;
+  objects: WorkspaceObject[];
+  edges: WorkspaceEdge[];
+  layout: WorkspaceLayout;
+  execution_traces?: WorkspaceExecutionTrace[];
+}
+
 export interface ChatResponse {
   run_id: string;
   session_id: string;
   status: 'completed' | 'waiting_for_approval' | 'failed' | 'cancelled';
   response?: string;
   approval_id?: string;
+  user_message_id?: string;
+  assistant_message_id?: string;
   tool_results: any[];
 }
 
@@ -255,10 +326,24 @@ export interface EffectiveRouting {
   project_name?: string | null;
 }
 export interface RoutingDecision {
-  provider_name: string;
-  model_name: string;
+  provider: string;
+  model: string;
   reason: string;
-  reasoning_effort_selected?: string | null;
+  reasoning_effort?: string | null;
+  profile_id?: string | null;
+  profile_name: string;
+  profile_version: number;
+  winning_scope: WinningScope;
+  privacy: RoutingPrivacy;
+  fallback: RoutingFallback;
+  role: string;
+  task_route?: string | null;
+  warnings: string[];
+}
+export interface RoutingProfileValidation {
+  valid: boolean;
+  profile_id: string;
+  errors: string[];
 }
 export interface RunRoutingDecision {
   run_id: string;

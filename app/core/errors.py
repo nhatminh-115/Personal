@@ -54,6 +54,11 @@ class SessionNotFoundError(AuraError):
     pass
 
 
+class ContextSelectionError(AuraError):
+    """Raised when explicit workspace context cannot be safely resolved or bounded."""
+    pass
+
+
 class ApprovalNotFoundError(AuraError):
     """Raised when a requested approval ID does not exist."""
     pass

@@ -17,7 +17,7 @@ def test_research_specialist_tool_scoping_blocks_dangerous_tools():
     spec = specialist_registry.get("research")
     assert spec is not None
 
-    scoped = ScopedToolRegistry(tool_registry, spec.allowed_tools)
+    scoped = ScopedToolRegistry(tool_registry, tool_registry.resolve_capabilities(spec.requested_runtime_capabilities))
     allowed_names = set(scoped.allowed_tool_names)
 
     # Allowed research tools

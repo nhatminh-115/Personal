@@ -592,6 +592,18 @@ input:focus-visible {
 .routing-checkboxes { display:flex; flex-wrap:wrap; gap:14px; margin:9px 0; }
 .routing-checkboxes label { display:flex; flex-direction:row; align-items:center; gap:5px; }
 .routing-preview pre { max-height:160px; overflow:auto; padding:10px; border-radius:8px; background:#080e14; color:#a7c5d1; font-size:10px; }
+.routing-validation { margin: 8px 0 12px; padding: 9px 11px; border: 1px solid rgba(140,177,194,.16); border-radius: 8px; color: #9fb2bd; background: rgba(110,150,170,.04); font-size: 10px; }
+.routing-validation strong { color: #c9d9e2; }
+.routing-validation p { margin: 5px 0 0; }
+.routing-validation.has-errors { border-color: rgba(234,121,106,.28); color: #e5a49a; background: rgba(234,121,106,.06); }
+.routing-validation.has-errors strong { color: #f0b5ab; }
+.routing-validation.is-valid { border-color: rgba(111,195,155,.22); color: #9dcdb6; background: rgba(111,195,155,.05); }
+.routing-preview-card { margin-top: 10px; padding: 12px; border: 1px solid rgba(148,190,212,.14); border-radius: 9px; background: #0a121a; }
+.routing-preview-card dl { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px 16px; margin: 8px 0; }
+.routing-preview-card dl div { min-width: 0; }
+.routing-preview-card dt { color: #708592; font-size: 9px; }
+.routing-preview-card dd { overflow-wrap: anywhere; margin: 3px 0 0; color: #c1d0d8; font-size: 10px; }
+.routing-route-row small { grid-column: 1 / -1; color: #c6a66c; font-size: 9px; }
 .routing-model-browser { margin:12px 0; padding:12px; border-radius:10px; background:#0e1923; }
 .routing-model-browser h3 { margin:0 0 8px; font-size:12px; }
 .routing-model-browser section { margin:9px 0; }

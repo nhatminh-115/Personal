@@ -21,6 +21,7 @@ from app.memory.base import MemoryService
 from app.models.router import ModelRouter
 from app.core.errors import (
     AuraError,
+    ContextSelectionError,
     ModelCapabilityMismatch,
     ModelUnavailable,
     NoEligibleRoute,
@@ -51,8 +52,20 @@ async def chat_endpoint(
     """
     run_id = str(uuid.uuid4())
 
+    context_object_ids = list(dict.fromkeys(req.context_object_ids))
+    if context_object_ids and not req.project_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="context_object_ids require a project_name scope.",
+        )
+
     # 1. Ensure session exists
     await mem_service.get_or_create_session(req.session_id)
+    if req.project_name:
+        try:
+            await mem_service.attach_session_to_project(req.session_id, req.project_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
     from app.models.routing_resolver import resolve_routing_profile, apply_routing_profile_to_context
     from app.models.base import RoutingContext
@@ -130,6 +143,7 @@ async def chat_endpoint(
         project_name=req.project_name,
         metadata=merged_metadata,
     )
+    initial_state["context_object_ids"] = context_object_ids
 
     config = {
         "configurable": {
@@ -179,6 +193,8 @@ async def chat_endpoint(
             status=run_record.status,
             response=result_state.get("final_response"),
             approval_id=None,
+            user_message_id=result_state.get("persisted_user_message_id"),
+            assistant_message_id=result_state.get("persisted_assistant_message_id"),
             tool_results=result_state.get("tool_results", []),
         )
 
@@ -196,6 +212,8 @@ async def chat_endpoint(
         if isinstance(e, AuraError):
             if isinstance(e, RoutingConfirmationRequired):
                 code, http_status = "RoutingConfirmationRequired", status.HTTP_409_CONFLICT
+            elif isinstance(e, ContextSelectionError):
+                code, http_status = "ContextSelectionError", status.HTTP_422_UNPROCESSABLE_CONTENT
             elif isinstance(e, PrivacyBoundaryViolation):
                 code, http_status = "PrivacyBoundaryViolation", status.HTTP_403_FORBIDDEN
             elif isinstance(e, ModelUnavailable):

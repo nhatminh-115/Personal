@@ -155,4 +155,22 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText(/Effective routing profile is unavailable/i)).toBeInTheDocument();
     expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
   });
+
+  it('renders persisted parent and specialist routing plus blocked fallback events', () => {
+    render(<InspectorPanel
+      effectiveRouting={{ profile: { id: 'p', name: 'Private', version: 4, is_active: true, is_default: true, global_privacy_policy: 'local_only', global_fallback_policy: 'none', cost_preference: 'normal', latency_preference: 'normal', routes: {} }, winning_scope: 'project' }}
+      routingData={[
+        { run_id: 'root-run', snapshot: { role: 'root', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'root-model' }, reasoning_selection: { selected_effort: 'medium' }, fallback_events: [] },
+        { run_id: 'child-run', parent_run_id: 'root-run', snapshot: { role: 'research', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'research-model' }, reasoning_selection: { selected_effort: 'high' }, fallback_events: [{ event_type: 'fallback_blocked', payload: { reason: 'local_only boundary' } }] },
+      ]}
+      onClose={vi.fn()}
+    />);
+    fireEvent.click(screen.getByTestId('inspector-tab-routing'));
+    expect(screen.getByText('root routing')).toBeInTheDocument();
+    expect(screen.getByText('research routing')).toBeInTheDocument();
+    expect(screen.getByText('ollama:research-model')).toBeInTheDocument();
+    expect(screen.getByText('fallback_blocked')).toBeInTheDocument();
+    expect(screen.getByText('local_only boundary')).toBeInTheDocument();
+    expect(screen.getByText(/Persisted routing decisions/i)).toBeInTheDocument();
+  });
 });

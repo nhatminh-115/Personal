@@ -1,4 +1,4 @@
-import { Bot, GitBranch, FilePlus2, GitMerge, X } from 'lucide-react';
+import { Bot, GitBranch, FilePlus2, GitMerge, Link2, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AuraFlowNode } from '../../types';
 
@@ -6,12 +6,13 @@ interface ContextLensBarProps {
   nodes: AuraFlowNode[];
   onAsk: (prompt: string) => void;
   onCreateNote: () => void;
+  onCreateBridge: () => void;
   onCreateBranch: () => void;
   onMerge: () => void;
   onClear: () => void;
 }
 
-export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onMerge, onClear }: ContextLensBarProps) {
+export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onMerge, onClear }: ContextLensBarProps) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
 
@@ -26,8 +27,6 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onM
     { turns: 0, notes: 0, papers: 0, code: 0 },
   );
 
-  const estimatedTokens = (nodes.length * 2.07).toFixed(1);
-
   return (
     <div className="context-lens">
       <div className="context-lens__main">
@@ -38,6 +37,9 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onM
           </button>
           <button type="button" onClick={onCreateNote}>
             <FilePlus2 size={13} /> Create Note
+          </button>
+          <button type="button" onClick={onCreateBridge}>
+            <Link2 size={13} /> Create Bridge
           </button>
           <button type="button" onClick={onCreateBranch}>
             <GitBranch size={13} /> Create Branch
@@ -85,7 +87,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onM
             <small>{counts.notes} note</small>
             <small>{counts.papers} papers</small>
             <small>{counts.code} code result</small>
-            <strong>Estimated context: {estimatedTokens}k tokens</strong>
+            <strong>Ask AURA includes only selected objects and their explicit context links.</strong>
           </div>
         </div>
       ) : null}

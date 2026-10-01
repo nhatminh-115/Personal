@@ -3,6 +3,7 @@
 import asyncio
 import os
 import sys
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -10,6 +11,7 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamable_http_client
 import httpx2
 
+from app.capabilities.registry import CapabilityProviderHealth, CapabilityProviderMetadata
 from app.core.errors import AURAError
 from app.core.logging import logger
 from app.mcp.adapter import MCPToolAdapter
@@ -44,10 +46,17 @@ class MCPClientManager:
 
     def register_server(self, config: MCPServerConfig) -> None:
         """Register an MCP server configuration."""
-        self._servers[config.id] = config
+        # Configs contain mutable collections even when callers treat them as
+        # immutable. Keep manager policy isolated from registration inputs.
+        stored_config = config.model_copy(deep=True)
+        self._servers[stored_config.id] = stored_config
+        self._sync_provider_metadata(
+            stored_config,
+            CapabilityProviderHealth.UNKNOWN if stored_config.enabled else CapabilityProviderHealth.DISABLED,
+        )
         logger.info(
-            f"Registered MCP server '{config.id}' (transport: {config.transport.value})",
-            extra={"server_id": config.id, "transport": config.transport.value},
+            f"Registered MCP server '{stored_config.id}' (transport: {stored_config.transport.value})",
+            extra={"server_id": stored_config.id, "transport": stored_config.transport.value},
         )
 
     def unregister_server(self, server_id: str) -> None:
@@ -61,15 +70,53 @@ class MCPClientManager:
                         del self.registry._tools[tool.name]
                 del self._discovered_tools[server_id]
             del self._servers[server_id]
+            self.registry.unregister_capability_provider(f"mcp.{server_id}")
             logger.info(f"Unregistered MCP server '{server_id}'", extra={"server_id": server_id})
+
+    def _sync_provider_metadata(
+        self,
+        config: MCPServerConfig,
+        health: CapabilityProviderHealth,
+        discovered_tool_names: Optional[set[str]] = None,
+    ) -> None:
+        """Expose declared, sanitized MCP provider facts without exposing credentials or endpoints."""
+        capability_tools: Dict[str, List[str]] = {}
+        for mcp_tool_name, capabilities in config.capabilities_by_tool.items():
+            canonical_name = f"mcp_{config.id}_{mcp_tool_name}"
+            # A declaration is configuration only. Bind it to runtime capabilities
+            # after tools/list confirms that the provider actually exposes it.
+            if discovered_tool_names is None or canonical_name not in discovered_tool_names:
+                continue
+            for capability in capabilities:
+                capability_tools.setdefault(capability, []).append(canonical_name)
+        metadata = CapabilityProviderMetadata(
+            provider_id=f"mcp.{config.id}",
+            name=config.name,
+            version=config.provider_version,
+            health=health,
+            health_checked_at=datetime.now(timezone.utc) if health in {
+                CapabilityProviderHealth.HEALTHY,
+                CapabilityProviderHealth.DEGRADED,
+                CapabilityProviderHealth.UNAVAILABLE,
+            } else None,
+            enabled=config.enabled,
+            capabilities=list(dict.fromkeys(cap for caps in config.capabilities_by_tool.values() for cap in caps)),
+            privacy_boundary=config.privacy_boundary,
+            network_requirement=config.network_requirement,
+            data_touched=config.data_touched,
+            permissions=config.permissions,
+            approval_requirement=config.approval_requirement,
+        )
+        self.registry.capability_providers.register(metadata, capability_tools)
 
     def get_server_config(self, server_id: str) -> Optional[MCPServerConfig]:
         """Retrieve server configuration by ID."""
-        return self._servers.get(server_id)
+        config = self._servers.get(server_id)
+        return config.model_copy(deep=True) if config else None
 
     def list_servers(self) -> List[MCPServerConfig]:
         """List all configured MCP servers."""
-        return list(self._servers.values())
+        return [config.model_copy(deep=True) for config in self._servers.values()]
 
     SAFE_ENV_VARS = {
         "PATH",
@@ -178,10 +225,33 @@ class MCPClientManager:
                     manager=self,
                     policy=self.policy,
                 )
+                existing = self.registry.get(adapter.name)
+                if existing is not None and (
+                    not isinstance(existing, MCPToolAdapter)
+                    or existing.server_id != server_id
+                    or existing.mcp_tool_name != tool_name
+                ):
+                    # Canonical names currently preserve the public
+                    # mcp_{server_id}_{tool_name} convention. Since both parts
+                    # may contain underscores, reject ambiguous collisions
+                    # instead of replacing another provider's executable tool.
+                    logger.error(
+                        "Skipping MCP tool with colliding canonical name '%s'.",
+                        adapter.name,
+                        extra={"server_id": server_id, "tool_name": tool_name},
+                    )
+                    continue
                 self.registry.register(adapter)
                 adapters.append(adapter)
 
             self._discovered_tools[server_id] = adapters
+            discovered_names = {adapter.name for adapter in adapters}
+            missing_declared_tools = set(config.capabilities_by_tool) - {adapter.mcp_tool_name for adapter in adapters}
+            self._sync_provider_metadata(
+                config,
+                CapabilityProviderHealth.DEGRADED if missing_declared_tools else CapabilityProviderHealth.HEALTHY,
+                discovered_names,
+            )
             logger.info(
                 f"Successfully registered {len(adapters)} tools from MCP server '{server_id}'.",
                 extra={"server_id": server_id, "tools_count": len(adapters)},
@@ -189,6 +259,7 @@ class MCPClientManager:
             return adapters
 
         except Exception as e:
+            self._sync_provider_metadata(config, CapabilityProviderHealth.UNAVAILABLE)
             logger.error(
                 f"Server-level failure during tool discovery on MCP server '{server_id}': {e}",
                 exc_info=True,

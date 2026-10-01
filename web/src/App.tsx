@@ -121,7 +121,17 @@ function stripExtension(name: string) {
 }
 
 function executionErrorText(error: unknown): string {
-  if (error instanceof ApiError) return `${error.code ? `${error.code}: ` : ''}${error.message}`;
+  if (error instanceof ApiError) {
+    const guidance: Record<string, string> = {
+      PrivacyBoundaryViolation: 'Privacy policy blocked this route. Review the profile scope and select a route that meets its privacy boundary.',
+      ModelCapabilityMismatch: 'The selected model cannot meet this request’s capability requirements. Choose a compatible model or adjust the request requirements.',
+      ReasoningControlUnsupported: 'The selected model does not support the requested reasoning control. Use Profile reasoning or choose a model with known support.',
+      ModelUnavailable: 'The configured provider or exact model is currently unavailable. Reconnect it or choose Auto; AURA did not substitute another model.',
+      NoEligibleRoute: 'No route meets the current privacy, fallback, capability, and reasoning constraints. Review the profile in Routing Studio.',
+    };
+    const nextStep = error.code ? guidance[error.code] : undefined;
+    return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;
+  }
   return (error as Error)?.message || 'Execution failed';
 }
 
@@ -181,6 +191,10 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
   const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
   const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
+  const workspaceGraphProjectName = activeProject && projectThreads.some((thread) => thread.source === 'live') ? activeProject.name : null;
+  const workspaceSessionIds = useMemo(() => projectThreads
+    .filter((thread) => thread.source === 'live' && thread.sessionId)
+    .map((thread) => thread.sessionId!), [projectThreads]);
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
   const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
   const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
@@ -448,12 +462,16 @@ export default function App() {
 
   const handleBranchFromChat = useCallback((message: ChatMessage) => {
     if (!activeProjectId || !activeProject) return;
-    const sourceNodeId = activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-') ? message.nodeId : projectRootNodeId();
+    const sourceNodeId = workspaceGraphProjectName && message.id
+      ? message.id
+      : activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-')
+        ? message.nodeId
+        : projectRootNodeId();
     openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'board' });
     setFocusNodeId(sourceNodeId);
     setBranchRequest({ nodeId: sourceNodeId, nonce: Date.now() });
-    pushToast('Branch created from chat', 'The Board opened at the nearest persisted project turn.');
-  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast]);
+    pushToast('Branch point requested', workspaceGraphProjectName ? 'The Board will save a link from this persisted conversation turn.' : 'The Board opened at the nearest project turn.');
+  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast, workspaceGraphProjectName]);
 
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
@@ -694,7 +712,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, contextObjectIds: string[] = []) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -721,6 +739,7 @@ export default function App() {
         branch: 'Root',
         nodeId: `live-user-node-${nonce}`,
         content: text,
+        contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
         timestamp: 'just now',
         created_at: new Date().toISOString(),
         status: 'Sent',
@@ -736,7 +755,14 @@ export default function App() {
           activeProject?.name || undefined,
           activeThreadOverrides?.model,
           activeThreadOverrides?.reasoning,
+          contextObjectIds,
         );
+
+        if (resp.user_message_id) {
+          updateThreadMessages(originatingThreadId, (prev) => prev.map((message) =>
+            message.id === userMsg.id ? { ...message, id: resp.user_message_id } : message,
+          ));
+        }
 
         patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
 
@@ -760,7 +786,7 @@ export default function App() {
             }
 
             const assistantMsg: ChatMessage = {
-              id: `live-assistant-${nonce}`,
+              id: resp.assistant_message_id || `live-assistant-${nonce}`,
               role: 'assistant',
               branch: 'Root',
               nodeId: `live-assistant-node-${nonce}`,
@@ -821,7 +847,7 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string) => {
+    async (text: string, contextObjectIds: string[] = []) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
       const id = `${activeProjectId}-live-${Date.now()}`;
@@ -854,13 +880,13 @@ export default function App() {
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);
@@ -891,6 +917,24 @@ export default function App() {
     },
     [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
   );
+
+  const handleBoardAskWithContext = useCallback(async (prompt: string, objectIds: string[]) => {
+    const currentThread = chatThreads.find((thread) => thread.id === activeThreadId);
+    openOrActivateTab({
+      id: `project-${activeProjectId}`,
+      title: activeProject?.name ?? 'Project',
+      subtitle: 'Chat',
+      kind: 'project',
+      surface: 'workspace',
+      projectId: activeProjectId,
+      mode: 'chat',
+    });
+    if (currentThread?.source === 'demo' || !currentThread?.sessionId) {
+      await handleStartLiveChat(prompt, objectIds);
+      return;
+    }
+    await handleSendMessage(prompt, objectIds);
+  }, [activeProject?.name, activeProjectId, activeThreadId, chatThreads, handleSendMessage, handleStartLiveChat, openOrActivateTab]);
 
   const handleApprovalDecision = useCallback(
     async (
@@ -1055,6 +1099,7 @@ export default function App() {
         effectiveRouting={effectiveRouting}
         catalog={catalog}
         sessionAvailable={sessionAvailable}
+        demoThread={activeThread?.source === 'demo'}
         lockedModel={activeThreadOverrides?.model ?? null}
         reasoningOverride={activeThreadOverrides?.reasoning ?? null}
         onSetModelLock={setActiveModelLock}
@@ -1069,6 +1114,7 @@ export default function App() {
         projectName={activeProject?.name ?? ''}
         sessionId={activeThread?.sessionId}
         sessionAvailable={sessionAvailable}
+        demoThread={activeThread?.source === 'demo'}
         effective={effectiveRouting}
         catalog={catalog}
         onClose={() => setRoutingStudioOpen(false)}
@@ -1195,14 +1241,17 @@ export default function App() {
           <BoardCanvas
             key={activeProject.id}
             boardKey={activeProject.id}
-            seedNodes={genericBoard?.nodes}
-            seedEdges={genericBoard?.edges}
-            showBranchLabels={activeProject.id === 'stateful'}
+            seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
+            seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
+            workspaceProjectName={workspaceGraphProjectName}
+            workspaceSessionIds={workspaceSessionIds}
+            showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'}
             focusNodeId={focusNodeId}
             onNodeFocus={handleBoardNodeFocus}
             onToast={pushToast}
             branchRequest={branchRequest}
             executionExpanded={params.get('execution') === '1'}
+            onAskWithContext={handleBoardAskWithContext}
           />
         ) : null}
 
@@ -1231,7 +1280,7 @@ export default function App() {
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={genericBoard?.nodes} seedEdges={genericBoard?.edges} showBranchLabels={activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} />
+              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} />
             </div>
           </div>
         ) : null}

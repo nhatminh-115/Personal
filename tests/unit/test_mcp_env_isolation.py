@@ -6,6 +6,7 @@ import pytest
 
 from app.mcp.config import MCPServerConfig, MCPTransportType
 from app.mcp.manager import MCPClientManager
+from app.capabilities.registry import CapabilityProviderHealth
 from app.tools.registry import ToolRegistry
 
 
@@ -31,9 +32,14 @@ async def test_mcp_subprocess_secret_isolation():
             command=sys.executable,
             args=["tests/fixtures/sample_mcp_server.py"],
             timeout_seconds=10.0,
+            capabilities_by_tool={"inspect_env": ["environment.inspect"]},
         )
         manager.register_server(server_isolated)
         await manager.discover_tools("isolated-server")
+        provider = registry.capability_providers.get("mcp.isolated-server")
+        assert provider is not None
+        assert provider.health == CapabilityProviderHealth.HEALTHY
+        assert registry.resolve_capabilities(["environment.inspect"]) == ["mcp_isolated-server_inspect_env"]
 
         res_isolated = await manager.call_tool(
             server_id="isolated-server",

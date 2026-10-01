@@ -39,6 +39,7 @@ class SessionModel(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     title: Mapped[str] = mapped_column(String(255), default="New Session")
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    project_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     routing_profile_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("routing_profiles.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
@@ -274,3 +275,52 @@ class ProjectRoutingAssignmentModel(Base):
     project_name: Mapped[str] = mapped_column(String(128), primary_key=True)
     routing_profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("routing_profiles.id", ondelete="CASCADE"), index=True)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+
+class WorkspaceObjectModel(Base):
+    """A durable, typed object that can be projected into workspace surfaces."""
+
+    __tablename__ = "workspace_objects"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    project_name: Mapped[str] = mapped_column(String(128), index=True)
+    session_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), nullable=True, index=True)
+    source_message_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("messages.id", ondelete="CASCADE"), nullable=True, unique=True, index=True)
+    object_type: Mapped[str] = mapped_column(String(48), index=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="user")
+    title: Mapped[str] = mapped_column(String(255), default="")
+    content: Mapped[str] = mapped_column(Text, default="")
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class WorkspaceEdgeModel(Base):
+    """A typed relationship between workspace objects."""
+
+    __tablename__ = "workspace_edges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    project_name: Mapped[str] = mapped_column(String(128), index=True)
+    source_object_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspace_objects.id", ondelete="CASCADE"), index=True)
+    target_object_id: Mapped[str] = mapped_column(String(36), ForeignKey("workspace_objects.id", ondelete="CASCADE"), index=True)
+    relation_type: Mapped[str] = mapped_column(String(48))
+    edge_family: Mapped[str] = mapped_column(String(24), index=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="user")
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+
+    __table_args__ = (
+        Index("ix_workspace_edges_project_family", "project_name", "edge_family"),
+    )
+
+
+class WorkspaceLayoutModel(Base):
+    """Per-project spatial state for the Board projection."""
+
+    __tablename__ = "workspace_layouts"
+
+    project_name: Mapped[str] = mapped_column(String(128), primary_key=True)
+    layout_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)

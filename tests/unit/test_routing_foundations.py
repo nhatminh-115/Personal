@@ -731,11 +731,49 @@ async def test_preview_zero_model_invocation(async_client: AsyncClient):
     )
     assert prev_resp.status_code == 200
     data = prev_resp.json()
-    assert data["provider_name"] == "spy-prev"
-    assert data["model_name"] == "prev-m"
+    assert data["provider"] == "spy-prev"
+    assert data["model"] == "prev-m"
+    assert data["profile_name"] == "System Balanced"
+    assert data["profile_id"] == "system-balanced"
+    assert data["winning_scope"] == "system"
+    assert data["role"] == "root"
+    assert data["task_route"] == "root"
+    assert data["privacy"] == "public"
+    assert data["fallback"] == "cloud_allowed"
+    assert isinstance(data["warnings"], list)
 
     # Preview must NOT invoke model provider
     assert spy.generate_call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_unsaved_profile_preview_is_non_persistent(async_client: AsyncClient, test_db_session: AsyncSession):
+    preview = await async_client.post("/v1/routing/preview", json={
+        "role": "research",
+        "profile_draft": {
+            "id": "unsaved-preview-only",
+            "name": "Unsaved preview",
+            "version": 7,
+            "is_active": True,
+            "is_default": False,
+            "global_privacy_policy": "local_only",
+            "global_fallback_policy": "none",
+            "cost_preference": "low",
+            "latency_preference": "normal",
+            "routes": {"research": {"model_override": "mock:mock-pro", "reasoning": {"policy": "fixed", "effort": "high"}}},
+        },
+    })
+    assert preview.status_code == 200
+    data = preview.json()
+    assert data["profile_id"] == "unsaved-preview-only"
+    assert data["profile_name"] == "Unsaved preview"
+    assert data["profile_version"] == 7
+    assert data["winning_scope"] == "draft"
+    assert data["privacy"] == "local_only"
+    assert data["fallback"] == "none"
+    assert data["role"] == "research"
+    assert data["task_route"] == "research"
+    assert await test_db_session.get(RoutingProfileModel, "unsaved-preview-only") is None
 
 
 def test_root_vs_research_differential_routes():
@@ -1010,6 +1048,7 @@ async def test_delegation_runtime_lock_all_child_propagation(test_db_session: As
         context={
             "is_lock_all": True,
             "model_override": "mock:lock-model-target",
+            "reasoning_override": "high",
         },
     )
 
@@ -1020,6 +1059,88 @@ async def test_delegation_runtime_lock_all_child_propagation(test_db_session: As
 
     assert snapshot["is_lock_all"] is True
     assert snapshot["explicit_model_override"] == "mock:lock-model-target"
+    assert snapshot["reasoning_policy"] == "fixed"
+    assert snapshot["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
+async def test_delegation_model_lock_preserves_child_reasoning_route(test_db_session: AsyncSession, monkeypatch):
+    """A temporary model lock propagates the model but leaves specialist reasoning policy intact."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.delegation.runtime import DelegationRuntime
+    from app.delegation.types import DelegationRequest
+
+    sess_id = str(uuid.uuid4())
+    parent_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=sess_id))
+    test_db_session.add(RunModel(id=parent_id, session_id=sess_id, user_message="parent root task"))
+    await test_db_session.commit()
+    mock_graph = AsyncMock()
+    mock_graph.aget_state.return_value = MagicMock(next=None)
+    mock_graph.ainvoke.return_value = {"messages": [{"role": "assistant", "content": "done"}]}
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
+
+    request = DelegationRequest(
+        specialist_name="research",
+        task_description="Use model lock without overriding research reasoning",
+        parent_run_id=parent_id,
+        session_id=sess_id,
+        context={"is_lock_all": True, "model_override": "mock:locked"},
+    )
+    result = await DelegationRuntime().delegate(request, db=test_db_session)
+    child = await test_db_session.get(RunModel, result.child_run_id)
+    assert child is not None
+    assert child.routing_snapshot_json["explicit_model_override"] == "mock:locked"
+    assert child.routing_snapshot_json["reasoning_policy"] == "adaptive"
+    assert child.routing_snapshot_json["reasoning_effort"] == "medium"
+
+
+@pytest.mark.asyncio
+async def test_custom_default_is_unique_and_system_balanced_clears_defaults(test_db_session: AsyncSession):
+    from app.api.routes.routing import set_default_routing_profile, DefaultProfileRequest
+
+    test_db_session.add_all([
+        RoutingProfileModel(id="default-a", name="A", is_default=True),
+        RoutingProfileModel(id="default-b", name="B", is_default=True),
+    ])
+    await test_db_session.commit()
+
+    await set_default_routing_profile(DefaultProfileRequest(profile_id="default-b"), test_db_session)
+    rows = (await test_db_session.execute(select(RoutingProfileModel).order_by(RoutingProfileModel.id))).scalars().all()
+    assert [(row.id, row.is_default) for row in rows] == [("default-a", False), ("default-b", True)]
+    profile, scope = await resolve_routing_profile(test_db_session)
+    assert (profile.id, scope) == ("default-b", "default")
+
+    await set_default_routing_profile(DefaultProfileRequest(profile_id="system-balanced"), test_db_session)
+    assert not any(row.is_default for row in (await test_db_session.execute(select(RoutingProfileModel))).scalars().all())
+    profile, scope = await resolve_routing_profile(test_db_session)
+    assert (profile.id, scope) == ("system-balanced", "system")
+
+
+@pytest.mark.asyncio
+async def test_profile_create_and_update_enforce_single_custom_default(test_db_session: AsyncSession):
+    from app.api.routes.routing import create_routing_profile, update_routing_profile
+
+    first = await create_routing_profile(RoutingProfile(id="created-default-a", name="First", is_default=True), test_db_session)
+    second = await create_routing_profile(RoutingProfile(id="created-default-b", name="Second", is_default=True), test_db_session)
+    assert first.is_default is True
+    assert second.is_default is True
+    rows = (await test_db_session.execute(select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True)))).scalars().all()
+    assert [row.id for row in rows] == ["created-default-b"]
+
+    await update_routing_profile("created-default-a", RoutingProfile(id="created-default-a", name="First active default", is_default=True), test_db_session)
+    rows = (await test_db_session.execute(select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True)))).scalars().all()
+    assert [row.id for row in rows] == ["created-default-a"]
+
+    inactive = RoutingProfileModel(id="inactive-default", name="Inactive", is_active=False, is_default=False)
+    test_db_session.add(inactive)
+    await test_db_session.commit()
+    from fastapi import HTTPException
+    from app.api.routes.routing import _set_default_profile
+    with pytest.raises(HTTPException) as exc:
+        await _set_default_profile(test_db_session, "inactive-default")
+    assert "inactive" in exc.value.detail.lower()
+    await test_db_session.rollback()
 
 
 def test_adaptive_reasoning_clamps_to_model_max_support():

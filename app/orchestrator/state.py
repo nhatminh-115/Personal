@@ -35,6 +35,9 @@ class AgentState(TypedDict, total=False):
     termination_reason: Optional[str]
     delegation_context: Optional[Dict[str, Any]]
     research_state: Optional[Dict[str, Any]]
+    persisted_user_message_id: Optional[str]
+    persisted_assistant_message_id: Optional[str]
+    context_object_ids: List[str]
 
 
 def create_initial_agent_state(

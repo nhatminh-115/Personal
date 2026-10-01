@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
+from app.capabilities.registry import CapabilityProviderMetadata
 
 
 # --- Chat Schemas ---
@@ -13,6 +14,11 @@ class ChatRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
     model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
     reasoning_override: Optional[Literal["instant", "low", "medium", "high", "max"]] = None
+    context_object_ids: List[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Explicit project workspace objects to compile into this turn's context",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -21,6 +27,8 @@ class ChatResponse(BaseModel):
     status: Literal["completed", "waiting_for_approval", "failed", "cancelled"]
     response: Optional[str] = None
     approval_id: Optional[str] = None
+    user_message_id: Optional[str] = None
+    assistant_message_id: Optional[str] = None
     tool_results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
@@ -95,6 +103,111 @@ class SessionSummaryResponse(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+
+
+# --- Shared Workspace Object Graph ---
+class WorkspaceObjectResponse(BaseModel):
+    id: str
+    project_name: str
+    session_id: Optional[str] = None
+    source_message_id: Optional[str] = None
+    object_type: str
+    created_by: str
+    title: str
+    content: str
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class WorkspaceObjectCreate(BaseModel):
+    object_type: Literal["manual_note", "context_bridge", "context_set", "conversation_branch"]
+    title: str = Field(default="", max_length=255)
+    content: str = Field(default="", max_length=100_000)
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+    source_object_ids: List[str] = Field(default_factory=list, max_length=100)
+
+
+class WorkspaceObjectUpdate(BaseModel):
+    title: str = Field(max_length=255)
+    content: str = Field(max_length=100_000)
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceEdgeResponse(BaseModel):
+    id: str
+    project_name: str
+    source_object_id: str
+    target_object_id: str
+    relation_type: str
+    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    created_by: str
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+
+class WorkspaceEdgeCreate(BaseModel):
+    source_object_id: str
+    target_object_id: str
+    relation_type: str = Field(min_length=1, max_length=48)
+    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceLayoutWrite(BaseModel):
+    layout: Dict[str, Any]
+    expected_revision: int = Field(ge=0)
+
+
+class WorkspaceLayoutResponse(BaseModel):
+    project_name: str
+    layout: Dict[str, Any] = Field(default_factory=dict)
+    revision: int
+    updated_at: Optional[datetime] = None
+
+
+class WorkspaceExecutionEventResponse(BaseModel):
+    id: str
+    event_type: str
+    created_at: datetime
+    agent_role: Optional[str] = None
+    specialist: Optional[str] = None
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    tool_name: Optional[str] = None
+    tool_call_id: Optional[str] = None
+    child_run_id: Optional[str] = None
+    status: Optional[str] = None
+    success: Optional[bool] = None
+    error_category: Optional[str] = None
+    risk_level: Optional[str] = None
+    step: Optional[int] = None
+
+
+class WorkspaceExecutionTraceResponse(BaseModel):
+    run_id: str
+    parent_run_id: Optional[str] = None
+    session_id: str
+    user_object_id: Optional[str] = None
+    response_object_id: Optional[str] = None
+    events: List[WorkspaceExecutionEventResponse] = Field(default_factory=list)
+
+
+class WorkspaceGraphResponse(BaseModel):
+    project_name: str
+    objects: List[WorkspaceObjectResponse]
+    edges: List[WorkspaceEdgeResponse]
+    layout: WorkspaceLayoutResponse
+    execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
+
+
+class CapabilityProvidersResponse(BaseModel):
+    providers: List[CapabilityProviderMetadata] = Field(default_factory=list)
+
+
+class WorkspaceSessionResponse(BaseModel):
+    session_id: str
+    project_name: str
 
 
 # --- Model Discovery Schemas ---

@@ -1,14 +1,15 @@
 """Unit tests for Milestone 2B Context Assembler and Memory Candidate Pipeline."""
 
 import pytest
-from app.db.models import MemoryModel
+from app.db.models import MemoryModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryType
 from app.memory.context import AssembledContext, ContextAssembler
+from app.memory.context_compiler import WorkspaceContextCompiler
 from app.memory.embeddings.mock_provider import MockEmbeddingProvider
 from app.memory.embeddings.router import EmbeddingRouter
 from app.memory.pipeline import MemoryCandidate, MemoryCandidatePipeline
-from app.memory.service import SQLMemoryService
 from app.memory.stores.factory import create_semantic_store
+from app.memory.service import SQLMemoryService
 
 
 @pytest.fixture
@@ -139,3 +140,87 @@ async def test_context_assembler_multitier_and_scoping(test_db_session, mock_rou
     assert "### Project Knowledge (Atlas):" in formatted
     assert "Project Atlas uses Python 3.12" in formatted
     assert "Python 3.11" not in formatted
+
+
+@pytest.mark.asyncio
+async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(test_db_session):
+    source = WorkspaceObjectModel(
+        id="source-note", project_name="Atlas", object_type="manual_note", title="Constraint",
+        content="Keep the migration reversible.", created_by="user",
+    )
+    unrelated = WorkspaceObjectModel(
+        id="unrelated-note", project_name="Atlas", object_type="manual_note", title="Private note",
+        content="This was not selected.", created_by="user",
+    )
+    other_project = WorkspaceObjectModel(
+        id="other-project-note", project_name="Titan", object_type="manual_note", title="Other project",
+        content="Must never cross projects.", created_by="user",
+    )
+    bridge = WorkspaceObjectModel(
+        id="bridge", project_name="Atlas", object_type="context_bridge", title="Migration context",
+        content="Use the selected constraint.", created_by="user",
+    )
+    test_db_session.add_all([source, unrelated, other_project, bridge])
+    await test_db_session.flush()
+    test_db_session.add_all([
+        WorkspaceEdgeModel(
+            id="explicit-bridge-edge", project_name="Atlas", source_object_id=source.id,
+            target_object_id=bridge.id, relation_type="bridges_to", edge_family="context",
+            created_by="user", metadata_json={},
+        ),
+        WorkspaceEdgeModel(
+            id="semantic-edge", project_name="Atlas", source_object_id=unrelated.id,
+            target_object_id=bridge.id, relation_type="related_to", edge_family="semantic",
+            created_by="user", metadata_json={},
+        ),
+    ])
+    await test_db_session.commit()
+
+    compiled = await WorkspaceContextCompiler(test_db_session).compile("Atlas", [bridge.id])
+
+    assert [item.object_id for item in compiled.objects] == [source.id, bridge.id]
+    assert [item.selected_by_user for item in compiled.objects] == [False, True]
+    assert compiled.objects[-1].source_object_ids == [source.id]
+    assert "Keep the migration reversible." in compiled.prompt_text
+    assert "Use the selected constraint." in compiled.prompt_text
+    assert "This was not selected." not in compiled.prompt_text
+    assert "Must never cross projects." not in compiled.prompt_text
+    assert compiled.estimated_tokens == (len(compiled.prompt_text) + 3) // 4
+
+
+@pytest.mark.asyncio
+async def test_workspace_context_compiler_rejects_missing_or_oversized_selection(test_db_session):
+    from app.core.errors import ContextSelectionError
+
+    compiler = WorkspaceContextCompiler(test_db_session, max_chars=10)
+    item = WorkspaceObjectModel(
+        id="large-note", project_name="Atlas", object_type="manual_note", title="Note",
+        content="A sufficiently large note.", created_by="user",
+    )
+    test_db_session.add(item)
+    await test_db_session.commit()
+
+    with pytest.raises(ContextSelectionError):
+        await compiler.compile("Atlas", ["missing-id"])
+    with pytest.raises(ContextSelectionError):
+        await compiler.compile("Atlas", [item.id])
+
+
+@pytest.mark.asyncio
+async def test_session_history_returns_newest_window_in_chronological_order(test_db_session):
+    from datetime import datetime, timedelta, timezone
+    from app.db.models import MessageModel
+
+    service = SQLMemoryService(db=test_db_session)
+    session = await service.get_or_create_session("recent-history-session")
+    start = datetime.now(timezone.utc)
+    test_db_session.add_all([
+        MessageModel(id=f"history-{index}", session_id=session.id, role="user", content=str(index),
+                     created_at=start + timedelta(seconds=index))
+        for index in range(4)
+    ])
+    await test_db_session.commit()
+
+    messages = await service.get_session_messages(session.id, limit=2)
+
+    assert [message.content for message in messages] == ["2", "3"]

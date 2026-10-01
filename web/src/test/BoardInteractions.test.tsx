@@ -48,6 +48,7 @@ describe('Board Prototype Interactions', () => {
   it('renders Context Bridge and triggers bridge options and apply', () => {
     const onBridgeApplyMock = vi.fn();
     const onBridgeOptionMock = vi.fn();
+    const onChangeBodyMock = vi.fn();
     const data: AuraNodeData = {
       kind: 'bridge',
       title: 'Bridge A → C',
@@ -63,6 +64,7 @@ describe('Board Prototype Interactions', () => {
       bridgeNote: 'Keep novelty hypothesis conservative',
       onBridgeApply: onBridgeApplyMock,
       onBridgeOption: onBridgeOptionMock,
+      onChangeBody: onChangeBodyMock,
     };
 
     render(
@@ -85,7 +87,10 @@ describe('Board Prototype Interactions', () => {
     );
 
     expect(screen.getByText('Bridge A → C')).toBeInTheDocument();
-    expect(screen.getByText(/Keep novelty hypothesis conservative/i)).toBeInTheDocument();
+    const handoffNote = screen.getByRole('textbox', { name: /Edit context bridge handoff note/i });
+    expect(handoffNote).toHaveValue('Keep novelty hypothesis conservative');
+    fireEvent.change(handoffNote, { target: { value: 'Keep the claim narrow.' } });
+    expect(onChangeBodyMock).toHaveBeenCalledWith('bridge-node-1', 'Keep the claim narrow.');
 
     // Toggle option
     const failedCheckbox = screen.getByLabelText(/Failed attempts/i);

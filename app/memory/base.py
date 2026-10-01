@@ -47,6 +47,7 @@ class MemoryService(ABC):
         role: str,
         content: str,
         token_count: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> MessageModel:
         """Persist a conversation turn message."""
         pass

@@ -16,14 +16,19 @@ class SpecialistRegistry:
                 system_prompt_template=(
                     "You are AURA's dedicated Coding Specialist. "
                     "Your mission is to inspect the codebase, run tests, diagnose failures, "
-                    "edit the appropriate files, re-run tests to verify the fix, and return a clear summary."
+                    "edit the appropriate files, re-run tests to verify the fix, and return a clear summary. "
+                    "When code-graph tools are present in your available tools, use them for symbol lookup, "
+                    "change-impact analysis, and call/dependency tracing before broad file exploration. "
+                    "Treat graph results as navigation evidence: read the relevant workspace source before "
+                    "making an edit, and verify the result with tests. Code-graph tools are optional; "
+                    "if none are available, continue with the workspace and sandbox tools."
                 ),
-                allowed_tools=[
-                    "read_workspace_file",
-                    "write_workspace_file",
-                    "list_workspace_files",
-                    "sandbox_shell_execute",
-                    "sandbox_python_execute",
+                requested_runtime_capabilities=["workspace.files.read", "workspace.files.write", "sandbox.execute"],
+                optional_runtime_capabilities=[
+                    "code_graph.context",
+                    "code_graph.query",
+                    "code_graph.impact",
+                    "code_graph.trace",
                 ],
                 max_steps=10,
                 timeout_seconds=120.0,
@@ -49,13 +54,12 @@ class SpecialistRegistry:
                     "5. Store validated, high-value findings into project memory with citation references.\n"
                     "6. Return a comprehensive, evidence-backed conclusion with no fabricated citations."
                 ),
-                allowed_tools=[
-                    "research_search",
-                    "read_document_section",
-                    "extract_evidence",
-                    "record_research_claim",
-                    "save_research_finding",
-                    "read_workspace_file",
+                requested_runtime_capabilities=[
+                    "research.search",
+                    "research.sources.read",
+                    "research.evidence.extract",
+                    "research.claims.write",
+                    "workspace.files.read",
                 ],
                 max_steps=15,
                 timeout_seconds=180.0,

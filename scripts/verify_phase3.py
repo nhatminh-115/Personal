@@ -163,7 +163,10 @@ async def run_phase3_verification():
                 assert coding_spec is not None
 
                 # 3a. Whitelist and blocked delegate_task
-                scoped = ScopedToolRegistry(tool_registry, coding_spec.allowed_tools)
+                scoped = ScopedToolRegistry(
+                    tool_registry,
+                    tool_registry.resolve_capabilities(coding_spec.requested_runtime_capabilities),
+                )
                 assert "delegate_task" not in scoped.allowed_tool_names
                 assert "read_workspace_file" in scoped.allowed_tool_names
                 assert "write_workspace_file" in scoped.allowed_tool_names

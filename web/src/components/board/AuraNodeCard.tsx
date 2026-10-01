@@ -173,11 +173,19 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
       </div>
       <div className="bridge-note">
         <span>User note</span>
-        <p>{data.bridgeNote}</p>
+        <textarea
+          className="note-editor nodrag nopan"
+          value={data.bridgeNote ?? ''}
+          onChange={(event) => data.onChangeBody?.(id, event.target.value)}
+          aria-label="Edit context bridge handoff note"
+          placeholder="Add a handoff note…"
+        />
       </div>
-      <button className="node-primary-action nodrag nopan" type="button" onClick={() => data.onBridgeApply?.(id)}>
-        Apply to Branch C <ChevronRight size={12} />
-      </button>
+      {data.onBridgeApply ? (
+        <button className="node-primary-action nodrag nopan" type="button" onClick={() => data.onBridgeApply?.(id)}>
+          Apply to Branch C <ChevronRight size={12} />
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -32,6 +32,25 @@ class DelegationRuntime:
         self.registry = registry or specialist_registry
         self.base_tool_registry = base_tool_registry or tool_registry
 
+    def _resolve_specialist_tools(self, spec: SpecialistDefinition) -> list[str]:
+        """Resolve required tools strictly, then add only currently available optional tools."""
+        allowed = spec.allowed_tools or None
+        if spec.requested_runtime_capabilities:
+            resolved = self.base_tool_registry.resolve_capabilities(
+                spec.requested_runtime_capabilities,
+                allowed_tool_names=allowed,
+            )
+        else:
+            resolved = list(spec.allowed_tools)
+        if spec.optional_runtime_capabilities:
+            resolved.extend(
+                self.base_tool_registry.resolve_available_capabilities(
+                    spec.optional_runtime_capabilities,
+                    allowed_tool_names=allowed,
+                )
+            )
+        return list(dict.fromkeys(resolved))
+
     async def delegate(
         self,
         request: DelegationRequest,
@@ -240,7 +259,8 @@ class DelegationRuntime:
             )
 
         # 5. Build Scoped Tool Registry for the specialist
-        scoped_tools = ScopedToolRegistry(self.base_tool_registry, spec.allowed_tools)
+        resolved_tools = self._resolve_specialist_tools(spec)
+        scoped_tools = ScopedToolRegistry(self.base_tool_registry, resolved_tools)
 
         # 6. Prepare Child Initial AgentState
         from app.models.base import ChatMessage, ModelRole
