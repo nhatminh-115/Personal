@@ -196,11 +196,12 @@ class SQLMemoryService(MemoryService):
         query = (
             select(MessageModel)
             .where(MessageModel.session_id == session_id)
-            .order_by(MessageModel.created_at.asc())
+            .order_by(MessageModel.created_at.desc(), MessageModel.id.desc())
             .limit(limit)
         )
         result = await self.db.execute(query)
-        return list(result.scalars().all())
+        # Select the newest window, then present it in chronological conversation order.
+        return list(reversed(result.scalars().all()))
 
     # --- Episodic Memory ---
     async def record_episodic_memory(

@@ -156,6 +156,58 @@ async def test_session_cannot_be_reassigned_to_another_project(async_client, tes
 
 
 @pytest.mark.asyncio
+async def test_chat_compiles_selected_workspace_context_and_records_provenance(async_client, test_db_session):
+    from app.db.models import WorkspaceObjectModel
+    from app.models.router import model_router
+    from app.models.base import ModelRole
+
+    selected = WorkspaceObjectModel(
+        id="selected-context-note", project_name="aura", object_type="manual_note",
+        created_by="user", title="Constraint", content="Keep the schema migration reversible.",
+    )
+    other_project = WorkspaceObjectModel(
+        id="unselected-other-project", project_name="elsewhere", object_type="manual_note",
+        created_by="user", title="Secret", content="This belongs to another project.",
+    )
+    test_db_session.add_all([selected, other_project])
+    await test_db_session.commit()
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "compiled-context-session",
+        "project_name": "aura",
+        "message": "Plan this migration.",
+        "context_object_ids": [selected.id],
+    })
+
+    assert response.status_code == 200
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert selected.id in system_message.content
+    assert "Keep the schema migration reversible." in system_message.content
+    assert "This belongs to another project." not in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert compiled_event["payload"]["objects"] == [{
+        "object_id": selected.id,
+        "object_type": "manual_note",
+        "source_object_ids": [],
+    }]
+    assert compiled_event["payload"]["estimated_tokens"] > 0
+
+    calls_before_invalid = len(model_router.get_provider("mock").call_history)
+    invalid = await async_client.post("/v1/chat", json={
+        "session_id": "compiled-context-cross-project",
+        "project_name": "aura",
+        "message": "This must not run.",
+        "context_object_ids": [other_project.id],
+    })
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "ContextSelectionError"
+    assert len(model_router.get_provider("mock").call_history) == calls_before_invalid
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)

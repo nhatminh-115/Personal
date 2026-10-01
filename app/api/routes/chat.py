@@ -21,6 +21,7 @@ from app.memory.base import MemoryService
 from app.models.router import ModelRouter
 from app.core.errors import (
     AuraError,
+    ContextSelectionError,
     ModelCapabilityMismatch,
     ModelUnavailable,
     NoEligibleRoute,
@@ -50,6 +51,13 @@ async def chat_endpoint(
     Main entry point for agent interaction turn.
     """
     run_id = str(uuid.uuid4())
+
+    context_object_ids = list(dict.fromkeys(req.context_object_ids))
+    if context_object_ids and not req.project_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="context_object_ids require a project_name scope.",
+        )
 
     # 1. Ensure session exists
     await mem_service.get_or_create_session(req.session_id)
@@ -135,6 +143,7 @@ async def chat_endpoint(
         project_name=req.project_name,
         metadata=merged_metadata,
     )
+    initial_state["context_object_ids"] = context_object_ids
 
     config = {
         "configurable": {
@@ -203,6 +212,8 @@ async def chat_endpoint(
         if isinstance(e, AuraError):
             if isinstance(e, RoutingConfirmationRequired):
                 code, http_status = "RoutingConfirmationRequired", status.HTTP_409_CONFLICT
+            elif isinstance(e, ContextSelectionError):
+                code, http_status = "ContextSelectionError", status.HTTP_422_UNPROCESSABLE_ENTITY
             elif isinstance(e, PrivacyBoundaryViolation):
                 code, http_status = "PrivacyBoundaryViolation", status.HTTP_403_FORBIDDEN
             elif isinstance(e, ModelUnavailable):

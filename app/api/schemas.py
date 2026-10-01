@@ -13,6 +13,11 @@ class ChatRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
     model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
     reasoning_override: Optional[Literal["instant", "low", "medium", "high", "max"]] = None
+    context_object_ids: List[str] = Field(
+        default_factory=list,
+        max_length=50,
+        description="Explicit project workspace objects to compile into this turn's context",
+    )
 
 
 class ChatResponse(BaseModel):
