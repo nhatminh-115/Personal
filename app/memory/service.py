@@ -223,10 +223,13 @@ class SQLMemoryService(MemoryService):
         return memory
 
     async def get_recent_episodes(self, session_id: Optional[str] = None, limit: int = 5) -> List[MemoryModel]:
-        query = select(MemoryModel).where(MemoryModel.memory_type == MemoryType.EPISODIC.value)
+        query = select(MemoryModel).where(
+            MemoryModel.memory_type == MemoryType.EPISODIC.value,
+            MemoryModel.is_active.is_(True),
+        )
         if session_id:
             query = query.where(MemoryModel.session_id == session_id)
-        query = query.order_by(MemoryModel.created_at.desc()).limit(limit)
+        query = query.order_by(MemoryModel.created_at.desc(), MemoryModel.id.desc()).limit(limit)
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
