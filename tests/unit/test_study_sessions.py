@@ -150,7 +150,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         "research-project", [started.json()["id"]]
     )
     assert [item.object_id for item in compiled.objects] == [started.json()["id"]]
-    assert "Verified finding" in compiled.prompt_text
+    assert "A verified finding" in compiled.prompt_text
 
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
