@@ -8,6 +8,7 @@ const liveAutomation: AutomationRecord = {
   id: 'auto-1', name: 'Daily digest', description: 'Summarize changes', instruction: 'Summarize updates.',
   enabled: true, scope: 'global', trigger: 'Every 1 day', actions: ['Run through AURA'],
   lastRun: 'Never', nextRun: 'Tomorrow', status: 'ready', source: 'live', intervalSeconds: 86400,
+  latestExecution: { eventId: 'event-1', runId: 'run-1', queuedAt: '2026-10-01T00:00:00Z', status: 'waiting_for_approval', retryCount: 0 },
 };
 const demoAutomation: AutomationRecord = {
   id: 'demo-1', name: 'Example routine', description: 'Example only', enabled: true, scope: 'global',
@@ -44,5 +45,6 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /pause daily digest/i }));
     expect(onToggle).toHaveBeenCalledWith(liveAutomation, false);
     expect(screen.getByText('Persistent scheduler')).toBeInTheDocument();
+    expect(screen.getByText('waiting for approval')).toBeInTheDocument();
   });
 });

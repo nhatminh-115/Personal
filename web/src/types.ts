@@ -360,6 +360,15 @@ export interface AutomationRecordResponse {
   next_run_at: string;
   created_at: string;
   updated_at: string;
+  latest_execution: AutomationExecutionRecord | null;
+}
+
+export interface AutomationExecutionRecord {
+  event_id: string;
+  run_id: string;
+  queued_at: string;
+  status: string;
+  retry_count: number;
 }
 
 export interface AutomationRunResponse {

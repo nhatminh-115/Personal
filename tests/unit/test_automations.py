@@ -4,7 +4,7 @@ import uuid
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import EventRecordModel, JobType, RunModel, ScheduledJobModel, utc_now
+from app.db.models import EventRecordModel, JobType, RunModel, ScheduledJobModel, SessionModel, utc_now
 from app.events.dispatcher import EventToAgentBridge
 from app.events.types import AURAEvent, EventType
 
@@ -42,6 +42,10 @@ async def test_automation_crud_and_manual_run_are_persisted(async_client, test_d
     assert event is not None
     assert event.status == "pending"
     assert event.payload_json["automation_id"] == automation["id"]
+    latest = (await async_client.get("/v1/automations")).json()[0]["latest_execution"]
+    assert latest["event_id"] == event.id
+    assert latest["status"] == "queued"
+    assert latest["run_id"] == str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
 
 
 @pytest.mark.asyncio
@@ -63,6 +67,29 @@ async def test_pausing_automation_moves_next_run_and_blocks_manual_run(async_cli
     assert resumed.status_code == 200
     assert resumed.json()["enabled"] is True
     assert resumed.json()["next_run_at"]
+
+
+@pytest.mark.asyncio
+async def test_automation_status_tracks_persisted_root_run_state(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Approval routine", "instruction": "Update the project plan.", "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    event_id = queued.json()["event_id"]
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    session_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id, title="Automation run", metadata_json={}))
+    test_db_session.add(RunModel(
+        id=run_id, session_id=session_id, status="waiting_for_approval", user_message="Update the project plan.",
+    ))
+    await test_db_session.commit()
+
+    listed = await async_client.get("/v1/automations")
+    latest = listed.json()[0]["latest_execution"]
+    assert latest["event_id"] == event_id
+    assert latest["run_id"] == run_id
+    assert latest["status"] == "waiting_for_approval"
 
 
 @pytest.mark.asyncio

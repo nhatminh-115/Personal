@@ -5,11 +5,11 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AutomationResponse, AutomationRunResponse, AutomationWrite
-from app.db.models import JobType, ScheduledJobModel, utc_now
+from app.api.schemas import AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.db.session import get_db
 from app.events.bus import event_bus
 from app.events.types import AURAEvent, EventType
@@ -44,10 +44,67 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
     )
 
 
+async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) -> dict[str, AutomationExecutionResponse]:
+    job_ids = [job.id for job in jobs]
+    if not job_ids:
+        return {}
+    latest_event_ids = (
+        select(
+            EventRecordModel.id.label("event_id"),
+            func.row_number().over(
+                partition_by=EventRecordModel.correlation_id,
+                order_by=(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc()),
+            ).label("position"),
+        )
+        .where(
+            EventRecordModel.correlation_id.in_(job_ids),
+            EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+        )
+        .subquery()
+    )
+    result = await db.execute(
+        select(EventRecordModel)
+        .join(latest_event_ids, latest_event_ids.c.event_id == EventRecordModel.id)
+        .where(latest_event_ids.c.position == 1)
+    )
+    latest: dict[str, EventRecordModel] = {}
+    for event in result.scalars():
+        if event.correlation_id:
+            latest[event.correlation_id] = event
+    run_id_by_event = {
+        event.id: str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+        for event in latest.values()
+    }
+    run_ids = list(run_id_by_event.values())
+    run_result = await db.execute(select(RunModel).where(RunModel.id.in_(run_ids))) if run_ids else None
+    runs = {run.id: run for run in run_result.scalars()} if run_result is not None else {}
+    response: dict[str, AutomationExecutionResponse] = {}
+    for automation_id, event in latest.items():
+        run_id = run_id_by_event[event.id]
+        run = runs.get(run_id)
+        event_status = {
+            EventStatus.PENDING.value: "queued",
+            EventStatus.PROCESSING.value: "running",
+            EventStatus.PROCESSED.value: "completed",
+            EventStatus.FAILED.value: "failed",
+            EventStatus.DEAD_LETTER.value: "failed",
+        }.get(event.status, event.status)
+        response[automation_id] = AutomationExecutionResponse(
+            event_id=event.id,
+            run_id=run_id,
+            queued_at=event.occurred_at,
+            status=run.status if run is not None else event_status,
+            retry_count=event.retry_count,
+        )
+    return response
+
+
 @router.get("", response_model=list[AutomationResponse])
 async def list_automations(db: AsyncSession = Depends(get_db)) -> list[AutomationResponse]:
     result = await db.execute(select(ScheduledJobModel).order_by(ScheduledJobModel.created_at.desc(), ScheduledJobModel.id))
-    return [_automation_response(job) for job in result.scalars() if (job.metadata_json or {}).get("kind") == "automation"]
+    jobs = [job for job in result.scalars() if (job.metadata_json or {}).get("kind") == "automation"]
+    latest = await _latest_executions(db, jobs)
+    return [_automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)}) for job in jobs]
 
 
 @router.post("", response_model=AutomationResponse, status_code=status.HTTP_201_CREATED)
@@ -87,7 +144,8 @@ async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(ge
     }
     await db.commit()
     await db.refresh(job)
-    return _automation_response(job)
+    latest = await _latest_executions(db, [job])
+    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
 
 
 @router.put("/{automation_id}", response_model=AutomationResponse)

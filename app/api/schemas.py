@@ -225,6 +225,14 @@ class AutomationWrite(BaseModel):
     interval_seconds: int = Field(ge=60, le=31_536_000)
 
 
+class AutomationExecutionResponse(BaseModel):
+    event_id: str
+    run_id: str
+    queued_at: datetime
+    status: str
+    retry_count: int = 0
+
+
 class AutomationResponse(BaseModel):
     id: str
     name: str
@@ -238,6 +246,7 @@ class AutomationResponse(BaseModel):
     next_run_at: datetime
     created_at: datetime
     updated_at: datetime
+    latest_execution: Optional[AutomationExecutionResponse] = None
 
 
 class AutomationRunResponse(BaseModel):
