@@ -79,6 +79,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
         messageId: object.source_message_id ?? undefined,
         workspaceObjectType: object.object_type,
+        workspaceMetadata: object.metadata_json,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
         bridgeOptions: kind === 'bridge' ? {
@@ -295,9 +296,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               title: latestNode.data.title,
               content: latestNode.data.kind === 'bridge' ? (latestNode.data.bridgeNote ?? body) : body,
               metadata_json: latestNode.data.kind === 'bridge' ? {
+                ...(latestNode.data.workspaceMetadata ?? {}),
                 bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
                 bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
-              } : {},
+              } : latestNode.data.workspaceMetadata ?? {},
             }).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
             timers.delete(id);
           }, 500);
@@ -335,6 +337,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
             title: latestNode.data.title,
             content: latestNode.data.bridgeNote ?? latestNode.data.body,
             metadata_json: {
+              ...(latestNode.data.workspaceMetadata ?? {}),
               bridge_options: latestNode.data.bridgeOptions ?? bridgeOptions,
               bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
             },
@@ -364,6 +367,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
             title: node.data.title,
             content: node.data.bridgeNote ?? node.data.body,
             metadata_json: {
+              ...(node.data.workspaceMetadata ?? {}),
               bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
               bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
             },

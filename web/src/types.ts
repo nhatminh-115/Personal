@@ -42,6 +42,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   running?: boolean;
   messageId?: string;
   workspaceObjectType?: string;
+  workspaceMetadata?: Record<string, unknown>;
   layer: LayerKey;
   from?: string;
   to?: string;
