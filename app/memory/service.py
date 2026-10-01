@@ -327,14 +327,23 @@ class SQLMemoryService(MemoryService):
         memory = result.scalar_one_or_none()
         return memory.content if memory else None
 
-    async def get_all_profile_facts(self) -> Dict[str, str]:
-        query = select(MemoryModel).where(
-            MemoryModel.memory_type == MemoryType.PROFILE.value,
-            MemoryModel.is_active.is_(True),
+    async def get_profile_memories(self, limit: Optional[int] = None) -> List[MemoryModel]:
+        query = (
+            select(MemoryModel)
+            .where(
+                MemoryModel.memory_type == MemoryType.PROFILE.value,
+                MemoryModel.is_active.is_(True),
+            )
+            .order_by(MemoryModel.key.asc(), MemoryModel.id.asc())
         )
+        if limit is not None:
+            query = query.limit(max(0, limit))
         result = await self.db.execute(query)
-        memories = result.scalars().all()
-        return {m.key: m.content for m in memories if m.key}
+        return list(result.scalars().all())
+
+    async def get_all_profile_facts(self) -> Dict[str, str]:
+        memories = await self.get_profile_memories()
+        return {memory.key: memory.content for memory in memories if memory.key}
 
     # --- Project Memory ---
     async def store_project_memory(

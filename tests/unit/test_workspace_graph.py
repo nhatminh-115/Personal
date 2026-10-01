@@ -699,6 +699,30 @@ async def test_session_local_only_episode_blocks_cloud_model_before_provider_cal
 
 
 @pytest.mark.asyncio
+async def test_profile_local_only_blocks_cloud_model_before_provider_call(async_client, test_db_session):
+    from app.memory.service import SQLMemoryService
+    from app.models.router import model_router
+
+    memory_service = SQLMemoryService(test_db_session)
+    await memory_service.set_profile_fact(
+        "private_preference",
+        "This saved setting must stay on-device.",
+        metadata={"privacy_policy": "local_only"},
+    )
+    calls_before = len(model_router.get_provider("mock").call_history)
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "profile-local-only-session",
+        "message": "Summarize my preferences.",
+        "model_override": "openai:gpt-4o",
+    })
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+
+@pytest.mark.asyncio
 async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
     session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
     test_db_session.add(session)
