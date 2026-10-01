@@ -338,49 +338,10 @@ export interface AutomationRecord {
   actions: string[];
   lastRun: string;
   nextRun: string;
-  status: 'ready' | 'running' | 'paused';
+  status: 'ready' | 'running' | 'paused' | 'queued';
+  prompt?: string;
+  intervalSeconds?: number;
 }
-
-export const initialAutomations: AutomationRecord[] = [
-  {
-    id: 'auto-paper-scan',
-    name: 'Stateful LLM weekly scan',
-    description: 'Find new literature, deduplicate against the project, then save only high-signal papers.',
-    enabled: true,
-    scope: 'project',
-    projectId: 'stateful',
-    trigger: 'Every Monday · 08:00',
-    actions: ['Search papers', 'Compare existing sources', 'Create research note', 'Notify if high relevance'],
-    lastRun: '14 papers · 3 retained',
-    nextRun: 'Mon · 08:00',
-    status: 'ready',
-  },
-  {
-    id: 'auto-study',
-    name: 'Study progress digest',
-    description: 'Summarize changed study artifacts and surface the next short session.',
-    enabled: true,
-    scope: 'global',
-    trigger: 'Every evening · 20:30',
-    actions: ['Read Study collection', 'Update progress summary', 'Surface next session'],
-    lastRun: 'TOEIC + German updated',
-    nextRun: 'Today · 20:30',
-    status: 'ready',
-  },
-  {
-    id: 'auto-benchmark',
-    name: 'Benchmark after code change',
-    description: 'Run the toy benchmark after a meaningful implementation change.',
-    enabled: false,
-    scope: 'project',
-    projectId: 'stateful',
-    trigger: 'When benchmark files change',
-    actions: ['Run tests', 'Run context sweep', 'Compare previous result', 'Create code result'],
-    lastRun: 'quality −8% at 16k',
-    nextRun: 'Paused',
-    status: 'paused',
-  },
-];
 
 export interface ChatThreadRecord {
   id: string;

@@ -166,6 +166,32 @@ class WorkspaceLayoutResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class AutomationCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=500)
+    message: str = Field(min_length=1, max_length=20_000)
+    project_name: Optional[str] = Field(default=None, max_length=128)
+    interval_seconds: int = Field(ge=3600, le=31_536_000)
+
+
+class AutomationUpdate(BaseModel):
+    is_active: bool
+
+
+class AutomationResponse(BaseModel):
+    id: str
+    name: str
+    description: str
+    message: str
+    project_name: Optional[str] = None
+    is_active: bool
+    interval_seconds: int
+    next_run_at: datetime
+    last_run_at: Optional[datetime] = None
+    last_run_status: Optional[str] = None
+    last_run_id: Optional[str] = None
+
+
 class WorkspaceExecutionEventResponse(BaseModel):
     id: str
     event_type: str

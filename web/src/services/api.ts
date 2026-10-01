@@ -35,6 +35,20 @@ export class ApiError extends Error {
   }
 }
 
+export interface AutomationDto {
+  id: string;
+  name: string;
+  description: string;
+  message: string;
+  project_name: string | null;
+  is_active: boolean;
+  interval_seconds: number;
+  next_run_at: string;
+  last_run_at: string | null;
+  last_run_status: string | null;
+  last_run_id: string | null;
+}
+
 const BASE_URL = ''; // Proxy forwards /v1 to FastAPI in dev
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -58,6 +72,32 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  async fetchAutomations(): Promise<AutomationDto[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations`));
+  },
+
+  async createAutomation(input: {
+    name: string; description: string; message: string; project_name?: string; interval_seconds: number;
+  }): Promise<AutomationDto> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async setAutomationActive(id: string, isActive: boolean): Promise<AutomationDto> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: isActive }),
+    }));
+  },
+
+  async deleteAutomation(id: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  },
+
+  async runAutomation(id: string): Promise<{ automation_id: string; event_id: string; status: 'queued' }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/run`, { method: 'POST' }));
+  },
+
   async fetchModels(): Promise<ModelCatalog> {
     const res = await fetch(`${BASE_URL}/v1/models`);
     return handleResponse<ModelCatalog>(res);

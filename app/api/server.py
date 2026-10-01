@@ -1,11 +1,12 @@
 """FastAPI server application initialization."""
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import approvals, capabilities, chat, memory, models, runs, sessions, routing, workspace
+from app.api.routes import approvals, automations, capabilities, chat, memory, models, runs, sessions, routing, workspace
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -47,10 +48,21 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Non-fatal error during startup MCP tool loading/discovery: {e}")
 
+    from app.events.automation_runtime import run_automation_runtime
+
+    automation_stop = asyncio.Event()
+    automation_task = asyncio.create_task(
+        run_automation_runtime(automation_stop),
+        name="aura-automation-runtime",
+    )
     try:
         yield
     finally:
         logger.info(f"Shutting down {settings.APP_NAME}")
+        automation_stop.set()
+        automation_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await automation_task
         try:
             from app.mcp.manager import mcp_manager
             await mcp_manager.disconnect_all()
@@ -88,6 +100,7 @@ def create_app() -> FastAPI:
     app.include_router(routing.router)
     app.include_router(workspace.router)
     app.include_router(capabilities.router)
+    app.include_router(automations.router)
 
     # Global Domain Exception Handlers
     @app.exception_handler(WorkspaceEscapeError)
