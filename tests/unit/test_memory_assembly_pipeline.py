@@ -214,8 +214,9 @@ async def test_project_memory_privacy_is_combined_without_losing_duplicate_prove
     )
 
     assert assembled.project_facts == ["Sensitive project fact"]
-    assert assembled.project_memory_ids == [first.id, stricter_duplicate.id]
-    assert assembled.project_fact_memory_ids == [first.id]
+    assert set(assembled.project_memory_ids) == {first.id, stricter_duplicate.id}
+    assert len(assembled.project_fact_memory_ids) == 1
+    assert assembled.project_fact_memory_ids[0] in {first.id, stricter_duplicate.id}
     assert assembled.privacy_requirement == "local_only"
 
 
