@@ -187,16 +187,5 @@ class ContextAssembler:
                 context.semantic_items.append((mem.content, sim))
                 semantic_memory_chars += len(mem.content)
                 seen_semantic.add(mem.content)
-            else:
-                raw_memories = await self.mem_service.search_semantic_memory(
-                    query=user_message,
-                    limit=semantic_top_k,
-                    min_similarity=semantic_threshold,
-                    project_name=project_name,
-                    is_active_only=True,
-                )
-                for mem in raw_memories:
-                    if mem.content not in context.project_facts:
-                        context.semantic_items.append((mem.content, 1.0))
 
         return context
