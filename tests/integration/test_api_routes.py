@@ -2,6 +2,7 @@
 
 import pytest
 from httpx import AsyncClient
+from app.db.models import RunEventModel, RunModel, SessionModel
 
 
 @pytest.mark.asyncio
@@ -121,3 +122,49 @@ async def test_non_existent_approval_returns_404(async_client: AsyncClient):
 async def test_non_existent_run_returns_404(async_client: AsyncClient):
     resp = await async_client.get("/v1/runs/non-existent-run-id")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_run_inspector_exposes_operational_trace_without_private_payloads(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    session_id, run_id = "inspector-safe-session", "inspector-safe-run"
+    test_db_session.add_all([
+        SessionModel(id=session_id),
+        RunModel(id=run_id, session_id=session_id, status="completed", user_message="private original prompt"),
+        RunEventModel(run_id=run_id, event_type="request_received", payload={"message": "private original prompt"}),
+        RunEventModel(run_id=run_id, event_type="context_compiled", payload={
+            "estimated_tokens": 128,
+            "prompt_text": "private compiled prompt",
+            "objects": [{"object_id": "note-1", "object_type": "manual_note", "selected_by_user": True, "content": "private note content"}],
+        }),
+        RunEventModel(run_id=run_id, event_type="tool_requested", payload={
+            "tool": "workspace.read", "tool_call_id": "call-1", "arguments": {"path": "private/path.txt"},
+        }),
+        RunEventModel(run_id=run_id, event_type="tool_executed", payload={
+            "tool": "workspace.read", "tool_call_id": "call-1",
+            "result": {"success": True, "output": "private tool output", "metadata": {"secret": "private metadata"}},
+        }),
+        RunEventModel(run_id=run_id, event_type="internal_reasoning", payload={"text": "private hidden reasoning"}),
+    ])
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/runs/{run_id}")
+    assert response.status_code == 200
+    run = response.json()
+    compiled = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    request = next(event for event in run["events"] if event["event_type"] == "request_received")
+    tool_request = next(event for event in run["events"] if event["event_type"] == "tool_requested")
+    tool_result = next(event for event in run["events"] if event["event_type"] == "tool_executed")
+    assert compiled["payload"]["objects"][0]["object_id"] == "note-1"
+    assert "message" not in request["payload"]
+    assert tool_request["payload"]["tool"] == "workspace.read"
+    assert tool_result["payload"]["result"] == {"success": True}
+    for private_value in (
+        "private compiled prompt", "private note content",
+        "private/path.txt", "private tool output", "private metadata", "private hidden reasoning",
+    ):
+        assert private_value not in response.text
+    for private_value in ("private original prompt", "private compiled prompt", "private note content"):
+        assert private_value not in str(run["events"])

@@ -186,7 +186,7 @@ export function InspectorPanel({
                                 className="inspector-payload-toggle"
                                 onClick={() => toggleEvent(evKey)}
                               >
-                                {isExpanded ? '▾ Hide payload' : '▸ View raw payload'}
+                                {isExpanded ? '▾ Hide details' : '▸ View operational details'}
                               </button>
                               {isExpanded ? (
                                 <pre className="inspector-event-payload">

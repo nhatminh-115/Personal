@@ -857,12 +857,13 @@ async def test_parent_and_child_routing_snapshot_lineage(test_db_session: AsyncS
 
 @pytest.mark.asyncio
 async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions(test_db_session: AsyncSession, async_client: AsyncClient):
-    session_id, parent_id, child_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    session_id, parent_id, child_id, pending_child_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
     test_db_session.add(SessionModel(id=session_id))
     test_db_session.add(RunModel(id=parent_id, session_id=session_id, user_message="root", routing_snapshot_json={"role": "root", "profile_id": "p", "winning_scope": "project"}))
     test_db_session.add(RunModel(id=child_id, session_id=session_id, parent_run_id=parent_id, user_message="child", routing_snapshot_json={"role": "research", "profile_id": "p", "winning_scope": "project"}))
-    test_db_session.add(RunEventModel(run_id=parent_id, event_type="model_selected", payload={"provider": "local", "model": "root-model", "agent_role": "root"}))
-    test_db_session.add(RunEventModel(run_id=parent_id, event_type="context_compiled", payload={"estimated_tokens": 64, "objects": [{"object_id": "root-note", "object_type": "manual_note", "selected_by_user": True}]}))
+    test_db_session.add(RunModel(id=pending_child_id, session_id=session_id, parent_run_id=parent_id, user_message="pending child", routing_snapshot_json={"role": "coding", "profile_id": "p", "winning_scope": "project"}))
+    test_db_session.add(RunEventModel(run_id=parent_id, event_type="model_selected", payload={"provider": "local", "model": "root-model", "agent_role": "root", "prompt": "private model prompt"}))
+    test_db_session.add(RunEventModel(run_id=parent_id, event_type="context_compiled", payload={"estimated_tokens": 64, "prompt_text": "private compiled context", "objects": [{"object_id": "root-note", "object_type": "manual_note", "selected_by_user": True, "content": "private note content"}]}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="model_selected", payload={"provider": "local", "model": "research-model", "agent_role": "research"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="reasoning_effort_selected", payload={"selected_effort": "high"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="context_compiled", payload={"estimated_tokens": 128, "objects": [{"object_id": "research-bridge", "object_type": "context_bridge", "selected_by_user": True}]}))
@@ -871,7 +872,7 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     response = await async_client.get(f"/v1/runs/{parent_id}/routing")
     assert response.status_code == 200
     decisions = response.json()["decisions"]
-    assert len(decisions) == 2
+    assert len(decisions) == 3
     child = next(item for item in decisions if item["run_id"] == child_id)
     assert child["parent_run_id"] == parent_id
     assert child["model_selection"]["model"] == "research-model"
@@ -880,6 +881,16 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert child["context_manifest"]["objects"][0]["object_id"] == "research-bridge"
     parent = next(item for item in decisions if item["run_id"] == parent_id)
     assert parent["context_manifest"]["objects"][0]["object_id"] == "root-note"
+    assert "prompt" not in parent["model_selection"]
+    assert "prompt_text" not in parent["context_manifest"]
+    assert "content" not in parent["context_manifest"]["objects"][0]
+    assert "private model prompt" not in response.text
+    assert "private compiled context" not in response.text
+    assert "private note content" not in response.text
+    pending = next(item for item in decisions if item["run_id"] == pending_child_id)
+    assert pending["model_selection"] is None
+    assert pending["reasoning_selection"] is None
+    assert pending["context_manifest"] is None
 
 
 @pytest.mark.asyncio
