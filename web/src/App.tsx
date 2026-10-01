@@ -36,6 +36,7 @@ import {
 } from './data/workspaceData';
 import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
 import { executionErrorText } from './lib/executionError';
+import { compiledContextTokenCount, contextProvenanceFromRunEvents } from './lib/contextProvenance';
 import {
   listDirectoryConnections,
   pickDirectoryConnection,
@@ -773,10 +774,14 @@ export default function App() {
           patchThreadLive(originatingThreadId, { approval: null });
           if (resp.response) {
             let steps: ExecutionStep[] = [];
+            let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
+            let contextTokens: number | undefined;
             if (resp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(resp.run_id);
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
+                provenance = contextProvenanceFromRunEvents(rDetail.events);
+                contextTokens = compiledContextTokenCount(rDetail.events);
                 patchThreadLive(originatingThreadId, { runDetail: rDetail });
               } catch (e) {
                 console.warn('Failed to fetch run details for execution steps', e);
@@ -794,6 +799,9 @@ export default function App() {
               status: 'Completed',
               executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
+              provenance,
+              contextTokens,
+              contextObjectIds,
             };
             updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
           }
@@ -896,10 +904,18 @@ export default function App() {
             patchThreadLive(originatingThreadId, { approval: null });
             if (resp.response) {
               let steps: ExecutionStep[] = [];
+              let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
+              let contextTokens: number | undefined;
               if (resp.run_id) {
-                try { const rDetail = await api.fetchRunDetails(resp.run_id); steps = mapRunEventsToExecutionSteps(rDetail.events); patchThreadLive(originatingThreadId, { runDetail: rDetail }); } catch {}
+                try {
+                  const rDetail = await api.fetchRunDetails(resp.run_id);
+                  steps = mapRunEventsToExecutionSteps(rDetail.events);
+                  provenance = contextProvenanceFromRunEvents(rDetail.events);
+                  contextTokens = compiledContextTokenCount(rDetail.events);
+                  patchThreadLive(originatingThreadId, { runDetail: rDetail });
+                } catch {}
               }
-              const assistantMsg: ChatMessage = { id: `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined };
+              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds };
               updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
             }
           }
@@ -978,11 +994,15 @@ export default function App() {
           patchThreadLive(originatingThreadId, { approval: null });
           if (decisionResp.final_response) {
             let steps: ExecutionStep[] = [];
+            let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
+            let contextTokens: number | undefined;
             if (decisionResp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(decisionResp.run_id);
                 patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
+                provenance = contextProvenanceFromRunEvents(rDetail.events);
+                contextTokens = compiledContextTokenCount(rDetail.events);
               } catch (e) {
                 console.warn('Failed to fetch run details after approval', e);
               }
@@ -1000,6 +1020,8 @@ export default function App() {
               status: 'Completed',
               executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
+              provenance,
+              contextTokens,
             };
             // Append to ORIGINATING thread, not the currently active one
             updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);

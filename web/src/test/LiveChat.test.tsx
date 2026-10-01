@@ -67,6 +67,18 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
               updated_at: new Date().toISOString(),
               events: [
                 {
+                  id: 'ev-context',
+                  event_type: 'context_compiled',
+                  payload: {
+                    estimated_tokens: 184,
+                    objects: [
+                      { object_id: 'workspace-note-1', object_type: 'manual_note', selected_by_user: true, source_object_ids: [] },
+                      { object_id: 'research-claim-1', object_type: 'research_claim', selected_by_user: true, source_object_ids: ['research-evidence-1'] },
+                    ],
+                  },
+                  created_at: new Date().toISOString(),
+                },
+                {
                   id: 'ev-1',
                   event_type: 'routing_profile_resolved',
                   payload: { profile_name: 'Balanced' },
@@ -138,13 +150,23 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Verify response rendered in v9.1 UI
     expect(await screen.findByText(/Live backend synthesis response for project architecture/i)).toBeInTheDocument();
 
+    // The live response reuses the persisted context manifest and focuses the exact Research object on Board.
+    expect(screen.getByText('0.2k context')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Research claim.*research-claim-1/i })).toBeInTheDocument();
+
     // Verify execution badge
-    expect(await screen.findByText(/AURA · 2 steps/i)).toBeInTheDocument();
+    expect(await screen.findByText(/AURA · 3 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Context').closest('button')!);
     fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
+
+    // Response provenance must also navigate to the persisted object without the message click stealing focus.
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
+    fireEvent.click(screen.getByRole('button', { name: /Research claim.*research-claim-1/i }));
+    expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
   });
 
