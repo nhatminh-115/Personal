@@ -278,6 +278,42 @@ describe('Persistent workspace graph Board projection', () => {
     expect(createObject).not.toHaveBeenCalled();
   });
 
+  it('offers a persisted Context Bridge directly to chat with the bridge object selected', async () => {
+    const bridgeId = 'saved-context-bridge';
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: bridgeId,
+        session_id: null,
+        source_message_id: null,
+        object_type: 'context_bridge',
+        created_by: 'user',
+        title: 'Experiment handoff',
+        content: 'Carry forward the verified constraints.',
+        metadata_json: { bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false } },
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-context-bridge', project_name: projects[0].name });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({} as never);
+    const onUseWorkspaceContext = vi.fn();
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="context-bridge-live-action" seedNodes={[]} seedEdges={[]} workspaceProjectName={projects[0].name} onUseWorkspaceContext={onUseWorkspaceContext} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('Experiment handoff')).toBeInTheDocument();
+    fireEvent.click(await screen.findByTitle('Current density: compact'));
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    const useButton = [...container.querySelectorAll('[data-id="saved-context-bridge"] button')]
+      .find((button) => button.textContent?.includes('Use in Chat'))!;
+    fireEvent.click(useButton);
+    expect(onUseWorkspaceContext).toHaveBeenCalledWith(bridgeId);
+    expect(createObject).not.toHaveBeenCalled();
+  });
+
   it('projects Research Specialist sources, evidence, claims, and provenance into the shared Board', async () => {
     const graph: WorkspaceGraph = {
       ...savedGraph,
