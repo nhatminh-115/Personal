@@ -117,9 +117,14 @@ export function InspectorPanel({
                   const uniqueRequirements = [...new Set(requirements)];
                   const contextWindow = typeof selection.context_window === 'number' ? selection.context_window : null;
                   const estimatedTokens = typeof selection.estimated_input_tokens === 'number' ? selection.estimated_input_tokens : null;
+                  const reservedOutputTokens = typeof selection.reserved_output_tokens === 'number' ? selection.reserved_output_tokens : null;
+                  const contextEstimate = estimatedTokens === null ? null : [
+                    `${estimatedTokens.toLocaleString()} input`,
+                    ...(reservedOutputTokens === null ? [] : [`${reservedOutputTokens.toLocaleString()} reserved`]),
+                  ].join(' + ');
                   return <>
                     {uniqueRequirements.length ? <div className="inspector-row"><span>Requirements</span><strong>{uniqueRequirements.join(' · ')}</strong></div> : null}
-                    {estimatedTokens !== null ? <div className="inspector-row"><span>Context budget</span><strong>{contextWindow !== null ? `${estimatedTokens.toLocaleString()} / ${contextWindow.toLocaleString()} tokens` : `${estimatedTokens.toLocaleString()} tokens · model limit unknown`}</strong></div> : null}
+                    {contextEstimate !== null ? <div className="inspector-row"><span>Context budget</span><strong>{contextWindow !== null ? `${contextEstimate} / ${contextWindow.toLocaleString()} tokens` : `${contextEstimate} tokens · model limit unknown`}</strong></div> : null}
                   </>;
                 })()}
               </> : null}

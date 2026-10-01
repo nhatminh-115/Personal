@@ -17,7 +17,7 @@ def mask_sensitive_data(data: Any) -> Any:
         for k, v in data.items():
             # This canonical numeric metric is safe to persist; substring matching
             # on "token" must not erase context-size provenance from run traces.
-            safe_token_metric = k.lower() in {"estimated_tokens", "estimated_input_tokens"} and isinstance(v, int) and not isinstance(v, bool)
+            safe_token_metric = k.lower() in {"estimated_tokens", "estimated_input_tokens", "reserved_output_tokens"} and isinstance(v, int) and not isinstance(v, bool)
             if any(s in k.lower() for s in SENSITIVE_KEYS) and not safe_token_metric:
                 masked[k] = "******"
             else:
