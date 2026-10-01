@@ -16,6 +16,7 @@ import {
   initialNotes,
   projectArtifacts,
   projects,
+  studyTracks,
   type AutomationRecord,
   type ChatThreadRecord,
   type LibraryItem,
@@ -53,6 +54,7 @@ import type {
   SessionSummary,
   ToastMessage,
   WorkspaceNoteRecord,
+  StudySessionRecord,
   WorkspaceMode,
   EffectiveRouting,
   ReasoningEffort,
@@ -221,6 +223,8 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [studySessions, setStudySessions] = useState<StudySessionRecord[]>([]);
+  const studySessionsLoaded = useRef(false);
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const notesLoaded = useRef(false);
@@ -1145,6 +1149,41 @@ export default function App() {
     return () => { active = false; };
   }, [persistLocalWorkspaceNote, pushToast, surface]);
 
+  useEffect(() => {
+    if (surface !== 'study' || studySessionsLoaded.current) return;
+    let active = true;
+    void api.fetchStudySessions().then((sessions) => {
+      if (!active) return;
+      setStudySessions(sessions);
+      studySessionsLoaded.current = true;
+    }).catch((error: unknown) => {
+      if (active) pushToast('Could not load Study sessions', executionErrorText(error));
+    });
+    return () => { active = false; };
+  }, [pushToast, surface]);
+
+  const startStudySession = useCallback(async (trackId: string) => {
+    const track = studyTracks.find((item) => item.id === trackId);
+    if (!track) return;
+    try {
+      const session = await api.startStudySession(track.id, track.title);
+      setStudySessions((current) => [session, ...current]);
+      pushToast('Study session started', `${track.title} · this session is saved in your workspace.`);
+    } catch (error) {
+      pushToast('Study session was not started', executionErrorText(error));
+    }
+  }, [pushToast]);
+
+  const completeStudySession = useCallback(async (sessionId: string) => {
+    try {
+      const session = await api.completeStudySession(sessionId);
+      setStudySessions((current) => current.map((item) => item.id === session.id ? session : item));
+      pushToast('Study session completed', `${session.track_title} · saved to your workspace.`);
+    } catch (error) {
+      pushToast('Study session was not updated', executionErrorText(error));
+    }
+  }, [pushToast]);
+
   useEffect(() => () => {
     noteSyncTimers.current.forEach((timer) => window.clearTimeout(timer));
     noteSyncTimers.current.clear();
@@ -1412,7 +1451,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} · prototype timer/activity is mocked.`)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => void startStudySession(trackId)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
         {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
 

@@ -5,7 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.routes import approvals, capabilities, chat, memory, models, runs, sessions, routing, workspace
+from app.api.routes import approvals, capabilities, chat, memory, models, runs, sessions, routing, study, workspace
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
     app.include_router(memory.router)
     app.include_router(routing.router)
     app.include_router(workspace.router)
+    app.include_router(study.router)
     app.include_router(capabilities.router)
 
     # Global Domain Exception Handlers

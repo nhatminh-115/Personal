@@ -1,13 +1,16 @@
 import { ArrowRight, BookOpenText, Clock3, Play, Sparkles } from 'lucide-react';
 import { studyTracks, type LibraryItem } from '../../data/workspaceData';
+import type { StudySessionRecord } from '../../types';
 
 interface StudyViewProps {
   libraryItems: LibraryItem[];
   onOpenItem: (item: LibraryItem) => void;
   onStartSession: (trackId: string) => void;
+  sessions: StudySessionRecord[];
+  onCompleteSession: (sessionId: string) => void;
 }
 
-export function StudyView({ libraryItems, onOpenItem, onStartSession }: StudyViewProps) {
+export function StudyView({ libraryItems, onOpenItem, onStartSession, sessions, onCompleteSession }: StudyViewProps) {
   return (
     <section className="study-view">
       <div className="library-view__header">
@@ -22,6 +25,7 @@ export function StudyView({ libraryItems, onOpenItem, onStartSession }: StudyVie
       <div className="study-track-grid">
         {studyTracks.map((track) => {
           const files = track.libraryIds.map((id) => libraryItems.find((item) => item.id === id)).filter(Boolean) as LibraryItem[];
+          const activeSession = sessions.find((session) => session.track_id === track.id && session.status === 'in_progress');
           return (
             <article key={track.id} className={`study-track-card study-track-card--${track.accent}`}>
               <div className="study-track-card__top">
@@ -38,7 +42,13 @@ export function StudyView({ libraryItems, onOpenItem, onStartSession }: StudyVie
                 <span>Linked materials</span>
                 {files.map((file) => <button key={file.id} type="button" onClick={() => onOpenItem(file)}><span className={`file-kind file-kind--${file.kind.toLowerCase()}`}>{file.kind}</span><strong>{file.name}</strong><ArrowRight size={12} /></button>)}
               </div>
-              <button className="study-start-button" type="button" onClick={() => onStartSession(track.id)}><Play size={13} /> Start short session</button>
+              {activeSession ? (
+                <button className="study-start-button" type="button" onClick={() => onCompleteSession(activeSession.id)}>
+                  <Play size={13} /> Mark session complete
+                </button>
+              ) : (
+                <button className="study-start-button" type="button" onClick={() => onStartSession(track.id)}><Play size={13} /> Start short session</button>
+              )}
             </article>
           );
         })}

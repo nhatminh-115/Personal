@@ -20,6 +20,7 @@ import {
   WorkspaceLayout,
   WorkspaceNoteRecord,
   WorkspaceObject,
+  StudySessionRecord,
 } from '../types';
 
 export class ApiError extends Error {
@@ -187,6 +188,23 @@ export const api = {
     }));
   },
 
+  async fetchStudySessions(): Promise<StudySessionRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`));
+  },
+
+  async startStudySession(trackId: string, trackTitle: string): Promise<StudySessionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track_id: trackId, track_title: trackTitle }),
+    }));
+  },
+
+  async completeStudySession(sessionId: string): Promise<StudySessionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, {
+      method: 'POST',
+    }));
+  },
+
   async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'POST' }));
   },
@@ -251,7 +269,8 @@ export const api = {
     };
     if (projectName) {
       payload.project_name = projectName;
-    }
+  }
+
     if (modelOverride) {
       payload.model_override = modelOverride;
     }

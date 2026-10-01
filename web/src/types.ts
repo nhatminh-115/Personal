@@ -315,6 +315,15 @@ export interface WorkspaceNoteRecord {
   updated_at: string;
 }
 
+export interface StudySessionRecord {
+  id: string;
+  track_id: string;
+  track_title: string;
+  status: 'in_progress' | 'completed';
+  started_at: string;
+  completed_at?: string | null;
+}
+
 export interface CompiledContextObject {
   object_id: string;
   object_type: string;

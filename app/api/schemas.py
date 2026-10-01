@@ -162,6 +162,20 @@ class WorkspaceNoteResponse(BaseModel):
     updated_at: datetime
 
 
+class StudySessionWrite(BaseModel):
+    track_id: str = Field(min_length=1, max_length=128)
+    track_title: str = Field(min_length=1, max_length=255)
+
+
+class StudySessionResponse(BaseModel):
+    id: str
+    track_id: str
+    track_title: str
+    status: Literal["in_progress", "completed"]
+    started_at: datetime
+    completed_at: Optional[datetime] = None
+
+
 class WorkspaceEdgeResponse(BaseModel):
     id: str
     project_name: str
