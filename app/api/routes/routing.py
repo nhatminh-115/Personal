@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, text, update
 
 from app.api.dependencies import get_db, get_model_router
 from app.db.models import RoutingProfileModel, ProjectRoutingAssignmentModel, SessionModel
@@ -58,6 +58,13 @@ class RoutingPreviewResponse(BaseModel):
 
 async def _set_default_profile(db: AsyncSession, profile_id: Optional[str]) -> None:
     """Set the sole custom default, or clear custom defaults for System Balanced."""
+    # Serialize all API default transitions across workers. The partial unique
+    # index below the model is the final guard for writes outside this helper.
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+            {"lock_key": "aura:routing-profile-default"},
+        )
     if profile_id and profile_id != "system-balanced":
         result = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
         profile = result.scalar_one_or_none()

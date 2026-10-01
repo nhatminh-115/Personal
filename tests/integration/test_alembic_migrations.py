@@ -3,7 +3,7 @@ import tempfile
 import pytest
 from alembic.config import Config
 from alembic import command
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 
 def test_alembic_upgrade_downgrade_cycle():
     """Test full Alembic migration cycle from base to head and back to base."""
@@ -20,7 +20,28 @@ def test_alembic_upgrade_downgrade_cycle():
         alembic_cfg = Config("alembic.ini")
         alembic_cfg.set_main_option("sqlalchemy.url", async_url)
 
-        # 1. Run upgrade head
+        # Upgrade to the previous head and simulate legacy duplicate defaults.
+        command.upgrade(alembic_cfg, "010_workspace_object_graph")
+        engine = create_engine(sync_url)
+        with engine.begin() as connection:
+            for profile_id, updated_at in (
+                ("legacy-default-a", "2026-09-01 00:00:00"),
+                ("legacy-default-z", "2026-09-02 00:00:00"),
+            ):
+                connection.execute(text("""
+                    INSERT INTO routing_profiles (
+                        id, name, version, is_active, is_default,
+                        global_privacy_policy, global_fallback_policy,
+                        cost_preference, latency_preference, routes_json,
+                        created_at, updated_at
+                    ) VALUES (
+                        :id, :name, 1, 1, 1, 'internal', 'none',
+                        'normal', 'normal', '{}', :updated_at, :updated_at
+                    )
+                """), {"id": profile_id, "name": profile_id, "updated_at": updated_at})
+        engine.dispose()
+
+        # The next migration normalizes old data before enforcing uniqueness.
         command.upgrade(alembic_cfg, "head")
 
         # 2. Inspect created schema using a sync engine
@@ -68,6 +89,19 @@ def test_alembic_upgrade_downgrade_cycle():
         assert expected_event_cols.issubset(event_cols), f"Missing events columns: {expected_event_cols - event_cols}"
         event_indexes = {idx["name"] for idx in inspector.get_indexes("events")}
         assert "uq_events_idempotency_key" in event_indexes, f"Missing unique index on events: {event_indexes}"
+
+        routing_indexes = {idx["name"] for idx in inspector.get_indexes("routing_profiles")}
+        assert "uq_routing_profiles_single_default" in routing_indexes
+        with engine.connect() as connection:
+            defaults = connection.execute(text(
+                "SELECT id FROM routing_profiles WHERE is_default = TRUE"
+            )).scalars().all()
+        assert defaults == ["legacy-default-z"]
+
+        # The full downgrade cycle exercises old routing migrations whose
+        # SQLite ALTER TABLE steps predate safe defaults for populated tables.
+        with engine.begin() as connection:
+            connection.execute(text("DELETE FROM routing_profiles"))
 
         # Check scheduled_jobs columns
         job_cols = {col["name"] for col in inspector.get_columns("scheduled_jobs")}
