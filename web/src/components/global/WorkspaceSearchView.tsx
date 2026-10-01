@@ -10,6 +10,7 @@ interface WorkspaceSearchViewProps {
   onOpenNote: (objectId: string) => void;
   onOpenLibraryItem: (objectId: string) => void;
   onOpenStudySession: (objectId: string) => void;
+  onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
   onOpenFile: (result: WorkspaceSearchResult) => void;
 }
 
@@ -22,7 +23,7 @@ const TYPE_LABELS: Record<string, string> = {
   study_session: 'Study session',
 };
 
-export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onOpenFile }: WorkspaceSearchViewProps) {
+export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onStudyResearchClaim, onOpenFile }: WorkspaceSearchViewProps) {
   return (
     <section className="workspace-search" aria-labelledby="workspace-search-title">
       <header className="workspace-search__header">
@@ -60,6 +61,9 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
                     : <span>Personal workspace</span>}
                 <time dateTime={result.updated_at}>{new Date(result.updated_at).toLocaleDateString()}</time>
                 {result.source === 'connected-folder' ? <button type="button" onClick={() => onOpenFile(result)}>Open file <ArrowUpRight size={12} /></button> : null}
+                {result.object_type === 'research_claim' && result.verification_status === 'verified' && result.project_name ? (
+                  <button type="button" onClick={() => onStudyResearchClaim?.(result.object_id, result.title, result.project_name!)}>Study verified finding <ArrowUpRight size={12} /></button>
+                ) : null}
               </div>
             </div>
           </article>
