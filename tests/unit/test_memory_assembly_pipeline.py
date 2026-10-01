@@ -4,7 +4,7 @@ import pytest
 from sqlalchemy import select
 from app.db.models import MemoryModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryType
-from app.memory.context import AssembledContext, ContextAssembler
+from app.memory.context import AssembledContext, ContextAssembler, MAX_PROJECT_MEMORY_CHARS, MAX_PROJECT_MEMORY_ITEMS
 from app.memory.context_compiler import WorkspaceContextCompiler
 from app.memory.embeddings.mock_provider import MockEmbeddingProvider
 from app.memory.embeddings.router import EmbeddingRouter
@@ -149,6 +149,33 @@ async def test_context_assembler_multitier_and_scoping(test_db_session, mock_rou
     assert "### Project Knowledge (Atlas):" in formatted
     assert "Project Atlas uses Python 3.12" in formatted
     assert "Python 3.11" not in formatted
+
+
+@pytest.mark.asyncio
+async def test_context_assembler_bounds_project_memory_without_truncating_facts(test_db_session, mock_router):
+    service = SQLMemoryService(db=test_db_session, router=mock_router)
+    assembler = ContextAssembler(memory_service=service)
+    all_ids = []
+    for index in range(MAX_PROJECT_MEMORY_ITEMS + 8):
+        saved = await service.store_project_memory(
+            "Bounded Project",
+            f"fact-{index}",
+            f"Fact {index}: " + ("x" * 900),
+            metadata={"confidence": 1.0},
+        )
+        all_ids.append(saved.id)
+
+    assembled = await assembler.assemble_context(
+        session_id="bounded-project-context",
+        user_message="Summarize the project facts.",
+        project_name="Bounded Project",
+    )
+
+    assert len(assembled.project_memory_ids) <= MAX_PROJECT_MEMORY_ITEMS
+    assert len(assembled.project_memory_ids) == len(assembled.project_facts)
+    assert sum(map(len, assembled.project_facts)) <= MAX_PROJECT_MEMORY_CHARS
+    assert all(fact.startswith("Fact ") and len(fact) > 900 for fact in assembled.project_facts)
+    assert set(assembled.project_memory_ids).issubset(all_ids)
 
 
 @pytest.mark.asyncio
