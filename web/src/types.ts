@@ -75,6 +75,7 @@ export interface AIContextItem {
   tokens: number;
   included: boolean;
   nodeId?: string;
+  personalNoteId?: string;
 }
 
 export interface AIProvenanceItem {
@@ -101,6 +102,7 @@ export interface ChatMessage {
   reasoningLabel?: string;
   contextTokens?: number;
   contextObjectIds?: string[];
+  personalNoteIds?: string[];
   provenance?: AIProvenanceItem[];
   tool_calls?: any[];
   tool_call_id?: string;
@@ -182,6 +184,27 @@ export interface WorkspaceObject {
   metadata_json: Record<string, unknown>;
   created_at: string;
   updated_at: string;
+}
+
+export interface PersonalNoteRecord {
+  id: string;
+  title: string;
+  body: string;
+  tags: string[];
+  project_ids: string[];
+  project_names: string[];
+  pinned: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudySessionRecord {
+  id: string;
+  track_id: string;
+  status: 'active' | 'completed';
+  started_at: string;
+  completed_at: string | null;
+  duration_seconds: number | null;
 }
 
 export interface WorkspaceEdge {

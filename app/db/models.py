@@ -153,6 +153,45 @@ class MemoryModel(Base):
     session: Mapped[Optional["SessionModel"]] = relationship("SessionModel", back_populates="memories")
 
 
+class PersonalNoteModel(Base):
+    """User-authored notes shared across the personal workspace."""
+
+    __tablename__ = "personal_notes"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    title: Mapped[str] = mapped_column(String(255), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    tags_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    project_ids_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    project_names_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+
+class StudySessionModel(Base):
+    """Durable focus sessions for the personal Study workspace."""
+
+    __tablename__ = "study_sessions"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    track_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_seconds: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_study_sessions_single_active",
+            "status",
+            unique=True,
+            postgresql_where=text("status = 'active'"),
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+
 class EventStatus(str, Enum):
     """Lifecycle statuses for event outbox processing."""
     PENDING = "pending"

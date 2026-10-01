@@ -36,7 +36,7 @@ separate capability scopes, and specialists cannot recursively delegate.
 
 | State | Implementation |
 | --- | --- |
-| Sessions, messages, runs, approvals, routing profiles, traces, and workspace graph | SQLAlchemy database selected by `DATABASE_URL`; SQLite is the local default and Docker Compose uses PostgreSQL with pgvector. |
+| Sessions, messages, runs, approvals, routing profiles, traces, workspace graph, personal Notes, and Study focus sessions | SQLAlchemy database selected by `DATABASE_URL`; SQLite is the local default and Docker Compose uses PostgreSQL with pgvector. |
 | LangGraph execution checkpoints | `AsyncSqliteSaver` at `CHECKPOINT_DB_PATH`, separate from the SQLAlchemy database. |
 | Board layout | Project workspace layout with revision checks; layout is user state rather than graph knowledge. |
 | Provider inventory | In-memory capability registry populated by native tool registration and MCP discovery. |

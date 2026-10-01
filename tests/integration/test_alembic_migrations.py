@@ -41,6 +41,8 @@ def test_alembic_upgrade_downgrade_cycle():
             "alembic_version",
         }
         assert expected_tables.issubset(tables), f"Missing tables: {expected_tables - tables}"
+        assert "personal_notes" in tables
+        assert "study_sessions" in tables
 
         # Check delegations index
         delegation_indexes = {idx["name"] for idx in inspector.get_indexes("delegations")}

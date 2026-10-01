@@ -53,10 +53,11 @@ async def chat_endpoint(
     run_id = str(uuid.uuid4())
 
     context_object_ids = list(dict.fromkeys(req.context_object_ids))
-    if context_object_ids and not req.project_name:
+    personal_note_ids = list(dict.fromkeys(req.personal_note_ids))
+    if (context_object_ids or personal_note_ids) and not req.project_name:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="context_object_ids require a project_name scope.",
+            detail="Selected context requires a project_name scope.",
         )
 
     # 1. Ensure session exists
@@ -144,6 +145,7 @@ async def chat_endpoint(
         metadata=merged_metadata,
     )
     initial_state["context_object_ids"] = context_object_ids
+    initial_state["personal_note_ids"] = personal_note_ids
 
     config = {
         "configurable": {
