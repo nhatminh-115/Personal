@@ -82,8 +82,8 @@ describe('Persistent personal workspace Notes', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open note' }));
 
     expect(await screen.findByRole('heading', { name: 'Personal notes' })).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Privacy boundary')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Connected files stay on this device.')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Privacy boundary')).toBeInTheDocument();
+    expect(await screen.findByDisplayValue('Connected files stay on this device.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Novelty framing/i }));
     fireEvent.change(screen.getByPlaceholderText('Write anything…'), { target: { value: 'Updated a different note.' } });

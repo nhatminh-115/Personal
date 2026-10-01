@@ -19,7 +19,7 @@ import {
   Upload,
   X,
 } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 import type { DirectoryConnection } from '../../lib/folderConnections';
 
@@ -28,6 +28,7 @@ type LibraryViewMode = 'list' | 'grid';
 interface LibraryViewProps {
   projects: ProjectRecord[];
   items: LibraryItem[];
+  focusItemId?: string | null;
   connections: DirectoryConnection[];
   directoryPickerSupported: boolean;
   onOpenItem: (item: LibraryItem) => void;
@@ -60,6 +61,7 @@ function formatSize(size?: number) {
 export function LibraryView({
   projects,
   items: libraryItems,
+  focusItemId,
   connections,
   directoryPickerSupported,
   onOpenItem,
@@ -76,6 +78,8 @@ export function LibraryView({
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const itemElements = useRef(new Map<string, HTMLElement>());
+  const lastFocusedItemId = useRef<string | null>(null);
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -85,6 +89,16 @@ export function LibraryView({
       return inCollection && (!q || searchable.includes(q));
     });
   }, [collection, libraryItems, query]);
+
+  useEffect(() => {
+    if (!focusItemId || !libraryItems.some((item) => item.id === focusItemId)) return;
+    if (collection !== 'All') setCollection('All');
+    if (query) setQuery('');
+    const element = itemElements.current.get(focusItemId);
+    if (!element || lastFocusedItemId.current === focusItemId) return;
+    lastFocusedItemId.current = focusItemId;
+    element.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+  }, [collection, focusItemId, items, libraryItems, query]);
 
   return (
     <section className="library-view library-view--explorer">
@@ -161,7 +175,12 @@ export function LibraryView({
             const Icon = iconFor(item);
             const linkedProjects = (item.projectLinks ?? []).map((id) => projects.find((project) => project.id === id)).filter(Boolean);
             return (
-              <article key={item.id} className={`library-item library-item--${view} library-item--v8`}>
+              <article
+                key={item.id}
+                ref={(element) => { if (element) itemElements.current.set(item.id, element); else itemElements.current.delete(item.id); }}
+                data-library-item-id={item.id}
+                className={`library-item library-item--${view} library-item--v8 ${focusItemId === item.id ? 'is-search-focused' : ''}`}
+              >
                 <button className="library-item__open" type="button" onClick={() => onOpenItem(item)}>
                   <span className={`library-file-icon library-file-icon--${item.kind.toLowerCase()}`}><Icon size={20} /></span>
                   <span className="library-item__copy">
@@ -205,3 +224,4 @@ export function LibraryView({
     </section>
   );
 }
+

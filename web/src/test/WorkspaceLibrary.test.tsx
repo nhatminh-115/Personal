@@ -50,4 +50,34 @@ describe('Workspace Library references', () => {
     expect(JSON.stringify(payload)).not.toContain('private contents stay local');
     expect(JSON.stringify(payload)).not.toContain('blobKey');
   });
+
+  it('opens a workspace search match at its exact Library reference', async () => {
+    const reference = {
+      id: 'library-search-match', name: 'Methods paper', kind: 'PDF', collection: 'Research',
+      detail: 'Imported local file · methods.pdf', tags: ['methods'], project_names: [], size: 2048,
+      mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes('/v1/workspace/search')) return Promise.resolve({ ok: true, json: () => Promise.resolve([{
+        object_id: reference.id, object_type: 'file_reference', title: reference.name, excerpt: reference.detail,
+        project_name: null, created_by: 'user', updated_at: reference.updated_at,
+      }]) } as Response);
+      if (url.endsWith('/v1/workspace/library')) return Promise.resolve({ ok: true, json: () => Promise.resolve([reference]) } as Response);
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.endsWith('/v1/sessions') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'methods paper' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('Methods paper')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Library' }));
+
+    expect(await screen.findByRole('heading', { name: 'Your files can stay where they already live.' })).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-library-item-id="library-search-match"]')).toHaveClass('is-search-focused'));
+  });
 });
+
