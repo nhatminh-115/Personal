@@ -88,3 +88,40 @@ async def test_workspace_search_indexes_library_reference_metadata_without_readi
     assert result.json()[0]["title"] == "architecture.pdf"
     assert result.json()[0]["excerpt"] == "workspace-index"
     assert "storage_location" not in result.text
+
+
+
+
+@pytest.mark.asyncio
+async def test_workspace_search_exposes_only_research_claim_verification_status(async_client, test_db_session):
+    from app.db.models import WorkspaceObjectModel
+
+    claim = WorkspaceObjectModel(
+        id="20000000-0000-4000-8000-000000000001",
+        project_name="Research Project",
+        object_type="research_claim",
+        created_by="research",
+        title="Verified graph finding",
+        content="verified-claim-search-token",
+        metadata_json={"verification_status": "verified", "private_notes": "never expose"},
+    )
+    note = WorkspaceObjectModel(
+        id="20000000-0000-4000-8000-000000000002",
+        project_name="Research Project",
+        object_type="manual_note",
+        created_by="user",
+        title="Ordinary note",
+        content="ordinary-note-search-token",
+        metadata_json={"verification_status": "verified", "private_notes": "never expose"},
+    )
+    test_db_session.add_all([claim, note])
+    await test_db_session.commit()
+
+    verified = await async_client.get("/v1/workspace/search", params={"query": "verified-claim-search-token"})
+    assert verified.status_code == 200
+    assert verified.json()[0]["verification_status"] == "verified"
+    assert "never expose" not in verified.text
+
+    ordinary = await async_client.get("/v1/workspace/search", params={"query": "ordinary-note-search-token"})
+    assert ordinary.status_code == 200
+    assert ordinary.json()[0]["verification_status"] is None
