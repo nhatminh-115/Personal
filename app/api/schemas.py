@@ -74,6 +74,7 @@ class MessageResponse(BaseModel):
     created_at: datetime
     run_id: Optional[str] = None
     context_manifest: Optional[Dict[str, Any]] = None
+    routing_provenance: Optional[Dict[str, Any]] = None
 
 
 class SessionDetailResponse(BaseModel):

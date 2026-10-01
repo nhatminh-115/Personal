@@ -41,6 +41,8 @@ import {
   compiledContextTokenCountFromManifest,
   contextProvenanceFromManifest,
   contextProvenanceFromRunEvents,
+  routingSummaryFromProvenance,
+  routingSummaryFromRunEvents,
 } from './lib/contextProvenance';
 import {
   listDirectoryConnections,
@@ -625,6 +627,7 @@ export default function App() {
             provenance: contextProvenanceFromManifest(manifest),
             contextTokens: compiledContextTokenCountFromManifest(manifest),
             contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
+            ...routingSummaryFromProvenance(message.routing_provenance),
           };
         });
         setChatThreads((current) => current.map((t) => {
@@ -675,6 +678,8 @@ export default function App() {
                 provenance: existing.provenance?.length ? existing.provenance : bm.provenance,
                 contextTokens: existing.contextTokens ?? bm.contextTokens,
                 contextObjectIds: existing.contextObjectIds?.length ? existing.contextObjectIds : bm.contextObjectIds,
+                routeLabel: existing.routeLabel ?? bm.routeLabel,
+                reasoningLabel: existing.reasoningLabel ?? bm.reasoningLabel,
               };
             } else {
               // Genuinely new message from backend — append
@@ -796,12 +801,14 @@ export default function App() {
             let steps: ExecutionStep[] = [];
             let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
             let contextTokens: number | undefined;
+            let routingSummary = {} as ReturnType<typeof routingSummaryFromRunEvents>;
             if (resp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(resp.run_id);
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
                 provenance = contextProvenanceFromRunEvents(rDetail.events);
                 contextTokens = compiledContextTokenCount(rDetail.events);
+                routingSummary = routingSummaryFromRunEvents(rDetail.events);
                 patchThreadLive(originatingThreadId, { runDetail: rDetail });
               } catch (e) {
                 console.warn('Failed to fetch run details for execution steps', e);
@@ -822,6 +829,7 @@ export default function App() {
               provenance,
               contextTokens,
               contextObjectIds,
+              ...routingSummary,
             };
             updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
           }
@@ -926,16 +934,18 @@ export default function App() {
               let steps: ExecutionStep[] = [];
               let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
               let contextTokens: number | undefined;
+              let routingSummary = {} as ReturnType<typeof routingSummaryFromRunEvents>;
               if (resp.run_id) {
                 try {
                   const rDetail = await api.fetchRunDetails(resp.run_id);
                   steps = mapRunEventsToExecutionSteps(rDetail.events);
                   provenance = contextProvenanceFromRunEvents(rDetail.events);
                   contextTokens = compiledContextTokenCount(rDetail.events);
+                  routingSummary = routingSummaryFromRunEvents(rDetail.events);
                   patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 } catch {}
               }
-              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds };
+              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds, ...routingSummary };
               updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
             }
           }
@@ -1016,6 +1026,7 @@ export default function App() {
             let steps: ExecutionStep[] = [];
             let provenance = [] as ReturnType<typeof contextProvenanceFromRunEvents>;
             let contextTokens: number | undefined;
+            let routingSummary = {} as ReturnType<typeof routingSummaryFromRunEvents>;
             if (decisionResp.run_id) {
               try {
                 const rDetail = await api.fetchRunDetails(decisionResp.run_id);
@@ -1023,6 +1034,7 @@ export default function App() {
                 steps = mapRunEventsToExecutionSteps(rDetail.events);
                 provenance = contextProvenanceFromRunEvents(rDetail.events);
                 contextTokens = compiledContextTokenCount(rDetail.events);
+                routingSummary = routingSummaryFromRunEvents(rDetail.events);
               } catch (e) {
                 console.warn('Failed to fetch run details after approval', e);
               }
@@ -1042,6 +1054,7 @@ export default function App() {
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
+              ...routingSummary,
             };
             // Append to ORIGINATING thread, not the currently active one
             updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);

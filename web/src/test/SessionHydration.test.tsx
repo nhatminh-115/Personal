@@ -21,6 +21,7 @@ const BACKEND_MESSAGE = {
     estimated_tokens: 96,
     objects: [{ object_id: 'hydrated-research-source', object_type: 'research_source', selected_by_user: true, source_object_ids: [] }],
   },
+  routing_provenance: { provider: 'ollama', model: 'local-chat', role: 'root', reasoning_effort: 'medium' },
 };
 
 describe('Session Hydration', () => {
@@ -81,6 +82,8 @@ describe('Session Hydration', () => {
 
     expect(await screen.findByRole('button', { name: /Research source.*hydrated-research-source/i })).toBeInTheDocument();
     expect(screen.getByText('0.1k context')).toBeInTheDocument();
+    expect(screen.getByText('ollama:local-chat')).toBeInTheDocument();
+    expect(screen.getByText('Reasoning · Medium')).toBeInTheDocument();
 
     // /v1/sessions/live-sess-1 was called
     // Fix 1: use type-safe call[0] extraction instead of tuple destructure

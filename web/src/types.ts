@@ -188,6 +188,12 @@ export interface SessionDetail {
 export interface SessionMessage extends ChatMessage {
   run_id?: string;
   context_manifest?: CompiledContextManifest;
+  routing_provenance?: {
+    provider?: string;
+    model?: string;
+    role?: string;
+    reasoning_effort?: string;
+  };
 }
 
 export interface WorkspaceObject {

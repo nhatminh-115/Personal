@@ -56,17 +56,34 @@ async def get_session_details(
                 run_id_by_message[message_id] = run_id
     run_ids = set(run_id_by_message.values())
     manifest_by_run: dict[str, dict] = {}
+    routing_by_run: dict[str, dict] = {}
     if run_ids:
         result = await db.execute(
             select(RunEventModel)
             .where(
                 RunEventModel.run_id.in_(run_ids),
-                RunEventModel.event_type == "context_compiled",
+                RunEventModel.event_type.in_({
+                    "context_compiled",
+                    "model_selected",
+                    "reasoning_effort_selected",
+                }),
             )
             .order_by(RunEventModel.created_at, RunEventModel.id)
         )
         for event in result.scalars():
             payload = event.payload if isinstance(event.payload, dict) else {}
+            if event.event_type == "model_selected":
+                routing = routing_by_run.setdefault(event.run_id, {})
+                for key in ("provider", "model", "agent_role"):
+                    value = payload.get(key)
+                    if isinstance(value, str):
+                        routing[{"agent_role": "role"}.get(key, key)] = value
+            elif event.event_type == "reasoning_effort_selected":
+                effort = payload.get("selected_effort")
+                if isinstance(effort, str):
+                    routing_by_run.setdefault(event.run_id, {})["reasoning_effort"] = effort
+            if event.event_type != "context_compiled":
+                continue
             raw_objects = payload.get("objects")
             objects = []
             if isinstance(raw_objects, list):
@@ -111,6 +128,7 @@ async def get_session_details(
                 created_at=m.created_at,
                 run_id=run_id_by_message.get(m.id),
                 context_manifest=manifest_by_run.get(run_id_by_message.get(m.id, "")),
+                routing_provenance=routing_by_run.get(run_id_by_message.get(m.id, "")),
             )
             for m in messages
         ],

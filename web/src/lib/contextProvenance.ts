@@ -1,5 +1,10 @@
 import type { AIProvenanceItem, RunEvent } from '../types';
 
+export interface RoutingProvenanceSummary {
+  routeLabel?: string;
+  reasoningLabel?: string;
+}
+
 const OBJECT_LABELS: Record<string, string> = {
   context_bridge: 'Context Bridge',
   context_set: 'Context Set',
@@ -51,4 +56,27 @@ export function compiledContextTokenCountFromManifest(manifest: Record<string, a
   return typeof manifest?.estimated_tokens === 'number' && Number.isFinite(manifest.estimated_tokens)
     ? manifest.estimated_tokens
     : undefined;
+}
+
+export function routingSummaryFromRunEvents(events: RunEvent[]): RoutingProvenanceSummary {
+  const modelSelection = [...events].reverse().find((event) => event.event_type === 'model_selected')?.payload;
+  const reasoningSelection = [...events].reverse().find((event) => event.event_type === 'reasoning_effort_selected')?.payload;
+  return routingSummaryFromProvenance({
+    provider: modelSelection?.provider,
+    model: modelSelection?.model,
+    reasoning_effort: reasoningSelection?.selected_effort,
+  });
+}
+
+export function routingSummaryFromProvenance(provenance: Record<string, any> | undefined): RoutingProvenanceSummary {
+  const provider = typeof provenance?.provider === 'string' ? provenance.provider : null;
+  const model = typeof provenance?.model === 'string' ? provenance.model : null;
+  const effort = typeof provenance?.reasoning_effort === 'string' ? provenance.reasoning_effort : null;
+  const routeLabel = provider && model ? `${provider}:${model}` : null;
+  const reasoningLabel = !effort || effort === 'unknown'
+    ? null
+    : effort === 'fixed_by_model' ? 'Fixed by model'
+      : effort === 'unsupported' ? 'Reasoning control unsupported'
+        : `Reasoning · ${effort[0].toUpperCase()}${effort.slice(1)}`;
+  return { routeLabel: routeLabel ?? undefined, reasoningLabel: reasoningLabel ?? undefined };
 }
