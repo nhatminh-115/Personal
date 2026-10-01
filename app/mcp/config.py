@@ -3,6 +3,12 @@
 from enum import Enum
 from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
+from app.capabilities.registry import (
+    NetworkRequirement,
+    PrivacyBoundary,
+    ProviderApprovalRequirement,
+    ProviderPermission,
+)
 
 
 class MCPTransportType(str, Enum):
@@ -16,7 +22,7 @@ class MCPTransportType(str, Enum):
 class MCPServerConfig(BaseModel):
     """Configuration definition for an external MCP server."""
 
-    id: str = Field(..., description="Unique alphanumeric identifier for the server (e.g. 'github', 'filesystem').")
+    id: str = Field(..., pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$", description="Unique alphanumeric identifier for the server (e.g. 'github', 'filesystem').")
     name: str = Field(..., description="Human-readable server name.")
     transport: MCPTransportType = Field(default=MCPTransportType.STDIO, description="Transport type (stdio, sse, http).")
     
@@ -39,3 +45,12 @@ class MCPServerConfig(BaseModel):
     read_only: bool = Field(default=False, description="If True, treats all server tools as read-only operations.")
     auto_approve_tools: List[str] = Field(default_factory=list, description="Tool names explicitly allowed to run automatically without human interruption.")
     high_risk_tools: List[str] = Field(default_factory=list, description="Tool names explicitly marked as HIGH risk.")
+
+    # Explicit capability-provider facts. Unknown values remain unknown; AURA does not infer them from server names.
+    provider_version: Optional[str] = Field(None, max_length=80)
+    capabilities_by_tool: Dict[str, List[str]] = Field(default_factory=dict)
+    privacy_boundary: PrivacyBoundary = PrivacyBoundary.UNKNOWN
+    network_requirement: NetworkRequirement = NetworkRequirement.UNKNOWN
+    data_touched: Optional[List[str]] = None
+    permissions: Optional[List[ProviderPermission]] = None
+    approval_requirement: ProviderApprovalRequirement = ProviderApprovalRequirement.PER_TOOL_POLICY

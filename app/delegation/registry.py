@@ -18,13 +18,7 @@ class SpecialistRegistry:
                     "Your mission is to inspect the codebase, run tests, diagnose failures, "
                     "edit the appropriate files, re-run tests to verify the fix, and return a clear summary."
                 ),
-                allowed_tools=[
-                    "read_workspace_file",
-                    "write_workspace_file",
-                    "list_workspace_files",
-                    "sandbox_shell_execute",
-                    "sandbox_python_execute",
-                ],
+                requested_runtime_capabilities=["workspace.files.read", "workspace.files.write", "sandbox.execute"],
                 max_steps=10,
                 timeout_seconds=120.0,
                 preferred_model_capabilities=["code", "reasoning"],
@@ -49,13 +43,12 @@ class SpecialistRegistry:
                     "5. Store validated, high-value findings into project memory with citation references.\n"
                     "6. Return a comprehensive, evidence-backed conclusion with no fabricated citations."
                 ),
-                allowed_tools=[
-                    "research_search",
-                    "read_document_section",
-                    "extract_evidence",
-                    "record_research_claim",
-                    "save_research_finding",
-                    "read_workspace_file",
+                requested_runtime_capabilities=[
+                    "research.search",
+                    "research.sources.read",
+                    "research.evidence.extract",
+                    "research.claims.write",
+                    "workspace.files.read",
                 ],
                 max_steps=15,
                 timeout_seconds=180.0,

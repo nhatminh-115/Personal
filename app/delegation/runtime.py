@@ -240,7 +240,14 @@ class DelegationRuntime:
             )
 
         # 5. Build Scoped Tool Registry for the specialist
-        scoped_tools = ScopedToolRegistry(self.base_tool_registry, spec.allowed_tools)
+        if spec.requested_runtime_capabilities:
+            resolved_tools = self.base_tool_registry.resolve_capabilities(
+                spec.requested_runtime_capabilities,
+                allowed_tool_names=spec.allowed_tools or None,
+            )
+        else:
+            resolved_tools = spec.allowed_tools
+        scoped_tools = ScopedToolRegistry(self.base_tool_registry, resolved_tools)
 
         # 6. Prepare Child Initial AgentState
         from app.models.base import ChatMessage, ModelRole

@@ -3,6 +3,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
+from app.capabilities.registry import CapabilityProviderMetadata
 
 
 # --- Chat Schemas ---
@@ -198,6 +199,10 @@ class WorkspaceGraphResponse(BaseModel):
     edges: List[WorkspaceEdgeResponse]
     layout: WorkspaceLayoutResponse
     execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
+
+
+class CapabilityProvidersResponse(BaseModel):
+    providers: List[CapabilityProviderMetadata] = Field(default_factory=list)
 
 
 class WorkspaceSessionResponse(BaseModel):

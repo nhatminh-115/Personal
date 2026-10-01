@@ -30,7 +30,10 @@ def test_coding_specialist_tools_evaluated_against_canonical_permission_policy()
     coding_spec = registry.get("coding")
     assert coding_spec is not None
 
-    scoped_tools = ScopedToolRegistry(tool_registry, coding_spec.allowed_tools)
+    scoped_tools = ScopedToolRegistry(
+        tool_registry,
+        tool_registry.resolve_capabilities(coding_spec.requested_runtime_capabilities),
+    )
 
     # 1. sandbox_shell_execute is HIGH risk -> MUST require approval
     shell_tool = scoped_tools.get("sandbox_shell_execute")
