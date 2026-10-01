@@ -365,11 +365,11 @@ export function ChatPane({
             <AIContextPanel
               items={contextItems}
               contextIsLive={contextIsLive}
-              onToggleItem={(id) => setContextItems((current) => {
-                const next = current.map((item) => item.id === id ? { ...item, included: !item.included } : item);
+              onToggleItem={(id) => {
+                const next = contextItems.map((item) => item.id === id ? { ...item, included: !item.included } : item);
+                setContextItems(next);
                 if (contextIsLive) onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
-                return next;
-              })}
+              }}
               onFocusItem={(nodeId) => {
                 setContextOpen(false);
                 onContextObjectFocus?.(nodeId);

@@ -125,10 +125,13 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
     expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
     const claimItem = (await screen.findByText('Restartability claim')).closest<HTMLButtonElement>('.ai-context-item')!;
+    const reactErrors = vi.spyOn(console, 'error').mockImplementation(() => {});
     fireEvent.click(claimItem);
     expect(claimItem).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(contextItem);
     expect(contextItem).toHaveAttribute('aria-pressed', 'true');
+    expect(reactErrors.mock.calls.some((args) => String(args[0]).includes('Cannot update a component'))).toBe(false);
+    reactErrors.mockRestore();
 
     // Type prompt into textarea and send
     const textarea = screen.getByPlaceholderText(/Ask AURA in this chat…/i);
