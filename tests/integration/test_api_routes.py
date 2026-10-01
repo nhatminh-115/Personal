@@ -18,13 +18,22 @@ async def test_direct_chat_turn(async_client: AsyncClient):
     session_id = "test-direct-sess"
     resp = await async_client.post(
         "/v1/chat",
-        json={"session_id": session_id, "message": "Hello AURA, who are you?"},
+        json={"session_id": session_id, "project_name": "AURA Project", "message": "Hello AURA, who are you?"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "completed"
     assert data["approval_id"] is None
+    assert data["user_message_id"]
+    assert data["assistant_message_id"]
     assert "AURA Response" in data["response"]
+
+    graph_resp = await async_client.get("/v1/workspace/projects/AURA%20Project/graph")
+    assert graph_resp.status_code == 200
+    graph = graph_resp.json()
+    assert {item["source_message_id"] for item in graph["objects"]} == {data["user_message_id"], data["assistant_message_id"]}
+    assert len(graph["edges"]) == 1
+    assert graph["edges"][0]["relation_type"] == "reply"
 
 
 @pytest.mark.asyncio

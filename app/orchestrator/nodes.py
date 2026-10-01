@@ -756,14 +756,22 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
     trace_service: Optional[TraceService] = services["trace_service"]
 
     final_resp = state.get("final_response") or "Run completed."
+    persisted_user_message_id: Optional[str] = None
+    persisted_assistant_message_id: Optional[str] = None
 
     if mem_service:
         # Save user message if not already saved
-        await mem_service.save_message(state["session_id"], role="user", content=state["user_message"])
+        user_message = await mem_service.save_message(
+            state["session_id"], role="user", content=state["user_message"], metadata={"run_id": state["run_id"]}
+        )
+        persisted_user_message_id = user_message.id
 
         # Save assistant final response if run completed or cancelled
         if state.get("execution_status") in {RunStatus.COMPLETED.value, RunStatus.CANCELLED.value}:
-            await mem_service.save_message(state["session_id"], role="assistant", content=final_resp)
+            assistant_message = await mem_service.save_message(
+                state["session_id"], role="assistant", content=final_resp, metadata={"run_id": state["run_id"]}
+            )
+            persisted_assistant_message_id = assistant_message.id
 
             # Record episodic memory if tools were used
             if state.get("tool_results"):
@@ -818,4 +826,8 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             payload={"status": exec_status},
         )
 
+    if persisted_user_message_id:
+        state["persisted_user_message_id"] = persisted_user_message_id
+    if persisted_assistant_message_id:
+        state["persisted_assistant_message_id"] = persisted_assistant_message_id
     return state

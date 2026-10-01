@@ -1,11 +1,11 @@
 """SQLAlchemy-backed implementation of the MemoryService."""
 
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
-from app.db.models import MemoryModel, MessageModel, SessionModel
+from app.db.models import MemoryModel, MessageModel, SessionModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryService, MemoryType
 from app.memory.embeddings.router import EmbeddingRouter, embedding_router
 from app.memory.stores.factory import get_semantic_store
@@ -22,6 +22,13 @@ class SQLMemoryService(MemoryService):
         self.db = db
         self.embedding_router = router or embedding_router
         self.store = get_semantic_store(db)
+
+    async def _lock_session_graph(self, session_id: str) -> None:
+        if self.db.get_bind().dialect.name == "postgresql":
+            await self.db.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext(:lock_key))"),
+                {"lock_key": f"workspace-session:{session_id}"},
+            )
 
     # --- Working Memory ---
     async def get_or_create_session(self, session_id: str, title: Optional[str] = None) -> SessionModel:
@@ -41,15 +48,91 @@ class SQLMemoryService(MemoryService):
             logger.info(f"Initialized new session '{session_id}'", extra={"session_id": session_id})
         return session
 
+    async def attach_session_to_project(self, session_id: str, project_name: str) -> SessionModel:
+        """Associate an existing live session and backfill its graph projection once."""
+        await self._lock_session_graph(session_id)
+        result = await self.db.execute(select(SessionModel).where(SessionModel.id == session_id))
+        session = result.scalar_one_or_none()
+        if session is None:
+            raise LookupError("Live session not found.")
+        if session.project_name and session.project_name != project_name:
+            raise ValueError("A live conversation session cannot be moved between projects.")
+        session.project_name = project_name
+
+        messages_result = await self.db.execute(
+            select(MessageModel)
+            .where(MessageModel.session_id == session_id)
+            .order_by(MessageModel.created_at, MessageModel.id)
+        )
+        messages = list(messages_result.scalars())
+        message_ids = [message.id for message in messages]
+        objects_result = await self.db.execute(
+            select(WorkspaceObjectModel).where(WorkspaceObjectModel.source_message_id.in_(message_ids))
+        ) if message_ids else None
+        objects_by_message = {
+            item.source_message_id: item for item in objects_result.scalars()
+        } if objects_result is not None else {}
+        for message in messages:
+            if message.id in objects_by_message:
+                continue
+            role = message.role
+            item = WorkspaceObjectModel(
+                project_name=project_name,
+                session_id=session_id,
+                source_message_id=message.id,
+                object_type="conversation_turn",
+                created_by=role if role in {"user", "assistant"} else "system",
+                title=message.content.strip().splitlines()[0][:255] if message.content.strip() else "Conversation turn",
+                content=message.content,
+                metadata_json={"role": role},
+            )
+            self.db.add(item)
+            await self.db.flush()
+            objects_by_message[message.id] = item
+
+        existing_replies = await self.db.execute(
+            select(WorkspaceEdgeModel.source_object_id).where(
+                WorkspaceEdgeModel.project_name == project_name,
+                WorkspaceEdgeModel.relation_type == "reply",
+            )
+        )
+        replied_user_ids = set(existing_replies.scalars())
+        pending_user: Optional[WorkspaceObjectModel] = None
+        for message in messages:
+            item = objects_by_message[message.id]
+            if message.role == "user":
+                pending_user = item
+            elif message.role == "assistant" and pending_user is not None:
+                if pending_user.id not in replied_user_ids:
+                    self.db.add(WorkspaceEdgeModel(
+                        project_name=project_name,
+                        source_object_id=pending_user.id,
+                        target_object_id=item.id,
+                        relation_type="reply",
+                        edge_family="context",
+                        created_by="system",
+                        metadata_json={},
+                    ))
+                    replied_user_ids.add(pending_user.id)
+                pending_user = None
+
+        await self.db.commit()
+        await self.db.refresh(session)
+        return session
+
     async def save_message(
         self,
         session_id: str,
         role: str,
         content: str,
         token_count: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> MessageModel:
-        # Ensure session exists first
-        await self.get_or_create_session(session_id)
+        # Ensure session exists first. Live project chat is indexed as typed
+        # workspace objects in the same transaction as its canonical message.
+        session = await self.get_or_create_session(session_id)
+        await self._lock_session_graph(session_id)
+        await self.db.refresh(session)
 
         msg = MessageModel(
             session_id=session_id,
@@ -58,6 +141,53 @@ class SQLMemoryService(MemoryService):
             token_count=token_count,
         )
         self.db.add(msg)
+        await self.db.flush()
+
+        if session.project_name:
+            workspace_object = WorkspaceObjectModel(
+                project_name=session.project_name,
+                session_id=session_id,
+                source_message_id=msg.id,
+                object_type="conversation_turn",
+                created_by="assistant" if role == "assistant" else "user",
+                title=content.strip().splitlines()[0][:255] if content.strip() else "Conversation turn",
+                content=content,
+                metadata_json={"role": role, **(metadata or {})},
+            )
+            self.db.add(workspace_object)
+            await self.db.flush()
+
+            if role == "assistant":
+                prior_users = await self.db.execute(
+                    select(WorkspaceObjectModel)
+                    .where(
+                        WorkspaceObjectModel.session_id == session_id,
+                        WorkspaceObjectModel.object_type == "conversation_turn",
+                        WorkspaceObjectModel.created_by == "user",
+                    )
+                    .order_by(WorkspaceObjectModel.created_at.desc())
+                )
+                replied_result = await self.db.execute(
+                    select(WorkspaceEdgeModel.source_object_id).where(
+                        WorkspaceEdgeModel.project_name == session.project_name,
+                        WorkspaceEdgeModel.relation_type == "reply",
+                    )
+                )
+                replied_user_ids = set(replied_result.scalars())
+                for user_object in prior_users.scalars():
+                    if metadata and metadata.get("run_id") and user_object.metadata_json.get("run_id") != metadata["run_id"]:
+                        continue
+                    if user_object.id not in replied_user_ids:
+                        self.db.add(WorkspaceEdgeModel(
+                            project_name=session.project_name,
+                            source_object_id=user_object.id,
+                            target_object_id=workspace_object.id,
+                            relation_type="reply",
+                            edge_family="context",
+                            created_by="system",
+                            metadata_json={},
+                        ))
+                        break
         await self.db.commit()
         await self.db.refresh(msg)
         return msg

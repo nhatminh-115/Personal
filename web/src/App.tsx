@@ -191,6 +191,10 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
   const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
   const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
+  const workspaceGraphProjectName = activeProject && projectThreads.some((thread) => thread.source === 'live') ? activeProject.name : null;
+  const workspaceSessionIds = useMemo(() => projectThreads
+    .filter((thread) => thread.source === 'live' && thread.sessionId)
+    .map((thread) => thread.sessionId!), [projectThreads]);
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
   const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
   const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
@@ -458,12 +462,16 @@ export default function App() {
 
   const handleBranchFromChat = useCallback((message: ChatMessage) => {
     if (!activeProjectId || !activeProject) return;
-    const sourceNodeId = activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-') ? message.nodeId : projectRootNodeId();
+    const sourceNodeId = workspaceGraphProjectName && message.id
+      ? message.id
+      : activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-')
+        ? message.nodeId
+        : projectRootNodeId();
     openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'board' });
     setFocusNodeId(sourceNodeId);
     setBranchRequest({ nodeId: sourceNodeId, nonce: Date.now() });
-    pushToast('Branch created from chat', 'The Board opened at the nearest persisted project turn.');
-  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast]);
+    pushToast('Branch point requested', workspaceGraphProjectName ? 'The Board will save a link from this persisted conversation turn.' : 'The Board opened at the nearest project turn.');
+  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast, workspaceGraphProjectName]);
 
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
@@ -748,6 +756,12 @@ export default function App() {
           activeThreadOverrides?.reasoning,
         );
 
+        if (resp.user_message_id) {
+          updateThreadMessages(originatingThreadId, (prev) => prev.map((message) =>
+            message.id === userMsg.id ? { ...message, id: resp.user_message_id } : message,
+          ));
+        }
+
         patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
 
         if (resp.status === 'waiting_for_approval' && resp.approval_id) {
@@ -770,7 +784,7 @@ export default function App() {
             }
 
             const assistantMsg: ChatMessage = {
-              id: `live-assistant-${nonce}`,
+              id: resp.assistant_message_id || `live-assistant-${nonce}`,
               role: 'assistant',
               branch: 'Root',
               nodeId: `live-assistant-node-${nonce}`,
@@ -1207,9 +1221,11 @@ export default function App() {
           <BoardCanvas
             key={activeProject.id}
             boardKey={activeProject.id}
-            seedNodes={genericBoard?.nodes}
-            seedEdges={genericBoard?.edges}
-            showBranchLabels={activeProject.id === 'stateful'}
+            seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
+            seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
+            workspaceProjectName={workspaceGraphProjectName}
+            workspaceSessionIds={workspaceSessionIds}
+            showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'}
             focusNodeId={focusNodeId}
             onNodeFocus={handleBoardNodeFocus}
             onToast={pushToast}
@@ -1243,7 +1259,7 @@ export default function App() {
               />
             </div>
             <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={genericBoard?.nodes} seedEdges={genericBoard?.edges} showBranchLabels={activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} />
+              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} />
             </div>
           </div>
         ) : null}

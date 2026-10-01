@@ -169,12 +169,54 @@ export interface SessionDetail {
   messages: ChatMessage[];
 }
 
+export interface WorkspaceObject {
+  id: string;
+  project_name: string;
+  session_id?: string | null;
+  source_message_id?: string | null;
+  object_type: string;
+  created_by: string;
+  title: string;
+  content: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WorkspaceEdge {
+  id: string;
+  project_name: string;
+  source_object_id: string;
+  target_object_id: string;
+  relation_type: string;
+  edge_family: 'semantic' | 'context' | 'execution' | 'provenance';
+  created_by: string;
+  metadata_json: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface WorkspaceLayout {
+  project_name: string;
+  layout: Record<string, any>;
+  revision: number;
+  updated_at?: string | null;
+}
+
+export interface WorkspaceGraph {
+  project_name: string;
+  objects: WorkspaceObject[];
+  edges: WorkspaceEdge[];
+  layout: WorkspaceLayout;
+}
+
 export interface ChatResponse {
   run_id: string;
   session_id: string;
   status: 'completed' | 'waiting_for_approval' | 'failed' | 'cancelled';
   response?: string;
   approval_id?: string;
+  user_message_id?: string;
+  assistant_message_id?: string;
   tool_results: any[];
 }
 

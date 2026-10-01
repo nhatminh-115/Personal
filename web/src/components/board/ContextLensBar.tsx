@@ -1,4 +1,4 @@
-import { Bot, GitBranch, FilePlus2, GitMerge, X } from 'lucide-react';
+import { Bot, GitBranch, FilePlus2, GitMerge, Link2, X } from 'lucide-react';
 import { useState } from 'react';
 import type { AuraFlowNode } from '../../types';
 
@@ -6,12 +6,13 @@ interface ContextLensBarProps {
   nodes: AuraFlowNode[];
   onAsk: (prompt: string) => void;
   onCreateNote: () => void;
+  onCreateBridge: () => void;
   onCreateBranch: () => void;
   onMerge: () => void;
   onClear: () => void;
 }
 
-export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onMerge, onClear }: ContextLensBarProps) {
+export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onMerge, onClear }: ContextLensBarProps) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
 
@@ -38,6 +39,9 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBranch, onM
           </button>
           <button type="button" onClick={onCreateNote}>
             <FilePlus2 size={13} /> Create Note
+          </button>
+          <button type="button" onClick={onCreateBridge}>
+            <Link2 size={13} /> Create Bridge
           </button>
           <button type="button" onClick={onCreateBranch}>
             <GitBranch size={13} /> Create Branch

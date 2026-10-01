@@ -1,0 +1,176 @@
+"""Durable shared workspace graph API invariants."""
+
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from app.memory.service import SQLMemoryService
+from app.db.models import MessageModel, SessionModel
+
+
+@pytest.mark.asyncio
+async def test_context_flow_is_a_dag_while_semantic_relations_can_cycle(async_client):
+    async def note(title: str) -> str:
+        response = await async_client.post(
+            "/v1/workspace/projects/aura/objects",
+            json={"object_type": "manual_note", "title": title, "content": f"Body: {title}"},
+        )
+        assert response.status_code == 201
+        return response.json()["id"]
+
+    first, second, third = await note("A"), await note("B"), await note("C")
+
+    async def edge(source: str, target: str, family: str):
+        return await async_client.post(
+            "/v1/workspace/projects/aura/edges",
+            json={
+                "source_object_id": source,
+                "target_object_id": target,
+                "relation_type": "related_to" if family == "semantic" else "feeds",
+                "edge_family": family,
+            },
+        )
+
+    assert (await edge(first, second, "context")).status_code == 201
+    assert (await edge(second, third, "context")).status_code == 201
+    assert (await edge(third, first, "context")).status_code == 409
+    assert (await edge(first, third, "semantic")).status_code == 201
+    assert (await edge(third, first, "semantic")).status_code == 201
+
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert len(graph["objects"]) == 3
+    assert len(graph["edges"]) == 4
+
+
+@pytest.mark.asyncio
+async def test_context_bridge_and_manual_note_are_user_authored_and_editable(async_client):
+    source = await async_client.post(
+        "/v1/workspace/projects/aura/objects",
+        json={"object_type": "manual_note", "title": "Source", "content": "Keep exact wording."},
+    )
+    assert source.status_code == 201
+
+    bridge = await async_client.post(
+        "/v1/workspace/projects/aura/objects",
+        json={
+            "object_type": "context_bridge",
+            "title": "Handoff",
+            "content": "Selected conclusions only.",
+            "source_object_ids": [source.json()["id"]],
+            "metadata_json": {"include_failed_attempts": False},
+        },
+    )
+    assert bridge.status_code == 201
+    assert bridge.json()["created_by"] == "user"
+
+    updated = await async_client.put(
+        f"/v1/workspace/projects/aura/objects/{source.json()['id']}",
+        json={"title": "Source edited", "content": "Keep exact wording, edited by the user.", "metadata_json": {}},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["content"] == "Keep exact wording, edited by the user."
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert any(edge["relation_type"] == "bridges_to" for edge in graph["edges"])
+
+    branch = await async_client.post(
+        "/v1/workspace/projects/aura/objects",
+        json={
+            "object_type": "conversation_branch",
+            "title": "Branch from source",
+            "content": "",
+            "source_object_ids": [source.json()["id"]],
+        },
+    )
+    assert branch.status_code == 201
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert any(edge["relation_type"] == "branches_to" and edge["target_object_id"] == branch.json()["id"] for edge in graph["edges"])
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revision(async_client):
+    note = await async_client.post(
+        "/v1/workspace/projects/aura/objects",
+        json={"object_type": "manual_note", "title": "AURA only", "content": "project"},
+    )
+    note_id = note.json()["id"]
+    foreign_edge = await async_client.post(
+        "/v1/workspace/projects/transportability/edges",
+        json={"source_object_id": note_id, "target_object_id": note_id, "relation_type": "same", "edge_family": "semantic"},
+    )
+    assert foreign_edge.status_code == 422
+    assert (await async_client.get("/v1/workspace/projects/transportability/graph")).json()["objects"] == []
+
+    saved = await async_client.put(
+        "/v1/workspace/projects/aura/layout",
+        json={"layout": {"nodes": {note_id: {"x": 12, "y": 34}}, "viewport": {"zoom": 0.8}}, "expected_revision": 0},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["revision"] == 1
+    assert saved.json()["layout"]["nodes"][note_id] == {"x": 12, "y": 34}
+
+    stale = await async_client.put(
+        "/v1/workspace/projects/aura/layout",
+        json={"layout": {"nodes": {}}, "expected_revision": 0},
+    )
+    assert stale.status_code == 409
+    assert (await async_client.get("/v1/workspace/projects/aura/graph")).json()["layout"]["revision"] == 1
+
+
+@pytest.mark.asyncio
+async def test_live_conversation_messages_are_project_graph_objects(test_db_session):
+    service = SQLMemoryService(test_db_session)
+    session = await service.get_or_create_session("workspace-project-session")
+    session.project_name = "aura"
+    await test_db_session.commit()
+
+    user = await service.save_message(session.id, "user", "Ask a question", metadata={"run_id": "run-1"})
+    assistant = await service.save_message(session.id, "assistant", "Answer carefully", metadata={"run_id": "run-1"})
+
+    from sqlalchemy import select
+    from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
+
+    objects = list((await test_db_session.execute(select(WorkspaceObjectModel).where(WorkspaceObjectModel.project_name == "aura"))).scalars())
+    edges = list((await test_db_session.execute(select(WorkspaceEdgeModel).where(WorkspaceEdgeModel.project_name == "aura"))).scalars())
+    assert {item.source_message_id for item in objects} == {user.id, assistant.id}
+    assert len(edges) == 1
+    assert (edges[0].source_object_id, edges[0].target_object_id, edges[0].relation_type) == (
+        next(item.id for item in objects if item.source_message_id == user.id),
+        next(item.id for item in objects if item.source_message_id == assistant.id),
+        "reply",
+    )
+
+
+@pytest.mark.asyncio
+async def test_session_cannot_be_reassigned_to_another_project(async_client, test_db_session):
+    service = SQLMemoryService(test_db_session)
+    session = await service.get_or_create_session("project-bound-session")
+    session.project_name = "AURA Project"
+    await test_db_session.commit()
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": session.id,
+        "project_name": "Other Project",
+        "message": "This must not cross project boundaries.",
+    })
+    assert response.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_attaching_existing_live_session_backfills_canonical_message_graph(async_client, test_db_session):
+    session = SessionModel(id="legacy-live-session", title="Legacy", metadata_json={})
+    test_db_session.add(session)
+    await test_db_session.flush()
+    created_at = datetime.now(timezone.utc)
+    test_db_session.add_all([
+        MessageModel(id="legacy-user-message", session_id=session.id, role="user", content="Old user turn", created_at=created_at),
+        MessageModel(id="legacy-assistant-message", session_id=session.id, role="assistant", content="Old answer", created_at=created_at + timedelta(seconds=1)),
+    ])
+    await test_db_session.commit()
+
+    attached = await async_client.post("/v1/workspace/projects/aura/sessions/legacy-live-session")
+    assert attached.status_code == 200
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert {item["source_message_id"] for item in graph["objects"]} == {"legacy-user-message", "legacy-assistant-message"}
+    assert len(graph["edges"]) == 1
+    assert graph["edges"][0]["relation_type"] == "reply"
+    assert (await async_client.post("/v1/workspace/projects/aura/sessions/missing-session")).status_code == 404

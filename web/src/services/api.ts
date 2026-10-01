@@ -15,6 +15,10 @@ import {
   RoutingProfileValidation,
   RunRoutingDecision,
   ReasoningEffort,
+  WorkspaceEdge,
+  WorkspaceGraph,
+  WorkspaceLayout,
+  WorkspaceObject,
 } from '../types';
 
 export class ApiError extends Error {
@@ -49,6 +53,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
       throw new ApiError(res.status, `Request failed with status ${res.status}: ${text}`);
     }
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -157,6 +162,54 @@ export const api = {
   async fetchSession(sessionId: string): Promise<SessionDetail> {
     const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}`);
     return handleResponse<SessionDetail>(res);
+  },
+
+  async fetchWorkspaceGraph(projectName: string): Promise<WorkspaceGraph> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph`));
+  },
+
+  async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'POST' }));
+  },
+
+  async createWorkspaceObject(projectName: string, input: {
+    object_type: 'manual_note' | 'context_bridge' | 'context_set' | 'conversation_branch';
+    title: string;
+    content: string;
+    metadata_json?: Record<string, unknown>;
+    source_object_ids?: string[];
+  }): Promise<WorkspaceObject> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async updateWorkspaceObject(projectName: string, objectId: string, input: {
+    title: string; content: string; metadata_json?: Record<string, unknown>;
+  }): Promise<WorkspaceObject> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async createWorkspaceEdge(projectName: string, input: {
+    source_object_id: string; target_object_id: string; relation_type: string;
+    edge_family: WorkspaceEdge['edge_family']; metadata_json?: Record<string, unknown>;
+  }): Promise<WorkspaceEdge> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
+  async deleteWorkspaceEdge(projectName: string, edgeId: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
+  },
+
+  async putWorkspaceLayout(projectName: string, layout: Record<string, any>, expectedRevision: number): Promise<WorkspaceLayout> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layout, expected_revision: expectedRevision }),
+    }));
   },
 
   async sendChat(

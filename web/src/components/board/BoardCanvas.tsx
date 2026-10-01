@@ -18,9 +18,11 @@ import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
 import { SmartEdge } from './SmartEdge';
+import { ApiError, api } from '../../services/api';
 
 const nodeTypes = { aura: AuraNodeCard };
 const edgeTypes = { smart: SmartEdge };
+const EMPTY_SESSION_IDS: string[] = [];
 
 function nodeCenter(node: AuraFlowNode) {
   const width = node.measured?.width ?? 296;
@@ -46,6 +48,59 @@ function smartHandles(source: AuraFlowNode | undefined, target: AuraFlowNode | u
     : { sourceHandle: 'source-top', targetHandle: 'target-bottom' };
 }
 
+function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGraph>>) {
+  const positions = graph.layout.layout?.positions ?? {};
+  const nodes: AuraFlowNode[] = graph.objects.map((object, index) => {
+    const role = object.metadata_json.role;
+    const kind = object.object_type === 'manual_note' ? 'note'
+      : object.object_type === 'context_bridge' ? 'bridge'
+        : object.object_type === 'context_set' ? 'merge'
+          : object.object_type === 'conversation_branch' || role === 'user' ? 'user' : 'answer';
+    const mergeItems = Array.isArray(object.metadata_json.source_titles)
+      ? object.metadata_json.source_titles.filter((item): item is string => typeof item === 'string')
+      : [];
+    const rawBridgeOptions = object.metadata_json.bridge_options as Record<string, unknown> | undefined;
+    return {
+      id: object.id,
+      type: 'aura',
+      position: positions[object.id] ?? { x: 120 + (index % 3) * 390, y: 100 + Math.floor(index / 3) * 210 },
+      data: {
+        kind,
+        eyebrow: object.object_type === 'conversation_branch' ? 'NEW BRANCH' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
+        title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
+        body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : ''),
+        summary: object.content.slice(0, 160),
+        density: 'compact',
+        manual: object.created_by === 'user' && kind === 'note',
+        accent: kind === 'note' ? 'amber' : kind === 'bridge' || kind === 'merge' ? 'cyan' : kind === 'user' ? 'slate' : 'purple',
+        layer: kind === 'note' || kind === 'bridge' || kind === 'merge' ? 'knowledge' : 'conversation',
+        messageId: object.source_message_id ?? undefined,
+        sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
+        mergeItems,
+        bridgeOptions: kind === 'bridge' ? {
+          conclusions: typeof rawBridgeOptions?.conclusions === 'boolean' ? rawBridgeOptions.conclusions : true,
+          observations: typeof rawBridgeOptions?.observations === 'boolean' ? rawBridgeOptions.observations : true,
+          failed: typeof rawBridgeOptions?.failed === 'boolean' ? rawBridgeOptions.failed : false,
+          artifacts: typeof rawBridgeOptions?.artifacts === 'boolean' ? rawBridgeOptions.artifacts : false,
+        } : undefined,
+        bridgeNote: object.content,
+      },
+    } as AuraFlowNode;
+  });
+  const edges: AuraFlowEdge[] = graph.edges.map((edge) => ({
+    id: edge.id,
+    source: edge.source_object_id,
+    target: edge.target_object_id,
+    type: 'smoothstep',
+    data: { edgeKind: edge.relation_type === 'reply' ? 'reply' : edge.edge_family === 'context' ? 'context' : edge.edge_family === 'execution' ? 'execution' : 'semantic' },
+  }));
+  return { nodes, edges };
+}
+
+function layoutSnapshotFor(nodes: AuraFlowNode[], viewport: { x: number; y: number; zoom: number } | null) {
+  return JSON.stringify({ positions: Object.fromEntries(nodes.map((node) => [node.id, node.position])), viewport });
+}
+
 interface BoardCanvasProps {
   compact?: boolean;
   boardKey?: string;
@@ -57,11 +112,13 @@ interface BoardCanvasProps {
   onToast?: (title: string, detail?: string) => void;
   executionExpanded?: boolean;
   branchRequest?: { nodeId: string; nonce: number } | null;
+  workspaceProjectName?: string | null;
+  workspaceSessionIds?: string[];
 }
 
 const densityOrder: NodeDensity[] = ['collapsed', 'compact', 'full'];
 
-export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest }: BoardCanvasProps) {
+export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
@@ -71,13 +128,22 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     execution: executionExpanded ?? false,
   });
   const [linkSource, setLinkSource] = useState<string | null>(null);
+  const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
+  const workspaceReady = useRef(false);
+  const layoutRevision = useRef(0);
+  const layoutSnapshot = useRef('');
+  const layoutTimer = useRef<number | null>(null);
+  const layoutConflict = useRef(false);
+  const viewportRef = useRef(viewport);
+  const noteSaveTimers = useRef<Map<string, number>>(new Map());
   nodesRef.current = nodes;
   edgesRef.current = edges;
+  viewportRef.current = viewport;
 
   const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
     nodesRef,
@@ -85,6 +151,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setNodes,
     setEdges,
   });
+
+  const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
   useEffect(() => {
     const nextNodes = (seedNodes ?? initialNodes).map((node) => ({ ...node, data: { ...node.data }, selected: false }));
@@ -96,12 +164,83 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [boardKey, seedEdges, seedNodes, setEdges, setNodes]);
 
   useEffect(() => {
+    workspaceReady.current = false;
+    layoutConflict.current = false;
+    if (!workspaceProjectName) return;
+    let cancelled = false;
+    void Promise.all(workspaceSessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
+      if (error instanceof ApiError && error.status === 404) return null;
+      throw error;
+    }))).then(() => api.fetchWorkspaceGraph(workspaceProjectName)).then(async (graph) => {
+      if (cancelled) return;
+      const { nodes: nextNodes, edges: nextEdges } = mapWorkspaceGraph(graph);
+      const savedViewport = graph.layout.layout?.viewport ?? null;
+      let revision = graph.layout.revision;
+      const persistedPositions = graph.layout.layout?.positions ?? {};
+      const missingPositions = nextNodes.some((node) => !persistedPositions[node.id]);
+      if (missingPositions) {
+        try {
+          const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, {
+            positions: Object.fromEntries(nextNodes.map((node) => [node.id, node.position])),
+            viewport: savedViewport,
+          }, revision);
+          revision = savedLayout.revision;
+        } catch (error) {
+          if (error instanceof ApiError && error.status === 409) layoutConflict.current = true;
+          toast('Some Board positions were not saved', 'AURA could not initialize the missing positions in the saved layout.');
+        }
+      }
+      if (cancelled) return;
+      layoutRevision.current = revision;
+      viewportRef.current = savedViewport;
+      setViewport(savedViewport);
+      layoutSnapshot.current = layoutSnapshotFor(nextNodes, savedViewport);
+      setNodes(nextNodes);
+      setEdges(nextEdges);
+      nodesRef.current = nextNodes;
+      edgesRef.current = nextEdges;
+      if (savedViewport) {
+        requestAnimationFrame(() => instanceRef.current?.setViewport(savedViewport, { duration: 0 }));
+      }
+      workspaceReady.current = true;
+    }).catch(() => {
+      if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from AURA.');
+    });
+    return () => { cancelled = true; };
+  }, [workspaceProjectName, workspaceSessionIds, setEdges, setNodes, toast]);
+
+  useEffect(() => () => {
+    if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+    noteSaveTimers.current.forEach((timer) => window.clearTimeout(timer));
+  }, []);
+
+  useEffect(() => {
+    if (!workspaceProjectName || !workspaceReady.current || layoutConflict.current) return;
+    const positions = Object.fromEntries(nodes.filter((node) => !node.id.startsWith('branch-') && !node.id.startsWith('note-') && !node.id.startsWith('merge-') && !node.id.startsWith('lens-answer-') && !node.id.startsWith('bridge-')).map((node) => [node.id, node.position]));
+    const layout = { positions, viewport };
+    const snapshot = JSON.stringify(layout);
+    if (snapshot === layoutSnapshot.current) return;
+    if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
+    layoutTimer.current = window.setTimeout(() => {
+      void api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current).then((result) => {
+        layoutRevision.current = result.revision;
+        layoutSnapshot.current = snapshot;
+      }).catch((error) => {
+        if (error instanceof ApiError && error.status === 409) {
+          layoutConflict.current = true;
+          toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
+        } else {
+          toast('Board layout was not saved', 'Check the connection and retry after reopening the Board.');
+        }
+      });
+    }, 450);
+  }, [nodes, viewport, workspaceProjectName, toast]);
+
+  useEffect(() => {
     if (typeof executionExpanded === 'boolean') {
       setLayers((current) => ({ ...current, execution: executionExpanded }));
     }
   }, [executionExpanded]);
-
-  const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
   const cycleDensity = useCallback(
     (id: string) => {
@@ -119,37 +258,83 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const changeBody = useCallback(
     (id: string, body: string) => {
-      setNodes((current) => current.map((node) => (node.id === id ? { ...node, data: { ...node.data, body } } : node)));
+      setNodes((current) => current.map((node) => (node.id === id ? {
+        ...node,
+        data: { ...node.data, body, ...(node.data.kind === 'bridge' ? { bridgeNote: body } : {}) },
+      } : node)));
+      if (workspaceProjectName) {
+        const node = nodesRef.current.find((item) => item.id === id);
+        if (node?.data.manual || node?.data.kind === 'bridge') {
+          const previous = noteSaveTimers.current.get(id);
+          if (previous !== undefined) window.clearTimeout(previous);
+          const timer = window.setTimeout(() => {
+            void api.updateWorkspaceObject(workspaceProjectName, id, {
+              title: node.data.title,
+              content: body,
+              metadata_json: node.data.kind === 'bridge' ? {
+                bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
+              } : {},
+            }).catch(() => toast(node.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            noteSaveTimers.current.delete(id);
+          }, 500);
+          noteSaveTimers.current.set(id, timer);
+        }
+      }
     },
-    [setNodes],
+    [setNodes, toast, workspaceProjectName],
   );
 
   const updateBridgeOption = useCallback(
     (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
       recordHistory();
+      const node = nodesRef.current.find((item) => item.id === id);
+      const bridgeOptions = {
+        ...(node?.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false }),
+        [key]: value,
+      };
       setNodes((current) =>
         current.map((node) => {
           if (node.id !== id) return node;
-          const bridgeOptions = node.data.bridgeOptions ?? {
-            conclusions: true,
-            observations: true,
-            failed: false,
-            artifacts: false,
-          };
           return {
             ...node,
             data: { ...node.data, bridgeOptions: { ...bridgeOptions, [key]: value } },
           };
         }),
       );
+      if (workspaceProjectName && node?.data.kind === 'bridge') {
+        void api.updateWorkspaceObject(workspaceProjectName, id, {
+          title: node.data.title,
+          content: node.data.bridgeNote ?? node.data.body,
+          metadata_json: { bridge_options: bridgeOptions },
+        }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+      }
     },
-    [recordHistory, setNodes],
+    [recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const addBranch = useCallback(
     (sourceId: string) => {
-      const source = nodesRef.current.find((node) => node.id === sourceId);
+      const source = nodesRef.current.find((node) => node.id === sourceId || node.data.messageId === sourceId);
       if (!source) return;
+      if (workspaceProjectName) {
+        void api.createWorkspaceObject(workspaceProjectName, {
+          object_type: 'conversation_branch',
+          title: 'Continue from this point…',
+          content: '',
+          metadata_json: { branch_source_title: source.data.title },
+          source_object_ids: [source.id],
+        }).then(async () => {
+          const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+          const projected = mapWorkspaceGraph(graph);
+          layoutRevision.current = graph.layout.revision;
+          nodesRef.current = projected.nodes;
+          edgesRef.current = projected.edges;
+          setNodes(projected.nodes);
+          setEdges(projected.edges);
+          toast('Branch point saved', 'The source turn is linked. Add a prompt before treating it as a live chat.');
+        }).catch(() => toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.'));
+        return;
+      }
       recordHistory();
       const id = `branch-${idRef.current++}`;
       const newNode: AuraFlowNode = {
@@ -179,14 +364,15 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setEdges((current) => [...current, newEdge]);
       toast('Branch created', 'A user placeholder was added from the selected AURA turn.');
     },
-    [recordHistory, setEdges, setNodes, toast],
+    [recordHistory, setEdges, setNodes, toast, workspaceProjectName],
   );
 
   useEffect(() => {
     if (!branchRequest || processedBranchNonce.current === branchRequest.nonce) return;
+    if (workspaceProjectName && !workspaceReady.current) return;
     processedBranchNonce.current = branchRequest.nonce;
     addBranch(branchRequest.nodeId);
-  }, [addBranch, branchRequest]);
+  }, [addBranch, branchRequest, nodes, workspaceProjectName]);
 
   const applyBridge = useCallback(
     (id: string) => {
@@ -219,23 +405,32 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onCycleDensity: cycleDensity,
           onBranch: addBranch,
           onChangeBody: changeBody,
-          onBridgeApply: applyBridge,
+          onBridgeApply: workspaceProjectName ? undefined : applyBridge,
           onBridgeOption: updateBridgeOption,
           onContinueMerge: continueMerge,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, layers, nodes, updateBridgeOption],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, layers, nodes, updateBridgeOption, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(
-    (edgeIds: string[]) => {
+    async (edgeIds: string[]) => {
       const ids = new Set(edgeIds);
       if (ids.size === 0) return;
+      if (workspaceProjectName) {
+        const persisted = edgesRef.current.filter((edge) => ids.has(edge.id) && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'));
+        try {
+          await Promise.all(persisted.map((edge) => api.deleteWorkspaceEdge(workspaceProjectName, edge.id)));
+        } catch {
+          toast('Link was not deleted', 'AURA could not update the saved workspace graph.');
+          return;
+        }
+      }
       recordHistory();
       setEdges((current) => current.filter((edge) => !ids.has(edge.id)));
       toast(ids.size === 1 ? 'Link deleted' : `${ids.size} links deleted`, 'Ctrl+Z restores the removed relation.');
     },
-    [recordHistory, setEdges, toast],
+    [recordHistory, setEdges, toast, workspaceProjectName],
   );
 
   const styledEdges = useMemo(() => {
@@ -265,9 +460,20 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const selectedEdges = useMemo(() => edges.filter((edge) => edge.selected), [edges]);
 
   const createNoteAt = useCallback(
-    (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
+    async (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
+      let id = `note-${idRef.current++}`;
+      if (workspaceProjectName) {
+        try {
+          const created = await api.createWorkspaceObject(workspaceProjectName, {
+            object_type: 'manual_note', title: 'Untitled note', content: body,
+          });
+          id = created.id;
+        } catch {
+          toast('Manual note was not saved', 'AURA could not create this note in the project graph.');
+          return null;
+        }
+      }
       recordHistory();
-      const id = `note-${idRef.current++}`;
       const note: AuraFlowNode = {
         id,
         type: 'aura',
@@ -288,7 +494,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       toast('Manual note created', 'It lives on the Knowledge layer and is explicitly marked Manual.');
       return id;
     },
-    [recordHistory, setNodes, toast],
+    [recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const getSelectionAnchor = useCallback(() => {
@@ -298,8 +504,83 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     return { x: x + 390, y };
   }, [selectedNodes]);
 
-  const mergeSelected = useCallback(() => {
+  const createContextBridge = useCallback(async () => {
     if (selectedNodes.length < 2) return;
+    const bridgeOptions = { conclusions: true, observations: true, failed: false, artifacts: false };
+    if (workspaceProjectName) {
+      try {
+        await api.createWorkspaceObject(workspaceProjectName, {
+          object_type: 'context_bridge',
+          title: 'Context Bridge',
+          content: '',
+          metadata_json: { bridge_options: bridgeOptions },
+          source_object_ids: selectedNodes.map((node) => node.id),
+        });
+        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+        const projected = mapWorkspaceGraph(graph);
+        layoutRevision.current = graph.layout.revision;
+        nodesRef.current = projected.nodes;
+        edgesRef.current = projected.edges;
+        setNodes(projected.nodes);
+        setEdges(projected.edges);
+        toast('Context Bridge saved', 'Selected source objects are linked. The bridge does not copy their full content.');
+      } catch (error) {
+        toast('Context Bridge was not saved', error instanceof ApiError && error.status === 409
+          ? 'This bridge would create a cycle in the context-flow graph.'
+          : 'AURA could not link all selected objects in the project graph.');
+      }
+      return;
+    }
+    const anchor = getSelectionAnchor();
+    const id = `bridge-${idRef.current++}`;
+    recordHistory();
+    setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), {
+      id,
+      type: 'aura',
+      position: anchor,
+      data: {
+        kind: 'bridge', eyebrow: 'CONTEXT BRIDGE', title: 'Context Bridge',
+        body: '', summary: 'Selected context handoff', density: 'full', accent: 'cyan',
+        layer: 'knowledge', bridgeOptions,
+        bridgeNote: 'User-authored handoff note goes here.',
+      },
+    }]);
+    setEdges((current) => [...current, ...selectedNodes.map((node) => ({
+      id: `edge-${idRef.current++}`, source: node.id, target: id, type: 'smoothstep' as const,
+      data: { edgeKind: 'context' as const },
+    }))]);
+    toast('Context Bridge created', 'Selected objects are connected as sources for a future context handoff.');
+  }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+
+  const mergeSelected = useCallback(async () => {
+    if (selectedNodes.length < 2) return;
+    if (workspaceProjectName) {
+      try {
+        await api.createWorkspaceObject(workspaceProjectName, {
+          object_type: 'context_set',
+          title: 'Saved context selection',
+          content: '',
+          metadata_json: {
+            source_count: selectedNodes.length,
+            source_titles: selectedNodes.map((node) => node.data.title),
+          },
+          source_object_ids: selectedNodes.map((node) => node.id),
+        });
+        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
+        const projected = mapWorkspaceGraph(graph);
+        layoutRevision.current = graph.layout.revision;
+        nodesRef.current = projected.nodes;
+        edgesRef.current = projected.edges;
+        setNodes(projected.nodes);
+        setEdges(projected.edges);
+        toast('Context selection saved', 'Source objects are linked without changing their content or generating a summary.');
+      } catch (error) {
+        toast('Context selection was not saved', error instanceof ApiError && error.status === 409
+          ? 'This selection would create a cycle in the context-flow graph.'
+          : 'AURA could not link all selected objects in the project graph.');
+      }
+      return;
+    }
     recordHistory();
     const anchor = getSelectionAnchor();
     const id = `merge-${idRef.current++}`;
@@ -331,7 +612,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergeNode]);
     setEdges((current) => [...current, ...mergeEdges]);
     toast('Merge node created', `${selectedNodes.length} selected objects feed a new merged context.`);
-  }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast]);
+  }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const askSelected = useCallback(
     (prompt: string) => {
@@ -454,8 +735,29 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStart={() => recordHistory()}
-        onConnect={(connection) => {
+        onConnect={async (connection) => {
           recordHistory();
+          if (workspaceProjectName && connection.source && connection.target) {
+            try {
+              const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
+                source_object_id: connection.source,
+                target_object_id: connection.target,
+                relation_type: 'related_to',
+                edge_family: 'semantic',
+              });
+              setEdges((current) => [...current, {
+                id: persisted.id,
+                source: persisted.source_object_id,
+                target: persisted.target_object_id,
+                type: 'smoothstep',
+                data: { edgeKind: 'semantic' },
+              }]);
+              return;
+            } catch {
+              toast('Link was not saved', 'Semantic links require two objects in this project graph.');
+              return;
+            }
+          }
           setEdges((current) => addEdge({ ...connection, type: 'smart', data: { edgeKind: 'semantic' } }, current));
         }}
         onEdgeClick={(event, edge) => {
@@ -465,9 +767,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }}
         onInit={(instance) => {
           instanceRef.current = instance;
-          window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
+          if (!workspaceProjectName || !viewportRef.current) {
+            window.setTimeout(() => instance.fitView({ padding: compact ? 0.2 : 0.12, duration: 300 }), 80);
+          }
         }}
-        onNodeClick={(_, node) => {
+        defaultViewport={viewport ?? undefined}
+        onMoveEnd={(_, nextViewport) => setViewport(nextViewport)}
+        onNodeClick={async (_, node) => {
           if (activeTool === 'link') {
             if (!linkSource) {
               setLinkSource(node.id);
@@ -481,21 +787,38 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                   (edge.source === node.id && edge.target === linkSource)),
               );
               if (existing) {
-                deleteEdges([existing.id]);
-                toast('Semantic link removed', 'Linking the same pair again toggles the manual relation off.');
+                await deleteEdges([existing.id]);
               } else {
                 recordHistory();
-                setEdges((current) => [
-                  ...current,
-                  {
+                if (workspaceProjectName) {
+                  try {
+                    const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
+                      source_object_id: linkSource,
+                      target_object_id: node.id,
+                      relation_type: 'related_to',
+                      edge_family: 'semantic',
+                    });
+                    setEdges((current) => [...current, {
+                      id: persisted.id,
+                      source: persisted.source_object_id,
+                      target: persisted.target_object_id,
+                      type: 'smart',
+                      data: { edgeKind: 'semantic' },
+                    }]);
+                    toast('Semantic link created', 'The relationship is saved in this project graph.');
+                  } catch {
+                    toast('Link was not saved', 'AURA could not create that semantic relationship.');
+                  }
+                } else {
+                  setEdges((current) => [...current, {
                     id: `semantic-${idRef.current++}`,
                     source: linkSource,
                     target: node.id,
                     type: 'smart',
                     data: { edgeKind: 'semantic' },
-                  },
-                ]);
-                toast('Semantic link created', 'Click the link to delete it, or link the same pair again to toggle it off.');
+                  }]);
+                  toast('Semantic link created', 'Click the link to delete it, or link the same pair again to toggle it off.');
+                }
               }
             }
             setLinkSource(null);
@@ -564,6 +887,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           nodes={selectedNodes}
           onAsk={askSelected}
           onCreateNote={() => createNoteAt(getSelectionAnchor(), 'Manual note derived from the current Context Lens selection.')}
+          onCreateBridge={createContextBridge}
           onCreateBranch={() => addBranch(selectedNodes[0].id)}
           onMerge={mergeSelected}
           onClear={clearSelection}
