@@ -24,9 +24,10 @@ def test_alembic_upgrade_downgrade_cycle():
         command.upgrade(alembic_cfg, "010_workspace_object_graph")
         engine = create_engine(sync_url)
         with engine.begin() as connection:
-            for profile_id, updated_at in (
-                ("legacy-default-a", "2026-09-01 00:00:00"),
-                ("legacy-default-z", "2026-09-02 00:00:00"),
+            for profile_id, is_active, updated_at in (
+                ("legacy-default-a", True, "2026-09-01 00:00:00"),
+                ("legacy-default-z", True, "2026-09-02 00:00:00"),
+                ("legacy-default-inactive", False, "2026-09-03 00:00:00"),
             ):
                 connection.execute(text("""
                     INSERT INTO routing_profiles (
@@ -35,10 +36,10 @@ def test_alembic_upgrade_downgrade_cycle():
                         cost_preference, latency_preference, routes_json,
                         created_at, updated_at
                     ) VALUES (
-                        :id, :name, 1, 1, 1, 'internal', 'none',
+                        :id, :name, 1, :is_active, 1, 'internal', 'none',
                         'normal', 'normal', '{}', :updated_at, :updated_at
                     )
-                """), {"id": profile_id, "name": profile_id, "updated_at": updated_at})
+                """), {"id": profile_id, "name": profile_id, "is_active": is_active, "updated_at": updated_at})
         engine.dispose()
 
         # The next migration normalizes old data before enforcing uniqueness.

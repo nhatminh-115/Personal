@@ -23,7 +23,7 @@ def upgrade() -> None:
     # constraint so upgrades remain safe for existing data.
     winner_id = connection.execute(
         sa.text(
-            "SELECT id FROM routing_profiles WHERE is_default = TRUE "
+            "SELECT id FROM routing_profiles WHERE is_default = TRUE AND is_active = TRUE "
             "ORDER BY updated_at DESC, created_at DESC, id DESC LIMIT 1"
         )
     ).scalar_one_or_none()
