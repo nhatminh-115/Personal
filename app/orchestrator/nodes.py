@@ -159,6 +159,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                     "estimated_tokens": compiled_context.estimated_tokens,
                     "character_count": len(compiled_context.prompt_text),
                     "privacy_requirement": compiled_context.privacy_requirement,
+                    "privacy_sources": compiled_context.privacy_sources,
                     "required_capabilities": compiled_context.required_capabilities,
                     "capability_requirements": {
                         "requires_tools": compiled_context.requires_tools,
