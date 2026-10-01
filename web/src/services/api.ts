@@ -18,6 +18,7 @@ import {
   WorkspaceEdge,
   WorkspaceGraph,
   WorkspaceLayout,
+  WorkspaceNoteRecord,
   WorkspaceObject,
 } from '../types';
 
@@ -166,6 +167,24 @@ export const api = {
 
   async fetchWorkspaceGraph(projectName: string): Promise<WorkspaceGraph> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph`));
+  },
+
+  async fetchWorkspaceNotes(): Promise<WorkspaceNoteRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`));
+  },
+
+  async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }));
+  },
+
+  async updateWorkspaceNote(id: string, input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }));
   },
 
   async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {

@@ -61,8 +61,20 @@ def test_alembic_upgrade_downgrade_cycle():
             "scheduled_jobs",
             "delegations",
             "alembic_version",
+            "workspace_objects",
+            "workspace_edges",
+            "workspace_object_project_links",
         }
         assert expected_tables.issubset(tables), f"Missing tables: {expected_tables - tables}"
+
+        workspace_object_columns = {
+            col["name"]: col for col in inspector.get_columns("workspace_objects")
+        }
+        assert workspace_object_columns["project_name"]["nullable"] is True
+        workspace_link_columns = {
+            col["name"] for col in inspector.get_columns("workspace_object_project_links")
+        }
+        assert workspace_link_columns == {"object_id", "project_name", "created_at"}
 
         # Check delegations index
         delegation_indexes = {idx["name"] for idx in inspector.get_indexes("delegations")}

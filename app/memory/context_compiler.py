@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import ContextSelectionError
-from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
+from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 
 
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
@@ -71,6 +71,17 @@ class WorkspaceContextCompiler:
             )
         )
         objects = {item.id: item for item in result.scalars()}
+        linked_result = await self.db.execute(
+            select(WorkspaceObjectModel)
+            .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+            .where(
+                WorkspaceObjectModel.project_name.is_(None),
+                WorkspaceObjectModel.object_type == "manual_note",
+                WorkspaceObjectProjectLinkModel.project_name == project_name,
+                WorkspaceObjectModel.id.in_(set(roots) - set(objects)),
+            )
+        )
+        objects.update({item.id: item for item in linked_result.scalars()})
         if len(objects) != len(roots):
             raise ContextSelectionError(
                 "One or more selected workspace objects were not found in this project.",
@@ -100,6 +111,17 @@ class WorkspaceContextCompiler:
                     )
                 )
                 objects.update({item.id: item for item in source_result.scalars()})
+                linked_source_result = await self.db.execute(
+                    select(WorkspaceObjectModel)
+                    .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+                    .where(
+                        WorkspaceObjectModel.project_name.is_(None),
+                        WorkspaceObjectModel.object_type == "manual_note",
+                        WorkspaceObjectProjectLinkModel.project_name == project_name,
+                        WorkspaceObjectModel.id.in_(candidate_ids - set(objects)),
+                    )
+                )
+                objects.update({item.id: item for item in linked_source_result.scalars()})
 
             next_expandable: list[str] = []
             for edge in edges:

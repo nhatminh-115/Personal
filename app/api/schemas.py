@@ -116,7 +116,7 @@ class SessionSummaryResponse(BaseModel):
 # --- Shared Workspace Object Graph ---
 class WorkspaceObjectResponse(BaseModel):
     id: str
-    project_name: str
+    project_name: Optional[str] = None
     session_id: Optional[str] = None
     source_message_id: Optional[str] = None
     object_type: str
@@ -141,6 +141,25 @@ class WorkspaceObjectUpdate(BaseModel):
     title: str = Field(max_length=255)
     content: str = Field(max_length=100_000)
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceNoteWrite(BaseModel):
+    title: str = Field(default="", max_length=255)
+    body: str = Field(default="", max_length=100_000)
+    tags: List[str] = Field(default_factory=list, max_length=32)
+    project_names: List[str] = Field(default_factory=list, max_length=64)
+    pinned: bool = False
+
+
+class WorkspaceNoteResponse(BaseModel):
+    id: str
+    title: str
+    body: str
+    tags: List[str]
+    project_names: List[str]
+    pinned: bool
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkspaceEdgeResponse(BaseModel):

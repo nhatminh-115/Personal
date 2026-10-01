@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
 import type { FilePreviewRecord } from './components/global/FilePreviewView';
@@ -52,6 +52,7 @@ import type {
   RunDetail,
   SessionSummary,
   ToastMessage,
+  WorkspaceNoteRecord,
   WorkspaceMode,
   EffectiveRouting,
   ReasoningEffort,
@@ -107,6 +108,50 @@ function loadStored<T>(key: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function noteUpdatedLabel(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) return 'today';
+  const age = Math.max(0, Date.now() - timestamp);
+  if (age < 60_000) return 'just now';
+  if (age < 60 * 60_000) return `${Math.floor(age / 60_000)}m ago`;
+  if (age < 24 * 60 * 60_000) return `${Math.floor(age / (60 * 60_000))}h ago`;
+  if (age < 48 * 60 * 60_000) return 'yesterday';
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function workspaceNoteFromRecord(record: WorkspaceNoteRecord): WorkspaceNote {
+  return {
+    id: record.id,
+    title: record.title,
+    body: record.body,
+    updated: noteUpdatedLabel(record.updated_at),
+    tags: record.tags,
+    projectIds: record.project_names.map((name) => projects.find((project) => project.name === name)?.id ?? name),
+    pinned: record.pinned,
+    source: 'live',
+  };
+}
+
+function workspaceNotePayload(note: WorkspaceNote): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'> {
+  return {
+    title: note.title,
+    body: note.body,
+    tags: note.tags,
+    project_names: note.projectIds.map((id) => projects.find((project) => project.id === id)?.name ?? id),
+    pinned: note.pinned === true,
+  };
+}
+
+function workspaceNoteFingerprint(note: WorkspaceNote): string {
+  return JSON.stringify({
+    title: note.title,
+    body: note.body,
+    tags: note.tags,
+    projectIds: [...note.projectIds].sort(),
+    pinned: note.pinned === true,
+  });
 }
 
 function loadLibrary(): LibraryItem[] {
@@ -176,6 +221,13 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
+  const notesLoaded = useRef(false);
+  const noteSyncTimers = useRef(new Map<string, number>());
+  const noteCreateInFlight = useRef(new Set<string>());
+  const noteUpdateInFlight = useRef(new Set<string>());
+  const savedNoteFingerprints = useRef(new Map<string, string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
@@ -999,6 +1051,105 @@ export default function App() {
       : thread));
   }, []);
 
+  const replaceWorkspaceNote = useCallback((previousId: string, nextNote: WorkspaceNote) => {
+    const next = notesRef.current.map((item) => item.id === previousId ? nextNote : item);
+    notesRef.current = next;
+    setNotes(next);
+  }, []);
+
+  const queueWorkspaceNoteUpdate = useCallback((note: WorkspaceNote) => {
+    if (note.source !== 'live') return;
+    const previousTimer = noteSyncTimers.current.get(note.id);
+    if (previousTimer !== undefined) window.clearTimeout(previousTimer);
+    const timer = window.setTimeout(() => {
+      noteSyncTimers.current.delete(note.id);
+      const latest = notesRef.current.find((item) => item.id === note.id);
+      if (!latest || latest.source !== 'live') return;
+      if (workspaceNoteFingerprint(latest) === savedNoteFingerprints.current.get(latest.id)) return;
+      if (noteUpdateInFlight.current.has(latest.id)) {
+        queueWorkspaceNoteUpdate(latest);
+        return;
+      }
+      noteUpdateInFlight.current.add(latest.id);
+      const sentFingerprint = workspaceNoteFingerprint(latest);
+      void api.updateWorkspaceNote(latest.id, workspaceNotePayload(latest)).then((record) => {
+        const saved = workspaceNoteFromRecord(record);
+        savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
+        const current = notesRef.current.find((item) => item.id === saved.id);
+        if (!current) return;
+        const refreshed = { ...current, updated: saved.updated, source: 'live' as const };
+        replaceWorkspaceNote(current.id, refreshed);
+        if (workspaceNoteFingerprint(current) !== sentFingerprint) queueWorkspaceNoteUpdate(refreshed);
+      }).catch((error: unknown) => {
+        pushToast('Note was not saved', executionErrorText(error));
+      }).finally(() => {
+        noteUpdateInFlight.current.delete(latest.id);
+      });
+    }, 500);
+    noteSyncTimers.current.set(note.id, timer);
+  }, [pushToast, replaceWorkspaceNote]);
+
+  const persistLocalWorkspaceNote = useCallback((note: WorkspaceNote) => {
+    if (note.source !== 'local' || noteCreateInFlight.current.has(note.id)) return;
+    noteCreateInFlight.current.add(note.id);
+    const submittedFingerprint = workspaceNoteFingerprint(note);
+    void api.createWorkspaceNote(workspaceNotePayload(note)).then((record) => {
+      const saved = workspaceNoteFromRecord(record);
+      savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
+      const latest = notesRef.current.find((item) => item.id === note.id);
+      if (!latest) return;
+      const liveNote: WorkspaceNote = {
+        ...saved,
+        title: latest.title,
+        body: latest.body,
+        tags: latest.tags,
+        projectIds: latest.projectIds,
+        pinned: latest.pinned,
+        source: 'live',
+      };
+      replaceWorkspaceNote(note.id, liveNote);
+      if (workspaceNoteFingerprint(latest) !== submittedFingerprint) queueWorkspaceNoteUpdate(liveNote);
+    }).catch((error: unknown) => {
+      pushToast('Note is still local', `AURA could not sync it to the workspace: ${executionErrorText(error)}`);
+    }).finally(() => {
+      noteCreateInFlight.current.delete(note.id);
+    });
+  }, [pushToast, queueWorkspaceNoteUpdate, replaceWorkspaceNote]);
+
+  const handleWorkspaceNotesChange = useCallback((next: WorkspaceNote[]) => {
+    notesRef.current = next;
+    setNotes(next);
+    for (const note of next) {
+      if (note.source === 'local') persistLocalWorkspaceNote(note);
+      else if (note.source === 'live') queueWorkspaceNoteUpdate(note);
+    }
+  }, [persistLocalWorkspaceNote, queueWorkspaceNoteUpdate]);
+
+  useEffect(() => {
+    if (surface !== 'notes' || notesLoaded.current) return;
+    let active = true;
+    void api.fetchWorkspaceNotes().then((records) => {
+      if (!active || !Array.isArray(records)) return;
+      const liveNotes = records.map(workspaceNoteFromRecord);
+      savedNoteFingerprints.current = new Map(liveNotes.map((note) => [note.id, workspaceNoteFingerprint(note)]));
+      const localNotes = notesRef.current.filter((note) => note.source !== 'live');
+      const next = [...liveNotes, ...localNotes];
+      notesRef.current = next;
+      setNotes(next);
+      notesLoaded.current = true;
+      localNotes.filter((note) => note.source === 'local').forEach(persistLocalWorkspaceNote);
+    }).catch((error: unknown) => {
+      if (!active) return;
+      pushToast('Could not load saved Notes', executionErrorText(error));
+    });
+    return () => { active = false; };
+  }, [persistLocalWorkspaceNote, pushToast, surface]);
+
+  useEffect(() => () => {
+    noteSyncTimers.current.forEach((timer) => window.clearTimeout(timer));
+    noteSyncTimers.current.clear();
+  }, []);
+
   const handleApprovalDecision = useCallback(
     async (
       decision: 'approved' | 'rejected' | 'edited',
@@ -1260,7 +1411,7 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
-        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={setNotes} onOpenProject={openProject} /> : null}
+        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} · prototype timer/activity is mocked.`)} /> : null}
         {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
