@@ -94,5 +94,18 @@ describe('WorkspaceSearchView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open in Library' }));
     expect(onOpenLibraryItem).toHaveBeenCalledWith('library-item-5');
   });
+  it('opens a persisted Study session by its workspace object id', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'study-session-12', object_type: 'study_session', title: 'Language notes session',
+      excerpt: 'Completed Study session.', project_name: null, created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onOpenStudySession = vi.fn();
+    render(<WorkspaceSearchView query="language" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={onOpenStudySession} onOpenFile={() => {}} />);
+
+    expect(screen.getByText('Study session')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open session' }));
+    expect(onOpenStudySession).toHaveBeenCalledWith('study-session-12');
+  });
+
 });
 
