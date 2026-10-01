@@ -41,6 +41,35 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
 
+  it('projects research-linked study sessions as study nodes with provenance edges', async () => {
+    const studySession: WorkspaceObject = {
+      id: 'study-session-1', project_name: null, object_type: 'study_session', created_by: 'user',
+      title: 'Verified finding', content: '',
+      metadata_json: { material_id: 'turn-1', material_project_name: 'AURA Project', status: 'in_progress' },
+      created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+    };
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [...savedGraph.objects, studySession],
+      edges: [{
+        id: 'study-provenance-1', project_name: 'AURA Project', source_object_id: 'turn-1',
+        target_object_id: 'study-session-1', relation_type: 'studied_in', edge_family: 'provenance',
+        created_by: 'user', metadata_json: {}, created_at: '2026-10-01T00:00:00Z',
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="study-provenance" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('STUDY SESSION')).toBeInTheDocument();
+    expect(screen.getByText('Learning session linked to verified research.')).toBeInTheDocument();
+  });
+
   it('renders backend execution provenance only when the execution layer is expanded', async () => {
     const graph: WorkspaceGraph = {
       ...savedGraph,
