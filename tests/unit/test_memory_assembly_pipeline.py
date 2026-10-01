@@ -218,6 +218,8 @@ async def test_project_memory_privacy_is_combined_without_losing_duplicate_prove
     assert len(assembled.project_fact_memory_ids) == 1
     assert assembled.project_fact_memory_ids[0] in {first.id, stricter_duplicate.id}
     assert assembled.privacy_requirement == "local_only"
+    assert {source["memory_id"] for source in assembled.privacy_memory_sources} == {first.id, stricter_duplicate.id}
+    assert {source["privacy_policy"] for source in assembled.privacy_memory_sources} == {"internal", "local_only"}
 
 
 @pytest.mark.asyncio
@@ -238,6 +240,7 @@ async def test_excluded_oversized_project_memory_does_not_constrain_context_priv
     assert assembled.project_facts == []
     assert assembled.project_memory_ids == []
     assert assembled.privacy_requirement is None
+    assert assembled.privacy_memory_sources == []
 
 
 @pytest.mark.asyncio
@@ -284,6 +287,7 @@ async def test_project_memory_cannot_bypass_bounds_through_semantic_search():
     assert store.search.call_args.kwargs["memory_types"] == [MemoryType.SEMANTIC.value]
     assert assembled.semantic_items == [("Relevant semantic memory.", 0.9)]
     assert assembled.privacy_requirement == "internal"
+    assert assembled.privacy_memory_sources == [{"memory_id": "semantic-memory", "privacy_policy": "internal"}]
 
 
 def test_retrieved_semantic_and_episodic_memories_are_serialized_as_untrusted_references():
@@ -345,6 +349,7 @@ async def test_episodic_memory_privacy_is_applied_only_when_episode_enters_conte
     assert assembled.episodes == [included.content]
     assert assembled.episode_memory_ids == [included.id]
     assert assembled.privacy_requirement == "local_only"
+    assert assembled.privacy_memory_sources == [{"memory_id": included.id, "privacy_policy": "local_only"}]
 
 
 @pytest.mark.asyncio
@@ -370,6 +375,7 @@ async def test_profile_context_preserves_privacy_and_memory_provenance(test_db_s
     assert assembled.profile_facts == {"private_preference": "Keep my sensitive settings on-device."}
     assert assembled.profile_memory_ids == {"private_preference": saved.id}
     assert assembled.privacy_requirement == "local_only"
+    assert assembled.privacy_memory_sources == [{"memory_id": saved.id, "privacy_policy": "local_only"}]
 
 
 @pytest.mark.asyncio
