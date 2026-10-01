@@ -529,6 +529,12 @@ input:focus-visible {
   font-weight: 580;
 }
 
+.inspector-empty {
+  padding: 10px 2px;
+  color: #718291;
+  font-size: 11px;
+}
+
 .context-list {
   display: flex;
   flex-direction: column;
@@ -2651,6 +2657,16 @@ input:focus-visible {
   background: rgba(103, 201, 218, 0.045);
   border-color: rgba(103, 201, 218, 0.12);
   transform: translateX(-1px);
+}
+
+.context-block:disabled {
+  cursor: default;
+}
+
+.context-block:disabled:hover {
+  background: rgba(123, 153, 174, 0.025);
+  border-color: rgba(155, 184, 202, 0.07);
+  transform: none;
 }
 
 .context-block__icon {

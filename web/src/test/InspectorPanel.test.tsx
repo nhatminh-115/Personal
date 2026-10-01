@@ -175,4 +175,81 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('local_only boundary')).toBeInTheDocument();
     expect(screen.getByText(/Persisted routing decisions/i)).toBeInTheDocument();
   });
+
+  it('renders the persisted compiled context manifest without exposing source text', () => {
+    const onContextSelect = vi.fn();
+    const runDetail: RunDetail = {
+      ...sampleRunDetail,
+      events: [...sampleRunDetail.events, {
+        id: 'context-compiled-1',
+        event_type: 'context_compiled',
+        created_at: new Date().toISOString(),
+        payload: {
+          project_name: 'Atlas',
+          estimated_tokens: 128,
+          character_count: 511,
+          privacy_requirement: 'confidential',
+          required_capabilities: ['code_graph.read'],
+          capability_requirements: { requires_tools: true, requires_vision: false },
+          objects: [
+            { object_id: 'selected-context-set', object_type: 'context_set', selected_by_user: true, source_object_ids: ['source-note-1'] },
+            { object_id: 'source-note-1', object_type: 'manual_note', selected_by_user: false },
+            { object_id: 'selected-bridge', object_type: 'context_bridge', selected_by_user: true, selected_sections: { conclusions: true, failed: false } },
+          ],
+          prompt_text: 'This private source text must not be shown in the Inspector.',
+        },
+      }],
+    };
+
+    render(<InspectorPanel runDetail={runDetail} onClose={vi.fn()} onContextSelect={onContextSelect} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+
+    expect(screen.getByText('1 compiled manifest')).toBeInTheDocument();
+    expect(screen.getByText('128')).toBeInTheDocument();
+    expect(screen.getByText('3 compiled objects across the run tree')).toBeInTheDocument();
+    expect(screen.getByText('confidential')).toBeInTheDocument();
+    expect(screen.getByText('code_graph.read · tools')).toBeInTheDocument();
+    expect(screen.getByText('selected-context-set')).toBeInTheDocument();
+    expect(screen.getByText('Provenance links: source-note-1')).toBeInTheDocument();
+    expect(screen.getByText('Bridge sections: conclusions')).toBeInTheDocument();
+    expect(screen.queryByText(/private source text/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /selected-context-set/i }));
+    expect(onContextSelect).toHaveBeenCalledWith('selected-context-set');
+  });
+
+  it('shows context manifests for the root and specialist runs', () => {
+    render(<InspectorPanel
+      runDetail={sampleRunDetail}
+      routingData={[
+        { run_id: 'root-context-run', snapshot: { role: 'root' }, context_manifest: {
+          estimated_tokens: 80,
+          objects: [{ object_id: 'root-note', object_type: 'manual_note', selected_by_user: true }],
+        }, fallback_events: [] },
+        { run_id: 'research-context-run', parent_run_id: 'root-context-run', snapshot: { role: 'research' }, context_manifest: {
+          estimated_tokens: 160,
+          objects: [
+            { object_id: 'research-bridge', object_type: 'context_bridge', selected_by_user: true },
+            { object_id: 'paper-evidence', object_type: 'research_evidence', selected_by_user: false },
+          ],
+        }, fallback_events: [] },
+      ]}
+      onClose={vi.fn()}
+    />);
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+
+    expect(screen.getByText('2 compiled manifests')).toBeInTheDocument();
+    expect(screen.getByText('3 compiled objects across the run tree')).toBeInTheDocument();
+    expect(screen.getByText(/root · root-conte/i)).toBeInTheDocument();
+    expect(screen.getByText(/research · research-co/i)).toBeInTheDocument();
+    expect(screen.getByText('research-bridge')).toBeInTheDocument();
+    expect(screen.getByText('paper-evidence')).toBeInTheDocument();
+  });
+
+  it('does not invent context usage when a run has no compiled manifest event', () => {
+    render(<InspectorPanel runDetail={sampleRunDetail} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+    expect(screen.getByText('Not recorded')).toBeInTheDocument();
+    expect(screen.getByText('No compiled context manifest is recorded for this run.')).toBeInTheDocument();
+    expect(screen.queryByText('Root synthesis')).not.toBeInTheDocument();
+  });
 });

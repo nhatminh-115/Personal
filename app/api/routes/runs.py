@@ -27,9 +27,11 @@ async def get_run_routing(
     runs_result = await db.execute(
         select(RunModel).where((RunModel.id == run_id) | (RunModel.parent_run_id == run_id))
     )
-    runs = runs_result.scalars().all()
+    runs = sorted(runs_result.scalars().all(), key=lambda run: (run.id != run_id, run.created_at, run.id))
     events_result = await db.execute(
-        select(RunEventModel).where(RunEventModel.run_id.in_([run.id for run in runs])).order_by(RunEventModel.created_at)
+        select(RunEventModel)
+        .where(RunEventModel.run_id.in_([run.id for run in runs]))
+        .order_by(RunEventModel.created_at, RunEventModel.id)
     )
     events_by_run: dict[str, list[RunEventModel]] = {run.id: [] for run in runs}
     for event in events_result.scalars().all():
@@ -40,12 +42,14 @@ async def get_run_routing(
         events = events_by_run[run.id]
         selected = next((e.payload for e in reversed(events) if e.event_type == "model_selected"), None)
         reasoning = next((e.payload for e in reversed(events) if e.event_type == "reasoning_effort_selected"), None)
+        context_manifest = next((e.payload for e in reversed(events) if e.event_type == "context_compiled"), None)
         decisions.append({
             "run_id": run.id,
             "parent_run_id": run.parent_run_id,
             "snapshot": run.routing_snapshot_json or {},
             "model_selection": selected,
             "reasoning_selection": reasoning,
+            "context_manifest": context_manifest,
             "fallback_events": [
                 {"event_type": e.event_type, "payload": e.payload}
                 for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
