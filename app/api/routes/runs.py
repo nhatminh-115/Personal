@@ -156,9 +156,9 @@ async def get_run_routing(
             "run_id": run.id,
             "parent_run_id": run.parent_run_id,
             "snapshot": run.routing_snapshot_json or {},
-            "model_selection": _safe_event_payload("model_selected", selected),
-            "reasoning_selection": _safe_event_payload("reasoning_effort_selected", reasoning),
-            "context_manifest": _safe_event_payload("context_compiled", context_manifest),
+            "model_selection": _safe_event_payload("model_selected", selected) if selected is not None else None,
+            "reasoning_selection": _safe_event_payload("reasoning_effort_selected", reasoning) if reasoning is not None else None,
+            "context_manifest": _safe_event_payload("context_compiled", context_manifest) if context_manifest is not None else None,
             "fallback_events": [
                 {"event_type": e.event_type, "payload": _safe_event_payload(e.event_type, e.payload)}
                 for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
