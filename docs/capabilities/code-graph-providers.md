@@ -41,6 +41,14 @@ provider external. Do not copy its server, download its binary automatically,
 or make it a CI dependency. Recheck upstream license, tool names, platform
 support, and network behavior before each real installation or distribution.
 
+## Dogfood status
+
+CodeGraph dogfood is pending external setup. The provider is not installed in
+this workspace, and no installation or download is performed by AURA. Resume
+the experiment only after the user has installed/configured the provider and
+its discovered tools can be reviewed against the capability contract above.
+This pending experiment does not block unrelated AURA milestones or CI.
+
 ## Example MCP configuration
 
 Install and configure a provider separately, then add its executable and

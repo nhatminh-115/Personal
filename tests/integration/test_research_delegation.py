@@ -4,7 +4,14 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel
+from app.db.models import (
+    DelegationModel,
+    MemoryModel,
+    RunEventModel,
+    RunModel,
+    WorkspaceEdgeModel,
+    WorkspaceObjectModel,
+)
 from app.delegation.registry import specialist_registry
 from app.memory.base import MemoryType
 from app.memory.service import SQLMemoryService
@@ -92,6 +99,27 @@ async def test_root_orchestrator_delegates_to_research_specialist_end_to_end(
     assert "Prior art review" in finding_memory.content or "Chen & Davis" in finding_memory.content
     assert finding_memory.metadata_json.get("type") == "research_finding"
     assert len(finding_memory.metadata_json.get("source_references", [])) >= 2
+
+    # 4. Research outputs are promoted into the project workspace graph with provenance.
+    graph_objects = (
+        await test_db_session.execute(
+            select(WorkspaceObjectModel).where(WorkspaceObjectModel.project_name == "Atlas_Architecture")
+        )
+    ).scalars().all()
+    object_types = {item.object_type for item in graph_objects}
+    assert {"research_source", "research_evidence", "research_claim"} <= object_types
+    assert all(item.session_id == session_id for item in graph_objects)
+
+    graph_edges = (
+        await test_db_session.execute(
+            select(WorkspaceEdgeModel).where(
+                WorkspaceEdgeModel.project_name == "Atlas_Architecture",
+                WorkspaceEdgeModel.created_by == "research_specialist",
+            )
+        )
+    ).scalars().all()
+    assert graph_edges
+    assert all(edge.edge_family == "provenance" for edge in graph_edges)
 
     events_stmt = select(RunEventModel).where(RunEventModel.run_id == parent_run_id).order_by(RunEventModel.created_at)
     events = (await test_db_session.execute(events_stmt)).scalars().all()
