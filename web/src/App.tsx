@@ -451,11 +451,11 @@ export default function App() {
   const handleChatContextObjectFocus = useCallback((nodeId: string) => {
     if (!activeProjectId || !activeProject) return;
     openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'board' });
-    const target = activeProjectId === 'stateful' ? nodeId : projectRootNodeId();
+    const target = (workspaceGraphProjectName || activeProjectId === 'stateful') ? nodeId : projectRootNodeId();
     setFocusNodeId(target);
     const node = initialNodes.find((item) => item.id === target);
     if (node) setSelectedNode(node);
-  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId]);
+  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, workspaceGraphProjectName]);
 
   const handleBranchFromChat = useCallback((message: ChatMessage) => {
     if (!activeProjectId || !activeProject) return;

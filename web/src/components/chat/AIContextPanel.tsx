@@ -1,10 +1,11 @@
-import { BadgeCheck, BookOpen, Braces, FileText, Network, NotebookPen, ScrollText, X } from 'lucide-react';
+import { BadgeCheck, BookOpen, Braces, FileText, LocateFixed, Network, NotebookPen, ScrollText, X } from 'lucide-react';
 import type { AIContextItem } from '../../types';
 
 interface AIContextPanelProps {
   items: AIContextItem[];
   contextIsLive: boolean;
   onToggleItem: (id: string) => void;
+  onFocusItem?: (nodeId: string) => void;
   onClose: () => void;
 }
 
@@ -17,7 +18,7 @@ const iconByKind = {
   file: FileText,
 } as const;
 
-export function AIContextPanel({ items, contextIsLive, onToggleItem, onClose }: AIContextPanelProps) {
+export function AIContextPanel({ items, contextIsLive, onToggleItem, onFocusItem, onClose }: AIContextPanelProps) {
   const included = items.filter((item) => item.included);
   const tokens = included.reduce((sum, item) => sum + item.tokens, 0);
 
@@ -43,21 +44,33 @@ export function AIContextPanel({ items, contextIsLive, onToggleItem, onClose }: 
         {items.map((item) => {
           const Icon = iconByKind[item.kind];
           return (
-            <button
-              key={item.id}
-              type="button"
-              className={`ai-context-item ${item.included ? 'is-included' : ''}`}
-              onClick={() => onToggleItem(item.id)}
-              aria-pressed={item.included}
-            >
-              <span className="ai-context-item__check" aria-hidden="true">{item.included ? '✓' : ''}</span>
-              <span className="ai-context-item__icon"><Icon size={13} /></span>
-              <span className="ai-context-item__copy">
-                <strong>{item.title}</strong>
-                <small>{item.detail}</small>
-              </span>
-              <em>~{item.tokens >= 1000 ? `${(item.tokens / 1000).toFixed(1)}k` : item.tokens}</em>
-            </button>
+            <div className="ai-context-item-row" key={item.id}>
+              <button
+                type="button"
+                className={`ai-context-item ${item.included ? 'is-included' : ''}`}
+                onClick={() => onToggleItem(item.id)}
+                aria-pressed={item.included}
+              >
+                <span className="ai-context-item__check" aria-hidden="true">{item.included ? '✓' : ''}</span>
+                <span className="ai-context-item__icon"><Icon size={13} /></span>
+                <span className="ai-context-item__copy">
+                  <strong>{item.title}</strong>
+                  <small>{item.detail}</small>
+                </span>
+                <em>~{item.tokens >= 1000 ? `${(item.tokens / 1000).toFixed(1)}k` : item.tokens}</em>
+              </button>
+              {contextIsLive && item.nodeId && onFocusItem ? (
+                <button
+                  className="ai-context-item__focus"
+                  type="button"
+                  aria-label={`Show ${item.title} on Board`}
+                  title="Show on Board"
+                  onClick={() => onFocusItem(item.nodeId!)}
+                >
+                  <LocateFixed size={13} />
+                </button>
+              ) : null}
+            </div>
           );
         })}
       </div>

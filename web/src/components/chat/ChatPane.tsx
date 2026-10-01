@@ -370,6 +370,10 @@ export function ChatPane({
                 if (contextIsLive) onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
                 return next;
               })}
+              onFocusItem={(nodeId) => {
+                setContextOpen(false);
+                onContextObjectFocus?.(nodeId);
+              }}
               onClose={() => setContextOpen(false)}
             />
           ) : null}

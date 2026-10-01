@@ -109,10 +109,10 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
-    const contextItem = await screen.findByRole('button', { name: /Shared project constraint/i });
-    expect(await screen.findByRole('button', { name: /Durable execution paper.*research source/i })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: /Checkpoint evidence.*research evidence/i })).toBeInTheDocument();
-    const claimItem = await screen.findByRole('button', { name: /Restartability claim.*research claim.*verified/i });
+    const contextItem = (await screen.findByText('Shared project constraint')).closest<HTMLButtonElement>('.ai-context-item')!;
+    expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
+    expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
+    const claimItem = (await screen.findByText('Restartability claim')).closest<HTMLButtonElement>('.ai-context-item')!;
     fireEvent.click(claimItem);
     expect(claimItem).toHaveAttribute('aria-pressed', 'true');
     fireEvent.click(contextItem);
@@ -140,6 +140,10 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // Verify execution badge
     expect(await screen.findByText(/AURA · 2 steps/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Context').closest('button')!);
+    fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
+    expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
   });
 
   it('handles waiting_for_approval and resumes after decision is submitted', async () => {

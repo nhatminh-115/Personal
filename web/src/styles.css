@@ -3909,7 +3909,15 @@ input:focus-visible {
   padding: 7px;
 }
 
+.ai-context-item-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .ai-context-item {
+  flex: 1;
+  min-width: 0;
   width: 100%;
   min-height: 48px;
   display: grid;
@@ -3923,6 +3931,25 @@ input:focus-visible {
   color: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.ai-context-item__focus {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 29px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #748a98;
+  cursor: pointer;
+}
+
+.ai-context-item__focus:hover {
+  border-color: rgba(103, 201, 218, 0.14);
+  background: rgba(103, 201, 218, 0.06);
+  color: #9bd9e2;
 }
 
 .ai-context-item:hover {
