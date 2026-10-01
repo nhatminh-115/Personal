@@ -102,10 +102,10 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('tool_executed')).toBeInTheDocument();
 
     // Toggle payload
-    const toggleButtons = screen.getAllByText(/View raw payload/i);
+    const toggleButtons = screen.getAllByText(/View operational details/i);
     expect(toggleButtons.length).toBeGreaterThan(0);
     fireEvent.click(toggleButtons[0]);
-    expect(screen.getByText(/Hide payload/i)).toBeInTheDocument();
+    expect(screen.getByText(/Hide details/i)).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes('"profile_name": "Balanced"'))).toBeInTheDocument();
   });
 

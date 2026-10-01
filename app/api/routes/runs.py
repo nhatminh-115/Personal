@@ -14,6 +14,115 @@ from app.orchestrator.graph import get_compiled_graph
 router = APIRouter(prefix="/v1/runs", tags=["Runs"])
 
 
+def _safe_event_payload(event_type: str, payload: object) -> dict:
+    """Project persisted trace data to operational metadata safe for the UI."""
+    if not isinstance(payload, dict):
+        return {}
+
+    def pick(source: dict, keys: tuple[str, ...]) -> dict:
+        return {key: source[key] for key in keys if key in source}
+
+    if event_type == "request_received":
+        return pick(payload, ("session_id", "parent_run_id", "specialist", "trigger_event_id"))
+    if event_type == "routing_profile_resolved":
+        return pick(payload, (
+            "profile_id", "profile_version", "winning_scope", "role", "is_lock_all",
+            "privacy_policy", "fallback_policy", "explicit_model_override",
+            "reasoning_policy", "reasoning_effort",
+        ))
+    if event_type == "context_loaded":
+        return pick(payload, ("context_count", "history_length", "compiled_object_count"))
+    if event_type == "context_compiled":
+        safe_objects = []
+        raw_objects = payload.get("objects")
+        if isinstance(raw_objects, list):
+            for item in raw_objects:
+                if not isinstance(item, dict):
+                    continue
+                object_id, object_type = item.get("object_id"), item.get("object_type")
+                if not isinstance(object_id, str) or not isinstance(object_type, str):
+                    continue
+                safe_item = {
+                    "object_id": object_id,
+                    "object_type": object_type,
+                    "selected_by_user": item.get("selected_by_user") is True,
+                }
+                source_ids = item.get("source_object_ids")
+                if isinstance(source_ids, list):
+                    safe_item["source_object_ids"] = [value for value in source_ids if isinstance(value, str)]
+                selected_sections = item.get("selected_sections")
+                if isinstance(selected_sections, dict):
+                    safe_item["selected_sections"] = {
+                        key: value for key, value in selected_sections.items()
+                        if isinstance(key, str) and (isinstance(value, bool) or value is None)
+                    }
+                safe_objects.append(safe_item)
+        safe = pick(payload, (
+            "estimated_tokens", "character_count", "privacy_requirement", "required_capabilities",
+            "capability_requirements",
+        ))
+        if isinstance(safe.get("required_capabilities"), list):
+            safe["required_capabilities"] = [value for value in safe["required_capabilities"] if isinstance(value, str)]
+        requirements = safe.get("capability_requirements")
+        if isinstance(requirements, dict):
+            safe["capability_requirements"] = pick(requirements, (
+                "requires_tools", "requires_vision", "requires_structured_output", "requires_long_context",
+            ))
+        else:
+            safe.pop("capability_requirements", None)
+        safe["objects"] = safe_objects
+        return safe
+    if event_type == "model_selected":
+        return pick(payload, (
+            "agent_role", "task_type", "provider", "model", "profile_id", "profile_version",
+            "winning_scope", "selection_reason", "privacy", "fallback_policy", "context_window",
+            "estimated_input_tokens", "reserved_output_tokens", "required_capabilities", "requires_tools",
+            "requires_vision", "requires_structured_output", "requires_long_context",
+        ))
+    if event_type == "reasoning_effort_selected":
+        return pick(payload, ("policy_mode", "configured_bounds", "selected_effort"))
+    if event_type == "fallback_considered":
+        return pick(payload, ("fallback_policy", "primary_provider", "selected_provider", "candidate_model"))
+    if event_type == "fallback_blocked":
+        return pick(payload, ("policy", "error_type", "privacy_boundary", "proposed_provider", "proposed_model"))
+    if event_type == "context_window_blocked":
+        return pick(payload, ("provider", "model", "estimated_input_tokens", "reserved_output_tokens", "context_window"))
+    if event_type == "model_called":
+        safe = pick(payload, ("messages_count", "tools_count", "estimated_input_tokens", "context_window"))
+        decision = payload.get("routing_decision")
+        if isinstance(decision, dict):
+            safe["routing_decision"] = pick(decision, ("provider", "model", "reason"))
+        return safe
+    if event_type == "response_generated":
+        return pick(payload, ("response_length", "step"))
+    if event_type == "tool_requested":
+        return pick(payload, ("tool", "tool_name", "tool_call_id"))
+    if event_type == "tool_executed":
+        safe = pick(payload, ("tool", "tool_name", "tool_call_id", "step"))
+        result = payload.get("result")
+        if isinstance(result, dict):
+            safe_result = pick(result, ("success", "error_category"))
+            safe["result"] = safe_result
+            if isinstance(safe_result.get("success"), bool):
+                safe["status"] = "success" if safe_result["success"] else "failed"
+        return safe
+    if event_type == "approval_requested":
+        return pick(payload, ("tool_name", "tool_call_id", "approval_id", "risk_level"))
+    if event_type in {"approval_granted", "approval_rejected"}:
+        return pick(payload, ("approval_id", "tool_call_id", "tool_name", "edited"))
+    if event_type in {"delegation_started", "delegation_completed", "delegation_failed"}:
+        return pick(payload, ("specialist", "child_run_id", "status", "steps"))
+    if event_type == "step_completed":
+        return pick(payload, ("step", "total_tool_calls", "consecutive_failures", "tool_results_count"))
+    if event_type == "memory_updated":
+        return pick(payload, ("memory_count", "project_name"))
+    if event_type == "run_failed":
+        return pick(payload, ("error_category",))
+    if event_type in {"run_completed", "run_cancelled"}:
+        return pick(payload, ("status",))
+    return {}
+
+
 @router.get("/{run_id}/routing")
 async def get_run_routing(
     run_id: str,
@@ -47,11 +156,11 @@ async def get_run_routing(
             "run_id": run.id,
             "parent_run_id": run.parent_run_id,
             "snapshot": run.routing_snapshot_json or {},
-            "model_selection": selected,
-            "reasoning_selection": reasoning,
-            "context_manifest": context_manifest,
+            "model_selection": _safe_event_payload("model_selected", selected),
+            "reasoning_selection": _safe_event_payload("reasoning_effort_selected", reasoning),
+            "context_manifest": _safe_event_payload("context_compiled", context_manifest),
             "fallback_events": [
-                {"event_type": e.event_type, "payload": e.payload}
+                {"event_type": e.event_type, "payload": _safe_event_payload(e.event_type, e.payload)}
                 for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
             ],
         })
@@ -83,7 +192,7 @@ async def get_run_details(
             RunEventResponse(
                 id=e.id,
                 event_type=e.event_type,
-                payload=e.payload,
+                payload=_safe_event_payload(e.event_type, e.payload),
                 created_at=e.created_at,
             )
             for e in events
