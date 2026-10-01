@@ -145,6 +145,13 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert provenance[0]["relation_type"] == "studied_in"
     assert provenance[0]["edge_family"] == "provenance"
 
+    from app.memory.context_compiler import WorkspaceContextCompiler
+    compiled = await WorkspaceContextCompiler(test_db_session).compile(
+        "research-project", [started.json()["id"]]
+    )
+    assert [item.object_id for item in compiled.objects] == [started.json()["id"]]
+    assert "Verified finding" in compiled.prompt_text
+
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
         "track_title": pending.title,
