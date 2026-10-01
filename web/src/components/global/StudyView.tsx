@@ -100,7 +100,12 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
         <section className="study-history" aria-label="Earlier Study sessions">
           <h2>Earlier sessions</h2>
           {unlinkedSessions.map((session) => (
-            <article key={session.id}>
+            <article
+              id={`study-session-${session.id}`}
+              key={session.id}
+              className={session.id === focusSessionId ? 'is-focused' : undefined}
+              tabIndex={-1}
+            >
               <strong>{session.track_title}</strong>
               <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}

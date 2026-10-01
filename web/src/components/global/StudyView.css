@@ -88,7 +88,8 @@
   scroll-margin: 18px;
 }
 
-.study-session-row.is-focused {
+.study-session-row.is-focused,
+.study-history article.is-focused {
   border-color: rgba(94, 210, 224, .55);
   background: rgba(66, 178, 193, .08);
 }
