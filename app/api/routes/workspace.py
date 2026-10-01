@@ -37,7 +37,8 @@ router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
     "approval_requested", "approval_granted", "approval_rejected", "response_generated",
-    "run_completed", "run_failed", "run_cancelled",
+    "run_completed", "run_failed", "run_cancelled", "reasoning_effort_selected",
+    "fallback_considered", "fallback_blocked",
 }
 
 
@@ -47,6 +48,10 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
     tool_name = payload.get("tool") or payload.get("tool_name")
     step = payload.get("step")
+    def safe_text(key: str) -> str | None:
+        value = payload.get(key)
+        return value[:120] if isinstance(value, str) else None
+
     return WorkspaceExecutionEventResponse(
         id=event.id,
         event_type=event.event_type,
@@ -64,6 +69,16 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
         error_category=result.get("error_category") if isinstance(result.get("error_category"), str) else None,
         risk_level=payload.get("risk_level") if isinstance(payload.get("risk_level"), str) else None,
         step=step if isinstance(step, int) and not isinstance(step, bool) else None,
+        reasoning_policy=safe_text("policy_mode") if event.event_type == "reasoning_effort_selected" else None,
+        selected_effort=safe_text("selected_effort") if event.event_type == "reasoning_effort_selected" else None,
+        fallback_policy=(safe_text("fallback_policy") or safe_text("policy"))
+        if event.event_type in {"fallback_considered", "fallback_blocked"} else None,
+        primary_provider=safe_text("primary_provider") if event.event_type == "fallback_considered" else None,
+        selected_provider=safe_text("selected_provider") if event.event_type == "fallback_considered" else None,
+        privacy_boundary=safe_text("privacy_boundary") if event.event_type == "fallback_blocked" else None,
+        error_type=safe_text("error_type") if event.event_type == "fallback_blocked" else None,
+        proposed_provider=safe_text("proposed_provider") if event.event_type == "fallback_blocked" else None,
+        proposed_model=safe_text("proposed_model") if event.event_type == "fallback_blocked" else None,
     )
 
 

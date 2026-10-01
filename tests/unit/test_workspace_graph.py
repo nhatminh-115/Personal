@@ -270,3 +270,44 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
     serialized = response.text
     for private_value in ("private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
         assert private_value not in serialized
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_exposes_sanitized_routing_and_fallback_provenance(async_client, test_db_session):
+    session = SessionModel(id="routing-trace-session", title="Routing trace", metadata_json={}, project_name="aura")
+    run = RunModel(id="routing-trace-run", session_id=session.id, status="failed", user_message="private prompt")
+    occurred = datetime.now(timezone.utc)
+    events = [
+        RunEventModel(id="routing-reasoning-event", run_id=run.id, event_type="reasoning_effort_selected",
+            created_at=occurred, payload={"policy_mode": "adaptive", "selected_effort": "high", "private": "do not expose"}),
+        RunEventModel(id="routing-fallback-event", run_id=run.id, event_type="fallback_considered",
+            created_at=occurred + timedelta(seconds=1), payload={
+                "fallback_policy": "local_only", "primary_provider": "cloud", "selected_provider": "ollama",
+                "reason": "private implementation detail",
+            }),
+        RunEventModel(id="routing-blocked-event", run_id=run.id, event_type="fallback_blocked",
+            created_at=occurred + timedelta(seconds=2), payload={
+                "policy": "ask_before_cloud", "error_type": "RoutingConfirmationRequired",
+                "privacy_boundary": "confidential", "proposed_provider": "cloud-provider",
+                "proposed_model": "exact-model", "reason": "private failure detail",
+            }),
+    ]
+    test_db_session.add_all([session, run, *events])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/aura/graph")
+    assert response.status_code == 200
+    trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
+    assert [item["event_type"] for item in trace["events"]] == [
+        "reasoning_effort_selected", "fallback_considered", "fallback_blocked",
+    ]
+    reasoning, fallback, blocked = trace["events"]
+    assert (reasoning["reasoning_policy"], reasoning["selected_effort"]) == ("adaptive", "high")
+    assert (fallback["fallback_policy"], fallback["primary_provider"], fallback["selected_provider"]) == (
+        "local_only", "cloud", "ollama",
+    )
+    assert (blocked["fallback_policy"], blocked["privacy_boundary"], blocked["error_type"], blocked["proposed_provider"], blocked["proposed_model"]) == (
+        "ask_before_cloud", "confidential", "RoutingConfirmationRequired", "cloud-provider", "exact-model",
+    )
+    for private_value in ("private prompt", "private implementation detail", "private failure detail", "do not expose"):
+        assert private_value not in response.text

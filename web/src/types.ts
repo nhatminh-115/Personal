@@ -219,6 +219,15 @@ export interface WorkspaceExecutionEvent {
   error_category?: string | null;
   risk_level?: string | null;
   step?: number | null;
+  reasoning_policy?: string | null;
+  selected_effort?: string | null;
+  fallback_policy?: string | null;
+  primary_provider?: string | null;
+  selected_provider?: string | null;
+  privacy_boundary?: string | null;
+  error_type?: string | null;
+  proposed_provider?: string | null;
+  proposed_model?: string | null;
 }
 
 export interface WorkspaceExecutionTrace {
