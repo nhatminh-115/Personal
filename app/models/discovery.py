@@ -20,6 +20,9 @@ class ModelEntry(BaseModel):
     capabilities: List[str] = Field(default_factory=list)
     tool_support: Literal["supported", "unsupported", "unknown"] = "unknown"
     context_window: Optional[int] = None
+    reasoning_support: Literal["instant", "low", "medium", "high", "max", "fixed_by_model", "unsupported", "unknown"] = "unknown"
+    vision_support: Optional[bool] = None
+    structured_output_support: Optional[bool] = None
 
 
 class ProviderEntry(BaseModel):
@@ -91,6 +94,23 @@ def infer_tool_support(model_id: str) -> Literal["supported", "unsupported", "un
     return "unknown"
 
 
+def extract_runtime_capabilities(raw_model: Dict[str, Any]) -> List[str]:
+    """Return only capabilities explicitly reported by the provider runtime."""
+    value = raw_model.get("capabilities")
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    if isinstance(value, dict):
+        return [str(key) for key, enabled in value.items() if enabled is True]
+    details = raw_model.get("details")
+    if isinstance(details, dict):
+        nested = details.get("capabilities")
+        if isinstance(nested, list):
+            return [str(item) for item in nested]
+        if isinstance(nested, dict):
+            return [str(key) for key, enabled in nested.items() if enabled is True]
+    return []
+
+
 class ModelDiscoveryService:
     """Discovers and registers local (Ollama, LM Studio) and cloud model providers."""
 
@@ -145,7 +165,7 @@ class ModelDiscoveryService:
                                 ModelEntry(
                                     id=m_name,
                                     label=m_name,
-                                    capabilities=["general", "code", "local"],
+                                    capabilities=extract_runtime_capabilities(m),
                                     tool_support=tool_sup,
                                 )
                             )
@@ -164,7 +184,7 @@ class ModelDiscoveryService:
                                     ModelEntry(
                                         id=m_id,
                                         label=m_id,
-                                        capabilities=["general", "code", "local"],
+                                        capabilities=extract_runtime_capabilities(m),
                                         tool_support=tool_sup,
                                     )
                                 )
@@ -207,7 +227,7 @@ class ModelDiscoveryService:
                                 ModelEntry(
                                     id=m_id,
                                     label=m_id,
-                                    capabilities=["general", "code", "local"],
+                                    capabilities=extract_runtime_capabilities(m),
                                     tool_support=tool_sup,
                                 )
                             )

@@ -144,7 +144,7 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText(/Confidence: 98%/i)).toBeInTheDocument();
   });
 
-  it('renders routing tab with prototype isolation indication', () => {
+  it('renders routing tab without invented prototype routing data', () => {
     render(
       <InspectorPanel
         onClose={vi.fn()}
@@ -152,7 +152,7 @@ describe('InspectorPanel Component', () => {
     );
 
     fireEvent.click(screen.getByTestId('inspector-tab-routing'));
-    expect(screen.getByText(/Balanced · Session/i)).toBeInTheDocument();
-    expect(screen.getByText(/Routing Studio v2 next sprint/i)).toBeInTheDocument();
+    expect(screen.getByText(/Effective routing profile is unavailable/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
   });
 });

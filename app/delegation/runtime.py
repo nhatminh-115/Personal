@@ -111,6 +111,7 @@ class DelegationRuntime:
             winning_scope = (request.context or {}).get("winning_scope", "system")
             is_lock_all = (request.context or {}).get("is_lock_all", False)
             model_override = (request.context or {}).get("model_override") if is_lock_all else None
+            reasoning_override = (request.context or {}).get("reasoning_override")
             
             child_rc = RoutingContext(
                 session_id=request.session_id,
@@ -137,6 +138,7 @@ class DelegationRuntime:
                 context=child_rc,
                 winning_scope=winning_scope,
                 message_override=model_override,
+                reasoning_override=reasoning_override,
             )
             
             request.context = request.context or {}
@@ -153,7 +155,7 @@ class DelegationRuntime:
                         routing_snapshot_json={
                             "profile_id": profile.id,
                             "profile_version": profile.version,
-                            "winning_scope": winning_scope,
+                            "winning_scope": child_rc.winning_scope,
                             "role": spec.name,
                             "is_lock_all": child_rc.is_lock_all,
                             "privacy_policy": child_rc.privacy_requirement.value,

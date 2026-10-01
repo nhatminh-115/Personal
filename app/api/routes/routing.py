@@ -33,6 +33,8 @@ class RoutingPreviewRequest(BaseModel):
     project_name: Optional[str] = None
     role: str = "root"
     message_override: Optional[str] = None
+    reasoning_override: Optional[str] = None
+    profile_draft: Optional[RoutingProfile] = None
 
 
 @router.get("/profiles", response_model=List[RoutingProfile])
@@ -210,7 +212,11 @@ async def preview_routing_decision(
     """
     Simulate routing resolution using production policy paths without calling any model provider (Requirement 13).
     """
-    profile, winning_scope = await resolve_routing_profile(db, session_id=req.session_id, project_name=req.project_name)
+    profile, winning_scope = (
+        (req.profile_draft, "draft")
+        if req.profile_draft
+        else await resolve_routing_profile(db, session_id=req.session_id, project_name=req.project_name)
+    )
     ctx = req.context or RoutingContext(session_id=req.session_id)
     ctx = apply_routing_profile_to_context(
         profile=profile,
@@ -218,6 +224,7 @@ async def preview_routing_decision(
         context=ctx,
         winning_scope=winning_scope,
         message_override=req.message_override,
+        reasoning_override=req.reasoning_override,
     )
     # Zero model invocation: select_model_for_task only
     _, selection = router_instance.select_model_for_task(ctx)

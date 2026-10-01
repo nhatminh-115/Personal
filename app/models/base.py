@@ -97,7 +97,7 @@ class RoutingContext(BaseModel):
     # Profile / Scope Tracking
     profile_id: str | None = None
     profile_version: int | None = None
-    winning_scope: Literal["message", "session", "project", "default", "system"] | None = None
+    winning_scope: Literal["message", "session", "project", "default", "system", "draft"] | None = None
     is_lock_all: bool = False
 
 

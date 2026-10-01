@@ -14,11 +14,15 @@ import type {
   MemoryItem,
   ResearchInspectorData,
   RunDetail,
+  EffectiveRouting,
+  RunRoutingDecision,
 } from '../../types';
 
 export interface InspectorPanelProps {
   selectedNode?: AuraFlowNode;
   runDetail?: RunDetail | null;
+  effectiveRouting?: EffectiveRouting | null;
+  routingData?: RunRoutingDecision[] | null;
   researchData?: ResearchInspectorData | null;
   memories?: MemoryItem[];
   onClose: () => void;
@@ -39,6 +43,8 @@ const tabs: { id: InspectorTab; label: string; icon: any }[] = [
 export function InspectorPanel({
   selectedNode,
   runDetail,
+  effectiveRouting,
+  routingData,
   researchData,
   memories = [],
   onClose,
@@ -88,18 +94,22 @@ export function InspectorPanel({
           <div data-testid="inspector-routing">
             <div className="inspector-kpi">
               <span>Routing Profile</span>
-              <strong>Balanced · Session</strong>
-              <small style={{ color: '#ffb366' }}>Prototype Adapter (Routing Studio v2 next sprint)</small>
+              <strong>{effectiveRouting?.profile.name ?? 'Routing unavailable'} · {effectiveRouting?.winning_scope ?? '—'}</strong>
+              <small>{runDetail ? 'Persisted routing decisions · No model invocation' : 'Effective profile before the next run'}</small>
             </div>
-            <InspectorGroup
-              title="Routing Invariants"
-              rows={[
-                ['Status', 'Demo / Prototype Isolated'],
-                ['Active Route', 'Balanced (Auto · Adaptive)'],
-                ['Reasoning Override', 'Profile Invariant'],
-                ['Locked Model', 'Model C (Default)'],
-              ]}
-            />
+            {routingData?.length ? routingData.map((decision) => <section className="inspector-group" key={decision.run_id}>
+              <h4>{decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'} routing</h4>
+              <div className="inspector-row"><span>Profile</span><strong>{decision.snapshot.profile_id ?? '—'} · v{decision.snapshot.profile_version ?? '?'}</strong></div>
+              <div className="inspector-row"><span>Scope</span><strong>{decision.snapshot.winning_scope ?? '—'}</strong></div>
+              <div className="inspector-row"><span>Privacy / fallback</span><strong>{decision.snapshot.privacy_policy ?? decision.model_selection?.privacy ?? '—'} / {decision.snapshot.fallback_policy ?? decision.model_selection?.fallback_policy ?? '—'}</strong></div>
+              <div className="inspector-row"><span>Selected model</span><strong>{decision.model_selection ? `${decision.model_selection.provider}:${decision.model_selection.model}` : decision.snapshot.explicit_model_override ?? 'Pending'}</strong></div>
+              <div className="inspector-row"><span>Reasoning</span><strong>{decision.reasoning_selection?.selected_effort ?? decision.snapshot.reasoning_effort ?? 'Unknown'}</strong></div>
+              {decision.fallback_events.map((event, index) => <div className="inspector-event-item" key={`${event.event_type}-${index}`}><strong>{event.event_type}</strong><small>{event.payload.reason ?? event.payload.fallback_policy ?? ''}</small></div>)}
+            </section>) : effectiveRouting ? <InspectorGroup title="Effective policy" rows={[
+              ['Privacy', effectiveRouting.profile.global_privacy_policy],
+              ['Fallback', effectiveRouting.profile.global_fallback_policy],
+              ['Cost / latency', `${effectiveRouting.profile.cost_preference} / ${effectiveRouting.profile.latency_preference}`],
+            ]} /> : <div style={{ color: '#68808e', fontSize: 11 }}>Effective routing profile is unavailable.</div>}
           </div>
         ) : null}
 

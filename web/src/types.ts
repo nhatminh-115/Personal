@@ -127,6 +127,10 @@ export interface ModelInfo {
   label: string;
   capabilities: string[];
   tool_support: ToolSupport;
+  context_window?: number | null;
+  reasoning_support?: 'instant' | 'low' | 'medium' | 'high' | 'max' | 'fixed_by_model' | 'unsupported' | 'unknown' | null;
+  vision_support?: boolean | null;
+  structured_output_support?: boolean | null;
 }
 
 export interface ProviderInfo {
@@ -213,6 +217,56 @@ export interface RunDetail {
   created_at: string;
   updated_at: string;
   events: RunEvent[];
+}
+
+export type RoutingPrivacy = 'public' | 'internal' | 'confidential' | 'local_only';
+export type RoutingFallback = 'none' | 'same_provider_only' | 'local_only' | 'cloud_allowed' | 'ask_before_cloud';
+export type ReasoningEffort = 'instant' | 'low' | 'medium' | 'high' | 'max';
+export type WinningScope = 'message' | 'session' | 'project' | 'default' | 'system' | 'draft';
+export interface RoutingReasoningConfig {
+  policy: 'fixed' | 'adaptive';
+  effort: ReasoningEffort;
+  min_effort?: ReasoningEffort | null;
+  max_effort?: ReasoningEffort | null;
+}
+export interface RoutingRoute {
+  model_override?: string | null;
+  provider_override?: string | null;
+  reasoning: RoutingReasoningConfig;
+  privacy_policy?: RoutingPrivacy | null;
+  fallback_policy?: RoutingFallback | null;
+}
+export interface RoutingProfile {
+  id?: string | null;
+  name: string;
+  version: number;
+  is_active: boolean;
+  is_default: boolean;
+  global_privacy_policy: RoutingPrivacy;
+  global_fallback_policy: RoutingFallback;
+  cost_preference: 'low' | 'normal';
+  latency_preference: 'low' | 'normal';
+  routes: Record<string, RoutingRoute>;
+}
+export interface EffectiveRouting {
+  profile: RoutingProfile;
+  winning_scope: WinningScope;
+  session_id?: string | null;
+  project_name?: string | null;
+}
+export interface RoutingDecision {
+  provider_name: string;
+  model_name: string;
+  reason: string;
+  reasoning_effort_selected?: string | null;
+}
+export interface RunRoutingDecision {
+  run_id: string;
+  parent_run_id?: string | null;
+  snapshot: Record<string, any>;
+  model_selection?: Record<string, any> | null;
+  reasoning_selection?: Record<string, any> | null;
+  fallback_events: Array<{ event_type: string; payload: Record<string, any> }>;
 }
 
 export interface MemoryItem {

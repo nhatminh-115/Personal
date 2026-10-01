@@ -2,6 +2,7 @@
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -18,6 +19,15 @@ from app.db.models import RunModel, RunStatus
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
+from app.core.errors import (
+    AuraError,
+    ModelCapabilityMismatch,
+    ModelUnavailable,
+    NoEligibleRoute,
+    PrivacyBoundaryViolation,
+    ReasoningControlUnsupported,
+    RoutingConfirmationRequired,
+)
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
 from app.orchestrator.state import AgentState, create_initial_agent_state
@@ -59,7 +69,8 @@ async def chat_endpoint(
         role="root",
         context=root_context,
         winning_scope=scope,
-        message_override=req.model_override
+        message_override=req.model_override,
+        reasoning_override=req.reasoning_override,
     )
 
     # 2. Persist Run entity in database
@@ -71,7 +82,7 @@ async def chat_endpoint(
         routing_snapshot_json={
             "profile_id": profile.id,
             "profile_version": profile.version,
-            "winning_scope": scope,
+            "winning_scope": root_context.winning_scope,
             "role": "root",
             "is_lock_all": root_context.is_lock_all,
             "privacy_policy": root_context.privacy_requirement.value,
@@ -103,12 +114,14 @@ async def chat_endpoint(
     merged_metadata = dict(req.metadata or {})
     merged_metadata["routing_context_dict"] = root_context.model_dump()
     merged_metadata["profile_id"] = profile.id
-    merged_metadata["winning_scope"] = scope
+    merged_metadata["winning_scope"] = root_context.winning_scope
     merged_metadata["is_lock_all"] = root_context.is_lock_all
     merged_metadata["global_fallback_policy"] = profile.global_fallback_policy.value
     
     if req.model_override:
         merged_metadata["model_override"] = req.model_override
+    if req.reasoning_override:
+        merged_metadata["reasoning_override"] = req.reasoning_override
 
     initial_state = create_initial_agent_state(
         run_id=run_id,
@@ -180,6 +193,22 @@ async def chat_endpoint(
             event_type="run_failed",
             payload={"error": str(e), "error_category": "graph_failure"},
         )
+        if isinstance(e, AuraError):
+            if isinstance(e, RoutingConfirmationRequired):
+                code, http_status = "RoutingConfirmationRequired", status.HTTP_409_CONFLICT
+            elif isinstance(e, PrivacyBoundaryViolation):
+                code, http_status = "PrivacyBoundaryViolation", status.HTTP_403_FORBIDDEN
+            elif isinstance(e, ModelUnavailable):
+                code, http_status = "ModelUnavailable", status.HTTP_422_UNPROCESSABLE_ENTITY
+            elif isinstance(e, ModelCapabilityMismatch):
+                code, http_status = "ModelCapabilityMismatch", status.HTTP_422_UNPROCESSABLE_ENTITY
+            elif isinstance(e, ReasoningControlUnsupported):
+                code, http_status = "ReasoningControlUnsupported", status.HTTP_422_UNPROCESSABLE_ENTITY
+            elif isinstance(e, NoEligibleRoute):
+                code, http_status = "NoEligibleRoute", status.HTTP_422_UNPROCESSABLE_ENTITY
+            else:
+                code, http_status = e.__class__.__name__, status.HTTP_400_BAD_REQUEST
+            return JSONResponse(status_code=http_status, content={"error": code, "code": code, "message": e.message, "details": e.details})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Agent execution failed: {str(e)}",

@@ -1,71 +1,57 @@
-import { Check, CloudOff, Lock, SlidersHorizontal, X } from 'lucide-react';
-import { routingPrototypeState } from '../../state/routingPrototype';
+import { Lock, SlidersHorizontal, X } from 'lucide-react';
+import type { EffectiveRouting, ModelCatalog, ReasoningEffort } from '../../types';
 
 interface RoutingPopoverProps {
-  locked: boolean;
-  onToggleLock: () => void;
+  effective: EffectiveRouting | null;
+  catalog: ModelCatalog;
+  sessionAvailable: boolean;
+  lockedModel: string | null;
+  reasoningOverride: ReasoningEffort | null;
+  onSetModel: (value: string | null) => void;
+  onSetReasoning: (value: ReasoningEffort | null) => void;
+  onOpenStudio: () => void;
   onClose: () => void;
 }
 
-export function RoutingPopover({ locked, onToggleLock, onClose }: RoutingPopoverProps) {
-  const { settings, routes } = routingPrototypeState;
+export function RoutingPopover({
+  effective, catalog, sessionAvailable, lockedModel, reasoningOverride,
+  onSetModel, onSetReasoning, onOpenStudio, onClose,
+}: RoutingPopoverProps) {
+  const profile = effective?.profile;
+  const availableModels = catalog.providers.flatMap((provider) => provider.models.map((model) => ({
+    value: `${provider.id}:${model.id}`,
+    label: `${provider.label} · ${model.label}`,
+    disabled: !provider.available,
+  })));
+  const lockedParts = lockedModel?.split(':');
+  const lockedModelInfo = lockedParts?.length === 2
+    ? catalog.providers.find((provider) => provider.id === lockedParts[0])?.models.find((model) => model.id === lockedParts[1])
+    : undefined;
+  const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
+
   return (
-    <div className="popover routing-popover" role="dialog" aria-label="Routing profile">
+    <div className="popover routing-popover" role="dialog" aria-label="Routing controls">
       <div className="popover__header">
-        <div>
-          <span className="eyebrow">ROUTING PROFILE</span>
-          <h3>{settings.profileName}</h3>
-        </div>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="Close routing popover">
-          <X size={16} />
-        </button>
+        <div><span className="eyebrow">ROUTING</span><h3>{profile?.name ?? 'Loading routing…'}</h3></div>
+        <button className="icon-button" type="button" onClick={onClose} aria-label="Close routing controls"><X size={16} /></button>
       </div>
-
-      <div className="routing-scope-row">
-        <span>Scope</span>
-        <strong>{settings.scope}</strong>
-      </div>
-
-      <div className="route-table">
-        <div className="route-table__head">
-          <span>Routes</span>
-          <span>Model</span>
-          <span>Reasoning</span>
-        </div>
-        {routes.map(({ specialist, model, reasoning }) => (
-          <div className="route-table__row" key={specialist}>
-            <strong>{specialist}</strong>
-            <span>{model}</span>
-            <span>{reasoning}</span>
-          </div>
-        ))}
-      </div>
-
-      <div className="routing-footer-grid">
-        <div className="setting-card">
-          <CloudOff size={15} />
-          <span>
-            <small>Privacy</small>
-            <strong>{settings.privacy}</strong>
-          </span>
-        </div>
-        <div className="setting-card">
-          <SlidersHorizontal size={15} />
-          <span>
-            <small>Fallback</small>
-            <strong>{settings.fallback}</strong>
-          </span>
-        </div>
-      </div>
-
+      <div className="routing-scope-row"><span>Winning scope</span><strong>{effective?.winning_scope ?? '—'}</strong></div>
+      {profile ? <div className="routing-scope-row"><span>Privacy · fallback</span><strong>{profile.global_privacy_policy} · {profile.global_fallback_policy}</strong></div> : null}
+      <label className="routing-control-label" htmlFor="routing-model-lock">Temporary exact model lock</label>
+      <select id="routing-model-lock" value={lockedModel ?? ''} onChange={(event) => onSetModel(event.target.value || null)}>
+        <option value="">Unlocked · follow profile</option>
+        {availableModels.map((model) => <option key={model.value} value={model.value} disabled={model.disabled}>{model.label}{model.disabled ? ' · unavailable' : ''}</option>)}
+      </select>
+      {lockedModel ? <button type="button" className="secondary-button routing-clear-lock" onClick={() => onSetModel(null)}><Lock size={14} /> Clear model lock</button> : null}
+      <label className="routing-control-label" htmlFor="routing-reasoning">Temporary reasoning</label>
+      <select id="routing-reasoning" value={reasoningOverride ?? ''} onChange={(event) => onSetReasoning((event.target.value || null) as ReasoningEffort | null)}>
+        <option value="">Profile</option>
+        {fixedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>{reasoningOverride} · unavailable for fixed-by-model control</option> : <option disabled>Fixed by model</option> : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => <option key={effort} value={effort}>{effort[0].toUpperCase() + effort.slice(1)}</option>)}
+      </select>
+      {!sessionAvailable ? <p className="routing-note">Session routing becomes available after this live chat has started.</p> : null}
       <div className="popover__actions">
-        <button className={`secondary-button ${locked ? 'is-locked' : ''}`} type="button" onClick={onToggleLock}>
-          {locked ? <Check size={15} /> : <Lock size={15} />}
-          {locked ? 'Agents locked' : 'Lock all agents'}
-        </button>
-        <button className="primary-button" type="button">
-          Open Routing Studio
-        </button>
+        <button className="secondary-button" type="button" onClick={() => onSetReasoning(null)}><SlidersHorizontal size={14} /> Reset reasoning</button>
+        <button className="primary-button" type="button" onClick={onOpenStudio}>Open Routing Studio</button>
       </div>
     </div>
   );

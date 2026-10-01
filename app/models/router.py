@@ -93,6 +93,10 @@ class ModelRouter:
             raise ProviderError(f"Model provider '{target_name}' is not registered.")
         return self._providers[target_name]
 
+    def get_provider_metadata(self, name: str) -> ProviderMetadata | None:
+        """Return the sanitized routing metadata for a registered provider."""
+        return self._metadata.get(name)
+
     def select_model_for_task(
         self,
         context: Optional[RoutingContext],

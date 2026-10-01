@@ -1,1197 +1,174 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BoardCanvas } from './components/board/BoardCanvas';
-import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
-import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
-import { AutomationsView } from './components/global/AutomationsView';
-import { GlobalHome } from './components/global/GlobalHome';
-import { LibraryView } from './components/global/LibraryView';
-import { ConnectedFolderView } from './components/global/ConnectedFolderView';
-import { FilePreviewView, type FilePreviewRecord } from './components/global/FilePreviewView';
-import { NotesView } from './components/global/NotesView';
-import { ProjectsView } from './components/global/ProjectsView';
-import { StudyView } from './components/global/StudyView';
-import { ProjectFilesView } from './components/home/ProjectFilesView';
-import { ProjectHome } from './components/home/ProjectHome';
-import { InspectorPanel } from './components/layout/InspectorPanel';
-import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
-import { Topbar } from './components/layout/Topbar';
-import { WorkspaceChrome, type AuraTab } from './components/layout/WorkspaceChrome';
-import { ToastStack } from './components/ui/ToastStack';
-import { initialNodes } from './data/mockData';
-import { makeProjectBoard } from './data/projectBoards';
-import {
-  initialAutomations,
-  initialChatThreads,
-  initialLibraryItems,
-  initialNotes,
-  projectArtifacts,
-  projects,
-  type AutomationRecord,
-  type ChatThreadRecord,
-  type LibraryItem,
-  type LibraryKind,
-  type WorkspaceNote,
-} from './data/workspaceData';
-import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
-import {
-  listDirectoryConnections,
-  pickDirectoryConnection,
-  removeDirectoryConnection,
-  supportsDirectoryPicker,
-  type DirectoryConnection,
-} from './lib/folderConnections';
-import { api } from './services/api';
-import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
-import type {
-  ApprovalDetail,
-  AuraFlowNode,
-  ChatMessage,
-  ExecutionStep,
-  MemoryItem,
-  ModelCatalog,
-  ResearchInspectorData,
-  RunDetail,
-  SessionSummary,
-  ToastMessage,
-  WorkspaceMode,
-} from './types';
-
-type WorkspaceSurface =
-  | 'global-home'
-  | 'library'
-  | 'notes'
-  | 'study'
-  | 'automations'
-  | 'projects'
-  | 'project-overview'
-  | 'project-files'
-  | 'folder-viewer'
-  | 'file-viewer'
-  | 'workspace';
-
-const STORAGE = {
-  library: 'aura-v7-library',
-  notes: 'aura-v7-notes',
-  automations: 'aura-v7-automations',
-  chats: 'aura-v7-chats',
-};
-
-function initialModeFromUrl(): WorkspaceMode {
-  const value = new URLSearchParams(window.location.search).get('mode');
-  return value === 'board' || value === 'split' || value === 'chat' ? value : 'chat';
-}
-
-function loadStored<T>(key: string, fallback: T): T {
-  try {
-    const value = window.localStorage.getItem(key);
-    return value ? JSON.parse(value) as T : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function loadLibrary(): LibraryItem[] {
-  const stored = loadStored<LibraryItem[]>(STORAGE.library, []);
-  if (!stored.length) return initialLibraryItems.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
-  const storedById = new Map(stored.map((item) => [item.id, item]));
-  const builtIns = initialLibraryItems.map((item) => ({ ...item, ...(storedById.get(item.id) ?? {}), href: item.href, source: 'bundled' as const }));
-  const imported = stored.filter((item) => item.source === 'imported');
-  return [...builtIns, ...imported];
-}
-
-function inferLibraryKind(file: File): LibraryKind {
-  const ext = file.name.split('.').pop()?.toLowerCase();
-  if (ext === 'html' || ext === 'htm' || file.type === 'text/html') return 'HTML';
-  if (ext === 'pdf' || file.type === 'application/pdf') return 'PDF';
-  if (ext === 'md' || ext === 'markdown') return 'MD';
-  if (ext === 'csv') return 'CSV';
-  if (ext === 'json' || file.type === 'application/json') return 'JSON';
-  if (file.type.startsWith('image/')) return 'IMAGE';
-  if (ext === 'txt' || file.type.startsWith('text/')) return 'TXT';
-  return 'FILE';
-}
-
-function stripExtension(name: string) {
-  return name.replace(/\.[^.]+$/, '');
-}
-
-interface AppTab extends AuraTab {
-  surface: WorkspaceSurface;
-  projectId?: string | null;
-  connectionId?: string | null;
-  previewId?: string | null;
-  mode?: WorkspaceMode;
-}
-
-const AURA_TAB: AppTab = { id: 'aura', title: 'AURA', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
-
-function tabStateKey(tab: AppTab) {
-  return [tab.id, tab.surface, tab.projectId ?? '', tab.connectionId ?? '', tab.previewId ?? '', tab.mode ?? ''].join('|');
-}
-
-export default function App() {
-  const params = useMemo(() => new URLSearchParams(window.location.search), []);
-  const [mode, setMode] = useState<WorkspaceMode>(initialModeFromUrl);
-  const [surface, setSurface] = useState<WorkspaceSurface>('global-home');
-  const [activeNav, setActiveNav] = useState<SidebarDestination | null>('home');
-  const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
-  const [auraOpen, setAuraOpen] = useState(false);
-  const [locked, setLocked] = useState(params.get('locked') !== '0');
-  const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
-  const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
-  const [focusNodeId, setFocusNodeId] = useState<string | null>(params.get('focus'));
-  const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
-  const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
-  const [toasts, setToasts] = useState<ToastMessage[]>([]);
-
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
-  const [directoryConnections, setDirectoryConnections] = useState<DirectoryConnection[]>([]);
-  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
-  const [filePreviews, setFilePreviews] = useState<Record<string, FilePreviewRecord>>({});
-  const [tabs, setTabs] = useState<AppTab[]>([AURA_TAB]);
-  const [activeTabId, setActiveTabId] = useState(AURA_TAB.id);
-  const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
-  const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
-  const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
-  const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
-  const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
-  const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
-    const map: Record<string, string> = {};
-    projects.forEach((project) => {
-      const first = initialChatThreads.find((thread) => thread.projectId === project.id);
-      if (first) map[project.id] = first.id;
-    });
-    return map;
-  });
-
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? null;
-  const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
-  const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
-  const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
-  const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
-  const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
-  const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
-
-  useEffect(() => window.localStorage.setItem(STORAGE.library, JSON.stringify(libraryItems)), [libraryItems]);
-  useEffect(() => window.localStorage.setItem(STORAGE.notes, JSON.stringify(notes)), [notes]);
-  useEffect(() => window.localStorage.setItem(STORAGE.automations, JSON.stringify(automations)), [automations]);
-  useEffect(() => window.localStorage.setItem(STORAGE.chats, JSON.stringify(chatThreads)), [chatThreads]);
-  useEffect(() => {
-    let cancelled = false;
-    void listDirectoryConnections().then((items) => { if (!cancelled) setDirectoryConnections(items); });
-    return () => { cancelled = true; };
-  }, []);
-
-  // â”€â”€ Per-thread live execution state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Each live-execution key is scoped to the thread that originated it.
-  // This prevents run/approval/research state from leaking across threads.
-  interface ThreadLiveState {
-    runId: string | null;
-    runStatus: string | null;
-    approval: ApprovalDetail | null;
-    runDetail: RunDetail | null;
-    researchData: ResearchInspectorData | null;
-  }
-
-  // Live Backend State
-  const [catalog, setCatalog] = useState<ModelCatalog>({ providers: [] });
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
-  const [memories, setMemories] = useState<MemoryItem[]>([]);
-  const [selectedModelOverride] = useState<string | null>(null);
-  const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
-  /**
-   * approvalOrigins â€” typed binding: approval.id â†’ originatingThreadId.
-   * Replaces the `_originatingThreadId as any` hack on the DTO.
-   */
-  const [approvalOrigins, setApprovalOrigins] = useState<Record<string, string>>({});
-
-  /** Convenience accessor â€” live state for the currently active thread only */
-  const activeThreadLive: ThreadLiveState = activeThreadId
-    ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null })
-    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null };
-
-  function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
-    setThreadLiveStates((prev) => ({
-      ...prev,
-      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null }, ...(prev[threadId] ?? {}), ...patch },
-    }));
-  }
-
-  useEffect(() => {
-    api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
-    api.fetchSessions().then(setSessions).catch(() => []);
-  }, []);
-
-  useEffect(() => {
-    if (activeProject?.name) {
-      api.fetchMemories(activeProject.name).then(setMemories).catch(() => setMemories([]));
-    }
-  }, [activeProject?.name]);
-
-  const refreshInspectorData = useCallback(async (originatingThreadId: string, runId: string) => {
-    try {
-      const [rDetail, rResearch] = await Promise.all([
-        api.fetchRunDetails(runId).catch(() => null),
-        api.fetchRunResearch(runId).catch(() => null),
-      ]);
-      setThreadLiveStates((prev) => ({
-        ...prev,
-        [originatingThreadId]: {
-          ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null },
-          ...(prev[originatingThreadId] ?? {}),
-          ...(rDetail ? { runDetail: rDetail } : {}),
-          ...(rResearch ? { researchData: rResearch } : {}),
-        },
-      }));
-    } catch (e) {
-      console.error('Failed to load inspector data', e);
-    }
-  }, []);
-
-  // Ensure app-level live states are marked as accessed
-  void catalog;
-  void sessions;
-  void activeThreadLive;
-
-  const pushToast = useCallback((title: string, detail?: string) => {
-    const id = Date.now() + Math.floor(Math.random() * 999);
-    setToasts((current) => [...current, { id, title, detail }]);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3200);
-  }, []);
-
-  const applyTab = useCallback((tab: AppTab) => {
-    setActiveTabId(tab.id);
-    setSurface(tab.surface);
-    setActiveProjectId(tab.projectId ?? null);
-    setActiveConnectionId(tab.connectionId ?? null);
-    if (tab.mode) setMode(tab.mode);
-    if (tab.surface === 'global-home') setActiveNav('home');
-    else if (tab.surface === 'library' || tab.surface === 'folder-viewer' || tab.surface === 'file-viewer') setActiveNav('library');
-    else if (tab.surface === 'notes') setActiveNav('notes');
-    else if (tab.surface === 'study') setActiveNav('study');
-    else if (tab.surface === 'automations') setActiveNav('automations');
-    else if (tab.surface === 'projects') setActiveNav('projects');
-    else setActiveNav(null);
-  }, []);
-
-  const openOrActivateTab = useCallback((tab: AppTab, recordHistory = true) => {
-    setTabs((current) => current.some((item) => item.id === tab.id) ? current.map((item) => item.id === tab.id ? { ...item, ...tab } : item) : [...current, tab]);
-    applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex]);
-
-  const selectTab = useCallback((tabId: string, recordHistory = true) => {
-    const tab = tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
-
-  const closeTab = useCallback((tabId: string) => {
-    if (tabId === AURA_TAB.id) return;
-    const closing = tabs.find((tab) => tab.id === tabId);
-    if (closing?.previewId) {
-      const preview = filePreviews[closing.previewId];
-      if (preview?.url.startsWith('blob:')) URL.revokeObjectURL(preview.url);
-      setFilePreviews((current) => { const next = { ...current }; delete next[closing.previewId!]; return next; });
-    }
-    setTabs((current) => {
-      if (current.length <= 1) return current;
-      const index = current.findIndex((item) => item.id === tabId);
-      const next = current.filter((item) => item.id !== tabId);
-      if (tabId === activeTabId) {
-        const fallback = next[Math.max(0, Math.min(index - 1, next.length - 1))] ?? AURA_TAB;
-        window.setTimeout(() => applyTab(fallback), 0);
-      }
-      return next;
-    });
-  }, [activeTabId, applyTab, filePreviews, tabs]);
-
-  const goTabHistory = useCallback((direction: -1 | 1) => {
-    let nextIndex = tabHistoryIndex + direction;
-    while (nextIndex >= 0 && nextIndex < tabHistory.length) {
-      const snapshot = tabHistory[nextIndex];
-      if (tabs.some((tab) => tab.id === snapshot.id)) {
-        setTabHistoryIndex(nextIndex);
-        setTabs((current) => current.map((tab) => tab.id === snapshot.id ? { ...tab, ...snapshot } : tab));
-        applyTab(snapshot);
-        return;
-      }
-      nextIndex += direction;
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        setAuraOpen((value) => !value);
-        return;
-      }
-      if (event.key !== 'Escape') return;
-      setRoutingOpen(false);
-      setAuraOpen(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
-
-  const openProject = useCallback((projectId: string) => {
-    const project = projects.find((item) => item.id === projectId);
-    if (!project) return;
-    setInspectorOpen(false);
-    setRoutingOpen(false);
-    openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
-  }, [openOrActivateTab]);
-
-  const openProjectChats = useCallback(() => {
-    if (!activeProjectId || !activeProject) return;
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
-
-  const openProjectFiles = useCallback(() => {
-    if (!activeProjectId || !activeProject) return;
-    setInspectorOpen(false);
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Files', kind: 'project', surface: 'project-files', projectId: activeProjectId });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
-
-  const openProjectOverview = useCallback(() => {
-    if (!activeProjectId || !activeProject) return;
-    setInspectorOpen(false);
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId: activeProjectId });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
-
-  const openBoardNode = useCallback((nodeId: string) => {
-    const projectId = activeProjectId ?? 'stateful';
-    const project = projects.find((item) => item.id === projectId);
-    if (!project) return;
-    openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId, mode: 'board' });
-    setFocusNodeId(nodeId);
-    const node = initialNodes.find((item) => item.id === nodeId);
-    if (node) setSelectedNode(node);
-  }, [activeProjectId, openOrActivateTab]);
-
-  const projectRootNodeId = useCallback(() => activeProjectId === 'stateful' ? 'root-answer' : activeProjectId ? `${activeProjectId}-root-answer` : 'root-answer', [activeProjectId]);
-
-  const handleChatMessageFocus = useCallback((message: ChatMessage) => {
-    setFocusedMessageId(message.id ?? null);
-    setFocusNodeId(activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-') ? message.nodeId : projectRootNodeId());
-  }, [activeProjectId, projectRootNodeId]);
-
-  const handleBoardNodeFocus = useCallback((messageId: string | null, node: AuraFlowNode) => {
-    setSelectedNode(node);
-    setFocusNodeId(node.id);
-    if (messageId) setFocusedMessageId(messageId);
-  }, []);
-
-  const handleChatContextObjectFocus = useCallback((nodeId: string) => {
-    if (!activeProjectId || !activeProject) return;
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'board' });
-    const target = activeProjectId === 'stateful' ? nodeId : projectRootNodeId();
-    setFocusNodeId(target);
-    const node = initialNodes.find((item) => item.id === target);
-    if (node) setSelectedNode(node);
-  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId]);
-
-  const handleBranchFromChat = useCallback((message: ChatMessage) => {
-    if (!activeProjectId || !activeProject) return;
-    const sourceNodeId = activeProjectId === 'stateful' && message.nodeId && !message.nodeId.startsWith('runtime-') ? message.nodeId : projectRootNodeId();
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'board' });
-    setFocusNodeId(sourceNodeId);
-    setBranchRequest({ nodeId: sourceNodeId, nonce: Date.now() });
-    pushToast('Branch created from chat', 'The Board opened at the nearest persisted project turn.');
-  }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast]);
-
-  const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
-    setInspectorOpen(false);
-    setRoutingOpen(false);
-    const map: Record<SidebarDestination, AppTab> = {
-      home: { ...AURA_TAB, subtitle: 'Home', surface: 'global-home' },
-      library: { ...AURA_TAB, subtitle: 'Library', surface: 'library' },
-      notes: { ...AURA_TAB, subtitle: 'Notes', surface: 'notes' },
-      study: { ...AURA_TAB, subtitle: 'Study', surface: 'study' },
-      projects: { ...AURA_TAB, subtitle: 'Projects', surface: 'projects' },
-      automations: { ...AURA_TAB, subtitle: 'Automations', surface: 'automations' },
-    };
-    openOrActivateTab(map[destination]);
-  }, [openOrActivateTab]);
-
-  const handleModeChange = useCallback((nextMode: WorkspaceMode) => {
-    if (!activeProjectId || !activeProject) return;
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: nextMode[0].toUpperCase() + nextMode.slice(1), kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: nextMode });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
-
-  const openFilePreview = useCallback((preview: FilePreviewRecord) => {
-    setFilePreviews((current) => {
-      const previous = current[preview.id];
-      if (previous?.url?.startsWith('blob:') && previous.url !== preview.url) URL.revokeObjectURL(previous.url);
-      return { ...current, [preview.id]: preview };
-    });
-    openOrActivateTab({ id: `file-${preview.id}`, title: preview.name, subtitle: preview.virtualPath, kind: 'file', surface: 'file-viewer', previewId: preview.id });
-  }, [openOrActivateTab]);
-
-  const handleLibraryItem = useCallback(async (item: LibraryItem) => {
-    if (item.blobKey) {
-      try {
-        const blob = await getLocalFile(item.blobKey);
-        if (!blob) throw new Error('Local file blob was not found');
-        const url = URL.createObjectURL(blob);
-        openFilePreview({ id: item.id, name: item.name, url, mimeType: item.mimeType || blob.type || 'application/octet-stream', virtualPath: `Library / ${item.collection} / ${item.name}` });
-        return;
-      } catch {
-        pushToast('Could not open local file', 'The metadata exists, but the browser-local blob is unavailable. Re-import the file.');
-        return;
-      }
-    }
-    if (item.href) {
-      openFilePreview({ id: item.id, name: item.name, url: item.href, mimeType: item.mimeType || (item.kind === 'HTML' ? 'text/html' : 'application/octet-stream'), virtualPath: `Library / ${item.collection} / ${item.name}` });
-      return;
-    }
-    pushToast(`${item.kind} preview is mocked`, 'This bundled placeholder has metadata only. Your own imported files and connected-folder files open inside AURA tabs.');
-  }, [openFilePreview, pushToast]);
-
-  const handleConnectedFile = useCallback((file: File, virtualPath: string) => {
-    const url = URL.createObjectURL(file);
-    openFilePreview({ id: `fs-${crypto.randomUUID()}`, name: file.name, url, mimeType: file.type || 'application/octet-stream', virtualPath });
-  }, [openFilePreview]);
-
-  const connectFolder = useCallback(async () => {
-    if (!supportsDirectoryPicker()) {
-      pushToast('Folder picker unavailable', 'Use Chrome or Edge on localhost/HTTPS for connected folders. Individual file imports still work.');
-      return;
-    }
-    try {
-      const connection = await pickDirectoryConnection();
-      if (!connection) return;
-      const next = await listDirectoryConnections();
-      setDirectoryConnections(next);
-      openOrActivateTab({ ...AURA_TAB, subtitle: connection.name, surface: 'folder-viewer', connectionId: connection.id });
-      pushToast('Folder connected', `${connection.name} stays in its original location. AURA stores only a browser permission handle.`);
-    } catch (error) {
-      if ((error as DOMException)?.name !== 'AbortError') pushToast('Could not connect folder', 'The folder picker was cancelled or the browser denied access.');
-    }
-  }, [openOrActivateTab, pushToast]);
-
-  const openConnection = useCallback((connection: DirectoryConnection) => {
-    openOrActivateTab({ ...AURA_TAB, subtitle: connection.name, surface: 'folder-viewer', connectionId: connection.id });
-  }, [openOrActivateTab]);
-
-  const disconnectConnection = useCallback(async (connection: DirectoryConnection) => {
-    await removeDirectoryConnection(connection.id);
-    setDirectoryConnections((current) => current.filter((item) => item.id !== connection.id));
-    if (activeConnectionId === connection.id) openOrActivateTab({ ...AURA_TAB, subtitle: 'Library', surface: 'library' });
-    pushToast('Disconnected from AURA', `${connection.name} was not deleted from disk.`);
-  }, [activeConnectionId, openOrActivateTab, pushToast]);
-
-  const removeLibraryItem = useCallback(async (item: LibraryItem) => {
-    if (item.source === 'imported' && item.blobKey) {
-      try { await deleteLocalFile(item.blobKey); } catch { /* metadata can still be removed */ }
-    }
-    setLibraryItems((current) => current.filter((entry) => entry.id !== item.id));
-    pushToast('Removed from Library', item.source === 'imported' ? 'The browser-local indexed copy was removed. Connected filesystem folders are untouched.' : 'The Library reference was removed from this prototype.');
-  }, [pushToast]);
-
-  const importFiles = useCallback(async (files: File[], projectId?: string) => {
-    if (!files.length) return;
-    const imported: LibraryItem[] = [];
-    for (const file of files) {
-      const id = `local-${crypto.randomUUID()}`;
-      const blobKey = id;
-      try {
-        await putLocalFile(blobKey, file);
-        imported.push({
-          id,
-          name: stripExtension(file.name),
-          kind: inferLibraryKind(file),
-          collection: projectId ? 'Research' : 'Reference',
-          detail: `Imported local file Â· ${file.name}`,
-          updated: 'just now',
-          tags: ['local', 'imported'],
-          projectLinks: projectId ? [projectId] : [],
-          source: 'imported',
-          size: file.size,
-          mimeType: file.type || undefined,
-          blobKey,
-        });
-      } catch {
-        pushToast('Import failed', `Could not store ${file.name} in browser-local storage.`);
-      }
-    }
-    if (imported.length) {
-      setLibraryItems((current) => [...imported, ...current]);
-      pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, projectId ? 'Imported into Library and linked to this project.' : 'Stored in Personal Library on this browser.');
-    }
-  }, [pushToast]);
-
-  const toggleProjectLink = useCallback((itemId: string, projectId: string) => {
-    setLibraryItems((current) => current.map((item) => {
-      if (item.id !== itemId) return item;
-      const links = item.projectLinks ?? [];
-      return { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
-    }));
-  }, []);
-
-  const selectThread = useCallback((threadId: string) => {
-    if (!activeProjectId) return;
-    setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: threadId }));
-    setFocusedMessageId(null);
-
-    // Session hydration: when switching to a live thread that has a backend
-    // sessionId, fetch /v1/sessions/{sessionId} and reconcile messages.
-    // This is fail-safe: hydration failure never destroys local state.
-    const thread = chatThreads.find((t) => t.id === threadId);
-    if (thread?.source === 'live' && thread.sessionId) {
-      void api.fetchSession(thread.sessionId).then((detail) => {
-        if (!detail?.messages?.length) return;
-        setChatThreads((current) => current.map((t) => {
-          if (t.id !== threadId) return t;
-
-          // â”€â”€ Role+content occurrence reconciliation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-          // Backend canonical IDs are UUIDs; local optimistic IDs are synthetic
-          // ("live-user-â€¦", "live-assistant-â€¦").  We CANNOT dedup by ID alone.
-          //
-          // Algorithm:
-          //   1. Build an occurrence counter over local (role, content) pairs.
-          //   2. For each backend message, check if occurrence N of that pair
-          //      already exists locally.  If yes: adopt the backend canonical ID
-          //      (so the backend wins on identity) and preserve all local UI
-          //      metadata (executionLabel, execution, provenance, etc.).
-          //      If no: it is a genuinely new backend-only message â†’ append.
-
-          type OccKey = `${string}::${string}`;
-          const occurrenceCounter = new Map<OccKey, number>();
-
-          // Index local messages by occurrence of (role, content)
-          const localByOccurrence = new Map<string, ChatMessage & { _localIdx: number }>();
-          t.messages.forEach((m, idx) => {
-            const key: OccKey = `${m.role}::${m.content}`;
-            const n = (occurrenceCounter.get(key) ?? 0) + 1;
-            occurrenceCounter.set(key, n);
-            localByOccurrence.set(`${key}::${n}`, { ...m, _localIdx: idx });
-          });
-
-          // Reset counter for backend pass
-          occurrenceCounter.clear();
-
-          const merged: ChatMessage[] = [...t.messages];
-          let appended = false;
-
-          for (const bm of detail.messages) {
-            const key: OccKey = `${bm.role}::${bm.content}`;
-            const n = (occurrenceCounter.get(key) ?? 0) + 1;
-            occurrenceCounter.set(key, n);
-
-            const localMatch = localByOccurrence.get(`${key}::${n}`);
-            if (localMatch) {
-              // Adopt the backend canonical ID on the existing local message
-              if (localMatch.id !== bm.id && bm.id) {
-                merged[localMatch._localIdx] = { ...merged[localMatch._localIdx], id: bm.id };
-              }
-            } else {
-              // Genuinely new message from backend â€” append
-              merged.push(bm);
-              appended = true;
-            }
-          }
-
-          // Only update thread if something actually changed
-          const idChanged = detail.messages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
-          if (!appended && !idChanged) return t;
-          return { ...t, messages: merged };
-        }));
-      }).catch(() => { /* hydration failure is silently ignored */ });
-    }
-  }, [activeProjectId, chatThreads]);
-
-  const newThread = useCallback(() => {
-    if (!activeProjectId) return;
-    const id = `${activeProjectId}-chat-${Date.now()}`;
-    const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-    const count = chatThreads.filter((thread) => thread.projectId === activeProjectId).length + 1;
-    const thread: ChatThreadRecord = {
-      id,
-      projectId: activeProjectId,
-      title: `New chat ${count}`,
-      summary: 'Clean conversation Â· project context available explicitly',
-      updated: 'just now',
-      messages: [],
-      sessionId,
-      source: 'live',
-    };
-    setChatThreads((current) => [thread, ...current]);
-    setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-    if (activeProject) openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
-    pushToast('New project chat', 'This thread starts clean and connects to live backend.');
-  }, [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast]);
-
-  const updateThreadMessages = useCallback((threadId: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
-    setChatThreads((current) => current.map((thread) => {
-      if (thread.id !== threadId) return thread;
-      const nextMessages = updater(thread.messages);
-      const firstUser = nextMessages.find((message) => message.role === 'user');
-      const wasEmpty = thread.messages.length === 0;
-      return {
-        ...thread,
-        messages: nextMessages,
-        updated: 'just now',
-        title: wasEmpty && firstUser ? firstUser.content.slice(0, 42) + (firstUser.content.length > 42 ? 'â€¦' : '') : thread.title,
-        summary: wasEmpty && firstUser ? 'New conversation in this project' : thread.summary,
-      };
-    }));
-  }, []);
-
-  const handleSendMessage = useCallback(
-    async (text: string) => {
-      if (!activeProjectId || !activeThreadId) return;
-
-      const currentThread = chatThreads.find((t) => t.id === activeThreadId);
-
-      // â”€â”€ Truthfulness invariant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      // Demo threads MUST NOT silently call POST /v1/chat.
-      // The caller (ChatPane) shows a CTA instead; this is a hard guard in case
-      // it is bypassed.
-      if (currentThread?.source === 'demo') {
-        pushToast('Demo thread', 'Start a live chat to use the AURA backend with this project.');
-        return;
-      }
-
-      const sessionId = currentThread?.sessionId || `sess-${activeProjectId}-${activeThreadId}`;
-
-      // Capture originating thread at the time of send so approval decisions
-      // are bound even if the user switches threads before the run completes.
-      const originatingThreadId = activeThreadId;
-
-      const nonce = Date.now();
-      const userMsg: ChatMessage = {
-        id: `live-user-${nonce}`,
-        role: 'user',
-        branch: 'Root',
-        nodeId: `live-user-node-${nonce}`,
-        content: text,
-        timestamp: 'just now',
-        created_at: new Date().toISOString(),
-        status: 'Sent',
-      };
-
-      updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
-      patchThreadLive(originatingThreadId, { runStatus: 'running' });
-
-      try {
-        const resp = await api.sendChat(
-          sessionId,
-          text,
-          activeProject?.name || undefined,
-          selectedModelOverride
-        );
-
-        patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
-
-        if (resp.status === 'waiting_for_approval' && resp.approval_id) {
-          const appDetail = await api.fetchApproval(resp.approval_id);
-          // Typed binding: register originating thread in the approvalOrigins map
-          setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
-          patchThreadLive(originatingThreadId, { approval: appDetail });
-        } else {
-          patchThreadLive(originatingThreadId, { approval: null });
-          if (resp.response) {
-            let steps: ExecutionStep[] = [];
-            if (resp.run_id) {
-              try {
-                const rDetail = await api.fetchRunDetails(resp.run_id);
-                steps = mapRunEventsToExecutionSteps(rDetail.events);
-                patchThreadLive(originatingThreadId, { runDetail: rDetail });
-              } catch (e) {
-                console.warn('Failed to fetch run details for execution steps', e);
-              }
-            }
-
-            const assistantMsg: ChatMessage = {
-              id: `live-assistant-${nonce}`,
-              role: 'assistant',
-              branch: 'Root',
-              nodeId: `live-assistant-node-${nonce}`,
-              content: resp.response,
-              timestamp: 'just now',
-              created_at: new Date().toISOString(),
-              status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA Â· ${steps.length} steps` : undefined,
-              execution: steps.length > 0 ? steps : undefined,
-            };
-            updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
-          }
-        }
-
-        if (resp.run_id) {
-          void refreshInspectorData(originatingThreadId, resp.run_id);
-        }
-
-        api.fetchSessions().then(setSessions).catch(() => {});
-        if (activeProject?.name) {
-          api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
-        }
-      } catch (err: any) {
-        patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-        const errorMsg: ChatMessage = {
-          id: `live-err-${nonce}`,
-          role: 'assistant',
-          branch: 'Root',
-          nodeId: `live-err-node-${nonce}`,
-          content: `Error: ${(err as Error).message || 'Execution failed'}`,
-          timestamp: 'just now',
-          status: 'Failed',
-        };
-        updateThreadMessages(originatingThreadId, (prev) => [...prev, errorMsg]);
-      }
-    },
-    [
-      activeProjectId,
-      activeThreadId,
-      chatThreads,
-      activeProject?.name,
-      selectedModelOverride,
-      updateThreadMessages,
-      refreshInspectorData,
-      pushToast,
-    ]
-  );
-
-  /**
-   * handleStartLiveChat â€” creates a fresh live thread for the active project
-   * then immediately sends `text` to the backend.
-   *
-   * This is the explicit user action that transitions from demo-only viewing to
-   * an actual backend session.  Demo threads are never promoted; a new thread is
-   * always created so the demo transcript is preserved exactly as-is.
-   */
-  const handleStartLiveChat = useCallback(
-    async (text: string) => {
-      if (!activeProjectId || !activeProject) return;
-      const promptText = text.trim();
-      const id = `${activeProjectId}-live-${Date.now()}`;
-      const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-      const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
-      // Title: use draft text if provided, otherwise a generic label
-      const title = promptText
-        ? promptText.slice(0, 42) + (promptText.length > 42 ? 'â€¦' : '')
-        : `Live chat ${count}`;
-      const thread: ChatThreadRecord = {
-        id,
-        projectId: activeProjectId,
-        title,
-        summary: 'Live backend session',
-        updated: 'just now',
-        messages: [],
-        sessionId,
-        source: 'live',
-      };
-      setChatThreads((current) => [thread, ...current]);
-      setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-      openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
-      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
-
-      // If there is no prompt text, we only create the thread â€” no backend call.
-      if (!promptText) return;
-
-      // Small yield so state settles before we send
-      await new Promise((resolve) => window.setTimeout(resolve, 0));
-      void (async () => {
-        const originatingThreadId = id;
-        const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
-        updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
-        patchThreadLive(originatingThreadId, { runStatus: 'running' });
-        try {
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, selectedModelOverride);
-          patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
-          if (resp.status === 'waiting_for_approval' && resp.approval_id) {
-            const appDetail = await api.fetchApproval(resp.approval_id);
-            // Typed binding: record which thread owns this approval
-            setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
-            patchThreadLive(originatingThreadId, { approval: appDetail });
-          } else {
-            patchThreadLive(originatingThreadId, { approval: null });
-            if (resp.response) {
-              let steps: ExecutionStep[] = [];
-              if (resp.run_id) {
-                try { const rDetail = await api.fetchRunDetails(resp.run_id); steps = mapRunEventsToExecutionSteps(rDetail.events); patchThreadLive(originatingThreadId, { runDetail: rDetail }); } catch {}
-              }
-              const assistantMsg: ChatMessage = { id: `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA Â· ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined };
-              updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
-            }
-          }
-          if (resp.run_id) void refreshInspectorData(originatingThreadId, resp.run_id);
-        } catch (err: any) {
-          patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-          updateThreadMessages(originatingThreadId, (prev) => [...prev, { id: `live-err-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-err-node-${nonce}`, content: `Error: ${(err as Error).message || 'Execution failed'}`, timestamp: 'just now', status: 'Failed' }]);
-        }
-      })();
-      void count; // suppress lint â€” count used for UI naming above
-    },
-    [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, selectedModelOverride, updateThreadMessages]
-  );
-
-  const handleApprovalDecision = useCallback(
-    async (
-      decision: 'approved' | 'rejected' | 'edited',
-      notes?: string,
-      editedInput?: Record<string, any>
-    ) => {
-      const approval = activeThreadLive.approval;
-      if (!approval) return;
-
-      // â”€â”€ Typed approval thread binding â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      // `approvalOrigins` maps approval.id â†’ originatingThreadId, set at the
-      // moment the approval was raised.  This replaces the `as any` hack and
-      // survives the user navigating to a different thread before deciding.
-      const originatingThreadId: string =
-        approvalOrigins[approval.id] ?? activeThreadId ?? '';
-      if (!originatingThreadId) return;
-
-      patchThreadLive(originatingThreadId, { runStatus: 'running' });
-      try {
-        const decisionResp = await api.submitApproval(
-          approval.id,
-          decision,
-          notes,
-          editedInput
-        );
-
-        patchThreadLive(originatingThreadId, { runStatus: decisionResp.execution_status });
-
-        if (decisionResp.execution_status === 'waiting_for_approval' && decisionResp.approval_id) {
-          const nextApp = await api.fetchApproval(decisionResp.approval_id);
-          // Register the next approval in the typed map
-          setApprovalOrigins((prev) => ({ ...prev, [nextApp.id]: originatingThreadId }));
-          patchThreadLive(originatingThreadId, { approval: nextApp });
-        } else {
-          patchThreadLive(originatingThreadId, { approval: null });
-          if (decisionResp.final_response) {
-            let steps: ExecutionStep[] = [];
-            if (decisionResp.run_id) {
-              try {
-                const rDetail = await api.fetchRunDetails(decisionResp.run_id);
-                patchThreadLive(originatingThreadId, { runDetail: rDetail });
-                steps = mapRunEventsToExecutionSteps(rDetail.events);
-              } catch (e) {
-                console.warn('Failed to fetch run details after approval', e);
-              }
-            }
-
-            const nonce = Date.now();
-            const assistantMsg: ChatMessage = {
-              id: `live-approval-assistant-${nonce}`,
-              role: 'assistant',
-              branch: 'Root',
-              nodeId: `live-approval-assistant-node-${nonce}`,
-              content: decisionResp.final_response,
-              timestamp: 'just now',
-              created_at: new Date().toISOString(),
-              status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA Â· ${steps.length} steps` : undefined,
-              execution: steps.length > 0 ? steps : undefined,
-            };
-            // Append to ORIGINATING thread, not the currently active one
-            updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
-          }
-        }
-
-        // Fix 5: use decisionResp.run_id as the authoritative ID for this refresh;
-        // fall back to the thread's stored runId only if the response omits it.
-        const runId = decisionResp.run_id ?? threadLiveStates[originatingThreadId]?.runId;
-        if (runId) {
-          void refreshInspectorData(originatingThreadId, runId);
-        }
-        if (activeProject?.name) {
-          api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
-        }
-      } catch (err: any) {
-        patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-        console.error('Approval decision error:', err);
-      }
-    },
-    [
-      activeThreadLive.approval,
-      activeThreadId,
-      approvalOrigins,
-      threadLiveStates,
-      updateThreadMessages,
-      refreshInspectorData,
-      activeProject?.name,
-    ]
-  );
-
-  const runAutomation = useCallback((automation: AutomationRecord) => {
-    setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'running', lastRun: 'Running nowâ€¦' } : item));
-    pushToast(`Running Â· ${automation.name}`, 'Prototype run only â€” no external actions are executed.');
-    window.setTimeout(() => {
-      setAutomations((current) => current.map((item) => item.id === automation.id ? { ...item, status: 'ready', lastRun: 'Completed just now' } : item));
-    }, 1600);
-  }, [pushToast]);
-
-  const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
-  const title = surface === 'global-home' ? 'Home'
-    : surface === 'library' ? 'Library'
-    : surface === 'notes' ? 'Notes'
-    : surface === 'study' ? 'Study'
-    : surface === 'automations' ? 'Automations'
-    : surface === 'projects' ? 'Projects'
-    : surface === 'folder-viewer' ? activeConnection?.name ?? 'Connected folder'
-    : surface === 'file-viewer' ? activeFilePreview?.name ?? 'File'
-    : 'Home';
-
-  const locationValue = surface === 'global-home' ? 'aura://home'
-    : surface === 'library' ? 'aura://library'
-    : surface === 'folder-viewer' ? `folder://${activeConnection?.name ?? 'connected'}`
-    : surface === 'file-viewer' ? activeFilePreview?.virtualPath ?? 'aura://file'
-    : activeProject ? `aura://projects/${activeProject.name.replace(/\s+/g, '-').toLowerCase()}/${surface === 'workspace' ? mode : surface.replace('project-', '')}`
-    : `aura://${surface}`;
-
-  const handleLocationSubmit = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (/^https?:\/\//i.test(trimmed)) {
-      window.open(trimmed, '_blank', 'noopener,noreferrer');
-      pushToast('Opened URL', trimmed);
-      return;
-    }
-    const normalized = trimmed.toLowerCase();
-    if (normalized.includes('library')) { handleSidebarNavigate('library'); return; }
-    if (normalized.includes('home')) { handleSidebarNavigate('home'); return; }
-    const matchingProject = projects.find((project) => project.name.toLowerCase().includes(normalized) || normalized.includes(project.name.toLowerCase()));
-    if (matchingProject) { openProject(matchingProject.id); return; }
-    const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
-    if (matchingConnection) { openConnection(matchingConnection); return; }
-    pushToast('Workspace search', `Searching AURA for â€œ${trimmed}â€ is mocked in v8; Ctrl/âŒ˜ K still opens Ask AURA.`);
-  };
-
-  const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
-  const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
-
-  return (
-    <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
-      <Sidebar
-        collapsed={sidebarCollapsed}
-        active={activeNav}
-        activeProjectId={activeProjectId}
-        libraryCount={libraryItems.length}
-        onCollapsedChange={setSidebarCollapsed}
-        onNavigate={handleSidebarNavigate}
-        onProjectOpen={openProject}
-        onNewProject={() => pushToast('New project', 'Project creation UI is the one remaining mocked shell action in v7.')}
-      />
-
-      <Topbar
-        projectName={activeProject?.name ?? null}
-        projectSection={projectSection}
-        globalTitle={title}
-        mode={mode}
-        onModeChange={handleModeChange}
-        onOpenProjectOverview={openProjectOverview}
-        onOpenProjectFiles={openProjectFiles}
-        routingOpen={routingOpen}
-        onRoutingOpenChange={setRoutingOpen}
-        locked={locked}
-        onToggleLock={() => {
-          setLocked((value) => !value);
-          pushToast(locked ? 'Agent lock released' : 'All agents locked', locked ? 'Routing follows the active profile again.' : 'Model C is pinned for this mock session.');
-        }}
-        inspectorOpen={inspectorOpen}
-        onToggleInspector={() => setInspectorOpen((value) => !value)}
-        onOpenAura={() => setAuraOpen(true)}
-      />
-
-      <WorkspaceChrome
-        tabs={tabs}
-        activeTabId={activeTabId}
-        locationValue={locationValue}
-        canGoBack={tabHistoryIndex > 0}
-        canGoForward={tabHistoryIndex < tabHistory.length - 1}
-        onGoBack={() => goTabHistory(-1)}
-        onGoForward={() => goTabHistory(1)}
-        onSelectTab={selectTab}
-        onCloseTab={closeTab}
-        onSubmitLocation={handleLocationSubmit}
-      />
-
-      <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}`}>
-        {surface === 'global-home' ? (
-          <GlobalHome
-            libraryItems={libraryItems}
-            automations={automations}
-            noteCount={notes.length}
-            onOpenProject={openProject}
-            onOpenProjects={() => handleSidebarNavigate('projects')}
-            onOpenLibrary={() => handleSidebarNavigate('library')}
-            onOpenFile={(id) => {
-              const item = libraryItems.find((entry) => entry.id === id);
-              if (item) void handleLibraryItem(item);
-            }}
-          />
-        ) : null}
-
-        {surface === 'library' ? (
-          <LibraryView
-            items={libraryItems}
-            connections={directoryConnections}
-            directoryPickerSupported={supportsDirectoryPicker()}
-            onOpenItem={(item) => void handleLibraryItem(item)}
-            onImportFiles={(files) => void importFiles(files)}
-            onToggleProjectLink={toggleProjectLink}
-            onRemoveItem={(item) => void removeLibraryItem(item)}
-            onConnectFolder={() => void connectFolder()}
-            onOpenConnection={openConnection}
-            onDisconnectConnection={(connection) => void disconnectConnection(connection)}
-          />
-        ) : null}
-        {surface === 'folder-viewer' && activeConnection ? (
-          <ConnectedFolderView
-            connection={activeConnection}
-            onBackToLibrary={() => handleSidebarNavigate('library')}
-            onDisconnect={(connection) => void disconnectConnection(connection)}
-            onOpenFile={handleConnectedFile}
-          />
-        ) : null}
-        {surface === 'file-viewer' && activeFilePreview ? (
-          <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
-        ) : null}
-        {surface === 'notes' ? <NotesView notes={notes} onNotesChange={setNotes} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => pushToast('Study session started', `${trackId} Â· prototype timer/activity is mocked.`)} /> : null}
-        {surface === 'automations' ? <AutomationsView automations={automations} onAutomationsChange={setAutomations} onRunNow={runAutomation} /> : null}
-        {surface === 'projects' ? <ProjectsView onOpenProject={openProject} onMockCreate={() => pushToast('New project', 'Project creation is still mocked in this UI prototype.')} /> : null}
-
-        {surface === 'project-overview' && activeProject ? (
-          <ProjectHome
-            projectId={activeProject.id}
-            chatCount={projectThreads.length}
-            fileCount={projectFileCount}
-            noteCount={projectNoteCount}
-            onBack={() => handleSidebarNavigate('projects')}
-            onOpenNode={openBoardNode}
-            onOpenChats={openProjectChats}
-            onOpenFiles={openProjectFiles}
-            onMockObject={(label) => pushToast(label, 'Open Chats, Files or Board to continue working with this object.')}
-          />
-        ) : null}
-
-        {surface === 'project-files' && activeProject ? (
-          <ProjectFilesView
-            project={activeProject}
-            libraryItems={libraryItems}
-            onBack={openProjectOverview}
-            onOpenItem={(item) => void handleLibraryItem(item)}
-            onImportFiles={(files, projectId) => void importFiles(files, projectId)}
-            onToggleProjectLink={toggleProjectLink}
-          />
-        ) : null}
-
-        {surface === 'workspace' && mode === 'chat' && activeProject ? (
-          <ProjectChatWorkspace
-            project={activeProject}
-            threads={projectThreads}
-            activeThreadId={activeThreadId}
-            libraryItems={libraryItems}
-            notes={notes}
-            focusedMessageId={focusedMessageId}
-            onSelectThread={selectThread}
-            onNewThread={newThread}
-            onUpdateMessages={updateThreadMessages}
-            onMessageFocus={handleChatMessageFocus}
-            onBranchFromMessage={handleBranchFromChat}
-            onContextObjectFocus={handleChatContextObjectFocus}
-            onAttachRequest={openProjectFiles}
-            onSendMessage={handleSendMessage}
-            onStartLiveChat={handleStartLiveChat}
-            currentApproval={activeThreadLive.approval}
-            onApprovalDecision={handleApprovalDecision}
-          />
-        ) : null}
-
-        {surface === 'workspace' && mode === 'board' && activeProject ? (
-          <BoardCanvas
-            key={activeProject.id}
-            boardKey={activeProject.id}
-            seedNodes={genericBoard?.nodes}
-            seedEdges={genericBoard?.edges}
-            showBranchLabels={activeProject.id === 'stateful'}
-            focusNodeId={focusNodeId}
-            onNodeFocus={handleBoardNodeFocus}
-            onToast={pushToast}
-            branchRequest={branchRequest}
-            executionExpanded={params.get('execution') === '1'}
-          />
-        ) : null}
-
-        {surface === 'workspace' && mode === 'split' && activeProject ? (
-          <div className="split-workspace">
-            <div className="split-workspace__chat">
-              <ProjectChatWorkspace
-                compact
-                project={activeProject}
-                threads={projectThreads}
-                activeThreadId={activeThreadId}
-                libraryItems={libraryItems}
-                notes={notes}
-                focusedMessageId={focusedMessageId}
-                onSelectThread={selectThread}
-                onNewThread={newThread}
-                onUpdateMessages={updateThreadMessages}
-                onMessageFocus={handleChatMessageFocus}
-                onBranchFromMessage={handleBranchFromChat}
-                onContextObjectFocus={handleChatContextObjectFocus}
-                onAttachRequest={openProjectFiles}
-                onSendMessage={handleSendMessage}
-                onStartLiveChat={handleStartLiveChat}
-                currentApproval={activeThreadLive.approval}
-                onApprovalDecision={handleApprovalDecision}
-              />
-            </div>
-            <div className="split-workspace__board">
-              <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={genericBoard?.nodes} seedEdges={genericBoard?.edges} showBranchLabels={activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} />
-            </div>
-          </div>
-        ) : null}
-      </main>
-
-      {inspectorOpen ? (
-        <InspectorPanel
-          selectedNode={selectedNode}
-          runDetail={activeThreadLive.runDetail}
-          researchData={activeThreadLive.researchData}
-          memories={memories}
-          onClose={() => setInspectorOpen(false)}
-          onContextSelect={openBoardNode}
-        />
-      ) : null}
-      {auraOpen ? (
-        <AuraCommandPalette
-          projectName={activeProject?.name ?? null}
-          libraryItems={libraryItems}
-          notes={notes}
-          automations={automations}
-          onClose={() => setAuraOpen(false)}
-          onOpenLibrary={() => { setAuraOpen(false); handleSidebarNavigate('library'); }}
-          onOpenNotes={() => { setAuraOpen(false); handleSidebarNavigate('notes'); }}
-          onOpenAutomations={() => { setAuraOpen(false); handleSidebarNavigate('automations'); }}
-          onOpenProject={(projectId) => { setAuraOpen(false); openProject(projectId); }}
-        />
-      ) : null}
-      <ToastStack toasts={toasts} />
-    </div>
-  );
-}
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíÛNùñ:-jZ.¶›­–)Ş³V–×÷'B²W6T6ÆÆ&6²ÂW6TVffV7BÂW6TÖVÖòÂW6U7FFRÒg&öÒw&V7Bs°¦–×÷'B²&ö&D6çf2Òg&öÒrâö6ö×öæVçG2ö&ö&Bô&ö&D6çf2s°¦–×÷'B²W&6öÖÖæEÆWGFRÒg&öÒrâö6ö×öæVçG2ö6†BôW&6öÖÖæEÆWGFRs°¦–×÷'B²&ö¦V7D6†Ev÷&·76RÒg&öÒrâö6ö×öæVçG2ö6†Bõ&ö¦V7D6†Ev÷&·76Rs°¦–×÷'B²WFöÖF–öç5f–WrÒg&öÒrâö6ö×öæVçG2övÆö&ÂôWFöÖF–öç5f–Wrs°¦–×÷'B²vÆö&Ä†öÖRÒg&öÒrâö6ö×öæVçG2övÆö&ÂôvÆö&Ä†öÖRs°¦–×÷'B²Æ–'&'•f–WrÒg&öÒrâö6ö×öæVçG2övÆö&ÂôÆ–'&'•f–Wrs°¦–×÷'B²6öææV7FVDföÆFW%f–WrÒg&öÒrâö6ö×öæVçG2övÆö&Âô6öææV7FVDföÆFW%f–Wrs°¦–×÷'B²f–ÆU&Wf–Wuf–WrÂG—Rf–ÆU&Wf–Wu&V6÷&BÒg&öÒrâö6ö×öæVçG2övÆö&Âôf–ÆU&Wf–Wuf–Wrs°¦–×÷'B²æ÷FW5f–WrÒg&öÒrâö6ö×öæVçG2övÆö&Âôæ÷FW5f–Wrs°¦–×÷'B²&ö¦V7G5f–WrÒg&öÒrâö6ö×öæVçG2övÆö&Âõ&ö¦V7G5f–Wrs°¦–×÷'B²7GVG•f–WrÒg&öÒrâö6ö×öæVçG2övÆö&Âõ7GVG•f–Wrs°¦–×÷'B²&ö¦V7Df–ÆW5f–WrÒg&öÒrâö6ö×öæVçG2ö†öÖRõ&ö¦V7Df–ÆW5f–Wrs°¦–×÷'B²&ö¦V7D†öÖRÒg&öÒrâö6ö×öæVçG2ö†öÖRõ&ö¦V7D†öÖRs°¦–×÷'B²–ç7V7F÷%æVÂÒg&öÒrâö6ö×öæVçG2öÆ–÷WBô–ç7V7F÷%æVÂs°¦–×÷'B²6–FV&"ÂG—R6–FV&$FW7F–æF–öâÒg&öÒrâö6ö×öæVçG2öÆ–÷WBõ6–FV&"s°¦–×÷'B²F÷&"Òg&öÒrâö6ö×öæVçG2öÆ–÷WBõF÷&"s°¦–×÷'B²v÷&·76T6‡&öÖRÂG—RW&F"Òg&öÒrâö6ö×öæVçG2öÆ–÷WBõv÷&·76T6‡&öÖRs°¦–×÷'B²Fö7E7F6²Òg&öÒrâö6ö×öæVçG2÷V’õFö7E7F6²s°¦–×÷'B²&÷WF–æu7GVF–òÒg&öÒrâö6ö×öæVçG2÷&÷WF–ærõ&÷WF–æu7GVF–òs°¦–×÷'B²&÷WF–æt6öæf—&ÖF–öäæ÷F–6RÒg&öÒrâö6ö×öæVçG2÷&÷WF–ærõ&÷WF–æt6öæf—&ÖF–öäæ÷F–6Rs°¦–×÷'B²–æ—F–ÄæöFW2Òg&öÒrâöFFöÖö6´FFs°¦–×÷'B²Ö¶U&ö¦V7D&ö&BÒg&öÒrâöFF÷&ö¦V7D&ö&G2s°¦–×÷'B°¢–æ—F–ÄWFöÖF–öç2À¢–æ—F–Ä6†EF‡&VG2À¢–æ—F–ÄÆ–'&'”—FV×2À¢–æ—F–Äæ÷FW2À¢&ö¦V7D'F–f7G2À¢&ö¦V7G2À¢G—RWFöÖF–öå&V6÷&BÀ¢G—R6†EF‡&VE&V6÷&BÀ¢G—RÆ–'&'”—FVÒÀ¢G—RÆ–'&'”¶–æBÀ¢G—Rv÷&·76Tæ÷FRÀ§Òg&öÒrâöFF÷v÷&·76TFFs°¦–×÷'B²FVÆWFTÆö6Äf–ÆRÂvWDÆö6Äf–ÆRÂWDÆö6Äf–ÆRÒg&öÒrâöÆ–"öÆö6Äf–ÆW2s°¦–×÷'B°¢Æ—7DF—&V7F÷'”6öææV7F–öç2À¢–6´F—&V7F÷'”6öææV7F–öâÀ¢&VÖ÷fTF—&V7F÷'”6öææV7F–öâÀ¢7W÷'G4F—&V7F÷'•–6¶W"À¢G—RF—&V7F÷'”6öææV7F–öâÀ§Òg&öÒrâöÆ–"öföÆFW$6öææV7F–öç2s°¦–×÷'B²’Â”W'&÷"Òg&öÒrâ÷6W'f–6W2ö’s°¦–×÷'B²Ö'VäWfVçG5FôW†V7WF–öå7FW2Òg&öÒrâöÆ–"öW†V7WF–öäWfVçG2s°¦–×÷'BG—R°¢&÷fÄFWF–ÂÀ¢W&fÆ÷tæöFRÀ¢6†DÖW76vRÀ¢W†V7WF–öå7FWÀ¢ÖVÖ÷'”—FVÒÀ¢ÖöFVÄ6FÆörÀ¢&W6V&6„–ç7V7F÷$FFÀ¢'VäFWF–ÂÀ¢6W76–öå7VÖÖ'’À¢Fö7DÖW76vRÀ¢v÷&·76TÖöFRÀ¢VffV7F—fU&÷WF–ærÀ¢&V6öæ–ætVff÷'BÀ¢'Vå&÷WF–ætFV6—6–öâÀ§Òg&öÒrâ÷G—W2s° §G—Rv÷&·76U7W&f6RĞ¢ÂvvÆö&ÂÖ†öÖRp¢ÂvÆ–'&'’p¢Âvæ÷FW2p¢Âw7GVG’p¢ÂvWFöÖF–öç2p¢Âw&ö¦V7G2p¢Âw&ö¦V7BÖ÷fW'f–Wrp¢Âw&ö¦V7BÖf–ÆW2p¢ÂvföÆFW"×f–WvW"p¢Âvf–ÆR×f–WvW"p¢Âwv÷&·76Rs° ¦6öç7B5Dõ$tRÒ°¢Æ–'&'“¢vW&×crÖÆ–'&'’rÀ¢æ÷FW3¢vW&×crÖæ÷FW2rÀ¢WFöÖF–öç3¢vW&×crÖWFöÖF–öç2rÀ¢6†G3¢vW&×crÖ6†G2rÀ§Ó° ¦gVæ7F–öâ–æ—F–ÄÖöFTg&öÕW&Â‚“¢v÷&·76TÖöFR°¢6öç7BfÇVRÒæWrU$Å6V&6…&×2‡v–æF÷ræÆö6F–öâç6V&6‚’ævWB‚vÖöFRr“°¢&WGW&âfÇVRÓÓÒv&ö&BrÇÂfÇVRÓÓÒw7Æ—BrÇÂfÇVRÓÓÒv6†BròfÇVR¢v6†Bs°§Ğ ¦gVæ7F–öâÆöE7F÷&VCÅCâ†¶W“¢7G&–ærÂfÆÆ&6³¢B“¢B°¢G'’°¢6öç7BfÇVRÒv–æF÷ræÆö6Å7F÷&vRævWD—FVÒ†¶W’“°¢&WGW&âfÇVRò¥4ôâç'6R‡fÇVR’2B¢fÆÆ&6³°¢Ò6F6‚°¢&WGW&âfÆÆ&6³°¢Ğ§Ğ ¦gVæ7F–öâÆöDÆ–'&'’‚“¢Æ–'&'”—FVÕµÒ°¢6öç7B7F÷&VBÒÆöE7F÷&VCÄÆ–'&'”—FVÕµÓâ…5Dõ$tRæÆ–'&'’ÂµÒ“°¢–b‚7F÷&VBæÆVæwF‚’&WGW&â–æ—F–ÄÆ–'&'”—FV×2æÖ‚†—FVÒ’Óâ‡²ââæ—FVÒÂ&ö¦V7DÆ–æ·3¢²âââ†—FVÒç&ö¦V7DÆ–æ·2óòµÒ•ÒÒ’“°¢6öç7B7F÷&VD'”–BÒæWrÖ‡7F÷&VBæÖ‚†—FVÒ’Óâ¶—FVÒæ–BÂ—FVÕÒ’“°¢6öç7B'V–ÇD–ç2Ò–æ—F–ÄÆ–'&'”—FV×2æÖ‚†—FVÒ’Óâ‡²ââæ—FVÒÂâââ‡7F÷&VD'”–BævWB†—FVÒæ–B’óò·Ò’Â‡&Vc¢—FVÒæ‡&VbÂ6÷W&6S¢v'VæFÆVBr26öç7BÒ’“°¢6öç7B–×÷'FVBÒ7F÷&VBæf–ÇFW"‚†—FVÒ’Óâ—FVÒç6÷W&6RÓÓÒv–×÷'FVBr“°¢&WGW&â²ââæ'V–ÇD–ç2Âââæ–×÷'FVEÓ°§Ğ ¦gVæ7F–öâ–æfW$Æ–'&'”¶–æB†f–ÆS¢f–ÆR“¢Æ–'&'”¶–æB°¢6öç7BW‡BÒf–ÆRææÖRç7Æ—B‚râr’ç÷‚“òçFôÆ÷vW$66R‚“°¢–b†W‡BÓÓÒv‡FÖÂrÇÂW‡BÓÓÒv‡FÒrÇÂf–ÆRçG—RÓÓÒwFW‡Bö‡FÖÂr’&WGW&ât…DÔÂs°¢–b†W‡BÓÓÒwFbrÇÂf–ÆRçG—RÓÓÒvÆ–6F–öâ÷Fbr’&WGW&âuDbs°¢–b†W‡BÓÓÒvÖBrÇÂW‡BÓÓÒvÖ&¶F÷vâr’&WGW&âtÔBs°¢–b†W‡BÓÓÒv77br’&WGW&ât55bs°¢–b†W‡BÓÓÒv§6öârÇÂf–ÆRçG—RÓÓÒvÆ–6F–öâö§6öâr’&WGW&ât¥4ôâs°¢–b†f–ÆRçG—Rç7F'G5v—F‚‚v–ÖvRòr’’&WGW&ât”ÔtRs°¢–b†W‡BÓÓÒwG‡BrÇÂf–ÆRçG—Rç7F'G5v—F‚‚wFW‡Bòr’’&WGW&âuE…Bs°¢&WGW&âtd”ÄRs°§Ğ ¦gVæ7F–öâ7G&—W‡FVç6–öâ†æÖS¢7G&–ær’°¢&WGW&âæÖRç&WÆ6R‚õÂåµâåÒ²BòÂrr“°§Ğ ¦gVæ7F–öâW†V7WF–öäW'&÷%FW‡B†W'&÷#¢Væ¶æ÷vâ“¢7G&–ær°¢–b†W'&÷"–ç7Fæ6Vöb”W'&÷"’&WGW&âG¶W'&÷"æ6öFRòG¶W'&÷"æ6öFWÓ¢¢rwÒG¶W'&÷"æÖW76vWÖ°¢&WGW&â†W'&÷"2W'&÷"“òæÖW76vRÇÂtW†V7WF–öâf–ÆVBs°§Ğ ¦–çFW&f6RF"W‡FVæG2W&F"°¢7W&f6S¢v÷&·76U7W&f6S°¢&ö¦V7D–Có¢7G&–ærÂçVÆÃ°¢6öææV7F–öä–Có¢7G&–ærÂçVÆÃ°¢&Wf–Wt–Có¢7G&–ærÂçVÆÃ°¢ÖöFSó¢v÷&·76TÖöFS°§Ğ ¦6öç7BU$õD#¢F"Ò²–C¢vW&rÂF—FÆS¢tU$rÂ7V'F—FÆS¢uW'6öæÂv÷&·76RrÂ¶–æC¢v†öÖRrÂ7W&f6S¢vvÆö&ÂÖ†öÖRrÂ6Æ÷6&ÆS¢fÇ6RÂ&ö¦V7D–C¢çVÆÂÂ6öææV7F–öä–C¢çVÆÂÂ&Wf–Wt–C¢çVÆÂÓ° ¦gVæ7F–öâF%7FFT¶W’‡F#¢F"’°¢&WGW&â·F"æ–BÂF"ç7W&f6RÂF"ç&ö¦V7D–BóòrrÂF"æ6öææV7F–öä–BóòrrÂF"ç&Wf–Wt–BóòrrÂF"æÖöFRóòruÒæ¦ö–â‚wÂr“°§Ğ ¦W‡÷'BFVfVÇBgVæ7F–öâ‚’°¢6öç7B&×2ÒW6TÖVÖò‚‚’ÓâæWrU$Å6V&6…&×2‡v–æF÷ræÆö6F–öâç6V&6‚’ÂµÒ“°¢6öç7B¶ÖöFRÂ6WDÖöFUÒÒW6U7FFSÅv÷&·76TÖöFSâ†–æ—F–ÄÖöFTg&öÕW&Â“°¢6öç7B·7W&f6RÂ6WE7W&f6UÒÒW6U7FFSÅv÷&·76U7W&f6Sâ‚vvÆö&ÂÖ†öÖRr“°¢6öç7B¶7F—fTæbÂ6WD7F—fTæeÒÒW6U7FFSÅ6–FV&$FW7F–æF–öâÂçVÆÃâ‚v†öÖRr“°¢6öç7B¶7F—fU&ö¦V7D–BÂ6WD7F—fU&ö¦V7D–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·6–FV&$6öÆÆ6VBÂ6WE6–FV&$6öÆÆ6VEÒÒW6U7FFR†fÇ6R“°¢6öç7B·&÷WF–æt÷VâÂ6WE&÷WF–æt÷VåÒÒW6U7FFR‡&×2ævWB‚w&÷WF–ærr’ÓÓÒsr“°¢6öç7B·&÷WF–æu7GVF–ô÷VâÂ6WE&÷WF–æu7GVF–ô÷VåÒÒW6U7FFR†fÇ6R“°¢6öç7B·&÷WF–æt6öæf—&ÖF–öâÂ6WE&÷WF–æt6öæf—&ÖF–öåÒÒW6U7FFSÇ²&÷f–FW#ó¢7G&–æs²ÖöFVÃó¢7G&–ærÒÂçVÆÃâ†çVÆÂ“°¢6öç7B¶W&÷VâÂ6WDW&÷VåÒÒW6U7FFR†fÇ6R“°¢6öç7B¶–ç7V7F÷$÷VâÂ6WD–ç7V7F÷$÷VåÒÒW6U7FFR‡&×2ævWB‚v–ç7V7F÷"r’ÓÓÒsr“°¢6öç7B¶fö7W6VDÖW76vT–BÂ6WDfö7W6VDÖW76vT–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶fö7W4æöFT–BÂ6WDfö7W4æöFT–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ‡&×2ævWB‚vfö7W2r’“°¢6öç7B·6VÆV7FVDæöFRÂ6WE6VÆV7FVDæöFUÒÒW6U7FFSÄW&fÆ÷tæöFRÂVæFVf–æVCâ‚‚’Óâ–æ—F–ÄæöFW2æf–æB‚†æöFR’ÓâæöFRæ–BÓÓÒ&×2ævWB‚vfö7W2r’’“°¢6öç7B¶'&æ6…&WVW7BÂ6WD'&æ6…&WVW7EÒÒW6U7FFSÇ²æöFT–C¢7G&–æs²æöæ6S¢çVÖ&W"ÒÂçVÆÃâ†çVÆÂ“°¢6öç7B·Fö7G2Â6WEFö7G5ÒÒW6U7FFSÅFö7DÖW76vUµÓâ…µÒ“° ¢6öç7B¶Æ–'&'”—FV×2Â6WDÆ–'&'”—FV×5ÒÒW6U7FFSÄÆ–'&'”—FVÕµÓâ†ÆöDÆ–'&'’“°¢6öç7B¶F—&V7F÷'”6öææV7F–öç2Â6WDF—&V7F÷'”6öææV7F–öç5ÒÒW6U7FFSÄF—&V7F÷'”6öææV7F–öåµÓâ…µÒ“°¢6öç7B¶7F—fT6öææV7F–öä–BÂ6WD7F—fT6öææV7F–öä–EÒÒW6U7FFSÇ7G&–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B¶f–ÆU&Wf–Ww2Â6WDf–ÆU&Wf–Ww5ÒÒW6U7FFSÅ&V6÷&CÇ7G&–ærÂf–ÆU&Wf–Wu&V6÷&Cãâ‡·Ò“°¢6öç7B·F'2Â6WEF'5ÒÒW6U7FFSÄF%µÓâ…´U$õD%Ò“°¢6öç7B¶7F—fUF$–BÂ6WD7F—fUF$–EÒÒW6U7FFR„U$õD"æ–B“°¢6öç7B·F$†—7F÷'’Â6WEF$†—7F÷'•ÒÒW6U7FFSÄF%µÓâ…´U$õD%Ò“°¢6öç7B·F$†—7F÷'”–æFW‚Â6WEF$†—7F÷'”–æFW…ÒÒW6U7FFRƒ“°¢6öç7B¶æ÷FW2Â6WDæ÷FW5ÒÒW6U7FFSÅv÷&·76Tæ÷FUµÓâ‚‚’ÓâÆöE7F÷&VB…5Dõ$tRææ÷FW2Â–æ—F–Äæ÷FW2’“°¢6öç7B¶WFöÖF–öç2Â6WDWFöÖF–öç5ÒÒW6U7FFSÄWFöÖF–öå&V6÷&EµÓâ‚‚’ÓâÆöE7F÷&VB…5Dõ$tRæWFöÖF–öç2Â–æ—F–ÄWFöÖF–öç2’“°¢6öç7B¶6†EF‡&VG2Â6WD6†EF‡&VG5ÒÒW6U7FFSÄ6†EF‡&VE&V6÷&EµÓâ‚‚’ÓâÆöE7F÷&VB…5Dõ$tRæ6†G2Â–æ—F–Ä6†EF‡&VG2’“°¢6öç7B¶7F—fUF‡&VD'•&ö¦V7BÂ6WD7F—fUF‡&VD'•&ö¦V7EÒÒW6U7FFSÅ&V6÷&CÇ7G&–ærÂ7G&–æsãâ‚‚’Óâ°¢6öç7BÖ¢&V6÷&CÇ7G&–ærÂ7G&–æsâÒ·Ó°¢&ö¦V7G2æf÷$V6‚‚‡&ö¦V7B’Óâ°¢6öç7Bf—'7BÒ–æ—F–Ä6†EF‡&VG2æf–æB‚‡F‡&VB’ÓâF‡&VBç&ö¦V7D–BÓÓÒ&ö¦V7Bæ–B“°¢–b†f—'7B’Ö·&ö¦V7Bæ–EÒÒf—'7Bæ–C°¢Ò“°¢&WGW&âÖ°¢Ò“° ¢6öç7B7F—fU&ö¦V7BÒ&ö¦V7G2æf–æB‚‡&ö¦V7B’Óâ&ö¦V7Bæ–BÓÓÒ7F—fU&ö¦V7D–B’óòçVÆÃ°¢6öç7B7F—fUF"ÒF'2æf–æB‚‡F"’ÓâF"æ–BÓÓÒ7F—fUF$–B’óòU$õD#°¢6öç7B7F—fTf–ÆU&Wf–WrÒ7F—fUF"ç&Wf–Wt–Bòf–ÆU&Wf–Ww5¶7F—fUF"ç&Wf–Wt–EÒóòçVÆÂ¢çVÆÃ°¢6öç7B&ö¦V7EF‡&VG2ÒW6TÖVÖò‚‚’Óâ6†EF‡&VG2æf–ÇFW"‚‡F‡&VB’ÓâF‡&VBç&ö¦V7D–BÓÓÒ7F—fU&ö¦V7D–B’Â¶7F—fU&ö¦V7D–BÂ6†EF‡&VG5Ò“°¢6öç7B7F—fUF‡&VD–BÒ7F—fU&ö¦V7D–Bò7F—fUF‡&VD'•&ö¦V7E¶7F—fU&ö¦V7D–EÒóò&ö¦V7EF‡&VG5³Óòæ–BóòçVÆÂ¢çVÆÃ°¢6öç7B&ö¦V7E6V7F–öâÒ7W&f6RÓÓÒw&ö¦V7BÖ÷fW'f–Wrròv÷fW'f–Wrr¢7W&f6RÓÓÒw&ö¦V7BÖf–ÆW2ròvf–ÆW2r¢7W&f6RÓÓÒwv÷&·76Rròwv÷&·76Rr¢çVÆÃ°¢6öç7BvVæW&–4&ö&BÒW6TÖVÖò‚‚’Óâ7F—fU&ö¦V7Bbb7F—fU&ö¦V7Bæ–BÓÒw7FFVgVÂròÖ¶U&ö¦V7D&ö&B†7F—fU&ö¦V7B’¢çVÆÂÂ¶7F—fU&ö¦V7EÒ“° ¢W6TVffV7B‚‚’Óâv–æF÷ræÆö6Å7F÷&vRç6WD—FVÒ…5Dõ$tRæÆ–'&'’Â¥4ôâç7G&–æv–g’†Æ–'&'”—FV×2’’Â¶Æ–'&'”—FV×5Ò“°¢W6TVffV7B‚‚’Óâv–æF÷ræÆö6Å7F÷&vRç6WD—FVÒ…5Dõ$tRææ÷FW2Â¥4ôâç7G&–æv–g’†æ÷FW2’’Â¶æ÷FW5Ò“°¢W6TVffV7B‚‚’Óâv–æF÷ræÆö6Å7F÷&vRç6WD—FVÒ…5Dõ$tRæWFöÖF–öç2Â¥4ôâç7G&–æv–g’†WFöÖF–öç2’’Â¶WFöÖF–öç5Ò“°¢W6TVffV7B‚‚’Óâv–æF÷ræÆö6Å7F÷&vRç6WD—FVÒ…5Dõ$tRæ6†G2Â¥4ôâç7G&–æv–g’†6†EF‡&VG2’’Â¶6†EF‡&VG5Ò“°¢W6TVffV7B‚‚’Óâ°¢ÆWB6æ6VÆÆVBÒfÇ6S°¢fö–BÆ—7DF—&V7F÷'”6öææV7F–öç2‚’çF†Vâ‚†—FV×2’Óâ²–b‚6æ6VÆÆVB’6WDF—&V7F÷'”6öææV7F–öç2†—FV×2“²Ò“°¢&WGW&â‚’Óâ²6æ6VÆÆVBÒG'VS²Ó°¢ÒÂµÒ“° ¢òò)H)HW"×F‡&VBÆ—fRW†V7WF–öâ7FFR)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H)H ¢òòV6‚Æ—fRÖW†V7WF–öâ¶W’—266÷VBFòF†RF‡&VBF†B÷&–v–æFVB—Bà¢òòF†—2&WfVçG2'Vâö&÷fÂ÷&W6V&6‚7FFRg&öÒÆV¶–ær7&÷72F‡&VG2à¢–çFW&f6RF‡&VDÆ—fU7FFR°¢'Vä–C¢7G&–ærÂçVÆÃ°¢'Vå7FGW3¢7G&–ærÂçVÆÃ°¢&÷fÃ¢&÷fÄFWF–ÂÂçVÆÃ°¢'VäFWF–Ã¢'VäFWF–ÂÂçVÆÃ°¢&W6V&6„FF¢&W6V&6„–ç7V7F÷$FFÂçVÆÃ°¢&÷WF–ætFF¢'Vå&÷WF–ætFV6—6–öåµÒÂçVÆÃ°¢Ğ ¢òòÆ—fR&6¶VæB7FFP¢6öç7B¶6FÆörÂ6WD6FÆöuÒÒW6U7FFSÄÖöFVÄ6FÆösâ‡²&÷f–FW'3¢µÒÒ“°¢6öç7B¶VffV7F—fU&÷WF–ærÂ6WDVffV7F—fU&÷WF–æuÒÒW6U7FFSÄVffV7F—fU&÷WF–ærÂçVÆÃâ†çVÆÂ“°¢6öç7B·6W76–öç2Â6WE6W76–öç5ÒÒW6U7FFSÅ6W76–öå7VÖÖ'•µÓâ…µÒ“°¢6öç7B¶ÖVÖ÷&–W2Â6WDÖVÖ÷&–W5ÒÒW6U7FFSÄÖVÖ÷'”—FVÕµÓâ…µÒ“°¢6öç7B·F‡&VE&÷WF–æt÷fW'&–FW2Â6WEF‡&VE&÷WF–æt÷fW'&–FW5ÒÒW6U7FFSÅ&V6÷&CÇ7G&–ærÂ²ÖöFVÃ¢7G&–ærÂçVÆÃ²&V6öæ–æs¢&V6öæ–ætVff÷'BÂçVÆÂÓãâ‡·Ò“°¢6öç7B·F‡&VDÆ—fU7FFW2Â6WEF‡&VDÆ—fU7FFW5ÒÒW6U7FFSÅ&V6÷&CÇ7G&–ærÂF‡&VDÆ—fU7FFSãâ‡·Ò“°¢ò¢ ¢¢&÷fÄ÷&–v–ç2(	BG—VB&–æF–æs¢&÷fÂæ–B(i"÷&–v–æF–æuF‡&VD–Bà¢¢&WÆ6W2F†Rö÷&–v–æF–æuF‡&VD–B2ç–†6²öâF†REDòà¢¢ğ¢6öç7B¶&÷fÄ÷&–v–ç2Â6WD&÷fÄ÷&–v–ç5ÒÒW6U7FFSÅ&V6÷&CÇ7G&–ærÂ7G&–æsãâ‡·Ò“° ¢ò¢¢6öçfVæ–Væ6R66W76÷"(	BÆ—fR7FFRf÷"F†R7W'&VçFÇ’7F—fRF‡&VBöæÇ’¢ğ¢6öç7B7F—fUF‡&VDÆ—fS¢F‡&VDÆ—fU7FFRÒ7F—fUF‡&VD–@¢ò‡F‡&VDÆ—fU7FFW5¶7F—fUF‡&VD–EÒóò²'Vä–C¢çVÆÂÂ'Vå7FGW3¢çVÆÂÂ&÷fÃ¢çVÆÂÂ'VäFWF–Ã¢çVÆÂÂ&W6V&6„FF¢çVÆÂÂ&÷WF–ætFF¢çVÆÂÒ¢¢²'Vä–C¢çVÆÂÂ'Vå7FGW3¢çVÆÂÂ&÷fÃ¢çVÆÂÂ'VäFWF–Ã¢çVÆÂÂ&W6V&6„FF¢çVÆÂÂ&÷WF–ætFF¢çVÆÂÓ°¢6öç7B7F—fUF‡&VBÒ6†EF‡&VG2æf–æB‚‡F‡&VB’ÓâF‡&VBæ–BÓÓÒ7F—fUF‡&VD–B’óòçVÆÃ°¢6öç7B7F—fUF‡&VD÷fW'&–FW2Ò7F—fUF‡&VD–BòF‡&VE&÷WF–æt÷fW'&–FW5¶7F—fUF‡&VD–EÒ¢VæFVf–æVC°¢6öç7B6W76–öäf–Æ&ÆRÒ&ööÆVâ†7F—fUF‡&VCòç6÷W&6RÓÓÒvÆ—fRrbb†7F—fUF‡&VBæÖW76vW2ç6öÖR‚†ÖW76vR’ÓâÖW76vRç&öÆRÓÓÒv76—7FçBr’ÇÂ7F—fUF‡&VDÆ—fRç'Vä–B’“° ¢6öç7B6WD7F—fTÖöFVÄÆö6²ÒW6T6ÆÆ&6²‚†ÖöFVÃ¢7G&–ærÂçVÆÂ’Óâ°¢–b‚7F—fUF‡&VD–B’&WGW&ã°¢6WEF‡&VE&÷WF–æt÷fW'&–FW2‚†7W'&VçB’Óâ‡²ââæ7W'&VçBÂ¶7F—fUF‡&VD–EÓ¢²ÖöFVÂÂ&V6öæ–æs¢7W'&VçE¶7F—fUF‡&VD–EÓòç&V6öæ–æróòçVÆÂÒÒ’“°¢ÒÂ¶7F—fUF‡&VD–EÒ“°¢6öç7B6WD7F—fU&V6öæ–æt÷fW'&–FRÒW6T6ÆÆ&6²‚‡&V6öæ–æs¢&V6öæ–ætVff÷'BÂçVÆÂ’Óâ°¢–b‚7F—fUF‡&VD–B’&WGW&ã°¢6WEF‡&VE&÷WF–æt÷fW'&–FW2‚†7W'&VçB’Óâ‡²ââæ7W'&VçBÂ¶7F—fUF‡&VD–EÓ¢²ÖöFVÃ¢7W'&VçE¶7F—fUF‡&VD–EÓòæÖöFVÂóòçVÆÂÂ&V6öæ–ærÒÒ’“°¢ÒÂ¶7F—fUF‡&VD–EÒ“° ¢gVæ7F–öâF6…F‡&VDÆ—fR‡F‡&VD–C¢7G&–ærÂF6ƒ¢'F–ÃÅF‡&VDÆ—fU7FFSâ’°¢6WEF‡&VDÆ—fU7FFW2‚‡&Wb’Óâ‡°¢ââç&WbÀ¢·F‡&VD–EÓ¢²ââç²'Vä–C¢çVÆÂÂ'Vå7FGW3¢çVÆÂÂ&÷fÃ¢çVÆÂÂ'VäFWF–Ã¢çVÆÂÂ&W6V&6„FF¢çVÆÂÂ&÷WF–ætFF¢çVÆÂÒÂâââ‡&We·F‡&VD–EÒóò·Ò’ÂââçF6‚ÒÀ¢Ò’“°¢Ğ ¢W6TVffV7B‚‚’Óâ°¢’æfWF6„ÖöFVÇ2‚’çF†Vâ‡6WD6FÆör’æ6F6‚‚‚’Óâ‡²&÷f–FW'3¢µÒÒ’“°¢’æfWF6…6W76–öç2‚’çF†Vâ‡6WE6W76–öç2’æ6F6‚‚‚’ÓâµÒ“°¢ÒÂµÒ“° ¢W6TVffV7B‚‚’Óâ°¢ÆWB6æ6VÆÆVBÒfÇ6S°¢–b‚7F—fU&ö¦V7CòææÖR’²6WDVffV7F—fU&÷WF–ær†çVÆÂ“²&WGW&ã²Ğ¢6öç7B6W76–öä–BÒ6W76–öäf–Æ&ÆRò7F—fUF‡&VCòç6W76–öä–B¢VæFVf–æVC°¢fö–B’æfWF6„VffV7F—fU&÷WF–ær†7F—fU&ö¦V7BææÖRÂ6W76–öä–B’çF†Vâ‚‡fÇVR’Óâ°¢–b‚6æ6VÆÆVB’6WDVffV7F—fU&÷WF–ær‡fÇVR“°¢Ò’æ6F6‚‚‚’Óâ²–b‚6æ6VÆÆVB’6WDVffV7F—fU&÷WF–ær†çVÆÂ“²Ò“°¢&WGW&â‚’Óâ²6æ6VÆÆVBÒG'VS²Ó°¢ÒÂ¶7F—fU&ö¦V7CòææÖRÂ7F—fUF‡&VCòæ–BÂ7F—fUF‡&VCòç6W76–öä–BÂ6W76–öäf–Æ&ÆUÒ“° ¢W6TVffV7B‚‚’Óâ°¢–b†7F—fU&ö¦V7CòææÖR’°¢’æfWF6„ÖVÖ÷&–W2†7F—fU&ö¦V7BææÖR’çF†Vâ‡6WDÖVÖ÷&–W2’æ6F6‚‚‚’Óâ6WDÖVÖ÷&–W2…µÒ’“°¢Ğ¢ÒÂ¶7F—fU&ö¦V7CòææÖUÒ“° ¢6öç7B&Vg&W6„–ç7V7F÷$FFÒW6T6ÆÆ&6²†7–æ2†÷&–v–æF–æuF‡&VD–C¢7G&–ærÂ'Vä–C¢7G&–ær’Óâ°¢G'’°¢6öç7B·$FWF–ÂÂ%&W6V&6‚Â%&÷WF–æuÒÒv—B&öÖ—6RæÆÂ…°¢’æfWF6…'VäFWF–Ç2‡'Vä–B’æ6F6‚‚‚’ÓâçVÆÂ’À¢’æfWF6…'Vå&W6V&6‚‡'Vä–B’æ6F6‚‚‚’ÓâçVÆÂ’À¢’æfWF6…'Vå&÷WF–ær‡'Vä–B’æ6F6‚‚‚’ÓâçVÆÂ’À¢Ò“°¢6WEF‡&VDÆ—fU7FFW2‚‡&Wb’Óâ‡°¢ââç&WbÀ¢¶÷&–v–æF–æuF‡&VD–EÓ¢°¢ââç²'Vä–C¢çVÆÂÂ'Vå7FGW3¢çVÆÂÂ&÷fÃ¢çVÆÂÂ'VäFWF–Ã¢çVÆÂÂ&W6V&6„FF¢çVÆÂÂ&÷WF–ætFF¢çVÆÂÒÀ¢âââ‡&We¶÷&–v–æF–æuF‡&VD–EÒóò·Ò’À¢âââ‡$FWF–Âò²'VäFWF–Ã¢$FWF–ÂÒ¢·Ò’À¢âââ‡%&W6V&6‚ò²&W6V&6„FF¢%&W6V&6‚Ò¢·Ò’À¢âââ‡%&÷WF–ærò²&÷WF–ætFF¢%&÷WF–æræFV6—6–öç2Ò¢·Ò’À¢ÒÀ¢Ò’“°¢Ò6F6‚†R’°¢6öç6öÆRæW'&÷"‚tf–ÆVBFòÆöB–ç7V7F÷"FFrÂR“°¢Ğ¢ÒÂµÒ“° ¢òòVç7W&RÖÆWfVÂÆ—fR7FFW2&RÖ&¶VB266W76V@¢fö–B6FÆös°¢fö–B6W76–öç3°¢fö–B7F—fUF‡&VDÆ—fS° ¢6öç7BW6…Fö7BÒW6T6ÆÆ&6²‚‡F—FÆS¢7G&–ærÂFWF–Ãó¢7G&–ær’Óâ°¢6öç7B–BÒFFRææ÷r‚’²ÖF‚æfÆö÷"„ÖF‚ç&æFöÒ‚’¢““’“°¢6WEFö7G2‚†7W'&VçB’Óâ²ââæ7W'&VçBÂ²–BÂF—FÆRÂFWF–ÂÕÒ“°¢v–æF÷rç6WEF–ÖV÷WB‚‚’Óâ6WEFö7G2‚†7W'&VçB’Óâ7W'&VçBæf–ÇFW"‚‡Fö7B’ÓâFö7Bæ–BÓÒ–B’’Â3#“°¢ÒÂµÒ“° ¢6öç7BÇ•F"ÒW6T6ÆÆ&6²‚‡F#¢F"’Óâ°¢6WD7F—fUF$–B‡F"æ–B“°¢6WE7W&f6R‡F"ç7W&f6R“°¢6WD7F—fU&ö¦V7D–B‡F"ç&ö¦V7D–BóòçVÆÂ“°¢6WD7F—fT6öææV7F–öä–B‡F"æ6öææV7F–öä–BóòçVÆÂ“°¢–b‡F"æÖöFR’6WDÖöFR‡F"æÖöFR“°¢–b‡F"ç7W&f6RÓÓÒvvÆö&ÂÖ†öÖRr’6WD7F—fTæb‚v†öÖRr“°¢VÇ6R–b‡F"ç7W&f6RÓÓÒvÆ–'&'’rÇÂF"ç7W&f6RÓÓÒvföÆFW"×f–WvW"rÇÂF"ç7W&f6RÓÓÒvf–ÆR×f–WvW"r’6WD7F—fTæb‚vÆ–'&'’r“°¢VÇ6R–b‡F"ç7W&f6RÓÓÒvæ÷FW2r’6WD7F—fTæb‚væ÷FW2r“°¢VÇ6R–b‡F"ç7W&f6RÓÓÒw7GVG’r’6WD7F—fTæb‚w7GVG’r“°¢VÇ6R–b‡F"ç7W&f6RÓÓÒvWFöÖF–öç2r’6WD7F—fTæb‚vWFöÖF–öç2r“°¢VÇ6R–b‡F"ç7W&f6RÓÓÒw&ö¦V7G2r’6WD7F—fTæb‚w&ö¦V7G2r“°¢VÇ6R6WD7F—fTæb†çVÆÂ“°¢ÒÂµÒ“° ¢6öç7B÷Vä÷$7F—fFUF"ÒW6T6ÆÆ&6²‚‡F#¢F"Â&V6÷&D†—7F÷'’ÒG'VR’Óâ°¢6WEF'2‚†7W'&VçB’Óâ7W'&VçBç6öÖR‚†—FVÒ’Óâ—FVÒæ–BÓÓÒF"æ–B’ò7W'&VçBæÖ‚†—FVÒ’Óâ—FVÒæ–BÓÓÒF"æ–Bò²ââæ—FVÒÂââçF"Ò¢—FVÒ’¢²ââæ7W'&VçBÂF%Ò“°¢Ç•F"‡F"“°¢–b‡&V6÷&D†—7F÷'’’°¢6öç7B7W'&VçE6æ6†÷BÒF$†—7F÷'•·F$†—7F÷'”–æFW…Ó°¢–b‚7W'&VçE6æ6†÷BÇÂF%7FFT¶W’†7W'&VçE6æ6†÷B’ÓÒF%7FFT¶W’‡F"’’°¢6öç7BæW‡D–æFW‚ÒF$†—7F÷'”–æFW‚²°¢6WEF$†—7F÷'’‚†7W'&VçB’Óâ²ââæ7W'&VçBç6Æ–6RƒÂæW‡D–æFW‚’Â²ââçF"ÕÒ“°¢6WEF$†—7F÷'”–æFW‚†æW‡D–æFW‚“°¢Ğ¢Ğ¢ÒÂ¶Ç•F"ÂF$†—7F÷'’ÂF$†—7F÷'”–æFW…Ò“° ¢6öç7B6VÆV7EF"ÒW6T6ÆÆ&6²‚‡F$–C¢7G&–ærÂ&V6÷&D†—7F÷'’ÒG'VR’Óâ°¢6öç7BF"ÒF'2æf–æB‚†—FVÒ’Óâ—FVÒæ–BÓÓÒF$–B“°¢–b‚F"’&WGW&ã°¢Ç•F"‡F"“°¢–b‡&V6÷&D†—7F÷'’’°¢6öç7B7W'&VçE6æ6†÷BÒF$†—7F÷'•·F$†—7F÷'”–æFW…Ó°¢–b‚7W'&VçE6æ6†÷BÇÂF%7FFT¶W’†7W'&VçE6æ6†÷B’ÓÒF%7FFT¶W’‡F"’’°¢6öç7BæW‡D–æFW‚ÒF$†—7F÷'”–æFW‚²°¢6WEF$†—7F÷'’‚†7W'&VçB’Óâ²ââæ7W'&VçBç6Æ–6RƒÂæW‡D–æFW‚’Â²ââçF"ÕÒ“°¢6WEF$†—7F÷'”–æFW‚†æW‡D–æFW‚“°¢Ğ¢Ğ¢ÒÂ¶Ç•F"ÂF$†—7F÷'’ÂF$†—7F÷'”–æFW‚ÂF'5Ò“° ¢6öç7B6Æ÷6UF"ÒW6T6ÆÆ&6²‚‡F$–C¢7G&–ær’Óâ°¢–b‡F$–BÓÓÒU$õD"æ–B’&WGW&ã°¢6öç7B6Æ÷6–ærÒF'2æf–æB‚‡F"’ÓâF"æ–BÓÓÒF$–B“°¢–b†6Æ÷6–æsòç&Wf–Wt–B’°¢6öç7B&Wf–WrÒf–ÆU&Wf–Ww5¶6Æ÷6–ærç&Wf–Wt–EÓ°¢–b‡&Wf–WsòçW&Âç7F'G5v—F‚‚v&Æö#¢r’’U$Âç&Wfö¶Tö&¦V7EU$Â‡&Wf–WrçW&Â“°¢6WDf–ÆU&Wf–Ww2‚†7W'&VçB’Óâ²6öç7BæW‡BÒ²ââæ7W'&VçBÓ²FVÆWFRæW‡E¶6Æ÷6–ærç&Wf–Wt–BÓ²&WGW&âæW‡C²Ò“°¢Ğ¢6WEF'2‚†7W'&VçB’Óâ°¢–b†7W'&VçBæÆVæwF‚ÃÒ’&WGW&â7W'&VçC°¢6öç7B–æFW‚Ò7W'&VçBæf–æD–æFW‚‚†—FVÒ’Óâ—FVÒæ–BÓÓÒF$–B“°¢6öç7BæW‡BÒ7W'&VçBæf–ÇFW"‚†—FVÒ’Óâ—FVÒæ–BÓÒF$–B“°¢–b‡F$–BÓÓÒ7F—fUF$–B’°¢6öç7BfÆÆ&6²ÒæW‡E´ÖF‚æÖ‚ƒÂÖF‚æÖ–â†–æFW‚ÒÂæW‡BæÆVæwF‚Ò’•ÒóòU$õD#°¢v–æF÷rç6WEF–ÖV÷WB‚‚’ÓâÇ•F"†fÆÆ&6²’Â“°¢Ğ¢&WGW&âæW‡C°¢Ò“°¢ÒÂ¶7F—fUF$–BÂÇ•F"Âf–ÆU&Wf–Ww2ÂF'5Ò“° ¢6öç7BvõF$†—7F÷'’ÒW6T6ÆÆ&6²‚†F—&V7F–öã¢ÓÂ’Óâ°¢ÆWBæW‡D–æFW‚ÒF$†—7F÷'”–æFW‚²F—&V7F–öã°¢v†–ÆR†æW‡D–æFW‚ãÒbbæW‡D–æFW‚ÂF$†—7F÷'’æÆVæwF‚’°¢6öç7B6æ6†÷BÒF$†—7F÷'•¶æW‡D–æFW…Ó°¢–b‡F'2ç6öÖR‚‡F"’ÓâF"æ–BÓÓÒ6æ6†÷Bæ–B’’°¢6WEF$†—7F÷'”–æFW‚†æW‡D–æFW‚“°¢6WEF'2‚†7W'&VçB’Óâ7W'&VçBæÖ‚‡F"’ÓâF"æ–BÓÓÒ6æ6†÷Bæ–Bò²ââçF"Âââç6æ6†÷BÒ¢F"’“°¢Ç•F"‡6æ6†÷B“°¢&WGW&ã°¢Ğ¢æW‡D–æFW‚³ÒF—&V7F–öã°¢Ğ¢ÒÂ¶Ç•F"ÂF/;çËh‘éì¶»§q«^v_X[Y\İ[\ˆ	Ú\İ›İÉËİ]\Îˆ	Ñ˜Z[Y	ÈWJNÂˆBˆJJ
+NÂˆ›ÚYÛİ[ÈËÈİ\™\ÜÈ[8 %Ûİ[\ÙY›ÜˆRH˜[Z[™ÈX›İ™BˆKˆØXİ]™T›Ú™XİXİ]™T›Ú™XİYÚ]™XYËÜ[“ÜXİ]˜]UX‹\ÚØ\İ™Yœ™\Ú[œÜXİÜ‘]K\]U™XYY\ÜØYÙ\×Bˆ
+NÂ‚ˆÛÛœİ[™P\›İ˜[XÚ\Ú[ÛˆH\ÙPØ[˜XÚÊˆ\Ş[˜È
+ˆXÚ\Ú[Ûˆ	Ø\›İ™Y	È	Ü™Z™XİY	È	ÙY]Y	Ëˆ›İ\ÏÎˆİš[™ËˆY]Y[œ]Îˆ™XÛÜ™İš[™Ë[O‚ˆ
+HOˆÂˆÛÛœİ\›İ˜[HXİ]™U™XY]™K˜\›İ˜[ÂˆYˆ
+X\›İ˜[
+H™]\›Â‚ˆËÈ8¥ 8¥ \Y\›İ˜[™XYš[™[™È8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ 8¥ ˆËÈ\›İ˜[ÜšYÚ[œØX\È\›İ˜[šY8¡¤ˆÜšYÚ[˜][™Õ™XYYÙ]]BˆËÈ[ÛY[H\›İ˜[Ø\È˜Z\ÙYˆ\È™\XÙ\ÈH\È[XXÚÈ[™ˆËÈİ\š]™\ÈH\Ù\ˆ˜]šYØ][™ÈÈHY™™\™[™XY™Y›Ü™HXÚY[™Ë‚ˆÛÛœİÜšYÚ[˜][™Õ™XYYˆİš[™ÈBˆ\›İ˜[ÜšYÚ[œÖØ\›İ˜[šYHÏÈXİ]™U™XYYÏÈ	ÉÎÂˆYˆ
+[ÜšYÚ[˜][™Õ™XYY
+H™]\›Â‚ˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ[”İ]\Îˆ	Ü[›š[™ÉÈJNÂˆHÂˆÛÛœİXÚ\Ú[Û”™\ÜH]ØZ]\KœİX›Z]\›İ˜[
+ˆ\›İ˜[šYˆXÚ\Ú[Û‹ˆ›İ\ËˆY]Y[œ]ˆ
+NÂ‚ˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ[”İ]\ÎˆXÚ\Ú[Û”™\Ü™^Xİ][Û—Üİ]\ÈJNÂ‚ˆYˆ
+XÚ\Ú[Û”™\Ü™^Xİ][Û—Üİ]\ÈOOH	İØZ][™×Ù›Ü—Ø\›İ˜[	È	‰ˆXÚ\Ú[Û”™\Ü˜\›İ˜[ÚY
+HÂˆÛÛœİ™^\H]ØZ]\K™™]Ú\›İ˜[
+XÚ\Ú[Û”™\Ü˜\›İ˜[ÚY
+NÂˆËÈ™YÚ\İ\ˆH™^\›İ˜[[ˆH\YX\ˆÙ]\›İ˜[ÜšYÚ[œÊ
+™]ŠHOˆ
+È‹‹œ™]‹Û™^\šYNˆÜšYÚ[˜][™Õ™XYYJJNÂˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ\›İ˜[ˆ™^\JNÂˆH[ÙHÂˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ\›İ˜[ˆ[JNÂˆYˆ
+XÚ\Ú[Û”™\Ü™š[˜[Ü™\ÜÛœÙJHÂˆ]İ\Îˆ^Xİ][Û”İ\×HH×NÂˆYˆ
+XÚ\Ú[Û”™\Üœ[—ÚY
+HÂˆHÂˆÛÛœİ‘]Z[H]ØZ]\K™™]Ú[‘]Z[ÊXÚ\Ú[Û”™\Üœ[—ÚY
+NÂˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ[‘]Z[ˆ‘]Z[JNÂˆİ\ÈHX\[‘]™[ÕÑ^Xİ][Û”İ\Ê‘]Z[™]™[ÊNÂˆHØ]Ú
+JHÂˆÛÛœÛÛKØ\›Š	Ñ˜Z[YÈ™]Ú[ˆ]Z[ÈY\ˆ\›İ˜[	ËJNÂˆBˆB‚ˆÛÛœİ›Û˜ÙHH]K››İÊ
+NÂˆÛÛœİ\ÜÚ\İ[\ÙÎˆÚ]Y\ÜØYÙHHÂˆYˆ]™KX\›İ˜[X\ÜÚ\İ[IÛ›Û˜Ù_Xˆ›ÛNˆ	Ø\ÜÚ\İ[	Ëˆœ˜[˜Úˆ	Ô›Ûİ	Ëˆ›ÙRYˆ]™KX\›İ˜[X\ÜÚ\İ[[›ÙKIÛ›Û˜Ù_XˆÛÛ[ˆXÚ\Ú[Û”™\Ü™š[˜[Ü™\ÜÛœÙKˆ[Y\İ[\ˆ	Ú\İ›İÉËˆÜ™X]YØ]ˆ™]È]J
+KÒTÓÔİš[™Ê
+Kˆİ]\Îˆ	ĞÛÛ\]Y	Ëˆ^Xİ][Û“X™[ˆİ\Ë›[™İˆÈUTH0­È	Üİ\Ë›[™İHİ\Øˆ[™Yš[™Yˆ^Xİ][Ûˆİ\Ë›[™İˆÈİ\Èˆ[™Yš[™YˆNÂˆËÈ\[™ÈÔ’QÒSUS‘È™XY›İHİ\œ™[HXİ]™HÛ™Bˆ\]U™XYY\ÜØYÙ\ÊÜšYÚ[˜][™Õ™XYY
+™]ŠHOˆË‹‹œ™]‹\ÜÚ\İ[\Ù×JNÂˆBˆB‚ˆËÈš^Nˆ\ÙHXÚ\Ú[Û”™\Üœ[—ÚY\ÈH]]Üš]]]™HQ›Üˆ\È™Yœ™\ÚÂˆËÈ˜[˜XÚÈÈH™XY	ÜÈİÜ™Y[’YÛ›HYˆH™\ÜÛœÙHÛZ]È]‚ˆÛÛœİ[’YHXÚ\Ú[Û”™\Üœ[—ÚYÏÈ™XY]™Tİ]\ÖÛÜšYÚ[˜][™Õ™XYYOËœ[’YÂˆYˆ
+[’Y
+HÂˆ›ÚY™Yœ™\Ú[œÜXİÜ‘]JÜšYÚ[˜][™Õ™XYY[’Y
+NÂˆBˆYˆ
+Xİ]™T›Ú™XİË›˜[YJHÂˆ\K™™]ÚY[[ÜšY\ÊXİ]™T›Ú™Xİ›˜[YJK[ŠÙ]Y[[ÜšY\ÊK˜Ø]Ú
+
+
+HOˆßJNÂˆBˆHØ]Ú
+\œˆ[JHÂˆ]Ú™XY]™JÜšYÚ[˜][™Õ™XYYÈ[”İ]\Îˆ	Ù˜Z[Y	ÈJNÂˆÛÛœÛÛK™\œ›ÜŠ	Ğ\›İ˜[XÚ\Ú[Ûˆ\œ›Ü‰Ë\œŠNÂˆBˆKˆÂˆXİ]™U™XY]™K˜\›İ˜[ˆXİ]™U™XYYˆ\›İ˜[ÜšYÚ[œËˆ™XY]™Tİ]\Ëˆ\]U™XYY\ÜØYÙ\Ëˆ™Yœ™\Ú[œÜXİÜ‘]KˆXİ]™T›Ú™XİË›˜[YKˆBˆ
+NÂ‚ˆÛÛœİ[]]ÛX][ÛˆH\ÙPØ[˜XÚÊ
+]]ÛX][Ûˆ]]ÛX][Û”™XÛÜ™
+HOˆÂˆÙ]]]ÛX][ÛœÊ
+İ\œ™[
+HOˆİ\œ™[›X\
+
+][JHOˆ][KšYOOH]]ÛX][Û‹šYÈÈ‹‹š][Kİ]\Îˆ	Ü[›š[™ÉË\İ[ˆ	Ô[›š[™È›İø )‰ÈHˆ][JJNÂˆ\ÚØ\İ
+[›š[™È0­È	Ø]]ÛX][Û‹›˜[Y_X	Ô›İİ\H[ˆÛ›H8 %›È^\›˜[Xİ[ÛœÈ\™H^Xİ]Y‰ÊNÂˆÚ[™İËœÙ][Y[İ]
+
+
+HOˆÂˆÙ]]]ÛX][ÛœÊ
+İ\œ™[
+HOˆİ\œ™[›X\
+
+][JHOˆ][KšYOOH]]ÛX][Û‹šYÈÈ‹‹š][Kİ]\Îˆ	Ü™XYIË\İ[ˆ	ĞÛÛ\]Y\İ›İÉÈHˆ][JJNÂˆKMŒ
+NÂˆKÜ\ÚØ\İJNÂ‚ˆÛÛœİXİ]™PÛÛ›™Xİ[ÛˆH\™XİÜPÛÛ›™Xİ[ÛœË™š[™
+
+][JHOˆ][KšYOOHXİ]™PÛÛ›™Xİ[Û’Y
+HÏÈ[ÂˆÛÛœİ]HHİ\™˜XÙHOOH	ÙÛØ˜[ZÛYIÈÈ	ÒÛYIÂˆˆİ\™˜XÙHOOH	ÛXœ˜\IÈÈ	ÓXœ˜\IÂˆˆİ\™˜XÙHOOH	Û›İ\ÉÈÈ	Ó›İ\ÉÂˆˆİ\™˜XÙHOOH	ÜİYIÈÈ	ÔİYIÂˆˆİ\™˜XÙHOOH	Ø]]ÛX][ÛœÉÈÈ	Ğ]]ÛX][ÛœÉÂˆˆİ\™˜XÙHOOH	Ü›Ú™XİÉÈÈ	Ô›Ú™XİÉÂˆˆİ\™˜XÙHOOH	Ù›Û\‹]šY]Ù\‰ÈÈXİ]™PÛÛ›™Xİ[ÛË›˜[YHÏÈ	ĞÛÛ›™XİY›Û\‰Âˆˆİ\™˜XÙHOOH	Ùš[K]šY]Ù\‰ÈÈXİ]™Qš[T™]šY]ÏË›˜[YHÏÈ	Ñš[IÂˆˆ	ÒÛYIÎÂ‚ˆÛÛœİØØ][Û•˜[YHHİ\™˜XÙHOOH	ÙÛØ˜[ZÛYIÈÈ	Ø]\˜N‹ËÚÛYIÂˆˆİ\™˜XÙHOOH	ÛXœ˜\IÈÈ	Ø]\˜N‹ËÛXœ˜\IÂˆˆİ\™˜XÙHOOH	Ù›Û\‹]šY]Ù\‰ÈÈ›Û\‹ËÉØXİ]™PÛÛ›™Xİ[ÛË›˜[YHÏÈ	ØÛÛ›™XİY	ßXˆˆİ\™˜XÙHOOH	Ùš[K]šY]Ù\‰ÈÈXİ]™Qš[T™]šY]ÏËš\X[]ÏÈ	Ø]\˜N‹ËÙš[IÂˆˆXİ]™T›Ú™XİÈ]\˜N‹ËÜ›Ú™XİËÉØXİ]™T›Ú™Xİ›˜[YKœ™\XÙJ×ÊËÙË	ËIÊKÓİÙ\Ø\ÙJ
+_KÉÜİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈÈ[ÙHˆİ\™˜XÙKœ™\XÙJ	Ü›Ú™XİIË	ÉÊ_Xˆˆ]\˜N‹ËÉÜİ\™˜XÙ_XÂ‚ˆÛÛœİ[™SØØ][Û”İX›Z]H
+˜[YNˆİš[™ÊHOˆÂˆÛÛœİš[[YYH˜[YKš[J
+NÂˆYˆ
+]š[[YY
+H™]\›ÂˆYˆ
+×šÏÎ—×ËÚK\İ
+š[[YY
+JHÂˆÚ[™İË›Ü[Šš[[YY	×Ø›[šÉË	Û›ÛÜ[™\‹›Ü™Y™\œ™\‰ÊNÂˆ\ÚØ\İ
+	ÓÜ[™YT“	Ëš[[YY
+NÂˆ™]\›ÂˆBˆÛÛœİ›Ü›X[^™YHš[[YYÓİÙ\Ø\ÙJ
+NÂˆYˆ
+›Ü›X[^™Yš[˜ÛY\Ê	ÛXœ˜\IÊJHÈ[™TÚYX˜\“˜]šYØ]J	ÛXœ˜\IÊNÈ™]\›ÈBˆYˆ
+›Ü›X[^™Yš[˜ÛY\Ê	ÚÛYIÊJHÈ[™TÚYX˜\“˜]šYØ]J	ÚÛYIÊNÈ™]\›ÈBˆÛÛœİX]Ú[™Ô›Ú™XİH›Ú™XİË™š[™
+
+›Ú™Xİ
+HOˆ›Ú™Xİ›˜[YKÓİÙ\Ø\ÙJ
+Kš[˜ÛY\Ê›Ü›X[^™Y
+H›Ü›X[^™Yš[˜ÛY\Ê›Ú™Xİ›˜[YKÓİÙ\Ø\ÙJ
+JJNÂˆYˆ
+X]Ú[™Ô›Ú™Xİ
+HÈÜ[”›Ú™Xİ
+X]Ú[™Ô›Ú™XİšY
+NÈ™]\›ÈBˆÛÛœİX]Ú[™ĞÛÛ›™Xİ[ÛˆH\™XİÜPÛÛ›™Xİ[ÛœË™š[™
+
+ÛÛ›™Xİ[ÛŠHOˆÛÛ›™Xİ[Û‹›˜[YKÓİÙ\Ø\ÙJ
+Kš[˜ÛY\Ê›Ü›X[^™Y
+JNÂˆYˆ
+X]Ú[™ĞÛÛ›™Xİ[ÛŠHÈÜ[ÛÛ›™Xİ[ÛŠX]Ú[™ĞÛÛ›™Xİ[ÛŠNÈ™]\›ÈBˆ\ÚØ\İ
+	ÕÛÜšÜÜXÙHÙX\˜Ú	ËÙX\˜Ú[™ÈUTH›Üˆ8 '	İš[[YYx 'H\È[ØÚÙY[ˆÈİ›ø£&Èİ[Ü[œÈ\ÚÈUTK˜
+NÂˆNÂ‚ˆÛÛœİ›Ú™Xİš[PÛİ[HXİ]™T›Ú™XİYÈXœ˜\R][\Ë™š[\Š
+][JHOˆ][Kœ›Ú™Xİ[šÜÏËš[˜ÛY\ÊXİ]™T›Ú™XİY
+JK›[™İ
+È›Ú™Xİ\Y˜XİË™š[\Š
+][JHOˆ][Kœ›Ú™XİYOOHXİ]™T›Ú™XİY
+K›[™İˆÂˆÛÛœİ›Ú™Xİ›İPÛİ[HXİ]™T›Ú™XİYÈ›İ\Ë™š[\Š
+›İJHOˆ›İKœ›Ú™XİYËš[˜ÛY\ÊXİ]™T›Ú™XİY
+JK›[™İˆÂ‚ˆ™]\›ˆ
+ˆ]ˆÛ\ÜÓ˜[YO^Ø\\Ú[	Ú[œÜXİÜ“Ü[ˆ	‰ˆİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈÈ	İÚ]Z[œÜXİÜ‰Èˆ	ÉßH	ÜÚYX˜\ÛÛ\ÙYÈ	ÜÚYX˜\‹Z\ËXÛÛ\ÙY	Èˆ	ÉßXO‚ˆÚYX˜\‚ˆÛÛ\ÙY^ÜÚYX˜\ÛÛ\ÙYBˆXİ]™O^ØXİ]™S˜]ŸBˆXİ]™T›Ú™XİY^ØXİ]™T›Ú™XİYBˆXœ˜\PÛİ[^ÛXœ˜\R][\Ë›[™İBˆÛÛÛ\ÙYÚ[™ÙO^ÜÙ]ÚYX˜\ÛÛ\ÙYBˆÛ“˜]šYØ]O^Ú[™TÚYX˜\“˜]šYØ]_BˆÛ”›Ú™XİÜ[^ÛÜ[”›Ú™XİBˆÛ“™]Ô›Ú™Xİ^Ê
+HOˆ\ÚØ\İ
+	Ó™]È›Ú™Xİ	Ë	Ô›Ú™XİÜ™X][ÛˆRH\ÈHÛ™H™[XZ[š[™È[ØÚÙYÚ[Xİ[Ûˆ[ˆË‰Ê_BˆÏ‚‚ˆÜ˜\‚ˆ›Ú™Xİ˜[YO^ØXİ]™T›Ú™XİË›˜[YHÏÈ[Bˆ›Ú™XİÙXİ[Û^Ü›Ú™XİÙXİ[ÛŸBˆÛØ˜[]O^İ]_Bˆ[ÙO^Û[Ù_BˆÛ“[ÙPÚ[™ÙO^Ú[™S[ÙPÚ[™Ù_BˆÛ“Ü[”›Ú™Xİİ™\šY]Ï^ÛÜ[”›Ú™Xİİ™\šY]ßBˆÛ“Ü[”›Ú™Xİš[\Ï^ÛÜ[”›Ú™Xİš[\ßBˆ›İ][™ÓÜ[^Ü›İ][™ÓÜ[ŸBˆÛ”›İ][™ÓÜ[Ú[™ÙO^ÜÙ]›İ][™ÓÜ[ŸBˆY™™Xİ]™T›İ][™Ï^ÙY™™Xİ]™T›İ][™ßBˆØ][ÙÏ^ØØ][ÙßBˆÙ\ÜÚ[Û]˜Z[X›O^ÜÙ\ÜÚ[Û]˜Z[X›_BˆØÚÙY[Ù[^ØXİ]™U™XYİ™\œšY\ÏË›[Ù[ÏÈ[Bˆ™X\ÛÛš[™Óİ™\œšYO^ØXİ]™U™XYİ™\œšY\ÏËœ™X\ÛÛš[™ÈÏÈ[BˆÛ”Ù][Ù[ØÚÏ^ÜÙ]Xİ]™S[Ù[ØÚßBˆÛ”Ù]™X\ÛÛš[™Óİ™\œšYO^ÜÙ]Xİ]™T™X\ÛÛš[™Óİ™\œšY_BˆÛ“Ü[”›İ][™ÔİY[Ï^Ê
+HOˆÈÙ]›İ][™ÓÜ[Š˜[ÙJNÈÙ]›İ][™ÔİY[ÓÜ[ŠYJNÈ_Bˆ[œÜXİÜ“Ü[^Ú[œÜXİÜ“Ü[ŸBˆÛ•ÙÙÛR[œÜXİÜ^Ê
+HOˆÙ][œÜXİÜ“Ü[Š
+˜[YJHOˆ]˜[YJ_BˆÛ“Ü[]\˜O^Ê
+HOˆÙ]]\˜SÜ[ŠYJ_BˆÏ‚ˆ›İ][™ÔİY[ÂˆÜ[^Ü›İ][™ÔİY[ÓÜ[ŸBˆ›Ú™Xİ˜[YO^ØXİ]™T›Ú™XİË›˜[YHÏÈ	ÉßBˆÙ\ÜÚ[Û’Y^ØXİ]™U™XYËœÙ\ÜÚ[Û’YBˆÙ\ÜÚ[Û]˜Z[X›O^ÜÙ\ÜÚ[Û]˜Z[X›_BˆY™™Xİ]™O^ÙY™™Xİ]™T›İ][™ßBˆØ][ÙÏ^ØØ][ÙßBˆÛÛÜÙO^Ê
+HOˆÙ]›İ][™ÔİY[ÓÜ[Š˜[ÙJ_BˆÛ”Ø]™Y^Ê
+HOˆÂˆYˆ
+Xİ]™T›Ú™XİË›˜[YJH›ÚY\K™™]ÚY™™Xİ]™T›İ][™ÊXİ]™T›Ú™Xİ›˜[YKÙ\ÜÚ[Û]˜Z[X›HÈXİ]™U™XYËœÙ\ÜÚ[Û’Yˆ[™Yš[™Y
+K[ŠÙ]Y™™Xİ]™T›İ][™ÊK˜Ø]Ú
+
+
+HOˆßJNÂˆ_BˆÛ”Ù][Ù[ØÚÏ^ÜÙ]Xİ]™S[Ù[ØÚßBˆÛ”™Yœ™\Ú[Ù[Ï^Ø\Ş[˜È
+
+HOˆÈHÈÙ]Ø][ÙÊ]ØZ]\Kœ™Yœ™\Ú[Ù[Ê
+JNÈHØ]Ú
+\œ›ÜŠHÈ\ÚØ\İ
+	Ó[Ù[\ØÛİ™\H˜Z[Y	Ë^Xİ][Û‘\œ›Ü•^
+\œ›ÜŠJNÈH_BˆÏ‚ˆÜ›İ][™ĞÛÛ™š\›X][ÛˆÈ›İ][™ĞÛÛ™š\›X][Û“›İXÙBˆ›ÜÜØ[^Ü›İ][™ĞÛÛ™š\›X][ÛŸBˆÛØ[˜Ù[^Ê
+HOˆÙ]›İ][™ĞÛÛ™š\›X][ÛŠ[
+_BˆÛ“Ü[”İY[Ï^Ê
+HOˆÈÙ]›İ][™ĞÛÛ™š\›X][ÛŠ[
+NÈÙ]›İ][™ÔİY[ÓÜ[ŠYJNÈ_BˆÛÚ[™ÙT›İ][™Ï^Ê
+HOˆÈÙ]›İ][™ĞÛÛ™š\›X][ÛŠ[
+NÈÙ]Xİ]™S[Ù[ØÚÊ[
+NÈÙ]›İ][™ÔİY[ÓÜ[ŠYJNÈ_BˆÏˆˆ[B‚ˆÛÜšÜÜXÙPÚ›ÛYBˆXœÏ^İXœßBˆXİ]™UX’Y^ØXİ]™UX’YBˆØØ][Û•˜[YO^ÛØØ][Û•˜[Y_BˆØ[‘ÛĞ˜XÚÏ^İX’\İÜR[™^ˆBˆØ[‘ÛÑ›ÜØ\™^İX’\İÜR[™^X’\İÜK›[™İH_BˆÛ‘ÛĞ˜XÚÏ^Ê
+HOˆÛÕX’\İÜJLJ_BˆÛ‘ÛÑ›ÜØ\™^Ê
+HOˆÛÕX’\İÜJJ_BˆÛ”Ù[XİX^ÜÙ[XİXŸBˆÛÛÜÙUX^ØÛÜÙUXŸBˆÛ”İX›Z]ØØ][Û^Ú[™SØØ][Û”İX›Z]BˆÏ‚‚ˆXZ[ˆÛ\ÜÓ˜[YO^ØÛÜšÜÜXÙHÛÜšÜÜXÙKKIÜİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈÈ[ÙHˆİ\™˜XÙ_XO‚ˆÜİ\™˜XÙHOOH	ÙÛØ˜[ZÛYIÈÈ
+ˆÛØ˜[ÛYBˆXœ˜\R][\Ï^ÛXœ˜\R][\ßBˆ]]ÛX][ÛœÏ^Ø]]ÛX][ÛœßBˆ›İPÛİ[^Û›İ\Ë›[™İBˆÛ“Ü[”›Ú™Xİ^ÛÜ[”›Ú™XİBˆÛ“Ü[”›Ú™XİÏ^Ê
+HOˆ[™TÚYX˜\“˜]šYØ]J	Ü›Ú™XİÉÊ_BˆÛ“Ü[“Xœ˜\O^Ê
+HOˆ[™TÚYX˜\“˜]šYØ]J	ÛXœ˜\IÊ_BˆÛ“Ü[‘š[O^ÊY
+HOˆÂˆÛÛœİ][HHXœ˜\R][\Ë™š[™
+
+[JHOˆ[KšYOOHY
+NÂˆYˆ
+][JH›ÚY[™SXœ˜\R][J][JNÂˆ_BˆÏ‚ˆ
+Hˆ[B‚ˆÜİ\™˜XÙHOOH	ÛXœ˜\IÈÈ
+ˆXœ˜\UšY]Âˆ][\Ï^ÛXœ˜\R][\ßBˆÛÛ›™Xİ[ÛœÏ^Ù\™XİÜPÛÛ›™Xİ[ÛœßBˆ\™XİÜTXÚÙ\”İ\ÜY^Üİ\ÜÑ\™XİÜTXÚÙ\Š
+_BˆÛ“Ü[’][O^Ê][JHOˆ›ÚY[™SXœ˜\R][J][J_BˆÛ’[\Üš[\Ï^Êš[\ÊHOˆ›ÚY[\Üš[\Êš[\Ê_BˆÛ•ÙÙÛT›Ú™Xİ[šÏ^İÙÙÛT›Ú™Xİ[šßBˆÛ”™[[İ™R][O^Ê][JHOˆ›ÚY™[[İ™SXœ˜\R][J][J_BˆÛÛÛ›™Xİ›Û\^Ê
+HOˆ›ÚYÛÛ›™Xİ›Û\Š
+_BˆÛ“Ü[ÛÛ›™Xİ[Û^ÛÜ[ÛÛ›™Xİ[ÛŸBˆÛ‘\ØÛÛ›™XİÛÛ›™Xİ[Û^ÊÛÛ›™Xİ[ÛŠHOˆ›ÚY\ØÛÛ›™XİÛÛ›™Xİ[ÛŠÛÛ›™Xİ[ÛŠ_BˆÏ‚ˆ
+Hˆ[BˆÜİ\™˜XÙHOOH	Ù›Û\‹]šY]Ù\‰È	‰ˆXİ]™PÛÛ›™Xİ[ÛˆÈ
+ˆÛÛ›™XİY›Û\•šY]ÂˆÛÛ›™Xİ[Û^ØXİ]™PÛÛ›™Xİ[ÛŸBˆÛ˜XÚÕÓXœ˜\O^Ê
+HOˆ[™TÚYX˜\“˜]šYØ]J	ÛXœ˜\IÊ_BˆÛ‘\ØÛÛ›™Xİ^ÊÛÛ›™Xİ[ÛŠHOˆ›ÚY\ØÛÛ›™XİÛÛ›™Xİ[ÛŠÛÛ›™Xİ[ÛŠ_BˆÛ“Ü[‘š[O^Ú[™PÛÛ›™XİYš[_BˆÏ‚ˆ
+Hˆ[BˆÜİ\™˜XÙHOOH	Ùš[K]šY]Ù\‰È	‰ˆXİ]™Qš[T™]šY]ÈÈ
+ˆš[T™]šY]ÕšY]È™]šY]Ï^ØXİ]™Qš[T™]šY]ßHÛ“Ü[‘^\›˜[^Ê
+HOˆÚ[™İË›Ü[ŠXİ]™Qš[T™]šY]Ë\›	×Ø›[šÉË	Û›ÛÜ[™\‹›Ü™Y™\œ™\‰Ê_HÏ‚ˆ
+Hˆ[BˆÜİ\™˜XÙHOOH	Û›İ\ÉÈÈ›İ\ÕšY]È›İ\Ï^Û›İ\ßHÛ“›İ\ĞÚ[™ÙO^ÜÙ]›İ\ßHÛ“Ü[”›Ú™Xİ^ÛÜ[”›Ú™XİHÏˆˆ[BˆÜİ\™˜XÙHOOH	ÜİYIÈÈİYUšY]ÈXœ˜\R][\Ï^ÛXœ˜\R][\ßHÛ“Ü[’][O^Ê][JHOˆ›ÚY[™SXœ˜\R][J][J_HÛ”İ\Ù\ÜÚ[Û^Ê˜XÚÒY
+HOˆ\ÚØ\İ
+	ÔİYHÙ\ÜÚ[Ûˆİ\Y	Ë	İ˜XÚÒYH0­È›İİ\H[Y\‹ØXİ]š]H\È[ØÚÙY˜
+_HÏˆˆ[BˆÜİ\™˜XÙHOOH	Ø]]ÛX][ÛœÉÈÈ]]ÛX][ÛœÕšY]È]]ÛX][ÛœÏ^Ø]]ÛX][ÛœßHÛ]]ÛX][ÛœĞÚ[™ÙO^ÜÙ]]]ÛX][ÛœßHÛ”[“›İÏ^Ü[]]ÛX][ÛŸHÏˆˆ[BˆÜİ\™˜XÙHOOH	Ü›Ú™XİÉÈÈ›Ú™XİÕšY]ÈÛ“Ü[”›Ú™Xİ^ÛÜ[”›Ú™XİHÛ“[ØÚĞÜ™X]O^Ê
+HOˆ\ÚØ\İ
+	Ó™]È›Ú™Xİ	Ë	Ô›Ú™XİÜ™X][Ûˆ\Èİ[[ØÚÙY[ˆ\ÈRH›İİ\K‰Ê_HÏˆˆ[B‚ˆÜİ\™˜XÙHOOH	Ü›Ú™Xİ[İ™\šY]ÉÈ	‰ˆXİ]™T›Ú™XİÈ
+ˆ›Ú™XİÛYBˆ›Ú™XİY^ØXİ]™T›Ú™XİšYBˆÚ]Ûİ[^Ü›Ú™Xİ™XYË›[™İBˆš[PÛİ[^Ü›Ú™Xİš[PÛİ[Bˆ›İPÛİ[^Ü›Ú™Xİ›İPÛİ[BˆÛ˜XÚÏ^Ê
+HOˆ[™TÚYX˜\“˜]šYØ]J	Ü›Ú™XİÉÊ_BˆÛ“Ü[“›ÙO^ÛÜ[›Ø\™›Ù_BˆÛ“Ü[Ú]Ï^ÛÜ[”›Ú™XİÚ]ßBˆÛ“Ü[‘š[\Ï^ÛÜ[”›Ú™Xİš[\ßBˆÛ“[ØÚÓØš™Xİ^ÊX™[
+HOˆ\ÚØ\İ
+X™[	ÓÜ[ˆÚ]Ëš[\ÈÜˆ›Ø\™ÈÛÛ[YHÛÜšÚ[™ÈÚ]\ÈØš™Xİ‰Ê_BˆÏ‚ˆ
+Hˆ[B‚ˆÜİ\™˜XÙHOOH	Ü›Ú™XİYš[\ÉÈ	‰ˆXİ]™T›Ú™XİÈ
+ˆ›Ú™Xİš[\ÕšY]Âˆ›Ú™Xİ^ØXİ]™T›Ú™XİBˆXœ˜\R][\Ï^ÛXœ˜\R][\ßBˆÛ˜XÚÏ^ÛÜ[”›Ú™Xİİ™\šY]ßBˆÛ“Ü[’][O^Ê][JHOˆ›ÚY[™SXœ˜\R][J][J_BˆÛ’[\Üš[\Ï^Êš[\Ë›Ú™XİY
+HOˆ›ÚY[\Üš[\Êš[\Ë›Ú™XİY
+_BˆÛ•ÙÙÛT›Ú™Xİ[šÏ^İÙÙÛT›Ú™Xİ[šßBˆÏ‚ˆ
+Hˆ[B‚ˆÜİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈ	‰ˆ[ÙHOOH	ØÚ]	È	‰ˆXİ]™T›Ú™XİÈ
+ˆ›Ú™XİÚ]ÛÜšÜÜXÙBˆ›Ú™Xİ^ØXİ]™T›Ú™XİBˆ™XYÏ^Ü›Ú™Xİ™XYßBˆXİ]™U™XYY^ØXİ]™U™XYYBˆXœ˜\R][\Ï^ÛXœ˜\R][\ßBˆ›İ\Ï^Û›İ\ßBˆ›Øİ\ÙYY\ÜØYÙRY^Ù›Øİ\ÙYY\ÜØYÙRYBˆÛ”Ù[Xİ™XY^ÜÙ[Xİ™XYBˆÛ“™]Õ™XY^Û™]Õ™XYBˆÛ•\]SY\ÜØYÙ\Ï^İ\]U™XYY\ÜØYÙ\ßBˆÛ“Y\ÜØYÙQ›Øİ\Ï^Ú[™PÚ]Y\ÜØYÙQ›Øİ\ßBˆÛœ˜[˜Úœ›ÛSY\ÜØYÙO^Ú[™Pœ˜[˜Úœ›ÛPÚ]BˆÛÛÛ^Øš™Xİ›Øİ\Ï^Ú[™PÚ]ÛÛ^Øš™Xİ›Øİ\ßBˆÛ]XÚ™\]Y\İ^ÛÜ[”›Ú™Xİš[\ßBˆÛ”Ù[™Y\ÜØYÙO^Ú[™TÙ[™Y\ÜØYÙ_BˆÛ”İ\]™PÚ]^Ú[™Tİ\]™PÚ]Bˆİ\œ™[\›İ˜[^ØXİ]™U™XY]™K˜\›İ˜[BˆÛ\›İ˜[XÚ\Ú[Û^Ú[™P\›İ˜[XÚ\Ú[ÛŸBˆÏ‚ˆ
+Hˆ[B‚ˆÜİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈ	‰ˆ[ÙHOOH	Ø›Ø\™	È	‰ˆXİ]™T›Ú™XİÈ
+ˆ›Ø\™Ø[˜\ÂˆÙ^O^ØXİ]™T›Ú™XİšYBˆ›Ø\™Ù^O^ØXİ]™T›Ú™XİšYBˆÙYY›Ù\Ï^ÙÙ[™\šXĞ›Ø\™Ë››Ù\ßBˆÙYYYÙ\Ï^ÙÙ[™\šXĞ›Ø\™Ë™YÙ\ßBˆÚİĞœ˜[˜ÚX™[Ï^ØXİ]™T›Ú™XİšYOOH	Üİ]Y[	ßBˆ›Øİ\Ó›ÙRY^Ù›Øİ\Ó›ÙRYBˆÛ“›ÙQ›Øİ\Ï^Ú[™P›Ø\™›ÙQ›Øİ\ßBˆÛ•Ø\İ^Ü\ÚØ\İBˆœ˜[˜Ú™\]Y\İ^Øœ˜[˜Ú™\]Y\İBˆ^Xİ][Û‘^[™Y^Ü\˜[\Ë™Ù]
+	Ù^Xİ][Û‰ÊHOOH	ÌIßBˆÏ‚ˆ
+Hˆ[B‚ˆÜİ\™˜XÙHOOH	İÛÜšÜÜXÙIÈ	‰ˆ[ÙHOOH	ÜÜ]	È	‰ˆXİ]™T›Ú™XİÈ
+ˆ]ˆÛ\ÜÓ˜[YOHœÜ]]ÛÜšÜÜXÙH‚ˆ]ˆÛ\ÜÓ˜[YOHœÜ]]ÛÜšÜÜXÙW×ØÚ]‚ˆ›Ú™XİÚ]ÛÜšÜÜXÙBˆÛÛ\Xİˆ›Ú™Xİ^ØXİ]™T›Ú™XİBˆ™XYÏ^Ü›Ú™Xİ™XYßBˆXİ]™U™XYY^ØXİ]™U™XYYBˆXœ˜\R][\Ï^ÛXœ˜\R][\ßBˆ›İ\Ï^Û›İ\ßBˆ›Øİ\ÙYY\ÜØYÙRY^Ù›Øİ\ÙYY\ÜØYÙRYBˆÛ”Ù[Xİ™XY^ÜÙ[Xİ™XYBˆÛ“™]Õ™XY^Û™]Õ™XYBˆÛ•\]SY\ÜØYÙ\Ï^İ\]U™XYY\ÜØYÙ\ßBˆÛ“Y\ÜØYÙQ›Øİ\Ï^Ú[™PÚ]Y\ÜØYÙQ›Øİ\ßBˆÛœ˜[˜Úœ›ÛSY\ÜØYÙO^Ú[™Pœ˜[˜Úœ›ÛPÚ]BˆÛÛÛ^Øš™Xİ›Øİ\Ï^Ú[™PÚ]ÛÛ^Øš™Xİ›Øİ\ßBˆÛ]XÚ™\]Y\İ^ÛÜ[”›Ú™Xİš[\ßBˆÛ”Ù[™Y\ÜØYÙO^Ú[™TÙ[™Y\ÜØYÙ_BˆÛ”İ\]™PÚ]^Ú[™Tİ\]™PÚ]Bˆİ\œ™[\›İ˜[^ØXİ]™U™XY]™K˜\›İ˜[BˆÛ\›İ˜[XÚ\Ú[Û^Ú[™P\›İ˜[XÚ\Ú[ÛŸBˆÏ‚ˆÙ]‚ˆ]ˆÛ\ÜÓ˜[YOHœÜ]]ÛÜšÜÜXÙW×Ø›Ø\™‚ˆ›Ø\™Ø[˜\ÈÙ^O^ØÜ]IØXİ]™T›Ú™XİšYXHÛÛ\Xİ›Ø\™Ù^O^ØXİ]™T›Ú™XİšYHÙYY›Ù\Ï^ÙÙ[™\šXĞ›Ø\™Ë››Ù\ßHÙYYYÙ\Ï^ÙÙ[™\šXĞ›Ø\™Ë™YÙ\ßHÚİĞœ˜[˜ÚX™[Ï^ØXİ]™T›Ú™XİšYOOH	Üİ]Y[	ßH›Øİ\Ó›ÙRY^Ù›Øİ\Ó›ÙRYHÛ“›ÙQ›Øİ\Ï^Ú[™P›Ø\™›ÙQ›Øİ\ßHÛ•Ø\İ^Ü\ÚØ\İHœ˜[˜Ú™\]Y\İ^Øœ˜[˜Ú™\]Y\İH^Xİ][Û‘^[™Y^Ü\˜[\Ë™Ù]
+	Ù^Xİ][Û‰ÊHOOH	ÌIßHÏ‚ˆÙ]‚ˆÙ]‚ˆ
+Hˆ[BˆÛXZ[‚‚ˆÚ[œÜXİÜ“Ü[ˆÈ
+ˆ[œÜXİÜ”[™[ˆÙ[XİY›ÙO^ÜÙ[XİY›Ù_Bˆ[‘]Z[^ØXİ]™U™XY]™Kœ[‘]Z[BˆY™™Xİ]™T›İ][™Ï^ÙY™™Xİ]™T›İ][™ßBˆ›İ][™Ñ]O^ØXİ]™U™XY]™Kœ›İ][™Ñ]_Bˆ™\ÙX\˜Ú]O^ØXİ]™U™XY]™Kœ™\ÙX\˜Ú]_BˆY[[ÜšY\Ï^ÛY[[ÜšY\ßBˆÛÛÜÙO^Ê
+HOˆÙ][œÜXİÜ“Ü[Š˜[ÙJ_BˆÛÛÛ^Ù[Xİ^ÛÜ[›Ø\™›Ù_BˆÏ‚ˆ
+Hˆ[BˆØ]\˜SÜ[ˆÈ
+ˆ]\˜PÛÛ[X[™[]Bˆ›Ú™Xİ˜[YO^ØXİ]™T›Ú™XİË›˜[YHÏÈ[BˆXœ˜\R][\Ï^ÛXœ˜\R][\ßBˆ›İ\Ï^Û›İ\ßBˆ]]ÛX][ÛœÏ^Ø]]ÛX][ÛœßBˆÛÛÜÙO^Ê
+HOˆÙ]]\˜SÜ[Š˜[ÙJ_BˆÛ“Ü[“Xœ˜\O^Ê
+HOˆÈÙ]]\˜SÜ[Š˜[ÙJNÈ[™TÚYX˜\“˜]šYØ]J	ÛXœ˜\IÊNÈ_BˆÛ“Ü[“›İ\Ï^Ê
+HOˆÈÙ]]\˜SÜ[Š˜[ÙJNÈ[™TÚYX˜\“˜]šYØ]J	Û›İ\ÉÊNÈ_BˆÛ“Ü[]]ÛX][ÛœÏ^Ê
+HOˆÈÙ]]\˜SÜ[Š˜[ÙJNÈ[™TÚYX˜\“˜]šYØ]J	Ø]]ÛX][ÛœÉÊNÈ_BˆÛ“Ü[”›Ú™Xİ^Ê›Ú™XİY
+HOˆÈÙ]]\˜SÜ[Š˜[ÙJNÈÜ[”›Ú™Xİ
+›Ú™XİY
+NÈ_BˆÏ‚ˆ
+Hˆ[BˆØ\İİXÚÈØ\İÏ^İØ\İßHÏ‚ˆÙ]‚ˆ
+NÂŸB

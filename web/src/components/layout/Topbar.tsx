@@ -1,6 +1,6 @@
-import { ChevronDown, Command, Files, LayoutDashboard, LockKeyhole, PanelRightOpen, Sparkles } from 'lucide-react';
+import { ChevronDown, Command, Files, LayoutDashboard, PanelRightOpen, Sparkles } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import type { WorkspaceMode } from '../../types';
+import type { EffectiveRouting, ModelCatalog, ReasoningEffort, WorkspaceMode } from '../../types';
 import { RoutingPopover } from '../ui/RoutingPopover';
 
 interface TopbarProps {
@@ -13,8 +13,14 @@ interface TopbarProps {
   onOpenProjectFiles: () => void;
   routingOpen: boolean;
   onRoutingOpenChange: (open: boolean) => void;
-  locked: boolean;
-  onToggleLock: () => void;
+  effectiveRouting: EffectiveRouting | null;
+  catalog: ModelCatalog;
+  sessionAvailable: boolean;
+  lockedModel: string | null;
+  reasoningOverride: ReasoningEffort | null;
+  onSetModelLock: (value: string | null) => void;
+  onSetReasoningOverride: (value: ReasoningEffort | null) => void;
+  onOpenRoutingStudio: () => void;
   inspectorOpen: boolean;
   onToggleInspector: () => void;
   onOpenAura: () => void;
@@ -32,14 +38,25 @@ export function Topbar({
   onOpenProjectFiles,
   routingOpen,
   onRoutingOpenChange,
-  locked,
-  onToggleLock,
+  effectiveRouting,
+  catalog,
+  sessionAvailable,
+  lockedModel,
+  reasoningOverride,
+  onSetModelLock,
+  onSetReasoningOverride,
+  onOpenRoutingStudio,
   inspectorOpen,
   onToggleInspector,
   onOpenAura,
 }: TopbarProps) {
   const activeIndex = modes.indexOf(mode);
   const inProject = Boolean(projectName);
+  const lockedParts = lockedModel?.split(':');
+  const lockedModelInfo = lockedParts?.length === 2
+    ? catalog.providers.find((provider) => provider.id === lockedParts[0])?.models.find((model) => model.id === lockedParts[1])
+    : undefined;
+  const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
 
   return (
     <header className="topbar">
@@ -75,13 +92,6 @@ export function Topbar({
           <span>Ask AURA</span>
           <Command size={11} />
         </button>
-        {inProject && locked ? (
-          <button className="lock-pill" type="button" onClick={onToggleLock}>
-            <LockKeyhole size={13} />
-            <span>LOCKED · Model C</span>
-          </button>
-        ) : null}
-
         {inProject ? (
           <div className="routing-trigger-wrap">
             <button
@@ -89,18 +99,28 @@ export function Topbar({
               type="button"
               onClick={() => onRoutingOpenChange(!routingOpen)}
             >
-              <span>Balanced · Session</span>
+              <span>{effectiveRouting?.profile?.name ? `${effectiveRouting.profile.name} · ${effectiveRouting.winning_scope}` : 'Routing…'}</span>
               <ChevronDown size={13} />
             </button>
-            {routingOpen ? <RoutingPopover locked={locked} onToggleLock={onToggleLock} onClose={() => onRoutingOpenChange(false)} /> : null}
+            {routingOpen ? <RoutingPopover
+              effective={effectiveRouting}
+              catalog={catalog}
+              sessionAvailable={sessionAvailable}
+              lockedModel={lockedModel}
+              reasoningOverride={reasoningOverride}
+              onSetModel={onSetModelLock}
+              onSetReasoning={onSetReasoningOverride}
+              onOpenStudio={onOpenRoutingStudio}
+              onClose={() => onRoutingOpenChange(false)}
+            /> : null}
           </div>
         ) : null}
 
         {inProject ? (
-          <button className="soft-pill" type="button">
-            <Sparkles size={13} />
-            <span>Reasoning: Profile</span>
-          </button>
+          <select aria-label="Temporary reasoning override" className="topbar-reasoning-select" value={reasoningOverride ?? ''} title={fixedReasoning ? 'The locked model controls reasoning internally.' : undefined} onChange={(event) => onSetReasoningOverride((event.target.value || null) as ReasoningEffort | null)}>
+            <option value="">Reasoning: Profile</option>
+            {fixedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>Reasoning: {reasoningOverride} · unavailable</option> : <option disabled>Reasoning: fixed by model</option> : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => <option key={value} value={value}>Reasoning: {value[0].toUpperCase() + value.slice(1)}</option>)}
+          </select>
         ) : null}
 
         {inProject && projectSection === 'workspace' ? (

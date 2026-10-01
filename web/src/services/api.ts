@@ -9,6 +9,11 @@ import {
   RunDetail,
   SessionDetail,
   SessionSummary,
+  EffectiveRouting,
+  RoutingDecision,
+  RoutingProfile,
+  RunRoutingDecision,
+  ReasoningEffort,
 } from '../types';
 
 export class ApiError extends Error {
@@ -66,6 +71,68 @@ export const api = {
     return handleResponse<ModelProbeResponse>(res);
   },
 
+  async fetchRoutingProfiles(): Promise<RoutingProfile[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles`));
+  },
+
+  async fetchRoutingProfile(id: string): Promise<RoutingProfile> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`));
+  },
+
+  async saveRoutingProfile(profile: RoutingProfile): Promise<RoutingProfile> {
+    const update = Boolean(profile.id && profile.id !== 'system-balanced');
+    const res = await fetch(`${BASE_URL}/v1/routing/profiles${update ? `/${encodeURIComponent(profile.id!)}` : ''}`, {
+      method: update ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(profile),
+    });
+    return handleResponse<RoutingProfile>(res);
+  },
+
+  async duplicateRoutingProfile(id: string): Promise<RoutingProfile> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
+  },
+
+  async deleteRoutingProfile(id: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  },
+
+  async fetchEffectiveRouting(projectName?: string, sessionId?: string): Promise<EffectiveRouting> {
+    const params = new URLSearchParams();
+    if (projectName) params.set('project_name', projectName);
+    if (sessionId) params.set('session_id', sessionId);
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/effective${params.size ? `?${params}` : ''}`));
+  },
+
+  async assignProjectRouting(projectName: string, profileId: string): Promise<void> {
+    const params = new URLSearchParams({ profile_id: profileId });
+    await handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}?${params}`, { method: 'POST' }));
+  },
+
+  async fetchProjectRouting(projectName: string): Promise<{ project_name: string; routing_profile_id: string | null }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}`));
+  },
+
+  async assignSessionRouting(sessionId: string, profileId: string | null): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileId }),
+    }));
+  },
+
+  async fetchRoutingPreview(input: {
+    role: string;
+    context?: Record<string, any>;
+    message_override?: string | null;
+    reasoning_override?: ReasoningEffort | null;
+    profile_draft?: RoutingProfile;
+    project_name?: string;
+    session_id?: string;
+  }): Promise<RoutingDecision> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/preview`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
   async fetchSessions(): Promise<SessionSummary[]> {
     const res = await fetch(`${BASE_URL}/v1/sessions`);
     return handleResponse<SessionSummary[]>(res);
@@ -80,7 +147,8 @@ export const api = {
     sessionId: string,
     message: string,
     projectName?: string,
-    modelOverride?: string | null
+    modelOverride?: string | null,
+    reasoningOverride?: ReasoningEffort | null
   ): Promise<ChatResponse> {
     const payload: Record<string, any> = {
       session_id: sessionId,
@@ -92,6 +160,7 @@ export const api = {
     if (modelOverride) {
       payload.model_override = modelOverride;
     }
+    if (reasoningOverride) payload.reasoning_override = reasoningOverride;
 
     const res = await fetch(`${BASE_URL}/v1/chat`, {
       method: 'POST',
@@ -132,6 +201,10 @@ export const api = {
   async fetchRunResearch(runId: string): Promise<ResearchInspectorData> {
     const res = await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/research`);
     return handleResponse<ResearchInspectorData>(res);
+  },
+
+  async fetchRunRouting(runId: string): Promise<{ run_id: string; decisions: RunRoutingDecision[] }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
   },
 
   async fetchMemories(projectName?: string, sessionId?: string): Promise<MemoryItem[]> {

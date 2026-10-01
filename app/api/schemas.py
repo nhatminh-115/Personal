@@ -12,6 +12,7 @@ class ChatRequest(BaseModel):
     project_name: Optional[str] = Field(default=None, description="Optional project context scope")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
     model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
+    reasoning_override: Optional[Literal["instant", "low", "medium", "high", "max"]] = None
 
 
 class ChatResponse(BaseModel):
@@ -102,6 +103,10 @@ class ModelInfoResponse(BaseModel):
     label: str
     capabilities: List[str] = Field(default_factory=list)
     tool_support: Literal["supported", "unsupported", "unknown"] = "unknown"
+    context_window: Optional[int] = None
+    reasoning_support: Literal["instant", "low", "medium", "high", "max", "fixed_by_model", "unsupported", "unknown"] = "unknown"
+    vision_support: Optional[bool] = None
+    structured_output_support: Optional[bool] = None
 
 
 class ProviderInfoResponse(BaseModel):

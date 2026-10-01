@@ -189,9 +189,9 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
 
     // Routing badge present in topbar
-    expect(screen.getByText(/Balanced · Session/i)).toBeInTheDocument();
+    expect(screen.getByText(/Routing…/i)).toBeInTheDocument();
     expect(screen.getByText(/Reasoning: Profile/i)).toBeInTheDocument();
-    expect(screen.getByText(/Model C/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
 
     // Old sidebar model picker is absent
     expect(screen.queryByTestId('model-picker')).not.toBeInTheDocument();

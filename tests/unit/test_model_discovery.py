@@ -233,6 +233,8 @@ async def test_models_api_never_exposes_credentials():
                 assert "id" in m
                 assert "tool_support" in m
                 assert m["tool_support"] in {"supported", "unsupported", "unknown"}
+                assert m.get("reasoning_support", "unknown") in {"instant", "low", "medium", "high", "max", "fixed_by_model", "unsupported", "unknown"}
+                assert "vision_support" in m and "structured_output_support" in m
 
 
 @pytest.mark.asyncio
@@ -341,4 +343,3 @@ async def test_no_redundant_discovery_on_get_and_refresh():
             resp2 = await client.post("/v1/models/refresh")
             assert resp2.status_code == 200
             assert mock_discover.call_count == 1
-

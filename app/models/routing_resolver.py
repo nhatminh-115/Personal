@@ -112,6 +112,7 @@ def apply_routing_profile_to_context(
     context: RoutingContext,
     winning_scope: str,
     message_override: Optional[str] = None,
+    reasoning_override: Optional[str] = None,
 ) -> RoutingContext:
     """
     Mutate or return a new RoutingContext mapped from the given profile and role.
@@ -122,17 +123,14 @@ def apply_routing_profile_to_context(
     context.profile_version = profile.version
     context.winning_scope = winning_scope
     
-    # Message override takes ultimate precedence (STRICT LOCK-ALL)
-    # The lock-all state should be tracked to propagate to children.
-    if message_override:
-        context.explicit_model_override = message_override
-        context.winning_scope = "message"
-        context.is_lock_all = True
-        return context
-        
-    # If a parent was locked, we inherit lock-all strictly
-    if getattr(context, "is_lock_all", False) and context.explicit_model_override:
-        return context
+    # Preserve an inherited thread lock while still resolving route policy for
+    # this role. The exact model is overlaid after profile policy is applied.
+    inherited_model_override = (
+        context.explicit_model_override
+        if getattr(context, "is_lock_all", False)
+        else None
+    )
+    exact_model_override = message_override or inherited_model_override
 
     # Otherwise apply profile routing (Requirement 14):
     # Specialist role route wins when role != root
@@ -165,5 +163,25 @@ def apply_routing_profile_to_context(
     context.reasoning_effort = route_config.reasoning.effort
     context.reasoning_effort_min = route_config.reasoning.min_effort
     context.reasoning_effort_max = route_config.reasoning.max_effort
+
+    # Temporary controls are overlays. A model lock must never replace the
+    # profile's privacy, fallback, cost, latency, or reasoning policy.
+    if exact_model_override:
+        context.explicit_model_override = exact_model_override
+        context.is_lock_all = True
+        context.winning_scope = "message"
+    else:
+        context.explicit_model_override = (
+            route_config.model_override
+            if route_config.model_override and route_config.model_override != "auto"
+            else route_config.provider_override
+        )
+
+    if reasoning_override:
+        context.reasoning_policy = ReasoningPolicy.FIXED
+        context.reasoning_effort = ReasoningEffort(reasoning_override)
+        context.reasoning_effort_min = None
+        context.reasoning_effort_max = None
+        context.winning_scope = "message"
 
     return context

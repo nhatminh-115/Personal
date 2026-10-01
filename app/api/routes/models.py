@@ -16,7 +16,7 @@ from app.models.router import ModelRouter
 router = APIRouter(prefix="/v1/models", tags=["Models"])
 
 
-def _build_catalog_response(catalog: ModelCatalogResponse) -> ModelCatalogResponse:
+def _build_catalog_response(catalog: ModelCatalogResponse, router_instance: ModelRouter) -> ModelCatalogResponse:
     return ModelCatalogResponse(
         providers=[
             ProviderInfoResponse(
@@ -31,6 +31,10 @@ def _build_catalog_response(catalog: ModelCatalogResponse) -> ModelCatalogRespon
                         label=m.label,
                         capabilities=m.capabilities,
                         tool_support=m.tool_support,
+                        context_window=m.context_window,
+                        reasoning_support=(router_instance.get_provider_metadata(p.id).reasoning_support.get(m.id, "unknown") if router_instance.get_provider_metadata(p.id) else m.reasoning_support),
+                        vision_support=(router_instance.get_provider_metadata(p.id).vision_support.get(m.id) if router_instance.get_provider_metadata(p.id) else m.vision_support),
+                        structured_output_support=(router_instance.get_provider_metadata(p.id).structured_output_support.get(m.id) if router_instance.get_provider_metadata(p.id) else m.structured_output_support),
                     )
                     for m in p.models
                 ],
@@ -52,7 +56,7 @@ async def get_models(
     """
     catalog = await model_discovery_service.discover_all()
     await model_discovery_service.register_discovered_providers(router_instance, catalog=catalog)
-    return _build_catalog_response(catalog)
+    return _build_catalog_response(catalog, router_instance)
 
 
 @router.post("/probe", response_model=ModelProbeResponse, status_code=status.HTTP_200_OK)
@@ -80,4 +84,4 @@ async def refresh_models(
     """
     catalog = await model_discovery_service.discover_all()
     await model_discovery_service.register_discovered_providers(router_instance, catalog=catalog)
-    return _build_catalog_response(catalog)
+    return _build_catalog_response(catalog, router_instance)

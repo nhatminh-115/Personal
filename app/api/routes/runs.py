@@ -6,12 +6,52 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.dependencies import get_trace_service
 from sqlalchemy import select
 from app.api.schemas import ResearchInspectorResponse, RunDetailResponse, RunEventResponse
-from app.db.models import DelegationModel
+from app.db.models import DelegationModel, RunModel, RunEventModel
 from app.db.session import get_db
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
 
 router = APIRouter(prefix="/v1/runs", tags=["Runs"])
+
+
+@router.get("/{run_id}/routing")
+async def get_run_routing(
+    run_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return persisted routing decisions for a root run and its specialists."""
+    root = await db.get(RunModel, run_id)
+    if not root:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
+
+    runs_result = await db.execute(
+        select(RunModel).where((RunModel.id == run_id) | (RunModel.parent_run_id == run_id))
+    )
+    runs = runs_result.scalars().all()
+    events_result = await db.execute(
+        select(RunEventModel).where(RunEventModel.run_id.in_([run.id for run in runs])).order_by(RunEventModel.created_at)
+    )
+    events_by_run: dict[str, list[RunEventModel]] = {run.id: [] for run in runs}
+    for event in events_result.scalars().all():
+        events_by_run[event.run_id].append(event)
+
+    decisions = []
+    for run in runs:
+        events = events_by_run[run.id]
+        selected = next((e.payload for e in reversed(events) if e.event_type == "model_selected"), None)
+        reasoning = next((e.payload for e in reversed(events) if e.event_type == "reasoning_effort_selected"), None)
+        decisions.append({
+            "run_id": run.id,
+            "parent_run_id": run.parent_run_id,
+            "snapshot": run.routing_snapshot_json or {},
+            "model_selection": selected,
+            "reasoning_selection": reasoning,
+            "fallback_events": [
+                {"event_type": e.event_type, "payload": e.payload}
+                for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
+            ],
+        })
+    return {"run_id": run_id, "decisions": decisions}
 
 
 @router.get("/{run_id}", response_model=RunDetailResponse)
