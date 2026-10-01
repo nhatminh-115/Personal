@@ -69,6 +69,20 @@ describe('WorkspaceSearchView', () => {
     expect(onOpenNote).not.toHaveBeenCalled();
   });
 
+  it('keeps project-scoped file references in their project graph', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'project-file-4', object_type: 'file_reference', title: 'Project attachment',
+      excerpt: 'Architecture sketch.', project_name: 'AURA Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onOpenProject = vi.fn();
+    const onOpenLibraryItem = vi.fn();
+    render(<WorkspaceSearchView query="architecture" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenFile={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'project-file-4');
+    expect(onOpenLibraryItem).not.toHaveBeenCalled();
+  });
+
   it('opens a personal Library reference in its Library list', () => {
     const result: WorkspaceSearchResult = {
       object_id: 'library-item-5', object_type: 'file_reference', title: 'Methods paper',
