@@ -185,6 +185,48 @@ async def test_discovered_mcp_capability_reaches_coding_runtime_and_executes():
     await manager.disconnect_all()
 
 
+@pytest.mark.asyncio
+async def test_mcp_canonical_name_collision_does_not_replace_an_existing_provider_tool():
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    manager.register_server(MCPServerConfig(
+        id="graph_provider",
+        name="First graph provider",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        read_only=True,
+        allowed_tools=["read_metric"],
+        capabilities_by_tool={"read_metric": ["code_graph.query"]},
+    ))
+    manager.register_server(MCPServerConfig(
+        id="graph",
+        name="Second graph provider",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        read_only=True,
+        allowed_tools=["provider_read_metric"],
+        capabilities_by_tool={"provider_read_metric": ["code_graph.impact"]},
+    ))
+
+    first_tools = await manager.discover_tools("graph_provider")
+    first_name = "mcp_graph_provider_read_metric"
+    original = registry.get(first_name)
+    assert any(tool.name == first_name for tool in first_tools)
+    assert original is not None
+
+    second_tools = await manager.discover_tools("graph")
+    assert second_tools == []
+    assert registry.get(first_name) is original
+    assert registry.resolve_available_capabilities(["code_graph.query"]) == [first_name]
+    assert registry.resolve_available_capabilities(["code_graph.impact"]) == []
+
+    await manager.disconnect_all()
+
+
 def test_specialists_request_abstract_capabilities_and_unresolved_provider_stays_blocked():
     from app.delegation.registry import specialist_registry
     from app.tools.registry import tool_registry

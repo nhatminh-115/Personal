@@ -225,6 +225,22 @@ class MCPClientManager:
                     manager=self,
                     policy=self.policy,
                 )
+                existing = self.registry.get(adapter.name)
+                if existing is not None and (
+                    not isinstance(existing, MCPToolAdapter)
+                    or existing.server_id != server_id
+                    or existing.mcp_tool_name != tool_name
+                ):
+                    # Canonical names currently preserve the public
+                    # mcp_{server_id}_{tool_name} convention. Since both parts
+                    # may contain underscores, reject ambiguous collisions
+                    # instead of replacing another provider's executable tool.
+                    logger.error(
+                        "Skipping MCP tool with colliding canonical name '%s'.",
+                        adapter.name,
+                        extra={"server_id": server_id, "tool_name": tool_name},
+                    )
+                    continue
                 self.registry.register(adapter)
                 adapters.append(adapter)
 

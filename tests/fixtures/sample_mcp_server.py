@@ -14,6 +14,12 @@ def read_metric(metric_name: str) -> str:
 
 
 @server.tool()
+def provider_read_metric(metric_name: str) -> str:
+    """Read a metric through a namespaced provider tool."""
+    return f"Namespaced metric '{metric_name}' is 99.8%"
+
+
+@server.tool()
 def system_echo(message: str) -> str:
     """Echo input string back to caller."""
     return f"echo: {message}"
