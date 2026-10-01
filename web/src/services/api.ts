@@ -22,6 +22,7 @@ import {
   WorkspaceObject,
   StudySessionRecord,
   WorkspaceLibraryReferenceRecord,
+  WorkspaceProjectRecord,
 } from '../types';
 
 export class ApiError extends Error {
@@ -208,6 +209,17 @@ export const api = {
 
   async fetchWorkspaceLibrary(): Promise<WorkspaceLibraryReferenceRecord[]> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`));
+  },
+
+  async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`));
+  },
+
+  async createWorkspaceProject(input: { id: string; name: string; subtitle: string }): Promise<WorkspaceProjectRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    }));
   },
 
   async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {

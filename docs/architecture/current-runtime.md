@@ -39,6 +39,7 @@ separate capability scopes, and specialists cannot recursively delegate.
 | Sessions, messages, runs, approvals, routing profiles, traces, and workspace graph | SQLAlchemy database selected by `DATABASE_URL`; SQLite is the local default and Docker Compose uses PostgreSQL with pgvector. |
 | LangGraph execution checkpoints | `AsyncSqliteSaver` at `CHECKPOINT_DB_PATH`, separate from the SQLAlchemy database. |
 | Board layout | Project workspace layout with revision checks; layout is user state rather than graph knowledge. |
+| User-created projects | Workspace project directory in the SQLAlchemy database; built-in sample projects remain clearly client-side demo data. |
 | Provider inventory | In-memory capability registry populated by native tool registration and MCP discovery. |
 
 Strict LangGraph MessagePack deserialization is enabled by

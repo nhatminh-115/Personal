@@ -1,7 +1,8 @@
 import { ArrowRight, BookOpenText, Clock3, FolderKanban, Sparkles } from 'lucide-react';
-import { projects, type AutomationRecord, type LibraryItem } from '../../data/workspaceData';
+import type { AutomationRecord, LibraryItem, ProjectRecord } from '../../data/workspaceData';
 
 interface GlobalHomeProps {
+  projects: ProjectRecord[];
   libraryItems: LibraryItem[];
   automations: AutomationRecord[];
   noteCount: number;
@@ -18,7 +19,7 @@ function greeting() {
   return 'Good evening';
 }
 
-export function GlobalHome({ libraryItems, automations, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
+export function GlobalHome({ projects, libraryItems, automations, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
   const recent = projects.slice(0, 3);
   const recentFiles = libraryItems.slice(0, 4);
   const activeAutomations = automations.filter((item) => item.enabled).length;

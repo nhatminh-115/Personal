@@ -1,8 +1,9 @@
 import { Activity, ArrowLeft, ChevronRight, Files, MessageSquareText, Sparkles, StickyNote } from 'lucide-react';
 import type { CSSProperties } from 'react';
-import { genericOrbit, projects, statefulOrbit } from '../../data/workspaceData';
+import { genericOrbit, projects as demoProjects, statefulOrbit, type ProjectRecord } from '../../data/workspaceData';
 
 interface ProjectHomeProps {
+  projects: ProjectRecord[];
   projectId: string;
   chatCount: number;
   fileCount: number;
@@ -14,9 +15,9 @@ interface ProjectHomeProps {
   onMockObject: (label: string) => void;
 }
 
-export function ProjectHome({ projectId, chatCount, fileCount, noteCount, onBack, onOpenNode, onOpenChats, onOpenFiles, onMockObject }: ProjectHomeProps) {
-  const project = projects.find((item) => item.id === projectId) ?? projects[0];
-  const items = project.id === 'stateful' ? statefulOrbit : genericOrbit;
+export function ProjectHome({ projects, projectId, chatCount, fileCount, noteCount, onBack, onOpenNode, onOpenChats, onOpenFiles, onMockObject }: ProjectHomeProps) {
+  const project = projects.find((item) => item.id === projectId) ?? demoProjects[0];
+  const items = project.source === 'user' ? [] : project.id === 'stateful' ? statefulOrbit : genericOrbit;
   const inner = items.filter((item) => item.ring === 'inner');
   const outer = items.filter((item) => item.ring === 'outer');
 
@@ -83,7 +84,9 @@ export function ProjectHome({ projectId, chatCount, fileCount, noteCount, onBack
         </div>
       </div>
 
-      <div className="orbit-stage" aria-label={`${project.name} project constellation`}>
+      {project.source === 'user' ? (
+        <div className="empty-section project-home__empty"><strong>Your project is ready.</strong><span>Start a chat or add a file to build its context graph.</span><button className="primary-soft-button" type="button" onClick={onOpenChats}><MessageSquareText size={14} /> Start a chat</button></div>
+      ) : <div className="orbit-stage" aria-label={`${project.name} project constellation`}>
         <div className="orbit-ring orbit-ring--one" />
         <div className="orbit-ring orbit-ring--two" />
         <div className="orbit-axis orbit-axis--x" />
@@ -99,7 +102,7 @@ export function ProjectHome({ projectId, chatCount, fileCount, noteCount, onBack
           <small>{project.subtitle}</small>
           <span className="orbit-core__meta">Open project chats →</span>
         </button>
-      </div>
+      </div>}
 
       <div className="project-home__footer">
         <div><span>Current thesis</span><strong>{project.thesis}</strong></div>

@@ -24,6 +24,7 @@ export interface ProjectRecord {
   meta: string;
   thesis: string;
   next: string;
+  source?: 'demo' | 'user';
 }
 
 export const projects: ProjectRecord[] = [

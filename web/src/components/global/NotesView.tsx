@@ -1,14 +1,15 @@
 import { Link2, NotebookPen, Pin, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { projects, type WorkspaceNote } from '../../data/workspaceData';
+import type { ProjectRecord, WorkspaceNote } from '../../data/workspaceData';
 
 interface NotesViewProps {
+  projects: ProjectRecord[];
   notes: WorkspaceNote[];
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
 }
 
-export function NotesView({ notes, onNotesChange, onOpenProject }: NotesViewProps) {
+export function NotesView({ projects, notes, onNotesChange, onOpenProject }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);

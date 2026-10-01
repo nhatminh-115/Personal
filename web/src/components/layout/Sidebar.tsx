@@ -15,7 +15,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { useState } from 'react';
-import { projects } from '../../data/workspaceData';
+import type { ProjectRecord } from '../../data/workspaceData';
 
 export type SidebarDestination = 'home' | 'library' | 'notes' | 'study' | 'projects' | 'automations';
 
@@ -28,6 +28,7 @@ const globalNav: { label: string; id: SidebarDestination; icon: typeof Home }[] 
 ];
 
 interface SidebarProps {
+  projects: ProjectRecord[];
   collapsed: boolean;
   active: SidebarDestination | null;
   activeProjectId: string | null;
@@ -39,6 +40,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
+  projects,
   collapsed,
   active,
   activeProjectId,
