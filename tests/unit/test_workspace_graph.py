@@ -87,6 +87,27 @@ async def test_context_bridge_and_manual_note_are_user_authored_and_editable(asy
 
 
 @pytest.mark.asyncio
+async def test_user_note_can_be_restored_with_its_original_id_for_redo(async_client):
+    payload = {
+        "id": "undoable-note-id",
+        "object_type": "manual_note",
+        "title": "Undoable",
+        "content": "User-authored text stays exact.",
+    }
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json=payload)
+    assert created.status_code == 201
+    assert created.json()["id"] == payload["id"]
+    assert (await async_client.post("/v1/workspace/projects/aura/objects", json=payload)).status_code == 409
+
+    deleted = await async_client.delete(f"/v1/workspace/projects/aura/objects/{payload['id']}")
+    assert deleted.status_code == 204
+    restored = await async_client.post("/v1/workspace/projects/aura/objects", json=payload)
+    assert restored.status_code == 201
+    assert restored.json()["id"] == payload["id"]
+    assert restored.json()["content"] == payload["content"]
+
+
+@pytest.mark.asyncio
 async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revision(async_client):
     note = await async_client.post(
         "/v1/workspace/projects/aura/objects",
@@ -224,6 +245,35 @@ async def test_batch_edge_delete_is_atomic_and_only_deletes_user_edges(async_cli
     assert {edge["id"] for edge in deleted.json()} == {first_edge, second_edge}
     assert await test_db_session.get(WorkspaceEdgeModel, first_edge) is None
     assert await test_db_session.get(WorkspaceEdgeModel, second_edge) is None
+
+    cyclic_restore = await async_client.post("/v1/workspace/projects/aura/edges/batch-restore", json={
+        "edges": [
+            {"id": "context-restore-a", "source_object_id": first.json()["id"], "target_object_id": second.json()["id"], "relation_type": "feeds", "edge_family": "context"},
+            {"id": "context-restore-b", "source_object_id": second.json()["id"], "target_object_id": first.json()["id"], "relation_type": "feeds", "edge_family": "context"},
+        ],
+    })
+    assert cyclic_restore.status_code == 409
+
+    restored = await async_client.post("/v1/workspace/projects/aura/edges/batch-restore", json={
+        "edges": [
+            {
+                "id": edge_id,
+                "source_object_id": source_id,
+                "target_object_id": target_id,
+                "relation_type": "related_to",
+                "edge_family": "semantic",
+                "metadata_json": {},
+            }
+            for edge_id, source_id, target_id in (
+                (first_edge, first.json()["id"], second.json()["id"]),
+                (second_edge, second.json()["id"], third.json()["id"]),
+            )
+        ],
+    })
+    assert restored.status_code == 201
+    assert {edge["id"] for edge in restored.json()} == {first_edge, second_edge}
+    assert all(edge["created_by"] == "user" for edge in restored.json())
+    assert await test_db_session.get(WorkspaceEdgeModel, first_edge) is not None
 
 
 @pytest.mark.asyncio

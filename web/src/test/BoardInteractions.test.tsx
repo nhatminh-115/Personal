@@ -209,4 +209,19 @@ describe('Board Prototype Interactions', () => {
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
   });
+
+  it('keeps persisted mutation effects paired with undo and redo snapshots', () => {
+    const nodesRef = { current: [] as AuraFlowNode[] };
+    const edgesRef = { current: [] as AuraFlowEdge[] };
+    const setNodes = (updater: any) => { nodesRef.current = typeof updater === 'function' ? updater(nodesRef.current) : updater; };
+    const setEdges = (updater: any) => { edgesRef.current = typeof updater === 'function' ? updater(edgesRef.current) : updater; };
+    const effect = { undo: vi.fn(async () => {}), redo: vi.fn(async () => {}) };
+    const { result } = renderHook(() => useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges }));
+
+    act(() => result.current.record(effect));
+    act(() => result.current.undo());
+    expect(result.current.getRedoEffect()).toBe(effect);
+    act(() => result.current.redo());
+    expect(result.current.getUndoEffect()).toBe(effect);
+  });
 });

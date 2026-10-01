@@ -173,6 +173,7 @@ export const api = {
   },
 
   async createWorkspaceObject(projectName: string, input: {
+    id?: string;
     object_type: 'manual_note' | 'context_bridge' | 'context_set' | 'conversation_branch';
     title: string;
     content: string;
@@ -205,10 +206,22 @@ export const api = {
     await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
   },
 
+  async deleteWorkspaceObject(projectName: string, objectId: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, { method: 'DELETE' }));
+  },
+
   async deleteWorkspaceEdges(projectName: string, edgeIds: string[]): Promise<WorkspaceEdge[]> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-delete`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ edge_ids: edgeIds }),
+    }));
+  },
+
+  async restoreWorkspaceEdges(projectName: string, edges: Array<Pick<WorkspaceEdge,
+    'id' | 'source_object_id' | 'target_object_id' | 'relation_type' | 'edge_family' | 'metadata_json'>>): Promise<WorkspaceEdge[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-restore`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edges }),
     }));
   },
 

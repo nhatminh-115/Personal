@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     WorkspaceEdgeBatchDelete,
+    WorkspaceEdgeBatchRestore,
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
     WorkspaceExecutionEventResponse,
@@ -240,6 +241,8 @@ async def create_workspace_object(
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceObjectResponse:
     await _lock_project_graph(db, project_name)
+    if body.id and await db.get(WorkspaceObjectModel, body.id) is not None:
+        raise HTTPException(status_code=409, detail="Workspace object ID already exists.")
     source_ids = list(dict.fromkeys(body.source_object_ids))
     if body.object_type not in {"context_bridge", "context_set", "conversation_branch"} and source_ids:
         raise HTTPException(status_code=422, detail="Only a Context Bridge, Context Set, or Branch can declare source objects.")
@@ -255,6 +258,8 @@ async def create_workspace_object(
         content=body.content,
         metadata_json=body.metadata_json,
     )
+    if body.id:
+        item.id = body.id
     db.add(item)
     await db.flush()
 
@@ -394,6 +399,62 @@ async def delete_workspace_edges(
         await db.delete(edge)
     await db.commit()
     return snapshots
+
+
+@router.post("/projects/{project_name}/edges/batch-restore", response_model=list[WorkspaceEdgeResponse], status_code=status.HTTP_201_CREATED)
+async def restore_workspace_edges(
+    project_name: str,
+    body: WorkspaceEdgeBatchRestore,
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceEdgeResponse]:
+    edge_ids = [edge.id for edge in body.edges]
+    if len(set(edge_ids)) != len(edge_ids):
+        raise HTTPException(status_code=422, detail="Workspace edge IDs must be unique.")
+    await _lock_project_graph(db, project_name)
+    existing_result = await db.execute(select(WorkspaceEdgeModel.id).where(WorkspaceEdgeModel.id.in_(edge_ids)))
+    if list(existing_result.scalars()):
+        raise HTTPException(status_code=409, detail="One or more workspace edges already exist.")
+    endpoint_ids = list(dict.fromkeys(
+        object_id for edge in body.edges for object_id in (edge.source_object_id, edge.target_object_id)
+    ))
+    objects = await _project_objects_by_ids(db, project_name, endpoint_ids)
+    if len(objects) != len(endpoint_ids):
+        raise HTTPException(status_code=404, detail="Both endpoints of every restored edge must exist in this project.")
+    if any(edge.source_object_id == edge.target_object_id for edge in body.edges):
+        raise HTTPException(status_code=422, detail="An object cannot be related to itself.")
+
+    context_result = await db.execute(select(WorkspaceEdgeModel).where(
+        WorkspaceEdgeModel.project_name == project_name,
+        WorkspaceEdgeModel.edge_family == "context",
+    ))
+    context_edges = list(context_result.scalars())
+    restored: list[WorkspaceEdgeModel] = []
+    for edge in body.edges:
+        if edge.edge_family == "context":
+            if _would_create_context_cycle(context_edges, edge.source_object_id, edge.target_object_id):
+                raise HTTPException(status_code=409, detail="Restored context-flow edges must preserve a DAG.")
+            context_edges.append(WorkspaceEdgeModel(
+                project_name=project_name,
+                source_object_id=edge.source_object_id,
+                target_object_id=edge.target_object_id,
+                relation_type=edge.relation_type,
+                edge_family=edge.edge_family,
+                created_by="user",
+                metadata_json=edge.metadata_json,
+            ))
+        restored.append(WorkspaceEdgeModel(
+            id=edge.id,
+            project_name=project_name,
+            source_object_id=edge.source_object_id,
+            target_object_id=edge.target_object_id,
+            relation_type=edge.relation_type,
+            edge_family=edge.edge_family,
+            created_by="user",
+            metadata_json=edge.metadata_json,
+        ))
+    db.add_all(restored)
+    await db.commit()
+    return [_edge_response(edge) for edge in restored]
 
 
 @router.put("/projects/{project_name}/layout", response_model=WorkspaceLayoutResponse)

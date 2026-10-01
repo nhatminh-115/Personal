@@ -138,6 +138,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   });
   const [linkSource, setLinkSource] = useState<string | null>(null);
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
+  const [historyApplying, setHistoryApplying] = useState(false);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const idRef = useRef(100);
   const processedBranchNonce = useRef<number | null>(null);
@@ -148,13 +149,15 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutSnapshot = useRef('');
   const layoutTimer = useRef<number | null>(null);
   const layoutConflict = useRef(false);
+  const historyBusy = useRef(false);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
+  const noteRestorePayloads = useRef<Map<string, { object_type: 'manual_note'; title: string; content: string }>>(new Map());
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
 
-  const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
+  const { record: recordHistory, undo, redo, getUndoEffect, getRedoEffect, canUndo, canRedo } = useBoardHistory({
     nodesRef,
     edgesRef,
     setNodes,
@@ -162,6 +165,23 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   });
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
+
+  const applyHistory = useCallback(async (direction: 'undo' | 'redo') => {
+    if (historyBusy.current) return;
+    const effect = direction === 'undo' ? getUndoEffect() : getRedoEffect();
+    historyBusy.current = true;
+    setHistoryApplying(true);
+    try {
+      if (effect) await effect[direction]();
+      const changed = direction === 'undo' ? undo() : redo();
+      if (changed) toast(direction === 'undo' ? 'Undone' : 'Redone');
+    } catch {
+      toast(direction === 'undo' ? 'Undo was not saved' : 'Redo was not saved', 'The saved graph changed or could not be reached. Reload the Board before retrying.');
+    } finally {
+      historyBusy.current = false;
+      setHistoryApplying(false);
+    }
+  }, [getRedoEffect, getUndoEffect, redo, toast, undo]);
 
   useEffect(() => {
     const nextNodes = (seedNodes ?? initialNodes).map((node) => ({ ...node, data: { ...node.data }, selected: false }));
@@ -278,6 +298,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (workspaceProjectName) {
         const node = nodesRef.current.find((item) => item.id === id);
         if (node?.data.manual || node?.data.kind === 'bridge') {
+          if (node.data.manual) {
+            const restorePayload = noteRestorePayloads.current.get(id);
+            if (restorePayload) restorePayload.content = body;
+          }
           const previous = noteSaveTimers.current.get(id);
           if (previous !== undefined) window.clearTimeout(previous);
           const timer = window.setTimeout(() => {
@@ -443,13 +467,22 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (workspaceProjectName) {
         const persisted = edgesRef.current.filter((edge) => deletableIds.has(edge.id) && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'));
         try {
-          if (persisted.length > 0) await api.deleteWorkspaceEdges(workspaceProjectName, persisted.map((edge) => edge.id));
+          if (persisted.length > 0) {
+            const deleted = await api.deleteWorkspaceEdges(workspaceProjectName, persisted.map((edge) => edge.id));
+            recordHistory({
+              undo: async () => { await api.restoreWorkspaceEdges(workspaceProjectName, deleted); },
+              redo: async () => { await api.deleteWorkspaceEdges(workspaceProjectName, deleted.map((edge) => edge.id)); },
+            });
+          } else {
+            recordHistory();
+          }
         } catch {
           toast('Link was not deleted', 'AURA could not update the saved workspace graph.');
           return;
         }
+      } else {
+        recordHistory();
       }
-      recordHistory();
       setEdges((current) => current.filter((edge) => !deletableIds.has(edge.id)));
       const deletedCount = [...deletableIds].filter((id) => edgesRef.current.some((edge) => edge.id === id)).length;
       const keptMessage = systemEdgeIds.size > 0 ? ' System-owned conversation links were kept.' : '';
@@ -488,18 +521,32 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const createNoteAt = useCallback(
     async (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
       let id = `note-${idRef.current++}`;
+      const noteInput = { object_type: 'manual_note' as const, title: 'Untitled note', content: body };
       if (workspaceProjectName) {
         try {
-          const created = await api.createWorkspaceObject(workspaceProjectName, {
-            object_type: 'manual_note', title: 'Untitled note', content: body,
-          });
+          const created = await api.createWorkspaceObject(workspaceProjectName, noteInput);
           id = created.id;
+          const objectId = id;
+          const restorePayload = { ...noteInput };
+          noteRestorePayloads.current.set(objectId, restorePayload);
+          recordHistory({
+            undo: async () => {
+              const timer = noteSaveTimers.current.get(objectId);
+              if (timer !== undefined) window.clearTimeout(timer);
+              noteSaveTimers.current.delete(objectId);
+              await api.deleteWorkspaceObject(workspaceProjectName, objectId);
+            },
+            redo: async () => {
+              await api.createWorkspaceObject(workspaceProjectName, { ...restorePayload, id: objectId });
+            },
+          });
         } catch {
           toast('Manual note was not saved', 'AURA could not create this note in the project graph.');
           return null;
         }
+      } else {
+        recordHistory();
       }
-      recordHistory();
       const note: AuraFlowNode = {
         id,
         type: 'aura',
@@ -712,15 +759,18 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (editing) return;
 
       const modifier = event.metaKey || event.ctrlKey;
+      if (historyBusy.current) {
+        if (modifier && ['z', 'y'].includes(event.key.toLowerCase())) event.preventDefault();
+        return;
+      }
       if (modifier && event.key.toLowerCase() === 'z') {
         event.preventDefault();
-        const changed = event.shiftKey ? redo() : undo();
-        if (changed) toast(event.shiftKey ? 'Redone' : 'Undone');
+        void applyHistory(event.shiftKey ? 'redo' : 'undo');
         return;
       }
       if (modifier && event.key.toLowerCase() === 'y') {
         event.preventDefault();
-        if (redo()) toast('Redone');
+        void applyHistory('redo');
         return;
       }
       if ((event.key === 'Delete' || event.key === 'Backspace') && selectedEdges.length > 0) {
@@ -736,7 +786,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [clearSelection, deleteEdges, redo, selectedEdges, toast, undo]);
+  }, [applyHistory, clearSelection, deleteEdges, selectedEdges]);
 
   useEffect(() => {
     if (!focusNodeId || !instanceRef.current) return;
@@ -768,9 +818,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
+        nodesDraggable={!historyApplying}
+        nodesConnectable={!historyApplying}
+        elementsSelectable={!historyApplying}
         onNodeDragStart={() => recordHistory()}
         onConnect={async (connection) => {
-          recordHistory();
           if (workspaceProjectName && connection.source && connection.target) {
             try {
               const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
@@ -779,12 +831,24 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                 relation_type: 'related_to',
                 edge_family: 'semantic',
               });
+              const restore = [{
+                id: persisted.id,
+                source_object_id: persisted.source_object_id,
+                target_object_id: persisted.target_object_id,
+                relation_type: persisted.relation_type,
+                edge_family: persisted.edge_family,
+                metadata_json: persisted.metadata_json,
+              }];
+              recordHistory({
+                undo: async () => { await api.deleteWorkspaceEdges(workspaceProjectName, restore.map((edge) => edge.id)); },
+                redo: async () => { await api.restoreWorkspaceEdges(workspaceProjectName, restore); },
+              });
               setEdges((current) => [...current, {
                 id: persisted.id,
                 source: persisted.source_object_id,
                 target: persisted.target_object_id,
                 type: 'smoothstep',
-                data: { edgeKind: 'semantic' },
+                data: { edgeKind: 'semantic', createdBy: persisted.created_by },
               }]);
               return;
             } catch {
@@ -792,6 +856,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               return;
             }
           }
+          recordHistory();
           setEdges((current) => addEdge({ ...connection, type: 'smart', data: { edgeKind: 'semantic' } }, current));
         }}
         onEdgeClick={(event, edge) => {
@@ -823,7 +888,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               if (existing) {
                 await deleteEdges([existing.id]);
               } else {
-                recordHistory();
                 if (workspaceProjectName) {
                   try {
                     const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
@@ -832,18 +896,31 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                       relation_type: 'related_to',
                       edge_family: 'semantic',
                     });
+                    const restore = [{
+                      id: persisted.id,
+                      source_object_id: persisted.source_object_id,
+                      target_object_id: persisted.target_object_id,
+                      relation_type: persisted.relation_type,
+                      edge_family: persisted.edge_family,
+                      metadata_json: persisted.metadata_json,
+                    }];
+                    recordHistory({
+                      undo: async () => { await api.deleteWorkspaceEdges(workspaceProjectName, restore.map((edge) => edge.id)); },
+                      redo: async () => { await api.restoreWorkspaceEdges(workspaceProjectName, restore); },
+                    });
                     setEdges((current) => [...current, {
                       id: persisted.id,
                       source: persisted.source_object_id,
                       target: persisted.target_object_id,
                       type: 'smart',
-                      data: { edgeKind: 'semantic' },
+                      data: { edgeKind: 'semantic', createdBy: persisted.created_by },
                     }]);
                     toast('Semantic link created', 'The relationship is saved in this project graph.');
                   } catch {
                     toast('Link was not saved', 'AURA could not create that semantic relationship.');
                   }
                 } else {
+                  recordHistory();
                   setEdges((current) => [...current, {
                     id: `semantic-${idRef.current++}`,
                     source: linkSource,
@@ -908,8 +985,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }}
         onAutoLayout={autoLayout}
         onFitView={() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 450 })}
-        onUndo={() => { if (undo()) toast('Undone'); }}
-        onRedo={() => { if (redo()) toast('Redone'); }}
+        onUndo={() => { void applyHistory('undo'); }}
+        onRedo={() => { void applyHistory('redo'); }}
         canUndo={canUndo}
         canRedo={canRedo}
         layers={layers}
