@@ -245,8 +245,12 @@ class WorkspaceContextCompiler:
         privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
         privacy_object_ids.update(provenance_source_ids)
         for object_id in sorted(privacy_object_ids):
-            metadata = objects[object_id].metadata_json or {}
+            workspace_object = objects[object_id]
+            metadata = workspace_object.metadata_json or {}
             classification = metadata.get("privacy_policy")
+            if classification is None and workspace_object.object_type == "conversation_turn":
+                # Legacy transcript objects predate durable per-turn privacy metadata.
+                classification = "local_only"
             if classification is not None and (
                 not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
             ):
