@@ -1,6 +1,7 @@
 """Unit tests for the Durable Transactional Outbox pattern, worker leasing, and dead-letter queues."""
 
-from datetime import timedelta
+import asyncio
+from datetime import timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -180,3 +181,40 @@ async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_
     assert event.locked_by is None
     assert actively_claimed.status == EventStatus.PROCESSING.value
     assert actively_claimed.locked_by == "active-worker"
+
+
+@pytest.mark.asyncio
+async def test_outbox_renews_lease_while_handler_is_running(test_db_session: AsyncSession):
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="slow-worker", lease_duration_seconds=0.12)
+    event = EventRecordModel(
+        event_type="slow-handler.event",
+        source="unit_test",
+        payload_json={},
+        status=EventStatus.PENDING.value,
+        occurred_at=utc_now(),
+        next_attempt_at=utc_now(),
+    )
+    test_db_session.add(event)
+    await test_db_session.commit()
+    original_lock = None
+    renewed_lock = None
+
+    async def slow_handler(_: AURAEvent):
+        nonlocal original_lock, renewed_lock
+        original_lock = event.locked_at
+        await asyncio.sleep(0.18)
+        await test_db_session.refresh(event)
+        renewed_lock = event.locked_at
+
+    bus.subscribe("slow-handler.event", slow_handler)
+    assert await worker.process_outbox_batch(test_db_session) == 1
+
+    await test_db_session.refresh(event)
+    assert original_lock is not None
+    assert renewed_lock is not None
+    normalized_original = original_lock if original_lock.tzinfo else original_lock.replace(tzinfo=timezone.utc)
+    normalized_renewed = renewed_lock if renewed_lock.tzinfo else renewed_lock.replace(tzinfo=timezone.utc)
+    assert normalized_renewed > normalized_original
+    assert event.status == EventStatus.PROCESSED.value
+    assert event.locked_at is None
