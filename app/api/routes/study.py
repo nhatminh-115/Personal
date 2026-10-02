@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.schemas import StudyCardResponse, StudyCardWrite, StudyReflectionWrite, StudySessionResponse, StudySessionWrite
 from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 from app.db.session import get_db
+from app.memory.context_compiler import WorkspaceContextCompiler, stricter_privacy_requirement
 
 router = APIRouter(prefix="/v1/study", tags=["Study"])
 
@@ -234,14 +235,26 @@ async def create_study_card(
     if not body.question.strip() or not body.answer.strip():
         raise HTTPException(status_code=422, detail="Study card question and answer must not be blank.")
     session_metadata = session.metadata_json if isinstance(session.metadata_json, dict) else {}
-    card_metadata: dict[str, Any] = {
-        "study_session_id": session.id,
-        **(
-            {"privacy_policy": session_metadata["privacy_policy"]}
-            if isinstance(session_metadata.get("privacy_policy"), str)
-            else {}
-        ),
-    }
+    privacy_requirement = (
+        session_metadata.get("privacy_policy")
+        if isinstance(session_metadata.get("privacy_policy"), str)
+        else None
+    )
+    project_links = await db.execute(
+        select(WorkspaceObjectProjectLinkModel.project_name)
+        .where(WorkspaceObjectProjectLinkModel.object_id == session.id)
+        .order_by(WorkspaceObjectProjectLinkModel.project_name)
+    )
+    project_names = list(project_links.scalars())
+    for project_name in project_names:
+        source_context = await WorkspaceContextCompiler(db).compile(project_name, [session.id])
+        privacy_requirement = stricter_privacy_requirement(
+            privacy_requirement,
+            source_context.privacy_requirement,
+        )
+    card_metadata: dict[str, Any] = {"study_session_id": session.id}
+    if privacy_requirement:
+        card_metadata["privacy_policy"] = privacy_requirement
     card = WorkspaceObjectModel(
         project_name=None,
         object_type="study_card",
@@ -253,12 +266,7 @@ async def create_study_card(
     db.add(card)
     await db.flush()
 
-    project_links = await db.execute(
-        select(WorkspaceObjectProjectLinkModel.project_name)
-        .where(WorkspaceObjectProjectLinkModel.object_id == session.id)
-        .order_by(WorkspaceObjectProjectLinkModel.project_name)
-    )
-    for project_name in project_links.scalars():
+    for project_name in project_names:
         db.add(WorkspaceObjectProjectLinkModel(object_id=card.id, project_name=project_name))
         db.add(WorkspaceEdgeModel(
             project_name=project_name,
