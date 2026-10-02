@@ -26,6 +26,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://aura:aura@postgres:5432/aura
       AURA_WORKSPACE_ROOT: /app/workspace
+      CHECKPOINT_DB_PATH: /app/checkpoints/aura_checkpoints.db
       MODEL_PROVIDER: mock
       LOG_LEVEL: INFO
     command:
@@ -36,6 +37,7 @@ services:
       - "127.0.0.1:8000:8000"
     volumes:
       - workspace_data:/app/workspace
+      - checkpoint_data:/app/checkpoints
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).close()"]
       interval: 15s
@@ -49,3 +51,4 @@ services:
 volumes:
   postgres_data:
   workspace_data:
+  checkpoint_data:

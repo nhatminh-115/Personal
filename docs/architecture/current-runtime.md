@@ -37,7 +37,7 @@ separate capability scopes, and specialists cannot recursively delegate.
 | State | Implementation |
 | --- | --- |
 | Sessions, messages, runs, approvals, routing profiles, traces, and workspace graph | SQLAlchemy database selected by `DATABASE_URL`; SQLite is the local default and Docker Compose uses PostgreSQL with pgvector. |
-| LangGraph execution checkpoints | `AsyncSqliteSaver` at `CHECKPOINT_DB_PATH`, separate from the SQLAlchemy database. |
+| LangGraph execution checkpoints | `AsyncSqliteSaver` at `CHECKPOINT_DB_PATH`, separate from the SQLAlchemy database. Docker Compose stores it in the persistent `checkpoint_data` volume. |
 | Board layout | Project workspace layout with revision checks; layout is user state rather than graph knowledge. |
 | User-created projects | Workspace project directory in the SQLAlchemy database; built-in sample projects remain clearly client-side demo data. |
 | Connected folder handles and search index | Browser IndexedDB; the user explicitly indexes a connected folder, storing file names and metadata only. File contents remain at the original path and are read only when the user opens a file. |
@@ -46,7 +46,8 @@ separate capability scopes, and specialists cannot recursively delegate.
 Strict LangGraph MessagePack deserialization is enabled by
 `LANGGRAPH_STRICT_MSGPACK`. A database backup does not replace a checkpoint
 backup; deployments that need durable recovery must preserve both configured
-stores.
+stores. Compose deployments must retain both `postgres_data` and
+`checkpoint_data` across container recreation.
 
 Outbox workers renew processing leases while handlers run and reclaim leases
 left by crashed workers. Proactive event runs use deterministic run IDs; a

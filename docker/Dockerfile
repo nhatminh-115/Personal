@@ -34,7 +34,7 @@ COPY alembic.ini /app/alembic.ini
 COPY README.md /app/README.md
 
 # Workspace directory with proper permissions
-RUN mkdir -p /app/workspace && useradd -m -u 1001 aurauser && chown -R aurauser:aurauser /app
+RUN mkdir -p /app/workspace /app/checkpoints && useradd -m -u 1001 aurauser && chown -R aurauser:aurauser /app
 USER aurauser
 
 EXPOSE 8000
