@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import StudyReflectionWrite, StudySessionResponse, StudySessionWrite
@@ -49,11 +49,41 @@ async def list_study_sessions(db: AsyncSession = Depends(get_db)) -> list[StudyS
     return [_study_session_response(item) for item in result.scalars()]
 
 
+async def _lock_study_session_creation(db: AsyncSession) -> None:
+    """Serialize Study starts so concurrent requests cannot create overlapping timers."""
+    if db.get_bind().dialect.name == "postgresql":
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:namespace), hashtext(:resource))"),
+            {"namespace": "aura", "resource": "study:active-session"},
+        )
+
+
+async def _ensure_no_active_study_session(db: AsyncSession) -> None:
+    result = await db.execute(
+        select(WorkspaceObjectModel).where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "study_session",
+            WorkspaceObjectModel.created_by == "user",
+        )
+    )
+    for item in result.scalars():
+        metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
+        # Older sessions without an explicit completed status are still active,
+        # matching the response projection's in_progress default.
+        if metadata.get("status") != "completed":
+            raise HTTPException(
+                status_code=409,
+                detail="Another Study session is already active. Complete it before starting a new one.",
+            )
+
+
 @router.post("/sessions", response_model=StudySessionResponse, status_code=status.HTTP_201_CREATED)
 async def start_study_session(
     body: StudySessionWrite,
     db: AsyncSession = Depends(get_db),
 ) -> StudySessionResponse:
+    await _lock_study_session_creation(db)
+    await _ensure_no_active_study_session(db)
     track_id = body.track_id.strip()
     track_title = body.track_title.strip()
     if not track_id or not track_title:
