@@ -40,6 +40,8 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [approvalLoading, setApprovalLoading] = useState(false);
   const [approvalError, setApprovalError] = useState('');
   const [approvalNotes, setApprovalNotes] = useState('');
+  const [approvalEditing, setApprovalEditing] = useState(false);
+  const [approvalEditedJson, setApprovalEditedJson] = useState('');
 
   const openApprovalReview = async (automation: AutomationRecord) => {
     const runId = automation.latestExecution?.runId;
@@ -47,6 +49,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
     setApprovalLoading(true);
     setApprovalError('');
     setApprovalNotes('');
+    setApprovalEditing(false);
     try {
       const run = await api.fetchRunDetails(runId);
       const requests = run.events.filter((event) => event.event_type === 'approval_requested').reverse();
@@ -56,6 +59,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
         const approval = await api.fetchApproval(approvalId);
         if (approval.status === 'pending') {
           setApprovalReview({ automation, approval });
+          setApprovalEditedJson(JSON.stringify(approval.tool_input, null, 2));
           return;
         }
       }
@@ -67,15 +71,28 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
     }
   };
 
-  const decideApproval = async (decision: 'approved' | 'rejected') => {
+  const decideApproval = async (decision: 'approved' | 'rejected' | 'edited') => {
     if (!approvalReview || approvalLoading) return;
+    let editedInput: Record<string, unknown> | undefined;
+    if (decision === 'edited') {
+      try {
+        const parsed: unknown = JSON.parse(approvalEditedJson);
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Expected a JSON object for tool arguments.');
+        editedInput = parsed as Record<string, unknown>;
+      } catch (cause) {
+        setApprovalError(cause instanceof Error ? cause.message : 'Edited input must be a valid JSON object.');
+        return;
+      }
+    }
     setApprovalLoading(true);
     setApprovalError('');
     try {
-      const result = await api.submitApproval(approvalReview.approval.id, decision, approvalNotes.trim() || undefined);
+      const result = await api.submitApproval(approvalReview.approval.id, decision, approvalNotes.trim() || undefined, editedInput);
       if (result.execution_status === 'waiting_for_approval' && result.approval_id) {
         const nextApproval = await api.fetchApproval(result.approval_id);
         setApprovalReview({ ...approvalReview, approval: nextApproval });
+        setApprovalEditedJson(JSON.stringify(nextApproval.tool_input, null, 2));
+        setApprovalEditing(false);
         setApprovalNotes('');
         return;
       }
@@ -153,10 +170,34 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
             <p>This automation run is paused until you decide whether AURA may continue.</p>
             <div className="automation-approval-detail"><span>Tool</span><strong>{approvalReview.approval.tool_name}</strong></div>
             <div className="automation-approval-detail"><span>Risk</span><strong>{approvalReview.approval.risk_level}</strong></div>
-            <label><span>Requested input</span><pre>{JSON.stringify(approvalReview.approval.tool_input, null, 2)}</pre></label>
+            <label>
+              <span>Requested input</span>
+              {approvalEditing ? (
+                <textarea
+                  aria-label="Edit automation tool input JSON"
+                  className="automation-approval-json"
+                  value={approvalEditedJson}
+                  onChange={(event) => { setApprovalEditedJson(event.target.value); setApprovalError(''); }}
+                  spellCheck={false}
+                />
+              ) : <pre>{JSON.stringify(approvalReview.approval.tool_input, null, 2)}</pre>}
+            </label>
             <label><span>Decision note (optional)</span><input value={approvalNotes} onChange={(event) => setApprovalNotes(event.target.value)} maxLength={1000} /></label>
             {approvalError ? <p className="automation-form-error" role="alert">{approvalError}</p> : null}
-            <div className="automation-approval-actions"><button type="button" className="secondary-button" disabled={approvalLoading} onClick={() => void decideApproval('rejected')}>Reject</button><button type="button" className="primary-soft-button" disabled={approvalLoading} onClick={() => void decideApproval('approved')}>{approvalLoading ? 'Submitting…' : 'Approve and continue'}</button></div>
+            <div className="automation-approval-actions">
+              {approvalEditing ? (
+                <>
+                  <button type="button" className="secondary-button" disabled={approvalLoading} onClick={() => { setApprovalEditing(false); setApprovalError(''); }}>Cancel edit</button>
+                  <button type="button" className="primary-soft-button" disabled={approvalLoading} onClick={() => void decideApproval('edited')}>{approvalLoading ? 'Submitting…' : 'Approve edited input'}</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="secondary-button" disabled={approvalLoading} onClick={() => void decideApproval('rejected')}>Reject</button>
+                  <button type="button" className="secondary-button" disabled={approvalLoading} onClick={() => { setApprovalEditedJson(JSON.stringify(approvalReview.approval.tool_input, null, 2)); setApprovalError(''); setApprovalEditing(true); }}>Edit input</button>
+                  <button type="button" className="primary-soft-button" disabled={approvalLoading} onClick={() => void decideApproval('approved')}>{approvalLoading ? 'Submitting…' : 'Approve and continue'}</button>
+                </>
+              )}
+            </div>
           </div>
         </div>
       ) : null}

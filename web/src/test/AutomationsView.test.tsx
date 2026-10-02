@@ -69,6 +69,67 @@ describe('AutomationsView', () => {
     expect(api.submitApproval).toHaveBeenNthCalledWith(2, 'approval-2', 'rejected', undefined);
   });
 
+  it('validates edited automation input and submits only an explicit JSON object decision', async () => {
+    const approval = {
+      id: 'approval-edit', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-edit',
+      tool_name: 'write_workspace_file', tool_input: { path: 'report.md', content: 'draft' },
+      risk_level: 'high', status: 'pending', created_at: '2026-10-02T00:00:00Z',
+    };
+    vi.spyOn(api, 'fetchRunDetails').mockResolvedValue({
+      id: 'run-1', session_id: 'session-1', status: 'waiting_for_approval', user_message: 'update report',
+      created_at: '', updated_at: '', events: [{ id: 'event-edit', event_type: 'approval_requested', created_at: '',
+        payload: { approval_id: approval.id, tool_name: approval.tool_name } }],
+    });
+    vi.spyOn(api, 'fetchApproval').mockResolvedValue(approval);
+    vi.spyOn(api, 'submitApproval').mockResolvedValue({
+      approval_id: approval.id, status: 'edited', run_id: 'run-1', execution_status: 'completed',
+    });
+    const onApprovalResolved = vi.fn();
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={onApprovalResolved} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review approval' }));
+    await screen.findByRole('dialog', { name: 'Daily digest' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit input' }));
+    const editor = screen.getByRole('textbox', { name: 'Edit automation tool input JSON' });
+    fireEvent.change(editor, { target: { value: '{ invalid json' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve edited input' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/JSON|property/i);
+    expect(api.submitApproval).not.toHaveBeenCalled();
+
+    fireEvent.change(editor, { target: { value: JSON.stringify({ path: 'report.md', content: 'reviewed' }) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve edited input' }));
+    await waitFor(() => expect(onApprovalResolved).toHaveBeenCalledWith('auto-1'));
+    expect(api.submitApproval).toHaveBeenCalledWith(approval.id, 'edited', undefined, {
+      path: 'report.md', content: 'reviewed',
+    });
+  });
+
+  it('rejects non-object automation approval edits without resolving the approval', async () => {
+    const approval = {
+      id: 'approval-array', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-array',
+      tool_name: 'write_workspace_file', tool_input: { path: 'report.md' },
+      risk_level: 'high', status: 'pending', created_at: '2026-10-02T00:00:00Z',
+    };
+    vi.spyOn(api, 'fetchRunDetails').mockResolvedValue({
+      id: 'run-1', session_id: 'session-1', status: 'waiting_for_approval', user_message: 'update report',
+      created_at: '', updated_at: '', events: [{ id: 'event-array', event_type: 'approval_requested', created_at: '',
+        payload: { approval_id: approval.id } }],
+    });
+    vi.spyOn(api, 'fetchApproval').mockResolvedValue(approval);
+    const onApprovalResolved = vi.fn();
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={onApprovalResolved} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review approval' }));
+    await screen.findByRole('dialog', { name: 'Daily digest' });
+    fireEvent.click(screen.getByRole('button', { name: 'Edit input' }));
+    fireEvent.change(screen.getByRole('textbox', { name: 'Edit automation tool input JSON' }), { target: { value: '[]' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Approve edited input' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/JSON object/i);
+    expect(api.submitApproval).not.toHaveBeenCalled();
+    expect(onApprovalResolved).not.toHaveBeenCalled();
+  });
+
   it('keeps example automations local and only allows live routines to run', () => {
     const onRunNow = vi.fn();
     const onToggle = vi.fn();
