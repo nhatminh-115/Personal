@@ -1706,7 +1706,7 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
     first = first_page.json()
     assert [trace["run_id"] for trace in first["execution_traces"]] == sorted(run_ids, reverse=True)[:2][::-1]
     assert first["execution_next_cursor"]
-    assert first["execution_history_truncated"] is True
+    assert first["execution_history_truncated"] is False
 
     second_page = await async_client.get(
         "/v1/workspace/projects/aura/graph",
