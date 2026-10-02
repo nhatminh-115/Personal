@@ -124,5 +124,26 @@ describe('WorkspaceSearchView', () => {
     expect(screen.queryByRole('button', { name: 'Study verified finding' })).not.toBeInTheDocument();
   });
 
+
+  it('opens a searchable learning card in its owning Study session', () => {
+    const result: WorkspaceSearchResult = {
+      object_id: 'study-card-17',
+      object_type: 'study_card',
+      related_object_id: 'study-session-12',
+      title: 'What is searchable?',
+      excerpt: 'A learning card in the workspace graph.',
+      project_name: null,
+      created_by: 'user',
+      updated_at: '2026-10-02T12:00:00Z',
+    };
+    const onOpenStudySession = vi.fn();
+    render(<WorkspaceSearchView query="searchable" results={[result]} loading={false} error={null} onOpenProject={() => {}} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={onOpenStudySession} onOpenFile={() => {}} />);
+
+    expect(screen.getByText('Learning card')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Study session' }));
+    expect(onOpenStudySession).toHaveBeenCalledWith('study-session-12');
+  });
+
+
 });
 
