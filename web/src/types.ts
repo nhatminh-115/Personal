@@ -66,6 +66,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   onCycleDensity?: (id: string) => void;
   onBranch?: (id: string) => void;
   onChangeBody?: (id: string, body: string) => void;
+  onSetPrivacyPolicy?: (id: string, policy: RoutingPrivacy | null) => void;
   onBridgeApply?: (id: string) => void;
   onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => void;
   onBridgeSection?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => void;
