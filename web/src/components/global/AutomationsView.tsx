@@ -246,7 +246,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                                 <time dateTime={run.queued_at}>{run.queued_at}</time>
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
-                                <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null}>{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>
+                                <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title={run.status === 'queued' ? 'Run details are available after execution starts' : 'Inspect persisted run result and operational provenance'}>{runLoadingId === run.run_id ? 'Loading run…' : run.status === 'queued' ? 'Queued' : 'Inspect run'}</button>
                               </li>
                             ))}
                           </ol>
