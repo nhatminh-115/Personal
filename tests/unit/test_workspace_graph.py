@@ -1646,3 +1646,27 @@ async def test_context_compilation_trace_exposes_only_safe_manifest_provenance(a
     serialized_event = str(trace["events"])
     for private_value in ("private user message", "private note body", "private compiled prompt", "source detail", "private.tool.argument"):
         assert private_value not in serialized_event
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_marks_execution_history_truncated_at_event_limit(async_client, test_db_session):
+    from app.api.routes.workspace import MAX_EXECUTION_GRAPH_EVENTS
+    from app.db.models import RunEventModel
+
+    session = SessionModel(id="bounded-trace-session", title="Bounded trace", metadata_json={}, project_name="aura")
+    run = RunModel(id="bounded-trace-run", session_id=session.id, status="completed", user_message="Question")
+    test_db_session.add_all([session, run])
+    await test_db_session.flush()
+    test_db_session.add_all([
+        RunEventModel(run_id=run.id, event_type="run_completed", payload={})
+        for _ in range(MAX_EXECUTION_GRAPH_EVENTS + 1)
+    ])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/aura/graph")
+
+    assert response.status_code == 200
+    graph = response.json()
+    assert graph["execution_history_truncated"] is True
+    [trace] = graph["execution_traces"]
+    assert len(trace["events"]) == MAX_EXECUTION_GRAPH_EVENTS
