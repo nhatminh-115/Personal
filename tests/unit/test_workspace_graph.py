@@ -1175,7 +1175,7 @@ async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections
         "object_type": "context_bridge",
         "selected_by_user": True,
         "source_object_ids": [source.json()["id"]],
-        "selected_sections": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
+        "selected_sections": {"conclusions": True, "observations": False, "failed": False, "artifacts": False, "constraints": None, "decisions": None},
     }]
     assert "The regression test passes." in preview["prompt_text"]
     assert "This section is not selected." not in preview["prompt_text"]
