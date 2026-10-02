@@ -798,7 +798,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionNodes(projected.nodes);
       setExecutionEdges(projected.edges);
       setExecutionNextCursor(page.execution_next_cursor ?? null);
-      setExecutionHistoryTruncated(page.execution_history_truncated ?? false);
+      setExecutionHistoryTruncated((current) => current || (page.execution_history_truncated ?? false));
     } catch {
       toast('Older execution history could not be loaded', 'The current Board trace is still available. Try again.');
     } finally {
@@ -1334,7 +1334,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         canUndo={canUndo}
         canRedo={canRedo}
         layers={layers}
-        executionHistoryTruncated={executionHistoryTruncated}
+        executionHistoryTruncated={executionHistoryTruncated || Boolean(executionNextCursor)}
         onLoadOlderExecution={executionNextCursor ? () => void loadOlderExecution() : undefined}
         loadingOlderExecution={loadingOlderExecution}
         onLayerToggle={(layer) => setLayers((current) => ({ ...current, [layer]: !current[layer] }))}
