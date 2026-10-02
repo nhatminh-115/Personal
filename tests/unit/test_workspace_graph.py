@@ -1102,7 +1102,7 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
         "object_type": "manual_note",
         "title": "Code graph requirement",
         "content": "Use the code graph for impact analysis.",
-        "metadata_json": {"required_capabilities": ["code_graph.read"], "requires_tools": True},
+        "metadata_json": {"required_capabilities": ["code_graph.read"]},
     })
     assert created.status_code == 201
     object_id = created.json()["id"]
@@ -1116,6 +1116,7 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
     assert preview.status_code == 200
     assert preview.json()["available_capabilities"] == []
     assert preview.json()["missing_capabilities"] == ["code_graph.read"]
+    assert preview.json()["requires_tools"] is True
     assert len(mock_provider.call_history) == calls_before
 
     missing_provider = await async_client.post("/v1/chat", json={
