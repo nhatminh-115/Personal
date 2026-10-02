@@ -197,6 +197,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     graph = graph_response.json()
     card_object = next(item for item in graph["objects"] if item["id"] == card["id"])
     assert card_object["object_type"] == "study_card"
+    assert card_object["metadata_json"]["privacy_policy"] == "local_only"
     [card_edge] = [
         edge for edge in graph["edges"]
         if edge["source_object_id"] == started.json()["id"]
