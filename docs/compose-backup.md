@@ -30,12 +30,12 @@ docker compose stop --timeout 30 aura-app
 docker compose cp .\restore\postgres.dump postgres:/tmp/aura-postgres.dump
 docker compose exec -T --user 0 postgres chmod 644 /tmp/aura-postgres.dump
 docker compose exec -T postgres pg_restore --clean --if-exists --no-owner -U aura -d aura /tmp/aura-postgres.dump
-docker compose exec -T aura-app sh -c 'rm -f /app/checkpoints/aura_checkpoints.db-wal /app/checkpoints/aura_checkpoints.db-shm'
+docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'rm -f /app/checkpoints/aura_checkpoints.db-wal /app/checkpoints/aura_checkpoints.db-shm'
 docker compose cp .\restore\checkpoint\aura_checkpoints.db aura-app:/app/checkpoints/aura_checkpoints.db
 if (Test-Path .\restore\checkpoint\aura_checkpoints.db-wal) {
   docker compose cp .\restore\checkpoint\aura_checkpoints.db-wal aura-app:/app/checkpoints/aura_checkpoints.db-wal
 }
-docker compose exec -T --user 0 aura-app chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*
+docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*'
 docker compose start aura-app
 ```
 

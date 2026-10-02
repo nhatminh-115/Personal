@@ -85,6 +85,7 @@ jobs:
             http://127.0.0.1:${AURA_API_PORT}/v1/chat > chat-before-restart.json
           python -c "import json, pathlib; data=json.loads(pathlib.Path('chat-before-restart.json').read_text()); assert data['status'] == 'waiting_for_approval', data; assert data.get('approval_id') and data.get('run_id'), data; print({'run_id': data['run_id'], 'status': data['status']})"
           approval_id=$(python -c "import json, pathlib; print(json.loads(pathlib.Path('chat-before-restart.json').read_text())['approval_id'])")
+          run_id=$(python -c "import json, pathlib; print(json.loads(pathlib.Path('chat-before-restart.json').read_text())['run_id'])")
           docker compose exec -T aura-app test ! -e /app/workspace/aura-compose-smoke.txt
 
           docker compose restart aura-app
@@ -105,6 +106,27 @@ jobs:
           python -c "import json, tarfile; archive=tarfile.open('${RUNNER_TEMP}/aura-compose-backup.tar.gz', 'r:gz'); data=json.load(archive.extractfile('manifest.json')); required={'postgres.dump', 'checkpoint/aura_checkpoints.db'}; assert required <= set(data['files']), data; assert all(archive.getmember(name).size > 0 for name in required), data; print({'backup_entries': sorted(data['files'])})"
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-backup.json
+
+          restore_dir="${RUNNER_TEMP}/aura-compose-restore"
+          mkdir -p "${restore_dir}"
+          tar -xzf "${backup_path}" -C "${restore_dir}"
+          docker compose stop --timeout 30 aura-app
+          docker compose cp "${restore_dir}/postgres.dump" postgres:/tmp/aura-postgres.dump
+          docker compose exec -T --user 0 postgres chmod 644 /tmp/aura-postgres.dump
+          docker compose exec -T postgres pg_restore --clean --if-exists --no-owner -U aura -d aura /tmp/aura-postgres.dump
+          docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'rm -f /app/checkpoints/aura_checkpoints.db-wal /app/checkpoints/aura_checkpoints.db-shm'
+          docker compose cp "${restore_dir}/checkpoint/aura_checkpoints.db" aura-app:/app/checkpoints/aura_checkpoints.db
+          if [ -f "${restore_dir}/checkpoint/aura_checkpoints.db-wal" ]; then
+            docker compose cp "${restore_dir}/checkpoint/aura_checkpoints.db-wal" aura-app:/app/checkpoints/aura_checkpoints.db-wal
+          fi
+          docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*'
+          docker compose start aura-app
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
+            http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-restore.json
+          curl --fail --silent --show-error \
+            "http://127.0.0.1:${AURA_API_PORT}/v1/runs/${run_id}" > run-after-restore.json
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('run-after-restore.json').read_text()); assert data['id'] == '${run_id}' and data['status'] == 'completed', data; print({'restored_run_id': data['id'], 'status': data['status']})"
+          docker compose exec -T aura-app sh -c 'test "$(cat /app/workspace/aura-compose-smoke.txt)" = "persistent test"'
 
       - name: Wait for PostgreSQL asyncpg connection
         run: |
