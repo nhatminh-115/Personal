@@ -174,11 +174,13 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
         "tags": ["migration", "migration"],
         "project_names": ["aura", "transportability"],
         "pinned": True,
+        "privacy_policy": "confidential",
     })
     assert created.status_code == 201
     note = created.json()
     assert note["tags"] == ["migration"]
     assert note["pinned"] is True
+    assert note["privacy_policy"] == "confidential"
     assert note["project_names"] == ["aura", "transportability"]
 
     personal_notes = (await async_client.get("/v1/workspace/notes")).json()
@@ -210,6 +212,21 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
     linked_note = next(item for item in aura_graph["objects"] if item["id"] == note["id"])
     assert linked_note["content"] == "Keep exact user-authored text."
     assert linked_note["metadata_json"]["privacy_policy"] == "local_only"
+    assert updated.json()["privacy_policy"] == "local_only"
+
+    cleared = await async_client.put(f"/v1/workspace/notes/{note['id']}", json={
+        "title": "Updated shared note",
+        "body": "Keep exact user-authored text.",
+        "tags": ["decision"],
+        "project_names": ["aura"],
+        "pinned": False,
+        "privacy_policy": None,
+    })
+    assert cleared.status_code == 200
+    assert cleared.json()["privacy_policy"] is None
+    aura_graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    linked_note = next(item for item in aura_graph["objects"] if item["id"] == note["id"])
+    assert "privacy_policy" not in linked_note["metadata_json"]
     assert note["id"] not in {item["id"] for item in transport_graph["objects"]}
 
 
