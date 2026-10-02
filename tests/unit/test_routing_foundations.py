@@ -1014,6 +1014,21 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
     from unittest.mock import AsyncMock, MagicMock
     from app.delegation.runtime import DelegationRuntime
     from app.delegation.types import DelegationRequest
+    from app.capabilities.registry import NetworkRequirement, PrivacyBoundary
+    from app.tools.registry import ToolRegistry
+
+    # This test exercises persisted routing semantics with a local research fixture.
+    # Mark the fixture's research provider accordingly so strict privacy permits it.
+    base_tool_registry = ToolRegistry()
+    research_provider = base_tool_registry.capability_providers.get("aura.research")
+    assert research_provider is not None
+    base_tool_registry.register_capability_provider(
+        research_provider.model_copy(update={
+            "privacy_boundary": PrivacyBoundary.LOCAL,
+            "network_requirement": NetworkRequirement.NONE,
+        }),
+        base_tool_registry.capability_providers.get_capability_tools("aura.research"),
+    )
 
     # 1. Create and persist custom profile in DB
     prof_id = "prof-persisted-custom-p1"
@@ -1047,7 +1062,7 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
 
     monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
 
-    runtime = DelegationRuntime()
+    runtime = DelegationRuntime(base_tool_registry=base_tool_registry)
     del_req = DelegationRequest(
         specialist_name="research",
         task_description="Execute local research task",
