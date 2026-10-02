@@ -430,27 +430,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const thread = activeThread;
+    if (thread?.source !== 'live' || !thread.sessionId) return;
     let cancelled = false;
-    void api.fetchPendingRoutingConfirmations().then((pending) => {
-      if (cancelled || !Array.isArray(pending)) return;
+    void api.fetchPendingRoutingConfirmations(thread.sessionId, 1).then(({ items }) => {
+      if (cancelled) return;
       setThreadLiveStates((current) => {
-        const next = { ...current };
-        for (const item of pending) {
-          const thread = chatThreads.find((candidate) => candidate.source === 'live' && candidate.sessionId === item.session_id);
-          if (!thread) continue;
-          next[thread.id] = {
-            ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null },
-            ...(current[thread.id] ?? {}),
-            runId: item.root_run_id,
-            runStatus: 'waiting_for_routing_confirmation',
-            routingConfirmation: { id: item.id, provider: item.proposed_provider, model: item.proposed_model },
-          };
+        const existing = current[thread.id] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null };
+        const nextConfirmation = items[0];
+        if (!nextConfirmation) {
+          if (!existing.routingConfirmation && existing.runStatus !== 'waiting_for_routing_confirmation') return current;
+          return { ...current, [thread.id]: { ...existing, runId: null, runStatus: null, routingConfirmation: null } };
         }
-        return next;
+        return {
+          ...current,
+          [thread.id]: {
+            ...existing,
+            runId: nextConfirmation.root_run_id,
+            runStatus: 'waiting_for_routing_confirmation',
+            routingConfirmation: { id: nextConfirmation.id, provider: nextConfirmation.proposed_provider, model: nextConfirmation.proposed_model },
+          },
+        };
       });
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, []);
+  }, [activeThread?.id, activeThread?.sessionId, activeThread?.source]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1601,12 +1605,24 @@ export default function App() {
         };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
       }
+      if (result.execution_status !== 'waiting_for_approval') {
+        const thread = chatThreads.find((item) => item.id === originatingThreadId);
+        if (thread?.sessionId) {
+          const { items } = await api.fetchPendingRoutingConfirmations(thread.sessionId, 1);
+          const nextConfirmation = items[0];
+          patchThreadLive(originatingThreadId, nextConfirmation ? {
+            runId: nextConfirmation.root_run_id,
+            runStatus: 'waiting_for_routing_confirmation',
+            routingConfirmation: { id: nextConfirmation.id, provider: nextConfirmation.proposed_provider, model: nextConfirmation.proposed_model },
+          } : { routingConfirmation: null });
+        }
+      }
       void refreshInspectorData(originatingThreadId, result.run_id);
     } catch (error) {
       patchThreadLive(originatingThreadId, { runStatus: 'waiting_for_routing_confirmation' });
       pushToast('Routing decision failed', executionErrorText(error));
     }
-  }, [activeThreadLive.routingConfirmation, activeThreadId, updateThreadMessages, refreshInspectorData, pushToast]);
+  }, [activeThreadLive.routingConfirmation, activeThreadId, chatThreads, updateThreadMessages, refreshInspectorData, pushToast]);
 
   const automationFromRecord = useCallback((record: AutomationRecordResponse, catalog: ProjectRecord[]): AutomationRecord => {
     const project = record.project_name

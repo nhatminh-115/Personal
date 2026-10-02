@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from langgraph.types import Command
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.api.dependencies import (
     get_tool_registry,
     get_trace_service,
 )
+from app.api.pagination import decode_timestamp_id_cursor, encode_timestamp_id_cursor, set_next_cursor_header
 from app.api.schemas import (
     RoutingConfirmationDecisionRequest,
     RoutingConfirmationDecisionResponse,
@@ -88,15 +89,31 @@ def _graph_config(
 
 @router.get("/pending", response_model=List[RoutingConfirmationResponse])
 async def list_pending_routing_confirmations(
+    response: Response,
+    session_id: Optional[str] = Query(default=None, min_length=1, max_length=36),
+    cursor: Optional[str] = Query(default=None, max_length=512),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> List[RoutingConfirmationResponse]:
+    query = select(RoutingConfirmationModel).where(RoutingConfirmationModel.status == "pending")
+    if session_id is not None:
+        query = query.where(RoutingConfirmationModel.session_id == session_id)
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(
+            (RoutingConfirmationModel.created_at < cursor_created_at)
+            | ((RoutingConfirmationModel.created_at == cursor_created_at) & (RoutingConfirmationModel.id < cursor_id))
+        )
     result = await db.execute(
-        select(RoutingConfirmationModel)
-        .where(RoutingConfirmationModel.status == "pending")
-        .order_by(RoutingConfirmationModel.created_at, RoutingConfirmationModel.id)
-        .limit(100)
+        query.order_by(RoutingConfirmationModel.created_at.desc(), RoutingConfirmationModel.id.desc()).limit(page_size + 1)
     )
-    return [_response(item) for item in result.scalars()]
+    rows = list(result.scalars())
+    items = set_next_cursor_header(
+        response, rows, page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
+    )
+    return [_response(item) for item in items]
 
 
 @router.get("/{confirmation_id}", response_model=RoutingConfirmationResponse)
