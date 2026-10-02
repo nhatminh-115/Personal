@@ -132,8 +132,7 @@ function StudyCardRow({ card, onUpdate, onDelete }: {
   );
 }
 
-function StudyCardCollection({ sessionId, cards, onCreate, onUpdate, onDelete }: {
-  sessionId: string;
+function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   cards: StudyCardRecord[];
   onCreate: (question: string, answer: string) => Promise<void>;
   onUpdate: (cardId: string, question: string, answer: string) => Promise<void>;
@@ -236,14 +235,12 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                         {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
                         <StudyReflectionEditor session={session} onSave={onSaveReflection} />
               <StudyCardCollection
-                sessionId={session.id}
                 cards={cards.filter((card) => card.session_id === session.id)}
                 onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
                 onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
                 onDelete={(cardId) => onDeleteCard(cardId, session.id)}
               />
                         <StudyCardCollection
-                          sessionId={session.id}
                           cards={cards.filter((card) => card.session_id === session.id)}
                           onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
                           onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
