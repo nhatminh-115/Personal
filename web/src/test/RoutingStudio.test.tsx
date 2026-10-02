@@ -138,6 +138,39 @@ describe('Routing Studio v2', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/default', expect.objectContaining({ method: 'PUT', body: JSON.stringify({ profile_id: null }) })));
   });
 
+  it('shows the saved default assignment when switching scope instead of replacing it with the open profile', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+
+    const scopeSelect = screen.getByLabelText('Scope');
+    const assignmentSelect = screen.getByLabelText('Assigned profile') as HTMLSelectElement;
+    expect(assignmentSelect).toHaveValue('system-balanced');
+
+    fireEvent.change(scopeSelect, { target: { value: 'default' } });
+
+    expect(assignmentSelect).toHaveValue('custom-profile');
+    expect(screen.getByRole('button', { name: 'Save assignment' })).toBeDisabled();
+  });
+
+  it('preserves the loaded session assignment when switching from another profile', async () => {
+    render(<RoutingStudio
+      open projectName="Project" sessionId="live-session" sessionAvailable demoThread={false}
+      effective={{ profile: customProfile, winning_scope: 'project' }}
+      catalog={{ providers: [] }}
+      onClose={vi.fn()} onSaved={vi.fn()} onSetModelLock={vi.fn()}
+      onRefreshModels={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    const assignmentSelect = screen.getByLabelText('Assigned profile') as HTMLSelectElement;
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
+
+    expect(assignmentSelect).toHaveValue('system-balanced');
+    expect(screen.getByRole('button', { name: 'Save assignment' })).toBeDisabled();
+  });
+
   it('keeps session assignment unavailable before a live session exists', async () => {
     const onClose = vi.fn();
     render(<RoutingStudio
