@@ -28,7 +28,7 @@ async def test_context_compiler_rejects_excess_roots_before_database_reads():
 @pytest.mark.asyncio
 async def test_context_compiler_rejects_excess_provenance_edges_before_loading_sources():
     db = AsyncMock()
-    root = SimpleNamespace(id="context-root", object_type="context_set")
+    root = SimpleNamespace(id="context-root", object_type="manual_note")
     root_result, linked_result, edge_result = (MagicMock() for _ in range(3))
     root_result.scalars.return_value = [root]
     linked_result.scalars.return_value = []
