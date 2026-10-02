@@ -6155,7 +6155,8 @@ html {
 .automation-approval-modal > p { color: #80939c; font-size: 12px; line-height: 1.5; }
 .automation-approval-detail { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(149,179,197,.08); color: #657b86; font-size: 11px; }
 .automation-approval-detail strong { color: #b0c0c5; }
-.automation-approval-modal pre { max-height: 260px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: #090f15; color: #a7b8bd; font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.automation-approval-modal pre, .automation-approval-json { max-height: 260px; min-height: 150px; width: 100%; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: #090f15; color: #a7b8bd; border: 1px solid rgba(149,179,197,.14); font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.automation-approval-json { resize: vertical; }
 .automation-approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 .workspace-search {
