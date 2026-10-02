@@ -153,34 +153,64 @@ class OutboxWorker:
                         handler_error = e
                         break
 
-                # Reload record in active session
+                # Reload record in active session. A lease can be reclaimed if
+                # its heartbeat failed or the worker was paused past expiry.
+                # Fence the completion write by the current owner so an older
+                # handler cannot overwrite the newer worker's state.
                 active_rec = await db.get(EventRecordModel, rec.id)
                 if not active_rec:
                     continue
-
-                active_rec.locked_at = None
-                active_rec.locked_by = None
-
                 if handler_error is None:
-                    active_rec.status = EventStatus.PROCESSED.value
-                    active_rec.processed_at = utc_now()
-                    active_rec.error_message = None
-                    processed_count += 1
+                    completion_values = {
+                        "status": EventStatus.PROCESSED.value,
+                        "processed_at": utc_now(),
+                        "error_message": None,
+                        "next_attempt_at": None,
+                        "locked_at": None,
+                        "locked_by": None,
+                    }
                 else:
-                    active_rec.retry_count += 1
-                    active_rec.error_message = str(handler_error)
-                    if active_rec.retry_count >= active_rec.max_attempts:
-                        active_rec.status = EventStatus.DEAD_LETTER.value
+                    next_retry_count = active_rec.retry_count + 1
+                    if next_retry_count >= active_rec.max_attempts:
+                        next_status = EventStatus.DEAD_LETTER.value
+                        next_attempt_at = active_rec.next_attempt_at
+                    else:
+                        next_status = EventStatus.FAILED.value
+                        backoff_seconds = min(300, 2 ** next_retry_count)
+                        next_attempt_at = utc_now() + timedelta(seconds=backoff_seconds)
+                    completion_values = {
+                        "status": next_status,
+                        "retry_count": EventRecordModel.retry_count + 1,
+                        "error_message": str(handler_error),
+                        "next_attempt_at": next_attempt_at,
+                        "locked_at": None,
+                        "locked_by": None,
+                    }
+                    if next_status == EventStatus.DEAD_LETTER.value:
                         logger.error(
-                            f"Event '{active_rec.id}' moved to DEAD_LETTER after {active_rec.retry_count} attempts.",
+                            f"Event '{active_rec.id}' moved to DEAD_LETTER after {next_retry_count} attempts.",
                             extra={"event_id": active_rec.id},
                         )
-                    else:
-                        active_rec.status = EventStatus.FAILED.value
-                        backoff_seconds = min(300, 2 ** active_rec.retry_count)
-                        active_rec.next_attempt_at = utc_now() + timedelta(seconds=backoff_seconds)
 
+                completion = await db.execute(
+                    update(EventRecordModel)
+                    .where(
+                        EventRecordModel.id == rec.id,
+                        EventRecordModel.status == EventStatus.PROCESSING.value,
+                        EventRecordModel.locked_by == self.worker_id,
+                    )
+                    .values(**completion_values)
+                    .execution_options(synchronize_session=False)
+                )
                 await db.commit()
+                if completion.rowcount:
+                    if handler_error is None:
+                        processed_count += 1
+                else:
+                    logger.warning(
+                        "Outbox handler finished after its processing lease was reclaimed; completion ignored",
+                        extra={"event_id": rec.id, "worker_id": self.worker_id},
+                    )
         finally:
             heartbeat_stopped.set()
             heartbeat_task.cancel()

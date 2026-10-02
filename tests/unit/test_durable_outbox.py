@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import EventRecordModel, EventStatus, utc_now
@@ -218,3 +218,37 @@ async def test_outbox_renews_lease_while_handler_is_running(test_db_session: Asy
     assert normalized_renewed > normalized_original
     assert event.status == EventStatus.PROCESSED.value
     assert event.locked_at is None
+
+
+@pytest.mark.asyncio
+async def test_outbox_stale_handler_cannot_ack_event_after_lease_reclaimed(test_db_session: AsyncSession):
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="old-worker", lease_duration_seconds=60)
+    event = EventRecordModel(
+        event_type="reclaimed-handler.event",
+        source="unit_test",
+        payload_json={},
+        status=EventStatus.PENDING.value,
+        occurred_at=utc_now(),
+        next_attempt_at=utc_now(),
+    )
+    test_db_session.add(event)
+    await test_db_session.commit()
+
+    async def handler(_: AURAEvent):
+        # Model a second worker reclaiming this event after the old worker's
+        # lease expires while its handler is still running.
+        await test_db_session.execute(
+            update(EventRecordModel)
+            .where(EventRecordModel.id == event.id)
+            .values(locked_by="new-worker", locked_at=utc_now())
+        )
+        await test_db_session.commit()
+
+    bus.subscribe("reclaimed-handler.event", handler)
+    assert await worker.process_outbox_batch(test_db_session) == 0
+
+    await test_db_session.refresh(event)
+    assert event.status == EventStatus.PROCESSING.value
+    assert event.locked_by == "new-worker"
+    assert event.locked_at is not None
