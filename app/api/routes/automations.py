@@ -3,12 +3,17 @@
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.api.pagination import (
+    MAX_COLLECTION_PAGE_SIZE,
+    decode_timestamp_id_cursor,
+    set_next_cursor_header,
+)
 from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.db.session import get_db
 from app.events.bus import event_bus
@@ -100,9 +105,29 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
 
 
 @router.get("", response_model=list[AutomationResponse])
-async def list_automations(db: AsyncSession = Depends(get_db)) -> list[AutomationResponse]:
-    result = await db.execute(select(ScheduledJobModel).order_by(ScheduledJobModel.created_at.desc(), ScheduledJobModel.id))
-    jobs = [job for job in result.scalars() if (job.metadata_json or {}).get("kind") == "automation"]
+async def list_automations(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[AutomationResponse]:
+    query = select(ScheduledJobModel).where(
+        ScheduledJobModel.metadata_json["kind"].as_string() == "automation"
+    )
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(or_(
+            ScheduledJobModel.created_at < cursor_created_at,
+            and_(ScheduledJobModel.created_at == cursor_created_at, ScheduledJobModel.id > cursor_id),
+        ))
+    result = await db.execute(
+        query.order_by(ScheduledJobModel.created_at.desc(), ScheduledJobModel.id).limit(page_size + 1)
+    )
+    jobs = set_next_cursor_header(
+        response, list(result.scalars()), page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
+    )
     latest = await _latest_executions(db, jobs)
     return [_automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)}) for job in jobs]
 
