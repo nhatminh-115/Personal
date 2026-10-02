@@ -73,10 +73,26 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness.json
           python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"session_id":"aura-compose-restart-smoke","message":"Write persistent test to aura-compose-smoke.txt"}' \
+            http://127.0.0.1:${AURA_API_PORT}/v1/chat > chat-before-restart.json
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('chat-before-restart.json').read_text()); assert data['status'] == 'waiting_for_approval', data; assert data.get('approval_id') and data.get('run_id'), data; print({'run_id': data['run_id'], 'status': data['status']})"
+          approval_id=$(python -c "import json, pathlib; print(json.loads(pathlib.Path('chat-before-restart.json').read_text())['approval_id'])")
+          docker compose exec -T aura-app test ! -e /app/workspace/aura-compose-smoke.txt
+
           docker compose restart aura-app
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-restart.json
           python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness-after-restart.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
+
+          curl --fail --silent --show-error \
+            -H 'Content-Type: application/json' \
+            -d '{"decision":"approved","decision_notes":"Compose restart durability smoke"}' \
+            "http://127.0.0.1:${AURA_API_PORT}/v1/approvals/${approval_id}/decision" > approval-after-restart.json
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('approval-after-restart.json').read_text()); assert data['status'] == 'approved', data; assert data['execution_status'] == 'completed', data; print({'run_id': data['run_id'], 'execution_status': data['execution_status']})"
+          docker compose exec -T aura-app sh -c 'test "$(cat /app/workspace/aura-compose-smoke.txt)" = "persistent test"'
 
       - name: Wait for PostgreSQL asyncpg connection
         run: |
