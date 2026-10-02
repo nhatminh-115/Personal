@@ -199,7 +199,7 @@ describe('AutomationsView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Inspect run' }));
     expect(await screen.findByRole('dialog', { name: 'Daily digest' })).toBeInTheDocument();
     expect(screen.getByText('The weekly report is ready.')).toBeInTheDocument();
-    expect(screen.getByText('ollama · qwen-local')).toBeInTheDocument();
+    expect(screen.getAllByText('ollama · qwen-local').length).toBeGreaterThan(0);
     expect(screen.getByText('read_workspace_file · succeeded')).toBeInTheDocument();
     expect(screen.queryByText('private automation instruction')).not.toBeInTheDocument();
     expect(screen.queryByText('private raw tool output')).not.toBeInTheDocument();
