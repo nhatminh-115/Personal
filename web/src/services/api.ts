@@ -20,6 +20,7 @@ import {
   WorkspaceEdge,
   WorkspaceGraph,
   WorkspaceExecutionHistory,
+  CapabilityProvidersResponse,
   WorkspaceLayout,
   WorkspaceNoteRecord,
   WorkspaceObject,
@@ -70,6 +71,10 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 export const api = {
+  async fetchCapabilityProviders(): Promise<CapabilityProvidersResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/capabilities/providers`));
+  },
+
   async fetchModels(): Promise<ModelCatalog> {
     const res = await fetch(`${BASE_URL}/v1/models`);
     return handleResponse<ModelCatalog>(res);
