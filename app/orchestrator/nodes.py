@@ -988,12 +988,13 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
                 assistant_response=final_resp,
                 active_project=project_name,
             )
-            if candidates:
+            if candidates and isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
                 await pipeline.process_and_commit(
                     candidates=candidates,
                     session_id=state["session_id"],
                     run_id=state["run_id"],
                     memory_service=mem_service,
+                    privacy_policy=privacy_policy,
                 )
 
         if trace_service:
