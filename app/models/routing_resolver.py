@@ -185,3 +185,59 @@ def apply_routing_profile_to_context(
         context.winning_scope = "message"
 
     return context
+
+def inherit_routing_boundaries(
+    child_context: RoutingContext,
+    parent_context: Optional[dict],
+) -> RoutingContext:
+    """Keep a specialist within the effective privacy and fallback limits of its parent.
+
+    Profile routing may refine a child route, but it must not widen the parent's
+    hard privacy boundary or fallback permissions. Incomparable fallback rules
+    cannot be represented by one enum value, so their intersection fails closed.
+    """
+    if not isinstance(parent_context, dict):
+        return child_context
+
+    from app.memory.context_compiler import stricter_privacy_requirement
+
+    def policy_value(value: object) -> str | None:
+        if isinstance(value, str):
+            return value
+        enum_value = getattr(value, "value", None)
+        return enum_value if isinstance(enum_value, str) else None
+
+    parent_privacy = policy_value(parent_context.get("privacy_requirement"))
+    inherited_privacy = stricter_privacy_requirement(
+        policy_value(child_context.privacy_requirement),
+        parent_privacy,
+    )
+    if inherited_privacy:
+        child_context.privacy_requirement = PrivacyPolicy(inherited_privacy)
+
+    raw_parent_fallback = policy_value(parent_context.get("fallback_policy"))
+    try:
+        parent_fallback = FallbackPolicy(raw_parent_fallback) if raw_parent_fallback else None
+    except ValueError:
+        parent_fallback = None
+
+    if parent_fallback is None:
+        return child_context
+
+    child_fallback = child_context.fallback_policy
+    if parent_fallback == FallbackPolicy.CLOUD_ALLOWED:
+        return child_context
+    if child_fallback == FallbackPolicy.CLOUD_ALLOWED:
+        child_context.fallback_policy = parent_fallback
+    elif child_fallback == parent_fallback:
+        return child_context
+    elif FallbackPolicy.NONE in {child_fallback, parent_fallback}:
+        child_context.fallback_policy = FallbackPolicy.NONE
+    elif {child_fallback, parent_fallback} == {FallbackPolicy.LOCAL_ONLY, FallbackPolicy.ASK_BEFORE_CLOUD}:
+        child_context.fallback_policy = FallbackPolicy.LOCAL_ONLY
+    else:
+        # The remaining policies constrain different dimensions (for example,
+        # same-provider plus ask-before-cloud). A single policy cannot express
+        # both, so disable fallback rather than weaken either constraint.
+        child_context.fallback_policy = FallbackPolicy.NONE
+    return child_context
