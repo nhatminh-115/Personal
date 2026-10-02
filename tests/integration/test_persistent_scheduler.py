@@ -83,6 +83,67 @@ async def test_scheduler_recurring_advancement(test_db_session):
 
 
 @pytest.mark.asyncio
+async def test_scheduler_defers_automation_while_prior_run_waits_for_approval(test_db_session):
+    """A recurring Automation must not queue again while its prior run is paused for approval."""
+    import uuid
+    from sqlalchemy import select
+    from app.db.models import EventRecordModel, RunModel, RunStatus, SessionModel
+
+    bus = EventBus()
+    scheduler = PersistentScheduler(bus=bus)
+    automation_id = str(uuid.uuid4())
+    event_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    job = ScheduledJobModel(
+        id=automation_id,
+        name="Approval routine",
+        job_type=JobType.RECURRING.value,
+        schedule_expression="60",
+        payload_json={"automation_id": automation_id, "session_id": session_id, "message": "Update the project status."},
+        is_active=True,
+        next_run_at=utc_now() - timedelta(seconds=1),
+        metadata_json={"kind": "automation"},
+    )
+    test_db_session.add_all([
+        job,
+        SessionModel(id=session_id, title="Automation run", metadata_json={}),
+        EventRecordModel(
+            id=event_id,
+            event_type=EventType.TIMER_FIRED.value,
+            source="automation",
+            payload_json=job.payload_json,
+            status="processed",
+            correlation_id=automation_id,
+            idempotency_key=f"manual-{event_id}",
+        ),
+        RunModel(
+            id=run_id,
+            session_id=session_id,
+            status=RunStatus.WAITING_FOR_APPROVAL.value,
+            user_message="Update the project status.",
+        ),
+    ])
+    await test_db_session.commit()
+
+    emitted = await scheduler.tick(test_db_session, dispatch_immediate=False)
+    refreshed_job = await test_db_session.get(ScheduledJobModel, automation_id)
+    events = list((await test_db_session.execute(
+        select(EventRecordModel).where(EventRecordModel.correlation_id == automation_id)
+    )).scalars())
+
+    assert emitted == []
+    assert refreshed_job is not None
+    next_run = refreshed_job.next_run_at
+    if next_run.tzinfo is None:
+        from datetime import timezone
+        next_run = next_run.replace(tzinfo=timezone.utc)
+    assert next_run > utc_now()
+    assert refreshed_job.locked_at is None
+    assert len(events) == 1
+
+
+@pytest.mark.asyncio
 async def test_scheduler_restart_durability(test_db_session):
     """Verify that jobs scheduled before a simulated system restart survive and execute correctly."""
     bus1 = EventBus()
