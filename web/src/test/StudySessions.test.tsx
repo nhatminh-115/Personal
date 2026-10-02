@@ -66,6 +66,7 @@ describe('Study sessions use shared Library materials', () => {
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     expect(screen.getByText('German A1')).toBeInTheDocument();
@@ -84,6 +85,7 @@ describe('Study sessions use shared Library materials', () => {
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     const row = document.getElementById(`study-session-${sessionId}`);
@@ -106,6 +108,7 @@ describe('Study sessions use shared Library materials', () => {
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     const row = document.getElementById(`study-session-${sessionId}`);
