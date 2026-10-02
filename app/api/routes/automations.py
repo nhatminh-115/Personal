@@ -189,3 +189,49 @@ async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_
     )
     queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
     return AutomationRunResponse(event_id=queued.id)
+
+@router.get("/{automation_id}/runs", response_model=list[AutomationExecutionResponse])
+async def list_automation_runs(
+    automation_id: str,
+    limit: int = Query(default=10, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> list[AutomationExecutionResponse]:
+    """Return recent safe status summaries without exposing instructions or run output."""
+    job = await db.get(ScheduledJobModel, automation_id)
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+
+    result = await db.execute(
+        select(EventRecordModel)
+        .where(
+            EventRecordModel.correlation_id == automation_id,
+            EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+        )
+        .order_by(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc())
+        .limit(limit)
+    )
+    events = list(result.scalars())
+    run_ids = [
+        str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+        for event in events
+    ]
+    run_result = await db.execute(select(RunModel).where(RunModel.id.in_(run_ids))) if run_ids else None
+    runs = {run.id: run for run in run_result.scalars()} if run_result is not None else {}
+    event_status = {
+        EventStatus.PENDING.value: "queued",
+        EventStatus.PROCESSING.value: "running",
+        EventStatus.PROCESSED.value: "completed",
+        EventStatus.FAILED.value: "failed",
+        EventStatus.DEAD_LETTER.value: "failed",
+    }
+    return [
+        AutomationExecutionResponse(
+            event_id=event.id,
+            run_id=run_id,
+            queued_at=event.occurred_at,
+            status=runs[run_id].status if run_id in runs else event_status.get(event.status, event.status),
+            retry_count=event.retry_count,
+        )
+        for event, run_id in zip(events, run_ids)
+    ]
+
