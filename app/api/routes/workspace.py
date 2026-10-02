@@ -1,10 +1,9 @@
 """Project-scoped durable workspace objects and graph relationships."""
 
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import String, case, delete as sa_delete, func, or_, select, text
+from sqlalchemy import String, bindparam, case, delete as sa_delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -232,23 +231,35 @@ async def _get_project_objects(db: AsyncSession, project_name: str) -> list[Work
     return list(result.scalars())
 
 
-def _would_create_context_cycle(edges: list[WorkspaceEdgeModel], source_id: str, target_id: str) -> bool:
-    """Return true when target already reaches source through context-flow edges."""
-    adjacency: dict[str, list[str]] = defaultdict(list)
-    for edge in edges:
-        if edge.edge_family == "context":
-            adjacency[edge.source_object_id].append(edge.target_object_id)
-    queue = deque([target_id])
-    visited: set[str] = set()
-    while queue:
-        current = queue.popleft()
-        if current == source_id:
-            return True
-        if current in visited:
-            continue
-        visited.add(current)
-        queue.extend(adjacency[current])
-    return False
+async def _would_create_context_cycle(
+    db: AsyncSession,
+    project_name: str,
+    source_ids: list[str],
+    target_id: str,
+) -> bool:
+    """Return true if target reaches any proposed source in the existing context graph."""
+    if not source_ids:
+        return False
+    statement = text("""
+        WITH RECURSIVE reachable(object_id) AS (
+            SELECT :target_id
+            UNION
+            SELECT edge.target_object_id
+            FROM workspace_edges AS edge
+            JOIN reachable ON edge.source_object_id = reachable.object_id
+            WHERE edge.project_name = :project_name
+              AND edge.edge_family = 'context'
+        )
+        SELECT EXISTS (
+            SELECT 1 FROM reachable WHERE object_id IN :source_ids
+        )
+    """).bindparams(bindparam("source_ids", expanding=True))
+    result = await db.execute(statement, {
+        "project_name": project_name,
+        "target_id": target_id,
+        "source_ids": source_ids,
+    })
+    return bool(result.scalar())
 
 
 async def _project_objects_by_ids(db: AsyncSession, project_name: str, ids: list[str]) -> dict[str, WorkspaceObjectModel]:
@@ -667,14 +678,7 @@ async def create_workspace_object(
     await db.flush()
 
     if source_ids:
-        existing = await db.execute(
-            select(WorkspaceEdgeModel).where(
-                WorkspaceEdgeModel.project_name == project_name,
-                WorkspaceEdgeModel.edge_family == "context",
-            )
-        )
-        edges = list(existing.scalars())
-        if any(_would_create_context_cycle(edges, source_id, item.id) for source_id in source_ids):
+        if await _would_create_context_cycle(db, project_name, source_ids, item.id):
             await db.rollback()
             raise HTTPException(status_code=409, detail="Context Bridge would create a cycle in the context-flow graph.")
         for source_id in source_ids:
@@ -755,13 +759,7 @@ async def create_workspace_edge(
         raise HTTPException(status_code=404, detail="Both edge endpoints must exist in this project.")
 
     if body.edge_family == "context":
-        existing = await db.execute(
-            select(WorkspaceEdgeModel).where(
-                WorkspaceEdgeModel.project_name == project_name,
-                WorkspaceEdgeModel.edge_family == "context",
-            )
-        )
-        if _would_create_context_cycle(list(existing.scalars()), body.source_object_id, body.target_object_id):
+        if await _would_create_context_cycle(db, project_name, [body.source_object_id], body.target_object_id):
             raise HTTPException(status_code=409, detail="Context-flow edges must form a DAG.")
 
     edge = WorkspaceEdgeModel(
