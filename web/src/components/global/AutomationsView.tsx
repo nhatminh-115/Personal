@@ -212,6 +212,8 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
         {automations.map((automation) => {
           const project = automation.projectId ? projects.find((item) => item.id === automation.projectId) : null;
           const live = automation.source === 'live';
+          const runInProgress = ['queued', 'running', 'waiting_for_approval', 'waiting_for_routing_confirmation']
+            .includes(automation.latestExecution?.status ?? '');
           return (
             <article key={automation.id} className={`automation-card ${automation.enabled ? '' : 'is-paused'}`}>
               <button aria-label={`${automation.enabled ? 'Pause' : 'Resume'} ${automation.name}`} className={`automation-toggle ${automation.enabled ? 'is-on' : ''}`} type="button" onClick={() => onToggle(automation, !automation.enabled)} disabled={!live}><span /></button>
@@ -258,7 +260,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                 {live ? <div className="automation-steps">{automation.actions.map((action) => <span key={action}><Check size={10} /> {action}</span>)}</div> : null}
                 <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
               </div>
-              <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled} title={live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled ? <Play size={13} /> : <Pause size={13} />} Run now</button>
+              <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || runInProgress} title={runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled ? <Play size={13} /> : <Pause size={13} />} Run now</button>
             </article>
           );
         })}
