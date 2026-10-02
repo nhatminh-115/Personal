@@ -292,7 +292,7 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem,
                     <span>{completedCount} complete</span>
                   </div>
                   <p className="study-material-detail">{note.body || 'No note text added.'}</p>
-                  {note.privacyPolicy ? <p className="study-material-note">Privacy · {note.privacyPolicy.replaceAll('_', ' ')}</p> : null}
+                  {note.privacyPolicy ? <p className="study-material-note">Privacy · {note.privacyPolicy.replace(/_/g, ' ')}</p> : null}
                   {noteSessions.length ? (
                     <div className="study-session-list" aria-label={`${note.title || 'Note'} sessions`}>
                       {noteSessions.map((session) => (
