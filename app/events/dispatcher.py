@@ -6,8 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus
+from app.db.models import RunModel, RunStatus, SessionModel
 from app.db.session import async_session_factory
+from app.models.base import FallbackPolicy, PrivacyPolicy, RoutingContext
+from app.models.routing_resolver import apply_routing_profile_to_context, resolve_routing_profile
 from app.events.types import AURAEvent
 from app.memory.service import SQLMemoryService
 from app.models.router import model_router
@@ -60,16 +62,64 @@ class EventToAgentBridge:
             trace_service = TraceService(db)
 
             await mem_service.get_or_create_session(session_id, title=f"Proactive: {event.event_type}")
+            session_record = await db.get(SessionModel, session_id)
+            if session_record:
+                if project_name and not session_record.project_name:
+                    session_record.project_name = project_name
+                project_name = session_record.project_name or project_name
+
+            profile, winning_scope = await resolve_routing_profile(
+                db,
+                session_id=session_id,
+                project_name=project_name,
+            )
+            routing_context = apply_routing_profile_to_context(
+                profile,
+                role="root",
+                context=RoutingContext(session_id=session_id, run_id=run_id),
+                winning_scope=winning_scope,
+            )
+            is_automation = bool(payload.get("automation_id"))
+            if is_automation:
+                # Scheduled/manual automation turns are always local-only,
+                # even when an assigned profile allows cloud routing.
+                routing_context.privacy_requirement = PrivacyPolicy.LOCAL_ONLY
+                routing_context.fallback_policy = FallbackPolicy.LOCAL_ONLY
+            routing_context_dict = routing_context.model_dump(mode="json")
+            routing_snapshot = {
+                "profile_id": profile.id,
+                "profile_version": profile.version,
+                "winning_scope": routing_context.winning_scope,
+                "role": "root",
+                "is_lock_all": routing_context.is_lock_all,
+                "privacy_policy": routing_context.privacy_requirement.value,
+                "fallback_policy": routing_context.fallback_policy.value,
+                "explicit_model_override": routing_context.explicit_model_override,
+                "reasoning_policy": routing_context.reasoning_policy.value if routing_context.reasoning_policy else None,
+                "reasoning_effort": routing_context.reasoning_effort.value if routing_context.reasoning_effort else None,
+            }
+            run_metadata = dict(payload.get("metadata") or {})
+            run_metadata["routing_context_dict"] = routing_context_dict
+            run_metadata["routing_profile_id"] = profile.id
+            run_metadata["routing_profile_version"] = profile.version
+            run_metadata["winning_scope"] = routing_context.winning_scope
 
             run_record = RunModel(
                 id=run_id,
                 session_id=session_id,
                 status=RunStatus.RUNNING.value,
                 user_message=message,
+                routing_snapshot_json=routing_snapshot,
             )
             db.add(run_record)
             await db.commit()
 
+            await trace_service.record_event(
+                run_id=run_id,
+                session_id=session_id,
+                event_type="routing_profile_resolved",
+                payload=routing_snapshot,
+            )
             await trace_service.record_event(
                 run_id=run_id,
                 session_id=session_id,
@@ -83,7 +133,7 @@ class EventToAgentBridge:
                 session_id=session_id,
                 user_message=message,
                 project_name=project_name,
-                metadata=payload.get("metadata", {}),
+                metadata=run_metadata,
             )
             initial_state["retrieved_context"] = [
                 f"[Proactive Event Trigger]: {event.event_type} (source: {event.source})"

@@ -118,7 +118,7 @@ class DelegationRuntime:
                 )
             created_new = False
         else:
-            from app.models.routing_resolver import apply_routing_profile_to_context
+            from app.models.routing_resolver import apply_routing_profile_to_context, inherit_routing_boundaries
             from app.db.models import RoutingProfileModel
             from app.models.routing_profile import RoutingProfile
             from app.models.base import RoutingContext
@@ -158,6 +158,10 @@ class DelegationRuntime:
                 winning_scope=winning_scope,
                 message_override=model_override,
                 reasoning_override=reasoning_override,
+            )
+            child_rc = inherit_routing_boundaries(
+                child_rc,
+                (request.context or {}).get("routing_context_dict"),
             )
             
             request.context = request.context or {}
