@@ -170,7 +170,7 @@ EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked", "context_compiled",
     "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
     "approval_requested", "approval_granted", "approval_rejected", "response_generated",
-    "run_completed", "run_failed", "run_cancelled",
+    "automation_triggered", "run_completed", "run_failed", "run_cancelled",
 }
 
 
@@ -267,6 +267,9 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
         error_type=safe_text("error_type") if event_type == "fallback_blocked" else None,
         proposed_provider=safe_text("proposed_provider") if event_type == "fallback_blocked" else None,
         proposed_model=safe_text("proposed_model") if event_type == "fallback_blocked" else None,
+        trigger_event_id=safe_text("trigger_event_id") if event_type == "automation_triggered" else None,
+        automation_id=safe_text("automation_id") if event_type == "automation_triggered" else None,
+        automation_name=safe_text("automation_name") if event_type == "automation_triggered" else None,
         context_objects=context_objects,
         context_estimated_tokens=context_estimated_tokens if event_type == "context_compiled" else None,
         context_privacy_requirement=safe_text("privacy_requirement") if event_type == "context_compiled" else None,
