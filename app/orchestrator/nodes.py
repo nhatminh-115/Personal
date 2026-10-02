@@ -590,6 +590,13 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
     For each tool requiring approval, pause via LangGraph interrupt().
     Upon resume, record decision specifically for that tool_call_id.
     """
+    if state.get("execution_status") in {
+        RunStatus.CANCELLED.value,
+        RunStatus.COMPLETED.value,
+        RunStatus.FAILED.value,
+    }:
+        return {}
+
     services = _get_services(config)
     registry: ToolRegistry = services["tool_registry"]
     approval_service: Optional[ApprovalService] = services["approval_service"]
