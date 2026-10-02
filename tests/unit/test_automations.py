@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import EventRecordModel, JobType, ProjectRoutingAssignmentModel, RunEventModel, RoutingProfileModel, RunModel, ScheduledJobModel, SessionModel, utc_now
+from app.db.models import EventRecordModel, JobType, ProjectRoutingAssignmentModel, RunEventModel, RoutingProfileModel, RunModel, RunStatus, ScheduledJobModel, SessionModel, utc_now
 from app.events.dispatcher import EventToAgentBridge
 from app.events.types import AURAEvent, EventType
 
@@ -324,6 +324,83 @@ async def test_event_bridge_skips_duplicate_delivery_for_existing_run(test_db_se
 
     duplicate = await bridge.handle_event(event)
     assert duplicate == {"run_id": run_id, "execution_status": "completed"}
+
+
+@pytest.mark.asyncio
+async def test_event_bridge_retries_run_when_crash_happened_before_first_checkpoint(test_db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    event_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    event = AURAEvent(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        payload={"session_id": session_id, "message": "Persist this scheduled task."},
+    )
+    graph = AsyncMock()
+    graph.aget_state.return_value = SimpleNamespace(values={}, next=())
+    graph.ainvoke.side_effect = [
+        RuntimeError("process interrupted before first checkpoint"),
+        {"execution_status": RunStatus.COMPLETED.value, "final_response": "Recovered."},
+    ]
+    monkeypatch.setattr("app.events.dispatcher.get_compiled_graph", AsyncMock(return_value=graph))
+
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    bridge = EventToAgentBridge(session_factory=factory)
+    with pytest.raises(RuntimeError, match="before first checkpoint"):
+        await bridge.handle_event(event)
+
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    stuck = await test_db_session.get(RunModel, run_id)
+    assert stuck is not None and stuck.status == RunStatus.RUNNING.value
+
+    recovered = await bridge.handle_event(event)
+    assert recovered["execution_status"] == RunStatus.COMPLETED.value
+    assert graph.ainvoke.await_count == 2
+    assert graph.ainvoke.await_args_list[1].args[0]["user_message"] == "Persist this scheduled task."
+    assert graph.aget_state.await_count == 1
+    await test_db_session.refresh(stuck)
+    assert stuck.status == RunStatus.COMPLETED.value
+
+
+@pytest.mark.asyncio
+async def test_event_bridge_resumes_persisted_graph_checkpoint(test_db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    event_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(
+        id=run_id,
+        session_id=session_id,
+        status=RunStatus.RUNNING.value,
+        user_message="Resume this scheduled task.",
+        routing_snapshot_json={"routing_context": {"session_id": session_id, "run_id": run_id}},
+    ))
+    await test_db_session.commit()
+
+    graph = AsyncMock()
+    graph.aget_state.return_value = SimpleNamespace(values={"user_message": "Resume this scheduled task."}, next=("root",))
+    graph.ainvoke.return_value = {"execution_status": RunStatus.COMPLETED.value, "final_response": "Resumed."}
+    monkeypatch.setattr("app.events.dispatcher.get_compiled_graph", AsyncMock(return_value=graph))
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    bridge = EventToAgentBridge(session_factory=factory)
+
+    resumed = await bridge.handle_event(AURAEvent(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        payload={"session_id": session_id, "message": "stale retry payload must be ignored"},
+    ))
+
+    assert resumed["execution_status"] == RunStatus.COMPLETED.value
+    assert graph.ainvoke.await_args.args[0] is None
+    assert graph.ainvoke.await_args.kwargs["config"]["configurable"]["thread_id"] == run_id
+    persisted = await test_db_session.get(RunModel, run_id)
+    await test_db_session.refresh(persisted)
+    assert persisted.status == RunStatus.COMPLETED.value
 
 
 
