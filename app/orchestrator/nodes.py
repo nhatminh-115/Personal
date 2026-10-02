@@ -917,6 +917,7 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
     trace_service: Optional[TraceService] = services["trace_service"]
 
     final_resp = state.get("final_response") or "Run completed."
+    privacy_policy = _state_privacy_policy(state)
     persisted_user_message_id: Optional[str] = None
     persisted_assistant_message_id: Optional[str] = None
 
