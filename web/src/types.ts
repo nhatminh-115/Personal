@@ -80,6 +80,7 @@ export type AuraFlowEdge = Edge<{
   workspaceCreatedBy?: string;
   relationType?: string;
   edgeFamily?: WorkspaceEdge['edge_family'];
+  contextOrigin?: 'selected' | 'linked';
   workspaceMetadata?: Record<string, unknown>;
   onDelete?: (id: string) => void;
 }>;
@@ -264,6 +265,15 @@ export interface WorkspaceExecutionEvent {
   error_type?: string | null;
   proposed_provider?: string | null;
   proposed_model?: string | null;
+  context_objects?: Array<{
+    object_id: string;
+    object_type: string;
+    selected_by_user: boolean;
+    source_object_ids: string[];
+    selected_sections?: Record<string, boolean | null> | null;
+  }>;
+  context_estimated_tokens?: number | null;
+  context_privacy_requirement?: string | null;
 }
 
 export interface WorkspaceExecutionTrace {

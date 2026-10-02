@@ -1426,3 +1426,69 @@ async def test_workspace_execution_graph_projects_sanitized_routing_provenance(a
     for private_value in ("private user prompt", "private model prompt", "never expose", "omit this"):
         assert private_value not in response.text
     assert "secret" not in str(reasoning["reasoning_bounds"])
+
+@pytest.mark.asyncio
+async def test_context_compilation_trace_exposes_only_safe_manifest_provenance(async_client, test_db_session):
+    session = SessionModel(id="context-manifest-session", title="Context manifest", metadata_json={}, project_name="aura")
+    run = RunModel(id="context-manifest-run", session_id=session.id, status="completed", user_message="private user message")
+    occurred = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    event = RunEventModel(
+        id="context-manifest-event",
+        run_id=run.id,
+        event_type="context_compiled",
+        created_at=occurred,
+        payload={
+            "objects": [
+                {
+                    "object_id": "selected-note",
+                    "object_type": "manual_note",
+                    "selected_by_user": True,
+                    "source_object_ids": [],
+                    "selected_sections": {"conclusions": True, "untrusted": "private section body"},
+                    "content": "private note body",
+                },
+                {
+                    "object_id": "linked-note",
+                    "object_type": "manual_note",
+                    "selected_by_user": False,
+                    "source_object_ids": ["selected-note", "selected-note"],
+                    "selected_sections": {"observations": False},
+                },
+                {"object_id": "invalid-object", "object_type": 7, "selected_by_user": True},
+            ],
+            "estimated_tokens": 42,
+            "privacy_requirement": "internal",
+            "prompt_text": "private compiled prompt",
+            "privacy_sources": [{"private": "source detail"}],
+            "required_tool_capabilities": ["private.tool.argument"],
+        },
+    )
+    test_db_session.add_all([session, run, event])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/aura/graph")
+    assert response.status_code == 200
+    trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
+    [compiled] = trace["events"]
+    assert compiled["event_type"] == "context_compiled"
+    assert compiled["context_objects"] == [
+        {
+            "object_id": "selected-note",
+            "object_type": "manual_note",
+            "selected_by_user": True,
+            "source_object_ids": [],
+            "selected_sections": {"conclusions": True},
+        },
+        {
+            "object_id": "linked-note",
+            "object_type": "manual_note",
+            "selected_by_user": False,
+            "source_object_ids": ["selected-note"],
+            "selected_sections": {"observations": False},
+        },
+    ]
+    assert compiled["context_estimated_tokens"] == 42
+    assert compiled["context_privacy_requirement"] == "internal"
+    serialized_event = str(trace["events"])
+    for private_value in ("private user message", "private note body", "private compiled prompt", "source detail", "private.tool.argument"):
+        assert private_value not in serialized_event

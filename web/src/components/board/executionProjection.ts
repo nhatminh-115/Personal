@@ -73,14 +73,42 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
       return { title: 'Run failed', body: 'Execution ended with an error', chip: 'RUN' };
     case 'run_cancelled':
       return { title: 'Run cancelled', body: 'Execution was cancelled', chip: 'RUN' };
+    case 'context_compiled': {
+      const objects = event.context_objects ?? [];
+      const selectedCount = objects.filter((item) => item.selected_by_user).length;
+      const linkedCount = objects.length - selectedCount;
+      const tokenEstimate = event.context_estimated_tokens == null
+        ? 'token estimate unknown'
+        : `about ${event.context_estimated_tokens} tokens`;
+      const details = [
+        `${selectedCount} selected`,
+        `${linkedCount} linked`,
+        tokenEstimate,
+        event.context_privacy_requirement ? `Privacy ${event.context_privacy_requirement}` : null,
+      ].filter(Boolean);
+      return {
+        title: `Context compiled · ${objects.length} object${objects.length === 1 ? '' : 's'}`,
+        body: details.join(' · '),
+        chip: 'CONTEXT',
+      };
+    }
     case 'run_completed':
     default:
       return { title: 'Run completed', body: 'Execution finished', chip: 'RUN' };
   }
 }
 
-function executionEdge(id: string, source: string, target: string): AuraFlowEdge {
-  return { id, source, target, type: 'smart', animated: true, selectable: false, deletable: false, data: { edgeKind: 'execution' } };
+function executionEdge(id: string, source: string, target: string, contextOrigin?: 'selected' | 'linked'): AuraFlowEdge {
+  return {
+    id,
+    source,
+    target,
+    type: 'smart',
+    animated: true,
+    selectable: false,
+    deletable: false,
+    data: { edgeKind: 'execution', ...(contextOrigin ? { contextOrigin } : {}) },
+  };
 }
 
 /** Create a read-only Board projection from sanitized persisted run events. */
@@ -143,6 +171,18 @@ export function projectExecutionGraph(
         },
       } as AuraFlowNode);
       if (index > 0) edges.push(executionEdge(`execution-link-${orderedEvents[index - 1].id}-${event.id}`, runEventNodes[index - 1], id));
+      if (event.event_type === 'context_compiled') {
+        for (const item of event.context_objects ?? []) {
+          if (workspaceNodeById.has(item.object_id)) {
+            edges.push(executionEdge(
+              `execution-context-${item.object_id}-${event.id}`,
+              item.object_id,
+              id,
+              item.selected_by_user ? 'selected' : 'linked',
+            ));
+          }
+        }
+      }
     });
 
     if (runEventNodes.length > 0 && trace.user_object_id && workspaceNodeById.has(trace.user_object_id)) {
