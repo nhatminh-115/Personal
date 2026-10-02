@@ -16,6 +16,7 @@ async def list_capability_providers() -> CapabilityProvidersResponse:
         CapabilityProviderResponse(
             **metadata.model_dump(),
             capability_tools=registry.get_capability_tools(metadata.provider_id),
+            declared_capability_tools=registry.get_declared_capability_tools(metadata.provider_id),
         )
         for metadata in registry.list_providers()
     ]
