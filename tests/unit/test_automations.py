@@ -97,11 +97,22 @@ async def test_concurrent_run_now_requests_queue_only_one_event(async_client, te
     })
     automation_id = created.json()["id"]
 
-    responses = await asyncio.gather(
-        async_client.post(f"/v1/automations/{automation_id}/run"),
-        async_client.post(f"/v1/automations/{automation_id}/run"),
-    )
-    assert sorted(response.status_code for response in responses) == [202, 409]
+    from fastapi import HTTPException
+    from app.api.routes.automations import run_automation_now
+    from app.api.schemas import AutomationRunResponse
+
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+
+    async def trigger():
+        async with factory() as session:
+            try:
+                return await run_automation_now(automation_id, db=session)
+            except HTTPException as error:
+                return error.status_code
+
+    results = await asyncio.gather(trigger(), trigger())
+    assert sum(isinstance(result, AutomationRunResponse) for result in results) == 1
+    assert sum(result == 409 for result in results) == 1
 
     events = list((await test_db_session.execute(
         select(EventRecordModel).where(EventRecordModel.correlation_id == automation_id)
