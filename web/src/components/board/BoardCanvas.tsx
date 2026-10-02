@@ -126,7 +126,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
     },
   }));
   const execution = projectExecutionGraph(graph.execution_traces ?? [], nodes);
-  return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges };
+  return { nodes, edges, executionNodes: execution.nodes, executionEdges: execution.edges, executionHistoryTruncated: graph.execution_history_truncated ?? false };
 }
 
 function layoutSnapshotFor(nodes: AuraFlowNode[], viewport: { x: number; y: number; zoom: number } | null) {
@@ -182,6 +182,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
   const [executionNodes, setExecutionNodes] = useState<AuraFlowNode[]>([]);
   const [executionEdges, setExecutionEdges] = useState<AuraFlowEdge[]>([]);
+  const [executionHistoryTruncated, setExecutionHistoryTruncated] = useState(false);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     conversation: true,
@@ -317,6 +318,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
       const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
       const projected = mapWorkspaceGraph(graph);
+      setExecutionHistoryTruncated(projected.executionHistoryTruncated);
       layoutRevision.current = graph.layout.revision;
       nodesRef.current = projected.nodes;
       edgesRef.current = projected.edges;
@@ -364,6 +366,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     layoutConflict.current = false;
     setExecutionNodes([]);
     setExecutionEdges([]);
+    setExecutionHistoryTruncated(false);
     if (!workspaceProjectName) return;
     let cancelled = false;
     void Promise.all(workspaceSessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
@@ -371,7 +374,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       throw error;
     }))).then(() => api.fetchWorkspaceGraph(workspaceProjectName)).then(async (graph) => {
       if (cancelled) return;
-      const { nodes: nextNodes, edges: nextEdges, executionNodes: nextExecutionNodes, executionEdges: nextExecutionEdges } = mapWorkspaceGraph(graph);
+      const { nodes: nextNodes, edges: nextEdges, executionNodes: nextExecutionNodes, executionEdges: nextExecutionEdges, executionHistoryTruncated: nextExecutionHistoryTruncated } = mapWorkspaceGraph(graph);
       const savedViewport = graph.layout.layout?.viewport ?? null;
       let revision = graph.layout.revision;
       const persistedPositions = graph.layout.layout?.positions ?? {};
@@ -399,6 +402,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setEdges(nextEdges);
       setExecutionNodes(nextExecutionNodes);
       setExecutionEdges(nextExecutionEdges);
+      setExecutionHistoryTruncated(nextExecutionHistoryTruncated);
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
       if (savedViewport) {
@@ -1279,6 +1283,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         canUndo={canUndo}
         canRedo={canRedo}
         layers={layers}
+        executionHistoryTruncated={executionHistoryTruncated}
         onLayerToggle={(layer) => setLayers((current) => ({ ...current, [layer]: !current[layer] }))}
       />
 

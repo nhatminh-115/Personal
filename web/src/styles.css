@@ -1676,6 +1676,13 @@ input:focus-visible {
   padding-top: 4px;
 }
 
+.execution-history-note {
+  color: #d7a66f;
+  font-size: 8px;
+  white-space: nowrap;
+  margin: 0 5px;
+}
+
 .layer-toggle button {
   flex: 1;
   justify-content: center;

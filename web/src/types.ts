@@ -295,6 +295,7 @@ export interface WorkspaceGraph {
   edges: WorkspaceEdge[];
   layout: WorkspaceLayout;
   execution_traces?: WorkspaceExecutionTrace[];
+  execution_history_truncated?: boolean;
 }
 
 export interface ChatResponse {

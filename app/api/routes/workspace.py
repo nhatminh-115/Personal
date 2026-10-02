@@ -160,6 +160,9 @@ async def search_workspace(
         ))
     return response
 
+MAX_EXECUTION_GRAPH_RUNS = 100
+MAX_EXECUTION_GRAPH_EVENTS = 3_000
+
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked", "context_compiled",
     "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
@@ -553,9 +556,11 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
             select(RunModel)
             .where(RunModel.session_id.in_(session_ids))
             .order_by(RunModel.created_at.desc(), RunModel.id.desc())
-            .limit(100)
+            .limit(MAX_EXECUTION_GRAPH_RUNS + 1)
         )
         runs = list(run_result.scalars())
+    runs_truncated = len(runs) > MAX_EXECUTION_GRAPH_RUNS
+    runs = runs[:MAX_EXECUTION_GRAPH_RUNS]
 
     execution_traces: list[WorkspaceExecutionTraceResponse] = []
     if runs:
@@ -567,10 +572,12 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
                 RunEventModel.event_type.in_(EXECUTION_GRAPH_EVENT_TYPES),
             )
             .order_by(RunEventModel.created_at.desc(), RunEventModel.id.desc())
-            .limit(3_000)
+            .limit(MAX_EXECUTION_GRAPH_EVENTS + 1)
         )
+        event_rows = list(event_result.scalars())
+        events_truncated = len(event_rows) > MAX_EXECUTION_GRAPH_EVENTS
         events_by_run: dict[str, list[WorkspaceExecutionEventResponse]] = {run_id: [] for run_id in run_ids}
-        for event in event_result.scalars():
+        for event in event_rows[:MAX_EXECUTION_GRAPH_EVENTS]:
             events_by_run[event.run_id].append(_safe_execution_event(event))
         for run_events in events_by_run.values():
             run_events.reverse()
@@ -607,6 +614,7 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
             updated_at=layout.updated_at if layout else None,
         ),
         execution_traces=execution_traces,
+        execution_history_truncated=runs_truncated or (bool(runs) and events_truncated),
     )
 
 
