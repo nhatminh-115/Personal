@@ -46,6 +46,7 @@ export interface ChatPaneProps {
   /** Called when user clicks "Start live chat" from a demo thread. */
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   onContextObjectIdsChange?: (objectIds: string[]) => void;
+  onContextPanelOpenChange?: (open: boolean) => void;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -125,6 +126,7 @@ export function ChatPane({
   onSendMessage,
   onStartLiveChat,
   onContextObjectIdsChange,
+  onContextPanelOpenChange,
   currentApproval,
   onApprovalDecision,
   isLiveThread = true,
@@ -140,8 +142,12 @@ export function ChatPane({
 
   useEffect(() => {
     setContextItems((suppliedContext ?? []).map((item) => ({ ...item })));
+  }, [suppliedContext]);
+
+  useEffect(() => {
     setContextOpen(false);
-  }, [threadTitle, suppliedContext]);
+    onContextPanelOpenChange?.(false);
+  }, [threadTitle, onContextPanelOpenChange]);
 
   const includedContext = useMemo(() => contextItems.filter((item) => item.included), [contextItems]);
   const contextTokens = useMemo(() => includedContext.reduce((sum, item) => sum + item.tokens, 0), [includedContext]);
@@ -181,6 +187,7 @@ export function ChatPane({
     if (onSendMessage && isLiveThread) {
       setDraft('');
       setContextOpen(false);
+      onContextPanelOpenChange?.(false);
       setRunPhase('routing');
       try {
         await onSendMessage(
@@ -210,6 +217,7 @@ export function ChatPane({
     onMessagesChange((current) => [...current, userMessage]);
     setDraft('');
     setContextOpen(false);
+    onContextPanelOpenChange?.(false);
     setRunPhase('routing');
 
     timersRef.current = [
@@ -245,7 +253,7 @@ export function ChatPane({
         timersRef.current = [];
       }, 1550),
     ];
-  }, [contextTokens, draft, includedContext, isLiveThread, onMessagesChange, onSendMessage, runPhase, workMode]);
+  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runPhase, workMode]);
 
 
   return (
@@ -424,7 +432,11 @@ export function ChatPane({
           <div className="chat-composer__footer">
             <div className="composer-tools">
               <button className="icon-button" type="button" aria-label="Attach project object" title="Attach project file or object" onClick={onAttachRequest}><Paperclip size={16} /></button>
-              <button className={`composer-context ${contextOpen ? 'is-active' : ''}`} type="button" onClick={() => setContextOpen((value) => !value)}>
+              <button className={`composer-context ${contextOpen ? 'is-active' : ''}`} type="button" onClick={() => {
+                const next = !contextOpen;
+                setContextOpen(next);
+                onContextPanelOpenChange?.(next);
+              }}>
                 <span className="composer-context__icon"><Layers3 size={13} /></span>
                 <span className="composer-context__copy">
                   <strong>Context</strong>

@@ -171,7 +171,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText(/AURA · 4 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Context').closest('button')!);
-    fireEvent.click(screen.getByRole('button', { name: 'Show Restartability claim on Board' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));

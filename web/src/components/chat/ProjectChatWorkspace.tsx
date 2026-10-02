@@ -66,6 +66,7 @@ export function ProjectChatWorkspace({
 }: ProjectChatWorkspaceProps) {
   const [query, setQuery] = useState('');
   const [liveWorkspaceContext, setLiveWorkspaceContext] = useState<AIContextItem[]>([]);
+  const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return threads.filter((thread) => !q || `${thread.title} ${thread.summary}`.toLowerCase().includes(q));
@@ -79,10 +80,11 @@ export function ProjectChatWorkspace({
       setLiveWorkspaceContext([]);
       return;
     }
+    if (!contextPanelOpen) return;
     let active = true;
+    setLiveWorkspaceContext([]);
     void api.fetchWorkspaceGraph(project.name).then((graph) => {
       if (!active) return;
-      const includedIds = new Set(activeThread?.initialContextObjectIds ?? []);
       setLiveWorkspaceContext(graph.objects.map((object) => {
         const kind: AIContextItem['kind'] = object.object_type === 'manual_note' ? 'note'
           : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
@@ -98,14 +100,14 @@ export function ProjectChatWorkspace({
           title: object.title || object.object_type.split('_').join(' '),
           detail,
           tokens: Math.max(1, Math.ceil(object.content.length / 4)),
-          included: includedIds.has(object.id),
+          included: false,
         };
       }));
     }).catch(() => {
       if (active) setLiveWorkspaceContext([]);
     });
     return () => { active = false; };
-  }, [isLiveThread, project.name, activeThread?.id, activeThread?.messages.length, activeThread?.initialContextObjectIds]);
+  }, [isLiveThread, contextPanelOpen, project.name, activeThread?.id, activeThread?.messages.length]);
 
   const demoContextItems = useMemo<AIContextItem[]>(() => {
     const files = libraryItems.filter((item) => item.projectLinks?.includes(project.id)).slice(0, 4).map((item, index) => ({
@@ -139,7 +141,10 @@ export function ProjectChatWorkspace({
       ...artifacts,
     ];
   }, [activeThread?.id, activeThread?.title, libraryItems, notes, project.id]);
-  const contextItems = isLiveThread ? liveWorkspaceContext : demoContextItems;
+  const selectedContextIds = useMemo(() => new Set(activeThread?.initialContextObjectIds ?? []), [activeThread?.initialContextObjectIds]);
+  const contextItems = useMemo(() => isLiveThread
+    ? liveWorkspaceContext.map((item) => ({ ...item, included: Boolean(item.nodeId && selectedContextIds.has(item.nodeId)) }))
+    : demoContextItems, [demoContextItems, isLiveThread, liveWorkspaceContext, selectedContextIds]);
 
   return (
     <div className={`project-chat-workspace ${compact ? 'project-chat-workspace--compact' : ''}`}>
@@ -211,6 +216,7 @@ export function ProjectChatWorkspace({
             onSendMessage={onSendMessage}
             onStartLiveChat={onStartLiveChat}
             onContextObjectIdsChange={onContextObjectIdsChange ? (ids) => onContextObjectIdsChange(activeThread.id, ids) : undefined}
+            onContextPanelOpenChange={setContextPanelOpen}
             currentApproval={currentApproval}
             onApprovalDecision={onApprovalDecision}
             isLiveThread={activeThread.source === 'live' || Boolean(activeThread.sessionId)}
