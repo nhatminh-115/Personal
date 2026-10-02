@@ -133,6 +133,33 @@ describe('Session Hydration', () => {
     expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([url]) => String(url).includes('cursor=older-cursor'))).toBe(true);
   });
 
+  it('clears stale older-message loading state restored from local storage', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions/stale-load-session')) return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('Unavailable') });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    const liveThread = {
+      id: 'stateful-live-stale-load', projectId: 'stateful', title: 'Stale loading thread', summary: 'Reload recovery',
+      updated: 'now', messages: [], sessionId: 'stale-load-session', source: 'live', pinned: false,
+      messagesNextCursor: 'older-cursor', loadingOlderMessages: true,
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsBtn); });
+    await act(async () => { fireEvent.click(screen.getByText('Stale loading thread')); });
+
+    const loadButton = await screen.findByRole('button', { name: 'Load older messages' });
+    expect(loadButton).toBeEnabled();
+  });
+
   it('hydration failure does not destroy local thread messages', async () => {
     // Override fetch to fail the session detail call
     global.fetch = vi.fn().mockImplementation((url: string) => {

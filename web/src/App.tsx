@@ -306,7 +306,10 @@ export default function App() {
   const savedNoteFingerprints = useRef(new Map<string, string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const automationsLoaded = useRef(false);
-  const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() => loadStored(STORAGE.chats, initialChatThreads));
+  const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() =>
+    loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
+      .map((thread) => ({ ...thread, loadingOlderMessages: false }))
+  );
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     projects.forEach((project) => {
