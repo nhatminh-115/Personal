@@ -978,9 +978,9 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
     prof_id = "prof-persisted-custom-p1"
     db_profile = RoutingProfileModel(
         id=prof_id,
-        name="Custom Local Privacy Profile",
-        global_privacy_policy="local_only",
-        global_fallback_policy="none",
+        name="Permissive Child Profile",
+        global_privacy_policy="public",
+        global_fallback_policy="cloud_allowed",
         version=3,
         is_active=True,
         routes_json={
@@ -1015,6 +1015,10 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
         context={
             "profile_id": prof_id,
             "winning_scope": "session",
+            "routing_context_dict": {
+                "privacy_requirement": "local_only",
+                "fallback_policy": "local_only",
+            },
         },
     )
 
@@ -1028,7 +1032,7 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
 
     # Assert contract preservation
     assert snapshot["privacy_policy"] == "local_only"
-    assert snapshot["fallback_policy"] == "none"
+    assert snapshot["fallback_policy"] == "local_only"
     assert snapshot["profile_id"] == prof_id
     assert snapshot["profile_version"] == 3
     assert snapshot["role"] == "research"
@@ -1037,7 +1041,7 @@ async def test_delegation_runtime_persisted_profile_privacy_and_fallback(test_db
     # Inspect the child's routing_context_dict
     routing_ctx_dict = del_req.context["routing_context_dict"]
     assert routing_ctx_dict["privacy_requirement"] == "local_only"
-    assert routing_ctx_dict["fallback_policy"] == "none"
+    assert routing_ctx_dict["fallback_policy"] == "local_only"
     assert routing_ctx_dict["explicit_model_override"] == "mock:research-model"
 
 
