@@ -143,5 +143,6 @@ GitHub Actions is the release gate for the integrated backend, Phase 1, Phase
 2.1, Phase 3, Phase 4, frontend tests, and production build.
 
 `GET /health` is a process liveness probe. `GET /ready` checks the configured
-database connection and LangGraph checkpointer and returns HTTP 503 when either
-dependency needed for durable runs is unavailable.
+database connection and performs a read-only lookup through the LangGraph
+checkpointer; it returns HTTP 503 when either dependency needed for durable
+runs is unavailable.

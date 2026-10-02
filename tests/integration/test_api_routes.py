@@ -28,13 +28,32 @@ async def test_readiness_reports_database_and_durable_checkpointer(async_client:
 
 @pytest.mark.asyncio
 async def test_readiness_fails_when_checkpointer_is_not_initialized(async_client: AsyncClient, monkeypatch):
-    monkeypatch.setattr("app.api.server.is_checkpointer_initialized", lambda: False)
+    async def unavailable_checkpointer():
+        return False
+
+    monkeypatch.setattr("app.api.server.is_checkpointer_available", unavailable_checkpointer)
     resp = await async_client.get("/ready")
     assert resp.status_code == 503
     assert resp.json() == {
         "status": "not_ready",
         "checks": {"database": "healthy", "checkpointer": "unavailable"},
     }
+
+
+@pytest.mark.asyncio
+async def test_readiness_detects_checkpointer_storage_failure(async_client: AsyncClient, monkeypatch):
+    class BrokenCheckpointer:
+        async def aget_tuple(self, _config):
+            raise RuntimeError("private checkpoint storage failure")
+
+    monkeypatch.setattr("app.orchestrator.graph._global_checkpointer", BrokenCheckpointer())
+    resp = await async_client.get("/ready")
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "status": "not_ready",
+        "checks": {"database": "healthy", "checkpointer": "unavailable"},
+    }
+    assert "private checkpoint" not in resp.text
 
 
 @pytest.mark.asyncio
