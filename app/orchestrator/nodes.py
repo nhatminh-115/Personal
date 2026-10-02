@@ -922,7 +922,13 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
     if mem_service:
         # Save user message if not already saved
         user_message = await mem_service.save_message(
-            state["session_id"], role="user", content=state["user_message"], metadata={"run_id": state["run_id"]}
+            state["session_id"],
+            role="user",
+            content=state["user_message"],
+            metadata={
+                "run_id": state["run_id"],
+                "context_object_ids": list(dict.fromkeys(state.get("context_object_ids", []))),
+            },
         )
         persisted_user_message_id = user_message.id
 

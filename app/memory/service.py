@@ -157,6 +157,24 @@ class SQLMemoryService(MemoryService):
             self.db.add(workspace_object)
             await self.db.flush()
 
+            if role == "user" and isinstance(metadata, dict):
+                selected_context_ids = metadata.get("context_object_ids")
+                if isinstance(selected_context_ids, list):
+                    for source_id in dict.fromkeys(
+                        value for value in selected_context_ids if isinstance(value, str)
+                    ):
+                        self.db.add(WorkspaceEdgeModel(
+                            project_name=session.project_name,
+                            source_object_id=source_id,
+                            target_object_id=workspace_object.id,
+                            relation_type="context_used",
+                            edge_family="context",
+                            created_by="system",
+                            metadata_json={
+                                "run_id": metadata.get("run_id")
+                            } if isinstance(metadata.get("run_id"), str) else {},
+                        ))
+
             if role == "assistant":
                 prior_users = await self.db.execute(
                     select(WorkspaceObjectModel)
