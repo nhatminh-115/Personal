@@ -29,7 +29,7 @@ Run the scripts from the repository root. They use isolated SQLite databases and
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and hosted model | Exact catalog models preserve local-only and cloud-allowed profile policies through zero-invocation routing preview |
 | Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | External CodeGraph setup required for CodeGraph-specific dogfood | **Pending external setup.** Do not run or claim CodeGraph dogfood until CodeGraph is installed and its provider is discovered. The harness never installs or configures it. |
 
-The routing constraints script reads the current catalog only. It does not refresh or probe providers. If the catalog has no explicitly classified local or hosted model, it reports that the scenario did not run and exits without model invocation.
+The routing constraints script calls GET /v1/models, which performs its normal provider-discovery snapshot and may make local model-list HTTP requests. It does not call the explicit refresh or capability-probe endpoints, install providers, or invoke a model. The zero-invocation preview itself does not require model credentials. The catalog must list an available explicitly classified local and hosted model; otherwise the scenario reports that it did not run.
 
 ## Approvals and audit artifacts
 

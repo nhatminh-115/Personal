@@ -1,7 +1,9 @@
 """Zero-invocation routing constraints smoke against the configured model catalog.
 
-The script reads the current catalog and uses unsaved profile drafts with /v1/routing/preview.
-It never refreshes/probes providers or calls a model; unknown provider/model metadata stays unknown.
+GET /v1/models performs its normal provider discovery snapshot, which can make
+local model-list HTTP requests. The script does not call explicit refresh or
+capability-probe endpoints and never invokes a model. Unknown provider/model
+metadata stays unknown.
 """
 import asyncio
 import json
@@ -11,12 +13,8 @@ import uuid
 from typing import Any, Mapping
 
 
-def live_environment_error(environ: Mapping[str, str] | None = None) -> str | None:
-    values = os.environ if environ is None else environ
-    if values.get("MODEL_PROVIDER", "").strip().lower() != "openai":
-        return "Routing constraints dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
-    if not values.get("OPENAI_API_KEY", "").strip():
-        return "Routing constraints dogfood requires OPENAI_API_KEY; no model call was made."
+def live_environment_error(_environ: Mapping[str, str] | None = None) -> str | None:
+    """This scenario only reads the model catalog and invokes zero model calls."""
     return None
 
 
@@ -78,7 +76,6 @@ async def run_live_dogfood() -> None:
     from app.core.settings import settings
     settings.DATABASE_URL = database_url
     settings.CHECKPOINT_DB_PATH = checkpoint_path
-    settings.MODEL_PROVIDER = "openai"
     from app.db import session as db_session
     db_session.configure_engine(database_url)
     from app.orchestrator.graph import init_checkpointer
@@ -100,7 +97,7 @@ async def run_live_dogfood() -> None:
             cloud = configured_model(providers, local=False)
             if local is None:
                 print("ROUTING CONSTRAINTS DOGFOOD NOT EXECUTED — no available provider is explicitly classified as local.")
-                print("No model refresh, provider probe, installation, or invocation was attempted.")
+                print("No explicit refresh, capability probe, installation, or model invocation was attempted; GET /v1/models performs its normal provider discovery.")
                 raise SystemExit(2)
             if cloud is None:
                 print("ROUTING CONSTRAINTS DOGFOOD NOT EXECUTED — no available provider is explicitly classified as cloud/hosted.")
