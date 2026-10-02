@@ -135,15 +135,17 @@ class ToolRegistry:
         self,
         capabilities: List[str],
         allowed_tool_names: Optional[List[str]] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> List[str]:
-        return self.capability_providers.resolve_tools(capabilities, allowed_tool_names)
+        return self.capability_providers.resolve_tools(capabilities, allowed_tool_names, privacy_requirement)
 
     def resolve_available_capabilities(
         self,
         capabilities: List[str],
         allowed_tool_names: Optional[List[str]] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> List[str]:
-        return self.capability_providers.resolve_available_tools(capabilities, allowed_tool_names)
+        return self.capability_providers.resolve_available_tools(capabilities, allowed_tool_names, privacy_requirement)
 
     def get(self, name: str) -> Optional[Tool]:
         """Lookup tool by name."""
