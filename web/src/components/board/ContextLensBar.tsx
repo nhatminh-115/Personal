@@ -1,10 +1,14 @@
-import { Bot, GitBranch, FilePlus2, BookmarkPlus, GitMerge, Link2, X } from 'lucide-react';
+import { Bot, Eye, GitBranch, FilePlus2, BookmarkPlus, GitMerge, Link2, X } from 'lucide-react';
 import { useState } from 'react';
-import type { AuraFlowNode } from '../../types';
+import type { AuraFlowNode, WorkspaceContextPreview } from '../../types';
 
 interface ContextLensBarProps {
   nodes: AuraFlowNode[];
   onAsk: (prompt: string) => void;
+  onPreviewContext?: () => void;
+  contextPreview?: WorkspaceContextPreview | null;
+  contextPreviewLoading?: boolean;
+  contextPreviewError?: string | null;
   onCreateNote: () => void;
   onCreateBridge: () => void;
   onCreateBranch: () => void;
@@ -14,11 +18,12 @@ interface ContextLensBarProps {
   onClear: () => void;
 }
 
-export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onSaveContextSet, mergeTargets, onMergeInto, onClear }: ContextLensBarProps) {
+export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onCreateBranch, onSaveContextSet, mergeTargets, onMergeInto, onClear, onPreviewContext, contextPreview, contextPreviewLoading = false, contextPreviewError }: ContextLensBarProps) {
   const [composerOpen, setComposerOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [mergeOpen, setMergeOpen] = useState(false);
   const [targetId, setTargetId] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const counts = nodes.reduce(
     (acc, node) => {
@@ -41,6 +46,15 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
           <button type="button" onClick={() => setComposerOpen(!composerOpen)}>
             <Bot size={13} /> Ask AURA
           </button>
+          {onPreviewContext ? (
+            <button type="button" aria-expanded={previewOpen} onClick={() => {
+              const opening = !previewOpen;
+              setPreviewOpen(opening);
+              if (opening) onPreviewContext();
+            }}>
+              <Eye size={13} /> Preview Context
+            </button>
+          ) : null}
           <button type="button" onClick={onCreateNote}>
             <FilePlus2 size={13} /> Create Note
           </button>
@@ -73,6 +87,42 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
             <button type="button" disabled={!targetId} onClick={() => { onMergeInto(targetId); setMergeOpen(false); setTargetId(''); }}>Create merged continuation</button>
           </> : <p role="status">Create a branch before merging selected context into it.</p>}
         </div>
+      ) : null}
+
+      {previewOpen ? (
+        <section className="context-lens__expanded context-preview" aria-label="Compiled context preview" aria-live="polite">
+          {contextPreviewLoading ? <p role="status">Compiling selected context…</p> : null}
+          {contextPreviewError ? <p className="context-preview__error" role="alert">{contextPreviewError}</p> : null}
+          {contextPreview && !contextPreviewLoading ? <>
+            <div className="context-preview__summary">
+              <strong>{contextPreview.estimated_tokens ?? 0} estimated tokens</strong>
+              <span>{contextPreview.objects?.filter((object) => object.selected_by_user).length ?? 0} selected · {contextPreview.objects?.length ?? 0} included</span>
+              <span>Privacy: {contextPreview.privacy_requirement ?? 'Unclassified'}</span>
+              {(contextPreview.required_capabilities?.length ?? 0) > 0 ? <span>Capabilities: {contextPreview.required_capabilities?.join(', ')}</span> : null}
+              {contextPreview.requires_tools || contextPreview.requires_vision || contextPreview.requires_structured_output || contextPreview.requires_long_context ? (
+                <span>Requirements: {[
+                  contextPreview.requires_tools && 'tools',
+                  contextPreview.requires_vision && 'vision',
+                  contextPreview.requires_structured_output && 'structured output',
+                  contextPreview.requires_long_context && 'long context',
+                ].filter(Boolean).join(', ')}</span>
+              ) : null}
+            </div>
+            <ul className="context-preview__objects">
+              {(contextPreview.objects ?? []).map((object) => (
+                <li key={object.object_id}>
+                  <span>{object.object_type.replace(/_/g, ' ')}</span>
+                  <code>{object.object_id}</code>
+                  <small>{object.selected_by_user ? 'selected' : 'included through context links'}</small>
+                </li>
+              ))}
+            </ul>
+            <details className="context-preview__text">
+              <summary>Inspect compiled text</summary>
+              <pre>{contextPreview.prompt_text}</pre>
+            </details>
+          </> : null}
+        </section>
       ) : null}
 
       {composerOpen ? (
