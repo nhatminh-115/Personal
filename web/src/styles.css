@@ -880,6 +880,28 @@ input:focus-visible {
   background: rgba(162, 188, 207, 0.055);
 }
 
+.load-older-messages {
+  display: block;
+  margin: -10px auto 18px;
+  padding: 5px 10px;
+  border: 1px solid rgba(125, 163, 181, .14);
+  border-radius: 7px;
+  background: rgba(82, 151, 165, .045);
+  color: #829aa5;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.load-older-messages:hover:not(:disabled) {
+  border-color: rgba(111, 177, 190, .28);
+  color: #b4c8d0;
+}
+
+.load-older-messages:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
 .chat-message {
   margin: 0 0 22px;
   transition: background 160ms ease, box-shadow 160ms ease;

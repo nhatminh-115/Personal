@@ -31,6 +31,9 @@ export interface ChatPaneProps {
   projectName: string;
   threadTitle: string;
   messages: ChatMessage[];
+  messagesNextCursor?: string | null;
+  loadingOlderMessages?: boolean;
+  onLoadOlderMessages?: () => Promise<void>;
   onMessagesChange: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void;
   contextItems?: AIContextItem[];
   contextIsLive?: boolean;
@@ -108,6 +111,9 @@ export function ChatPane({
   projectName,
   threadTitle,
   messages,
+  messagesNextCursor,
+  loadingOlderMessages = false,
+  onLoadOlderMessages,
   onMessagesChange,
   contextItems: suppliedContext,
   contextIsLive = false,
@@ -254,6 +260,17 @@ export function ChatPane({
         </div>
 
         <div className="branch-divider"><span>Conversation thread</span></div>
+
+        {isLiveThread && messagesNextCursor ? (
+          <button
+            className="load-older-messages"
+            type="button"
+            disabled={loadingOlderMessages}
+            onClick={() => { void onLoadOlderMessages?.(); }}
+          >
+            {loadingOlderMessages ? 'Loading older messages…' : 'Load older messages'}
+          </button>
+        ) : null}
 
         {!isLiveThread ? (
           <div className="chat-demo-banner">

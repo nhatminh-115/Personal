@@ -363,6 +363,8 @@ export interface ChatThreadRecord {
   sessionId?: string;
   source?: 'demo' | 'live';
   initialContextObjectIds?: string[];
+  messagesNextCursor?: string | null;
+  loadingOlderMessages?: boolean;
 }
 
 function cloneMessages(messages: ChatMessage[]): ChatMessage[] {
