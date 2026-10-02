@@ -65,6 +65,7 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
   const materials = libraryItems.filter(isStudyMaterial);
   const materialIds = new Set(materials.map((item) => item.id));
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
+  const activeWorkspaceSession = sessions.find((session) => session.status === 'in_progress');
 
   useEffect(() => {
     if (!focusSessionId) return;
@@ -121,9 +122,15 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                   </div>
                 ) : null}
                 {activeSession ? null : canStartSession ? (
-                  <button className="study-start-button" type="button" onClick={() => onStartSession(item)}>
-                    <Play size={13} /> Start short session
-                  </button>
+                  activeWorkspaceSession ? (
+                    <p className="study-material-note">
+                      Finish “{activeWorkspaceSession.track_title}” before starting another Study session.
+                    </p>
+                  ) : (
+                    <button className="study-start-button" type="button" onClick={() => onStartSession(item)}>
+                      <Play size={13} /> Start short session
+                    </button>
+                  )
                 ) : (
                   <p className="study-material-note">Save a personal Study or Research reference in Library to start a durable session.</p>
                 )}

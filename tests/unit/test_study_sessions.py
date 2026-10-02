@@ -207,3 +207,48 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         "material_project_name": "research-project",
     })
     assert refused.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_study_workspace_allows_only_one_active_session(async_client: AsyncClient):
+    first = await async_client.post("/v1/study/sessions", json={
+        "track_id": "first-track",
+        "track_title": "First track",
+    })
+    assert first.status_code == 201
+
+    blocked = await async_client.post("/v1/study/sessions", json={
+        "track_id": "second-track",
+        "track_title": "Second track",
+    })
+    assert blocked.status_code == 409
+    assert "already active" in blocked.json()["detail"]
+
+    completed = await async_client.post(f"/v1/study/sessions/{first.json()['id']}/complete")
+    assert completed.status_code == 200
+
+    second = await async_client.post("/v1/study/sessions", json={
+        "track_id": "second-track",
+        "track_title": "Second track",
+    })
+    assert second.status_code == 201
+    assert second.json()["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_study_start_lock_uses_a_postgres_transaction_advisory_lock():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
+
+    from app.api.routes.study import _lock_study_session_creation
+
+    db = Mock()
+    db.get_bind.return_value = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+    db.execute = AsyncMock()
+
+    await _lock_study_session_creation(db)
+
+    db.execute.assert_awaited_once()
+    statement, parameters = db.execute.await_args.args
+    assert "pg_advisory_xact_lock" in str(statement)
+    assert parameters == {"namespace": "aura", "resource": "study:active-session"}

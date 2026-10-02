@@ -36,6 +36,28 @@ describe('Study sessions use shared Library materials', () => {
     expect(onCompleteSession).toHaveBeenCalledWith('study-session-1');
   });
 
+  it('prevents starting a second session while a different material is active', () => {
+    const otherMaterial: LibraryItem = {
+      ...studyMaterial, id: 'library-study-2', name: 'Grammar guide.pdf',
+    };
+    render(<StudyView
+      libraryItems={[studyMaterial, otherMaterial]}
+      sessions={[{
+        id: 'active-study-session', track_id: studyMaterial.id, track_title: studyMaterial.name,
+        material_id: studyMaterial.id, status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+      }]}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    expect(screen.queryByRole('button', { name: 'Start short session' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Finish “Language notes.pdf” before starting another Study session/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Mark complete' })).toBeInTheDocument();
+  });
+
   it('does not start workspace sessions from bundled preview materials', () => {
     const preview: LibraryItem = {
       ...studyMaterial, id: 'bundled-study-preview', name: 'Bundled example', source: 'bundled', syncState: undefined,
