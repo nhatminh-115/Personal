@@ -643,7 +643,7 @@ async def get_workspace_graph(
             updated_at=layout.updated_at if layout else None,
         ),
         execution_traces=execution_traces,
-        execution_history_truncated=runs_truncated or (bool(runs) and events_truncated),
+        execution_history_truncated=bool(runs) and events_truncated,
         execution_next_cursor=execution_next_cursor,
     )
 
