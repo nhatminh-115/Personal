@@ -461,6 +461,7 @@ class WorkspaceGraphResponse(BaseModel):
     layout: WorkspaceLayoutResponse
     execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
     execution_history_truncated: bool = False
+    execution_next_cursor: Optional[str] = None
 
 
 class CapabilityProvidersResponse(BaseModel):

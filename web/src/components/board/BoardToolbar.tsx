@@ -13,6 +13,8 @@ interface BoardToolbarProps {
   canRedo: boolean;
   layers: Record<LayerKey, boolean>;
   executionHistoryTruncated?: boolean;
+  onLoadOlderExecution?: () => void;
+  loadingOlderExecution?: boolean;
   onLayerToggle: (layer: LayerKey) => void;
 }
 
@@ -27,6 +29,8 @@ export function BoardToolbar({
   canRedo,
   layers,
   executionHistoryTruncated = false,
+  onLoadOlderExecution,
+  loadingOlderExecution = false,
   onLayerToggle,
 }: BoardToolbarProps) {
   return (
@@ -46,6 +50,7 @@ export function BoardToolbar({
       <div className="layer-toggle">
         <span className="layer-toggle__title"><Layers3 size={12} /> Layers</span>
         {executionHistoryTruncated ? <span className="execution-history-note" role="status">Recent execution history shown</span> : null}
+        {onLoadOlderExecution ? <button type="button" onClick={onLoadOlderExecution} disabled={loadingOlderExecution}>{loadingOlderExecution ? 'Loading…' : 'Load older runs'}</button> : null}
         {(['conversation', 'knowledge', 'execution'] as LayerKey[]).map((layer) => (
           <button className={layers[layer] ? 'is-active' : ''} type="button" key={layer} onClick={() => onLayerToggle(layer)}>
             <span className="layer-check">{layers[layer] ? <Check size={9} /> : null}</span>

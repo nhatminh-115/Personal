@@ -1,5 +1,7 @@
 """Project-scoped durable workspace objects and graph relationships."""
 
+import base64
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -522,7 +524,12 @@ async def preview_workspace_context(
 
 
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
-async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_db)) -> WorkspaceGraphResponse:
+async def get_workspace_graph(
+    project_name: str,
+    execution_cursor: str | None = Query(default=None, max_length=512),
+    execution_page_size: int = Query(default=100, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceGraphResponse:
     objects = await _get_project_objects(db, project_name)
     linked_ids = await db.execute(
         select(WorkspaceObjectProjectLinkModel.object_id).where(
@@ -550,17 +557,39 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
     layout = await db.get(WorkspaceLayoutModel, project_name)
     session_result = await db.execute(select(SessionModel.id).where(SessionModel.project_name == project_name))
     session_ids = list(session_result.scalars())
+    cursor_created_at: datetime | None = None
+    cursor_run_id: str | None = None
+    if execution_cursor:
+        try:
+            encoded = execution_cursor + "=" * (-len(execution_cursor) % 4)
+            cursor_created_at_text, cursor_run_id = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+            cursor_created_at = datetime.fromisoformat(cursor_created_at_text)
+            if cursor_created_at.tzinfo is None:
+                cursor_created_at = cursor_created_at.replace(tzinfo=timezone.utc)
+            if not isinstance(cursor_run_id, str) or not cursor_run_id or len(cursor_run_id) > 36:
+                raise ValueError("invalid run ID")
+        except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError):
+            raise HTTPException(status_code=422, detail="Invalid execution history cursor.")
+
     runs: list[RunModel] = []
     if session_ids:
+        run_query = select(RunModel).where(RunModel.session_id.in_(session_ids))
+        if cursor_created_at is not None and cursor_run_id is not None:
+            run_query = run_query.where(or_(
+                RunModel.created_at < cursor_created_at,
+                (RunModel.created_at == cursor_created_at) & (RunModel.id < cursor_run_id),
+            ))
         run_result = await db.execute(
-            select(RunModel)
-            .where(RunModel.session_id.in_(session_ids))
-            .order_by(RunModel.created_at.desc(), RunModel.id.desc())
-            .limit(MAX_EXECUTION_GRAPH_RUNS + 1)
+            run_query.order_by(RunModel.created_at.desc(), RunModel.id.desc()).limit(execution_page_size + 1)
         )
         runs = list(run_result.scalars())
-    runs_truncated = len(runs) > MAX_EXECUTION_GRAPH_RUNS
-    runs = runs[:MAX_EXECUTION_GRAPH_RUNS]
+    runs_truncated = len(runs) > execution_page_size
+    runs = runs[:execution_page_size]
+    execution_next_cursor = None
+    if runs_truncated and runs:
+        oldest_run = runs[-1]
+        cursor_payload = json.dumps([oldest_run.created_at.isoformat(), oldest_run.id], separators=(",", ":"))
+        execution_next_cursor = base64.urlsafe_b64encode(cursor_payload.encode("utf-8")).decode("ascii").rstrip("=")
 
     execution_traces: list[WorkspaceExecutionTraceResponse] = []
     if runs:
@@ -614,7 +643,8 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
             updated_at=layout.updated_at if layout else None,
         ),
         execution_traces=execution_traces,
-        execution_history_truncated=runs_truncated or (bool(runs) and events_truncated),
+        execution_history_truncated=bool(runs) and events_truncated,
+        execution_next_cursor=execution_next_cursor,
     )
 
 
