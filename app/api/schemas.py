@@ -316,6 +316,8 @@ class WorkspaceContextPreviewResponse(BaseModel):
     privacy_requirement: Optional[str] = None
     privacy_sources: List[Dict[str, str]] = Field(default_factory=list)
     required_capabilities: List[str] = Field(default_factory=list)
+    available_capabilities: List[str] = Field(default_factory=list)
+    missing_capabilities: List[str] = Field(default_factory=list)
     requires_tools: bool = False
     requires_vision: bool = False
     requires_structured_output: bool = False
