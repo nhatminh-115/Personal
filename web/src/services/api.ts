@@ -327,6 +327,14 @@ export const api = {
     }));
   },
 
+  async deleteWorkspaceEdges(projectName: string, edgeIds: string[]): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edge_ids: edgeIds }),
+    }));
+  },
+
   async deleteWorkspaceEdge(projectName: string, edgeId: string): Promise<void> {
     await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
   },

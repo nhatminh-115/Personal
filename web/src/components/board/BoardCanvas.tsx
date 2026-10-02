@@ -692,18 +692,40 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     async (edgeIds: string[]) => {
       const ids = new Set(edgeIds);
       if (ids.size === 0) return;
+      const selected = edgesRef.current.filter((edge) => ids.has(edge.id));
+      const persisted = workspaceProjectName
+        ? selected.filter((edge) => !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'))
+        : [];
+      const protectedIds = new Set(
+        persisted.filter((edge) => edge.data?.workspaceCreatedBy !== 'user').map((edge) => edge.id),
+      );
+      const deletableIds = new Set([...ids].filter((id) => !protectedIds.has(id)));
+      if (deletableIds.size === 0) {
+        toast('System link protected', 'AURA-owned graph links cannot be deleted.');
+        return;
+      }
       if (workspaceProjectName) {
-        const persisted = edgesRef.current.filter((edge) => ids.has(edge.id) && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-'));
+        const persistedUserEdges = persisted.filter((edge) => deletableIds.has(edge.id));
         try {
-          await Promise.all(persisted.map((edge) => api.deleteWorkspaceEdge(workspaceProjectName, edge.id)));
+          if (persistedUserEdges.length > 0) {
+            await api.deleteWorkspaceEdges(workspaceProjectName, persistedUserEdges.map((edge) => edge.id));
+          }
         } catch {
           toast('Link was not deleted', 'AURA could not update the saved workspace graph.');
           return;
         }
       }
       recordHistory();
-      setEdges((current) => current.filter((edge) => !ids.has(edge.id)));
-      toast(ids.size === 1 ? 'Link deleted' : `${ids.size} links deleted`, 'Ctrl+Z restores the removed relation.');
+      setEdges((current) => current.filter((edge) => !deletableIds.has(edge.id)));
+      const protectedCount = protectedIds.size;
+      if (protectedCount > 0) {
+        toast(
+          'User links deleted',
+          `${protectedCount} AURA-owned ${protectedCount === 1 ? 'link was' : 'links were'} kept in the graph.`,
+        );
+      } else {
+        toast(deletableIds.size === 1 ? 'Link deleted' : `${deletableIds.size} links deleted`, 'Ctrl+Z restores the removed relation.');
+      }
     },
     [recordHistory, setEdges, toast, workspaceProjectName],
   );
@@ -725,7 +747,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         data: {
           ...edge.data,
           edgeKind: kind,
-          onDelete: isExecution ? undefined : (id: string) => deleteEdges([id]),
+          onDelete: isExecution || (workspaceProjectName && !edge.id.startsWith('edge-') && !edge.id.startsWith('semantic-') && edge.data?.workspaceCreatedBy !== 'user') ? undefined : (id: string) => deleteEdges([id]),
         },
       };
     });
