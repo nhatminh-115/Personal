@@ -519,7 +519,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   );
 
   const updateBridgeOption = useCallback(
-    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: boolean) => {
       if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       const node = nodesRef.current.find((item) => item.id === id);
       const bridgeOptions = {
@@ -559,7 +559,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   );
 
   const updateBridgeSection = useCallback(
-    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => {
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: string) => {
       if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       setNodes((current) => current.map((node) => node.id === id ? {
         ...node,
