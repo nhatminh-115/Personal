@@ -60,6 +60,7 @@ class MessageModel(Base):
     role: Mapped[str] = mapped_column(String(32))  # "user", "assistant", "system", "tool"
     content: Mapped[str] = mapped_column(Text)
     token_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     session: Mapped["SessionModel"] = relationship("SessionModel", back_populates="messages")
