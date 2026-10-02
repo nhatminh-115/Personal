@@ -143,10 +143,10 @@ describe('AutomationsView', () => {
 
   it('loads safe run history on demand without displaying run contents', async () => {
     vi.clearAllMocks();
-    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue([
+    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [
       { event_id: 'event-new', run_id: 'run-new', queued_at: '2026-10-02T09:00:00Z', status: 'dead_letter', retry_count: 2 },
       { event_id: 'event-old', run_id: 'run-old', queued_at: '2026-10-01T09:00:00Z', status: 'completed', retry_count: 0 },
-    ]);
+    ], nextCursor: null });
     render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
 
     expect(api.fetchAutomationRuns).not.toHaveBeenCalled();
@@ -160,12 +160,31 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide run history' }));
     expect(screen.queryByText('2026-10-02T09:00:00Z')).not.toBeInTheDocument();
   });
+  it('loads older automation runs only when requested', async () => {
+    vi.clearAllMocks();
+    vi.spyOn(api, 'fetchAutomationRuns')
+      .mockResolvedValueOnce({ runs: [
+        { event_id: 'event-new', run_id: 'run-new', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 },
+      ], nextCursor: 'older-runs-cursor' })
+      .mockResolvedValueOnce({ runs: [
+        { event_id: 'event-old', run_id: 'run-old', queued_at: '2026-10-01T09:00:00Z', status: 'failed', retry_count: 1 },
+      ], nextCursor: null });
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    expect(await screen.findByText('2026-10-02T09:00:00Z')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older runs' }));
+    expect(await screen.findByText('2026-10-01T09:00:00Z')).toBeInTheDocument();
+    expect(screen.getByText('2026-10-02T09:00:00Z')).toBeInTheDocument();
+    expect(api.fetchAutomationRuns).toHaveBeenLastCalledWith('auto-1', 10, 'older-runs-cursor');
+    expect(screen.queryByRole('button', { name: 'Load older runs' })).not.toBeInTheDocument();
+  });
   it('refreshes cached history when reopened and on explicit request', async () => {
     vi.clearAllMocks();
     vi.spyOn(api, 'fetchAutomationRuns')
-      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'running', retry_count: 0 }])
-      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 }])
-      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'failed', retry_count: 1 }]);
+      .mockResolvedValueOnce({ runs: [{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'running', retry_count: 0 }], nextCursor: null })
+      .mockResolvedValueOnce({ runs: [{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 }], nextCursor: null })
+      .mockResolvedValueOnce({ runs: [{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'failed', retry_count: 1 }], nextCursor: null });
     render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
@@ -183,9 +202,9 @@ describe('AutomationsView', () => {
   });
   it('inspects persisted routing and filtered events without exposing instructions or raw tool payloads', async () => {
     vi.clearAllMocks();
-    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue([
+    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [
       { event_id: 'event-1', run_id: 'run-history-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 },
-    ]);
+    ], nextCursor: null });
     vi.spyOn(api, 'fetchRunDetails').mockResolvedValue({
       id: 'run-history-1', session_id: 'automation-session', status: 'completed', user_message: 'private automation instruction',
       final_response: 'The weekly report is ready.', error_message: undefined, created_at: '2026-10-02T09:00:00Z', updated_at: '2026-10-02T09:01:00Z',
