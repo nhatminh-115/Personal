@@ -97,12 +97,16 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
           observations: typeof rawBridgeOptions?.observations === 'boolean' ? rawBridgeOptions.observations : true,
           failed: typeof rawBridgeOptions?.failed === 'boolean' ? rawBridgeOptions.failed : false,
           artifacts: typeof rawBridgeOptions?.artifacts === 'boolean' ? rawBridgeOptions.artifacts : false,
+          constraints: typeof rawBridgeOptions?.constraints === 'boolean' ? rawBridgeOptions.constraints : false,
+          decisions: typeof rawBridgeOptions?.decisions === 'boolean' ? rawBridgeOptions.decisions : false,
         } : undefined,
         bridgeSections: kind === 'bridge' ? {
           conclusions: typeof rawBridgeSections?.conclusions === 'string' ? rawBridgeSections.conclusions : '',
           observations: typeof rawBridgeSections?.observations === 'string' ? rawBridgeSections.observations : '',
           failed: typeof rawBridgeSections?.failed === 'string' ? rawBridgeSections.failed : '',
           artifacts: typeof rawBridgeSections?.artifacts === 'string' ? rawBridgeSections.artifacts : '',
+          constraints: typeof rawBridgeSections?.constraints === 'string' ? rawBridgeSections.constraints : '',
+          decisions: typeof rawBridgeSections?.decisions === 'string' ? rawBridgeSections.decisions : '',
         } : undefined,
         bridgeNote: object.content,
       },
@@ -162,8 +166,8 @@ function workspaceObjectWrite(node: AuraFlowNode) {
   const metadata = {
     ...(node.data.workspaceMetadata ?? {}),
     ...(bridge ? {
-      bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
-      bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+      bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false },
+      bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
     } : {}),
   };
   return {
@@ -483,8 +487,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               content: latestNode.data.kind === 'bridge' ? (latestNode.data.bridgeNote ?? body) : body,
               metadata_json: latestNode.data.kind === 'bridge' ? {
                 ...(latestNode.data.workspaceMetadata ?? {}),
-                bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
-                bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+                bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false },
+                bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
               } : latestNode.data.workspaceMetadata ?? {},
             }).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
             timers.delete(id);
@@ -515,11 +519,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   );
 
   const updateBridgeOption = useCallback(
-    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: boolean) => {
       if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       const node = nodesRef.current.find((item) => item.id === id);
       const bridgeOptions = {
-        ...(node?.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false }),
+        ...(node?.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false }),
         [key]: value,
       };
       setNodes((current) =>
@@ -543,7 +547,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
             metadata_json: {
               ...(latestNode.data.workspaceMetadata ?? {}),
               bridge_options: latestNode.data.bridgeOptions ?? bridgeOptions,
-              bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+              bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
             },
           }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
           bridgeSectionSaveTimers.current.delete(id);
@@ -555,11 +559,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   );
 
   const updateBridgeSection = useCallback(
-    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => {
+    (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: string) => {
       if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
       setNodes((current) => current.map((node) => node.id === id ? {
         ...node,
-        data: { ...node.data, bridgeSections: { ...(node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' }), [key]: value } },
+        data: { ...node.data, bridgeSections: { ...(node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' }), [key]: value } },
       } : node));
       if (workspaceProjectName) {
         const previous = bridgeSectionSaveTimers.current.get(id);
@@ -572,8 +576,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
             content: node.data.bridgeNote ?? node.data.body,
             metadata_json: {
               ...(node.data.workspaceMetadata ?? {}),
-              bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false },
-              bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '' },
+              bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false },
+              bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
             },
           }).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
           bridgeSectionSaveTimers.current.delete(id);
@@ -826,14 +830,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const createContextBridge = useCallback(async () => {
     if (selectedNodes.length < 2) return;
-    const bridgeOptions = { conclusions: true, observations: true, failed: false, artifacts: false };
+    const bridgeOptions = { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false };
     if (workspaceProjectName) {
       try {
         await api.createWorkspaceObject(workspaceProjectName, {
           object_type: 'context_bridge',
           title: 'Context Bridge',
           content: '',
-          metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '' } },
+          metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' } },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);

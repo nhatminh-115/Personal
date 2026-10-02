@@ -62,6 +62,8 @@ describe('Board Prototype Interactions', () => {
         observations: true,
         failed: false,
         artifacts: false,
+        constraints: true,
+        decisions: true,
       },
       bridgeNote: 'Keep novelty hypothesis conservative',
       bridgeSections: {
@@ -69,6 +71,8 @@ describe('Board Prototype Interactions', () => {
         observations: '',
         failed: '',
         artifacts: '',
+        constraints: '',
+        decisions: '',
       },
       onBridgeApply: onBridgeApplyMock,
       onBridgeOption: onBridgeOptionMock,
@@ -102,6 +106,14 @@ describe('Board Prototype Interactions', () => {
     expect(conclusions).toHaveValue('The migration can be reversible.');
     fireEvent.change(conclusions, { target: { value: 'Keep rollbacks available.' } });
     expect(onBridgeSectionMock).toHaveBeenCalledWith('bridge-node-1', 'conclusions', 'Keep rollbacks available.');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Constraints' }));
+    expect(onBridgeOptionMock).toHaveBeenCalledWith('bridge-node-1', 'constraints', false);
+    const constraints = screen.getByRole('textbox', { name: 'Context Bridge Constraints' });
+    fireEvent.change(constraints, { target: { value: 'Keep legacy clients working.' } });
+    expect(onBridgeSectionMock).toHaveBeenCalledWith('bridge-node-1', 'constraints', 'Keep legacy clients working.');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Decisions' }));
+    expect(onBridgeOptionMock).toHaveBeenCalledWith('bridge-node-1', 'decisions', false);
+    expect(screen.getByRole('textbox', { name: 'Context Bridge Decisions' })).toBeInTheDocument();
     fireEvent.change(handoffNote, { target: { value: 'Keep the claim narrow.' } });
     expect(onChangeBodyMock).toHaveBeenCalledWith('bridge-node-1', 'Keep the claim narrow.');
 

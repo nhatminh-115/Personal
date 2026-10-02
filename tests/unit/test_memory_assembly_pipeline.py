@@ -432,6 +432,8 @@ async def test_workspace_context_compiler_resolves_explicit_bridge_sources_only(
         "observations": False,
         "failed": False,
         "artifacts": False,
+        "constraints": None,
+        "decisions": None,
     }
     assert compiled.privacy_requirement == "local_only"
     assert compiled.privacy_sources == [

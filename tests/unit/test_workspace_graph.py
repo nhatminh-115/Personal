@@ -501,12 +501,14 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
         "title": "Selected migration handoff",
         "content": "Keep rollback available.",
         "metadata_json": {
-            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": True},
+            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": True, "constraints": True, "decisions": True},
             "bridge_sections": {
                 "conclusions": "Deploy in reversible stages.",
                 "observations": "Disabled observation must stay out.",
                 "failed": "",
                 "artifacts": "Migration checklist v2.",
+                "constraints": "Keep legacy clients working.",
+                "decisions": "Roll back on a privacy breach.",
             },
         },
         "source_object_ids": [source.json()["id"]],
@@ -526,6 +528,8 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
     assert "Keep rollback available." in system_message.content
     assert "Deploy in reversible stages." in system_message.content
     assert "Migration checklist v2." in system_message.content
+    assert "Keep legacy clients working." in system_message.content
+    assert "Roll back on a privacy breach." in system_message.content
     assert "Disabled observation must stay out." not in system_message.content
     assert "Full source text must stay out of Bridge context." not in system_message.content
 
@@ -542,6 +546,8 @@ async def test_chat_compiles_only_selected_bridge_sections_and_records_section_p
             "observations": False,
             "failed": False,
             "artifacts": True,
+            "constraints": True,
+            "decisions": True,
         },
     }]
     selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
@@ -1169,7 +1175,7 @@ async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections
         "object_type": "context_bridge",
         "selected_by_user": True,
         "source_object_ids": [source.json()["id"]],
-        "selected_sections": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
+        "selected_sections": {"conclusions": True, "observations": False, "failed": False, "artifacts": False, "constraints": None, "decisions": None},
     }]
     assert "The regression test passes." in preview["prompt_text"]
     assert "This section is not selected." not in preview["prompt_text"]

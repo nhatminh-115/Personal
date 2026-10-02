@@ -104,8 +104,8 @@ describe('Persistent workspace graph Board projection', () => {
         metadata_json: {
           privacy_policy: 'confidential',
           required_capabilities: ['document_parse'],
-          bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false },
-          bridge_sections: { conclusions: 'Preserve the rollback path.', observations: '', failed: '', artifacts: '' },
+          bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false, constraints: false, decisions: false },
+          bridge_sections: { conclusions: 'Preserve the rollback path.', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
         },
         created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       }],
@@ -132,8 +132,8 @@ describe('Persistent workspace graph Board projection', () => {
       metadata_json: expect.objectContaining({
         privacy_policy: 'confidential',
         required_capabilities: ['document_parse'],
-        bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false },
-        bridge_sections: { conclusions: 'Keep rollback available.', observations: '', failed: '', artifacts: '' },
+        bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false, constraints: false, decisions: false },
+        bridge_sections: { conclusions: 'Keep rollback available.', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
       }),
     })), { timeout: 2000 });
   });

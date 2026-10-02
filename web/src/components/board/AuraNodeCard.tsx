@@ -222,6 +222,8 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
     observations: true,
     failed: false,
     artifacts: false,
+    constraints: false,
+    decisions: false,
   };
 
   return (
@@ -237,6 +239,8 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
           ['observations', 'Important observations'],
           ['failed', 'Failed attempts'],
           ['artifacts', 'Artifacts'],
+          ['constraints', 'Constraints'],
+          ['decisions', 'Decisions'],
         ] as const).map(([key, label]) => (
           <label key={key}>
             <input
@@ -255,6 +259,8 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
           ['observations', 'Important observations'],
           ['failed', 'Failed attempts'],
           ['artifacts', 'Artifacts'],
+          ['constraints', 'Constraints'],
+          ['decisions', 'Decisions'],
         ] as const).map(([key, label]) => options[key] ? (
           <label className="bridge-section" key={key}>
             <span>{label}</span>
