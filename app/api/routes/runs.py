@@ -1,10 +1,11 @@
 """Runs and trace auditing endpoint: GET /v1/runs/{id}."""
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_trace_service
-from sqlalchemy import select
+from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
 from app.api.schemas import ResearchInspectorResponse, RunDetailResponse, RunEventResponse
 from app.db.models import DelegationModel, RunModel, RunEventModel
 from app.db.session import get_db
@@ -199,14 +200,33 @@ async def get_run_routing(
 @router.get("/{run_id}", response_model=RunDetailResponse)
 async def get_run_details(
     run_id: str,
+    response: Response,
+    page_size: int = Query(default=100, ge=1, le=500),
+    cursor: str | None = None,
     trace_service: TraceService = Depends(get_trace_service),
+    db: AsyncSession = Depends(get_db),
 ) -> RunDetailResponse:
-    """Inspect execution details and chronological event trace of a run."""
+    """Inspect run details and one bounded page of its chronological event trace."""
     run = await trace_service.get_run(run_id)
     if not run:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Run not found")
 
-    events = await trace_service.get_run_events(run_id)
+    query = select(RunEventModel).where(RunEventModel.run_id == run_id)
+    if cursor:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(
+            or_(
+                RunEventModel.created_at > cursor_created_at,
+                and_(RunEventModel.created_at == cursor_created_at, RunEventModel.id > cursor_id),
+            )
+        )
+    result = await db.execute(
+        query.order_by(RunEventModel.created_at.asc(), RunEventModel.id.asc()).limit(page_size + 1)
+    )
+    events = set_next_cursor_header(
+        response, list(result.scalars().all()), page_size,
+        lambda event: event.created_at, lambda event: event.id,
+    )
 
     return RunDetailResponse(
         id=run.id,
