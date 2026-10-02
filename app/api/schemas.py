@@ -296,6 +296,32 @@ class WorkspaceEdgeCreate(BaseModel):
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
 
+class WorkspaceContextPreviewRequest(BaseModel):
+    selected_object_ids: List[str] = Field(min_length=1, max_length=50)
+
+
+class WorkspaceContextPreviewObject(BaseModel):
+    object_id: str
+    object_type: str
+    selected_by_user: bool = False
+    source_object_ids: List[str] = Field(default_factory=list)
+    selected_sections: Dict[str, Optional[bool]] | None = None
+
+
+class WorkspaceContextPreviewResponse(BaseModel):
+    project_name: str
+    objects: List[WorkspaceContextPreviewObject] = Field(default_factory=list)
+    estimated_tokens: int = 0
+    prompt_text: str = ""
+    privacy_requirement: Optional[str] = None
+    privacy_sources: List[Dict[str, str]] = Field(default_factory=list)
+    required_capabilities: List[str] = Field(default_factory=list)
+    requires_tools: bool = False
+    requires_vision: bool = False
+    requires_structured_output: bool = False
+    requires_long_context: bool = False
+
+
 class WorkspaceEdgeBatchDelete(BaseModel):
     edge_ids: List[str] = Field(min_length=1, max_length=200)
 

@@ -8,6 +8,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
+    WorkspaceContextPreviewRequest,
+    WorkspaceContextPreviewResponse,
     WorkspaceEdgeBatchDelete,
     WorkspaceEdgeBatchRestore,
     WorkspaceEdgeCreate,
@@ -42,6 +44,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.memory.base import MemoryService
+from app.memory.context_compiler import WorkspaceContextCompiler
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 
@@ -404,6 +407,20 @@ async def _sync_workspace_note_links(
     for name in names:
         if name not in existing:
             db.add(WorkspaceObjectProjectLinkModel(object_id=item.id, project_name=name))
+
+
+@router.post(
+    "/projects/{project_name}/context/preview",
+    response_model=WorkspaceContextPreviewResponse,
+)
+async def preview_workspace_context(
+    project_name: str,
+    body: WorkspaceContextPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceContextPreviewResponse:
+    """Compile selected project context for inspection without invoking a model or writing data."""
+    compiled = await WorkspaceContextCompiler(db).compile(project_name, body.selected_object_ids)
+    return WorkspaceContextPreviewResponse.model_validate(compiled.model_dump())
 
 
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)

@@ -24,6 +24,7 @@ import {
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
   WorkspaceSearchResult,
+  WorkspaceContextPreview,
   AutomationRecordResponse,
   AutomationRunResponse,
 } from '../types';
@@ -169,6 +170,14 @@ export const api = {
   async fetchSession(sessionId: string): Promise<SessionDetail> {
     const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}`);
     return handleResponse<SessionDetail>(res);
+  },
+
+  async previewWorkspaceContext(projectName: string, selectedObjectIds: string[]): Promise<WorkspaceContextPreview> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/context/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected_object_ids: [...new Set(selectedObjectIds)] }),
+    }));
   },
 
   async fetchWorkspaceGraph(projectName: string): Promise<WorkspaceGraph> {

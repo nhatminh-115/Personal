@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { initialEdges, initialNodes } from '../../data/mockData';
 import { useBoardHistory } from '../../hooks/useBoardHistory';
-import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity, RoutingPrivacy } from '../../types';
+import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity, RoutingPrivacy, WorkspaceContextPreview } from '../../types';
 import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
@@ -186,6 +186,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [viewport, setViewport] = useState<{ x: number; y: number; zoom: number } | null>(null);
   const [flowReady, setFlowReady] = useState(false);
   const [canvasSizeReady, setCanvasSizeReady] = useState(false);
+  const [contextPreview, setContextPreview] = useState<WorkspaceContextPreview | null>(null);
+  const [contextPreviewLoading, setContextPreviewLoading] = useState(false);
+  const [contextPreviewError, setContextPreviewError] = useState<string | null>(null);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const pendingInitialFit = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const initialFitTimer = useRef<number | null>(null);
@@ -752,6 +755,20 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [deleteEdges, edges, executionEdges, executionNodes, layers.execution, nodes]);
 
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
+  const previewSelectedContext = useCallback(async () => {
+    if (!workspaceProjectName) return;
+    setContextPreviewLoading(true);
+    setContextPreviewError(null);
+    setContextPreview(null);
+    try {
+      setContextPreview(await api.previewWorkspaceContext(workspaceProjectName, selectedNodes.map((node) => node.id)));
+    } catch (error) {
+      setContextPreviewError(error instanceof Error ? error.message : 'Could not preview selected context.');
+    } finally {
+      setContextPreviewLoading(false);
+    }
+  }, [selectedNodes, workspaceProjectName]);
+
   const selectedEdges = useMemo(() => edges.filter((edge) => edge.selected), [edges]);
   const mergeTargets = useMemo(() => nodes
     .filter((node) => workspaceProjectName
@@ -1261,8 +1278,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
       {selectedNodes.length > 1 ? (
         <ContextLensBar
+          key={selectedNodes.map((node) => node.id).join(':')}
           nodes={selectedNodes}
           onAsk={askSelected}
+          onPreviewContext={workspaceProjectName ? previewSelectedContext : undefined}
+          contextPreview={contextPreview}
+          contextPreviewLoading={contextPreviewLoading}
+          contextPreviewError={contextPreviewError}
           onCreateNote={() => createNoteAt(getSelectionAnchor(), 'Manual note derived from the current Context Lens selection.')}
           onCreateBridge={createContextBridge}
           onCreateBranch={() => addBranch(selectedNodes[0].id)}

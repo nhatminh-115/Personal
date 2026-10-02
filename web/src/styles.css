@@ -1765,6 +1765,82 @@ input:focus-visible {
   border-top: 1px solid rgba(162, 188, 207, 0.07);
 }
 
+.context-preview {
+  display: block;
+  max-height: min(48vh, 390px);
+  overflow: auto;
+  color: #9cafba;
+  font-size: 9px;
+}
+
+.context-preview > p {
+  margin: 0;
+}
+
+.context-preview__error {
+  color: #e0a39b;
+}
+
+.context-preview__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 12px;
+  align-items: baseline;
+}
+
+.context-preview__summary strong {
+  color: #c3d5dc;
+  font-size: 10px;
+}
+
+.context-preview__objects {
+  display: grid;
+  gap: 4px;
+  max-height: 130px;
+  overflow: auto;
+  margin: 9px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.context-preview__objects li {
+  display: grid;
+  grid-template-columns: minmax(95px, 1fr) minmax(100px, 1.2fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 6px;
+  border-radius: 5px;
+  background: rgba(125, 158, 179, 0.045);
+}
+
+.context-preview__objects code {
+  overflow: hidden;
+  color: #7fa7b1;
+  text-overflow: ellipsis;
+}
+
+.context-preview__objects small {
+  color: #738793;
+}
+
+.context-preview__text summary {
+  color: #94b6bf;
+  cursor: pointer;
+}
+
+.context-preview__text pre {
+  max-height: 180px;
+  overflow: auto;
+  margin: 7px 0 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(5, 10, 14, 0.75);
+  color: #b7c8cf;
+  font: 8.5px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .aura-node__source-link {
   display: inline-flex;
   align-items: center;

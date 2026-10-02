@@ -3,8 +3,9 @@ import { renderHook, act } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { ReactFlowProvider } from '@xyflow/react';
 import { AuraNodeCard } from '../components/board/AuraNodeCard';
+import { ContextLensBar } from '../components/board/ContextLensBar';
 import { useBoardHistory } from '../hooks/useBoardHistory';
-import type { AuraFlowNode, AuraFlowEdge, AuraNodeData } from '../types';
+import type { AuraFlowNode, AuraFlowEdge, AuraNodeData, WorkspaceContextPreview } from '../types';
 
 describe('Board Prototype Interactions', () => {
   it('renders answer node card and triggers Branch interaction', () => {
@@ -220,5 +221,63 @@ describe('Board Prototype Interactions', () => {
     expect(currentNodes.length).toBe(2);
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
+  });
+});
+
+
+describe('Compiled Context Preview', () => {
+  it('shows the included manifest and compiled text when requested', () => {
+    const onPreviewContext = vi.fn();
+    const node = {
+      id: 'bridge-preview',
+      position: { x: 0, y: 0 },
+      data: {
+        kind: 'bridge',
+        title: 'Safe handoff',
+        body: 'Selected bridge',
+        density: 'compact',
+        layer: 'knowledge',
+        workspaceObjectType: 'context_bridge',
+      },
+    } as AuraFlowNode;
+    const preview: WorkspaceContextPreview = {
+      project_name: 'AURA Project',
+      estimated_tokens: 22,
+      prompt_text: 'The reviewed finding is ready.',
+      privacy_requirement: 'internal',
+      objects: [
+        {
+          object_id: 'bridge-preview',
+          object_type: 'context_bridge',
+          selected_by_user: true,
+          source_object_ids: ['source-note'],
+          selected_sections: { conclusions: true },
+        },
+        { object_id: 'source-note', object_type: 'manual_note', selected_by_user: false },
+      ],
+    };
+
+    render(
+      <ContextLensBar
+        nodes={[node, { ...node, id: 'note-preview', data: { ...node.data, kind: 'note', workspaceObjectType: 'manual_note' } }]}
+        onAsk={vi.fn()}
+        onPreviewContext={onPreviewContext}
+        contextPreview={preview}
+        mergeTargets={[]}
+        onCreateNote={vi.fn()}
+        onCreateBridge={vi.fn()}
+        onCreateBranch={vi.fn()}
+        onSaveContextSet={vi.fn()}
+        onMergeInto={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: /Preview Context/i }));
+    expect(onPreviewContext).toHaveBeenCalledOnce();
+    expect(screen.getByText('22 estimated tokens')).toBeInTheDocument();
+    expect(screen.getByText(/1 selected · 2 included/)).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Inspect compiled text'));
+    expect(screen.getByText('The reviewed finding is ready.')).toBeInTheDocument();
   });
 });
