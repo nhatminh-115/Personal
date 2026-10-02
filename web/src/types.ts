@@ -289,6 +289,25 @@ export interface WorkspaceExecutionTrace {
   events: WorkspaceExecutionEvent[];
 }
 
+export interface CapabilityProviderMetadata {
+  provider_id: string;
+  name: string;
+  version?: string | null;
+  health: 'unknown' | 'healthy' | 'degraded' | 'unavailable' | 'disabled';
+  health_checked_at?: string | null;
+  enabled: boolean;
+  capabilities: string[];
+  privacy_boundary: 'unknown' | 'local' | 'cloud' | 'mixed';
+  network_requirement: 'unknown' | 'none' | 'local' | 'internet';
+  data_touched?: string[] | null;
+  permissions?: Array<'read' | 'write' | 'execute'> | null;
+  approval_requirement: 'unknown' | 'per_tool_policy' | 'always';
+}
+
+export interface CapabilityProvidersResponse {
+  providers: CapabilityProviderMetadata[];
+}
+
 export interface WorkspaceExecutionHistory {
   execution_traces: WorkspaceExecutionTrace[];
   execution_history_truncated: boolean;
