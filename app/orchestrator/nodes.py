@@ -13,6 +13,7 @@ from app.db.models import RunStatus
 from app.memory.base import MemoryService
 from app.memory.context import ContextAssembler
 from app.memory.context_compiler import WorkspaceContextCompiler, stricter_privacy_requirement
+from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER
 from app.memory.pipeline import MemoryCandidatePipeline
 from app.models.base import ChatMessage, ModelRequest, ModelRole, RoutingContext, ToolCallRequest
 from app.models.router import ModelRouter, model_router
@@ -939,14 +940,29 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             )
             persisted_assistant_message_id = assistant_message.id
 
-            # Record episodic memory if tools were used
+            # Record episodic memory if tools were used. Keep the turn's effective
+            # privacy boundary attached so retrieval cannot route private content to a
+            # less restrictive model later.
             if state.get("tool_results"):
-                tool_summary = ", ".join(tr["name"] for tr in state["tool_results"])
-                await mem_service.record_episodic_memory(
-                    session_id=state["session_id"],
-                    summary=f"User requested: '{state['user_message']}'. Executed tools: [{tool_summary}]. Result: {final_resp[:150]}...",
-                    metadata={"run_id": state["run_id"]},
+                routing_context = (state.get("metadata") or {}).get("routing_context_dict")
+                privacy_policy = (
+                    routing_context.get("privacy_requirement")
+                    if isinstance(routing_context, dict)
+                    else (state.get("metadata") or {}).get("privacy_requirement")
                 )
+                if hasattr(privacy_policy, "value"):
+                    privacy_policy = privacy_policy.value
+                if privacy_policy is None:
+                    # Legacy callers without a resolved routing context use the router's
+                    # public default. Explicit but unknown classifications fail closed.
+                    privacy_policy = "public"
+                if isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
+                    tool_summary = ", ".join(tr["name"] for tr in state["tool_results"])
+                    await mem_service.record_episodic_memory(
+                        session_id=state["session_id"],
+                        summary=f"User requested: '{state['user_message']}'. Executed tools: [{tool_summary}]. Result: {final_resp[:150]}...",
+                        metadata={"run_id": state["run_id"], "privacy_policy": privacy_policy},
+                    )
 
             # Extract and commit conservative memory candidates
             pipeline = MemoryCandidatePipeline()
