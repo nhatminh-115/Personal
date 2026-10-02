@@ -597,3 +597,24 @@ async def test_session_history_returns_newest_window_in_chronological_order(test
     messages = await service.get_session_messages(session.id, limit=2)
 
     assert [message.content for message in messages] == ["2", "3"]
+
+
+def test_context_capabilities_are_split_between_model_traits_and_tool_providers():
+    from app.memory.context_compiler import split_context_capabilities
+
+    model_caps, tool_caps, flags = split_context_capabilities([
+        "code",
+        "vision",
+        "code_graph.read",
+        "long_context",
+        "document_parse",
+    ])
+
+    assert model_caps == ["code"]
+    assert tool_caps == ["code_graph.read", "document_parse"]
+    assert flags == {
+        "requires_tools": False,
+        "requires_vision": True,
+        "requires_structured_output": False,
+        "requires_long_context": True,
+    }
