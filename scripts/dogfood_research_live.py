@@ -301,6 +301,15 @@ async def audit_dogfood_run(
     }
 
 
+def write_audit_report(parent_run_id: str, report: Dict[str, Any], output_dir: Path | None = None) -> Path:
+    """Persist the sanitized audit summary without source text or model output."""
+    directory = Path(output_dir or "artifacts/dogfood").resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"research-{parent_run_id}.json"
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return path
+
+
 async def run_live_agent_dogfood():
     # 1. Validate live credentials fail-fast
     validate_live_dogfood_environment()
@@ -388,7 +397,10 @@ async def run_live_agent_dogfood():
     # --------------------------------------------------------------------------
     print("\n[Phase 2] Inspecting Database Lineage, Checkpoints & Audit Traces...")
     elapsed = time.time() - overall_start_time
-    await audit_dogfood_run(parent_run_id=parent_run_id, elapsed_seconds=elapsed)
+    report = await audit_dogfood_run(parent_run_id=parent_run_id, elapsed_seconds=elapsed)
+    report["elapsed_seconds"] = round(elapsed, 2)
+    report_path = write_audit_report(parent_run_id, report)
+    print(f"Sanitized audit artifact: {report_path}")
 
 
 if __name__ == "__main__":
