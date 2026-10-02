@@ -86,6 +86,23 @@ const sampleMemories: MemoryItem[] = [
 ];
 
 describe('InspectorPanel Component', () => {
+  it('loads older pages of persisted project memory on demand', async () => {
+    const onLoadMoreMemories = vi.fn().mockResolvedValue(undefined);
+    render(
+      <InspectorPanel
+        memories={sampleMemories}
+        memoryNextCursor="older-memory-cursor"
+        onLoadMoreMemories={onLoadMoreMemories}
+        onClose={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    expect(screen.getByText('Showing 1 item')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older memories' }));
+    expect(onLoadMoreMemories).toHaveBeenCalledOnce();
+  });
+
   it('renders live run events in the execution tab with togglable payload', () => {
     render(
       <InspectorPanel

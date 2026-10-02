@@ -589,13 +589,21 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
   },
 
-  async fetchMemories(projectName?: string, sessionId?: string): Promise<MemoryItem[]> {
+  async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null): Promise<{
+    items: MemoryItem[];
+    nextCursor: string | null;
+  }> {
     const params = new URLSearchParams();
     if (projectName) params.append('project_name', projectName);
     if (sessionId) params.append('session_id', sessionId);
+    params.set('page_size', '25');
+    if (cursor) params.set('cursor', cursor);
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
     const res = await fetch(`${BASE_URL}/v1/memory${queryStr}`);
-    return handleResponse<MemoryItem[]>(res);
+    return {
+      items: await handleResponse<MemoryItem[]>(res),
+      nextCursor: res.headers?.get('X-Next-Cursor') ?? null,
+    };
   },
 };
