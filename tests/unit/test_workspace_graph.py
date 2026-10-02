@@ -10,6 +10,50 @@ from app.memory.service import SQLMemoryService
 from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
 from app.core.errors import ContextSelectionError
 from app.memory.context_compiler import MAX_COMPILED_OBJECTS, WorkspaceContextCompiler
+from app.api.schemas import MAX_WORKSPACE_LAYOUT_BYTES, MAX_WORKSPACE_METADATA_BYTES, WorkspaceLayoutWrite, WorkspaceObjectCreate
+
+
+def test_workspace_object_metadata_has_a_serialized_size_bound():
+    accepted = WorkspaceObjectCreate(object_type="manual_note", metadata_json={"payload": "x" * (MAX_WORKSPACE_METADATA_BYTES - 32)})
+    assert accepted.metadata_json["payload"]
+
+    with pytest.raises(ValueError, match="metadata_json must be"):
+        WorkspaceObjectCreate(object_type="manual_note", metadata_json={"payload": "x" * MAX_WORKSPACE_METADATA_BYTES})
+
+
+def test_workspace_layout_has_a_serialized_size_bound_and_rejects_non_finite_values():
+    accepted = WorkspaceLayoutWrite(layout={"payload": "x" * (MAX_WORKSPACE_LAYOUT_BYTES - 32)}, expected_revision=0)
+    assert accepted.layout["payload"]
+
+    with pytest.raises(ValueError, match="layout must be"):
+        WorkspaceLayoutWrite(layout={"payload": "x" * MAX_WORKSPACE_LAYOUT_BYTES}, expected_revision=0)
+
+    with pytest.raises(ValueError, match="finite JSON values"):
+        WorkspaceLayoutWrite(layout={"zoom": float("nan")}, expected_revision=0)
+
+
+@pytest.mark.asyncio
+async def test_workspace_api_rejects_oversized_metadata_and_layout_before_persistence(async_client):
+    object_response = await async_client.post(
+        "/v1/workspace/projects/bounded-payload/objects",
+        json={
+            "object_type": "manual_note",
+            "title": "must not persist",
+            "metadata_json": {"payload": "x" * MAX_WORKSPACE_METADATA_BYTES},
+        },
+    )
+    assert object_response.status_code == 422
+
+    layout_response = await async_client.put(
+        "/v1/workspace/projects/bounded-payload/layout",
+        json={"layout": {"payload": "x" * MAX_WORKSPACE_LAYOUT_BYTES}, "expected_revision": 0},
+    )
+    assert layout_response.status_code == 422
+
+    graph = await async_client.get("/v1/workspace/projects/bounded-payload/graph")
+    assert graph.status_code == 200
+    assert graph.json()["objects"] == []
+    assert graph.json()["layout"]["revision"] == 0
 
 
 @pytest.mark.asyncio
