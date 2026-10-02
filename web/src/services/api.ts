@@ -209,6 +209,14 @@ export const api = {
     }));
   },
 
+  async updateStudySessionReflection(sessionId: string, reflection: string): Promise<StudySessionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/reflection`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reflection }),
+    }));
+  },
+
   async completeStudySession(sessionId: string): Promise<StudySessionRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',

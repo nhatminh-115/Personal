@@ -20,6 +20,7 @@ describe('Study sessions use shared Library materials', () => {
       onStartSession,
       sessions: [],
       onCompleteSession,
+      onSaveReflection: vi.fn().mockResolvedValue(undefined),
     };
     const { rerender } = render(<StudyView {...props} />);
 
@@ -29,7 +30,7 @@ describe('Study sessions use shared Library materials', () => {
 
     rerender(<StudyView {...props} sessions={[{
       id: 'study-session-1', track_id: studyMaterial.id, track_title: studyMaterial.name,
-      material_id: studyMaterial.id, status: 'in_progress', started_at: '2026-10-02T00:00:00Z',
+      material_id: studyMaterial.id, status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
     }]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
     expect(onCompleteSession).toHaveBeenCalledWith('study-session-1');
@@ -46,6 +47,7 @@ describe('Study sessions use shared Library materials', () => {
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     expect(screen.getByText('Preview reference')).toBeInTheDocument();
@@ -58,12 +60,13 @@ describe('Study sessions use shared Library materials', () => {
       libraryItems={[]}
       sessions={[{
         id: 'legacy-session', track_id: 'german', track_title: 'German A1',
-        status: 'in_progress', started_at: '2026-10-02T00:00:00Z',
+        status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     expect(screen.getByText('German A1')).toBeInTheDocument();
@@ -75,13 +78,14 @@ describe('Study sessions use shared Library materials', () => {
       libraryItems={[studyMaterial]}
       sessions={[{
         id: sessionId, track_id: studyMaterial.id, track_title: studyMaterial.name,
-        material_id: studyMaterial.id, status: 'completed', started_at: '2026-10-02T00:00:00Z',
+        material_id: studyMaterial.id, status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
       focusSessionId={sessionId}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     const row = document.getElementById(`study-session-${sessionId}`);
@@ -97,13 +101,14 @@ describe('Study sessions use shared Library materials', () => {
       libraryItems={[]}
       sessions={[{
         id: sessionId, track_id: 'removed-material', track_title: 'Archived notes',
-        status: 'completed', started_at: '2026-10-02T00:00:00Z',
+        status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
       focusSessionId={sessionId}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
       onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
     />);
 
     const row = document.getElementById(`study-session-${sessionId}`);

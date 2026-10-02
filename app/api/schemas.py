@@ -169,6 +169,10 @@ class StudySessionWrite(BaseModel):
     material_project_name: Optional[str] = Field(default=None, max_length=128)
 
 
+class StudyReflectionWrite(BaseModel):
+    reflection: str = Field(default="", max_length=12_000)
+
+
 class StudySessionResponse(BaseModel):
     id: str
     track_id: str
@@ -176,6 +180,7 @@ class StudySessionResponse(BaseModel):
     material_id: Optional[str] = None
     material_project_name: Optional[str] = None
     status: Literal["in_progress", "completed"]
+    reflection: str = ""
     started_at: datetime
     completed_at: Optional[datetime] = None
 

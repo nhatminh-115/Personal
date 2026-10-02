@@ -48,6 +48,7 @@
 
 .study-history article {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 11px 13px;
@@ -78,6 +79,7 @@
 
 .study-session-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -103,4 +105,71 @@
   background: transparent;
   color: #87aab7;
   cursor: pointer;
+}
+
+
+.study-reflection {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 6px;
+  padding-top: 7px;
+}
+
+.study-reflection label {
+  color: #a8bec8;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.study-reflection textarea {
+  width: 100%;
+  min-height: 62px;
+  resize: vertical;
+  border: 1px solid rgba(149, 179, 197, .14);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: rgba(7, 15, 20, .35);
+  color: #c4d3d9;
+  font: inherit;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.study-reflection textarea:focus {
+  outline: 1px solid rgba(94, 210, 224, .65);
+  border-color: transparent;
+}
+
+.study-reflection textarea::placeholder {
+  color: #637984;
+}
+
+.study-reflection__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #718892;
+  font-size: 8px;
+}
+
+.study-reflection__footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(94, 210, 224, .2) !important;
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: rgba(94, 210, 224, .06) !important;
+  color: #90cbd2 !important;
+}
+
+.study-reflection__footer button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.study-reflection__error {
+  margin: 0;
+  color: #f09b87;
+  font-size: 8px;
 }

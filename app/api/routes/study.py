@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import StudySessionResponse, StudySessionWrite
+from app.api.schemas import StudyReflectionWrite, StudySessionResponse, StudySessionWrite
 from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 from app.db.session import get_db
 
@@ -29,6 +29,7 @@ def _study_session_response(item: WorkspaceObjectModel) -> StudySessionResponse:
             else None
         ),
         status=status_value,
+        reflection=item.content or "",
         started_at=item.created_at,
         completed_at=datetime.fromisoformat(completed_at) if isinstance(completed_at, str) else None,
     )
@@ -115,6 +116,27 @@ async def start_study_session(
             edge_family="provenance",
             created_by="user",
         ))
+    await db.commit()
+    await db.refresh(item)
+    return _study_session_response(item)
+
+
+@router.put("/sessions/{session_id}/reflection", response_model=StudySessionResponse)
+async def update_study_reflection(
+    session_id: str,
+    body: StudyReflectionWrite,
+    db: AsyncSession = Depends(get_db),
+) -> StudySessionResponse:
+    item = await db.get(WorkspaceObjectModel, session_id)
+    if (
+        item is None
+        or item.project_name is not None
+        or item.object_type != "study_session"
+        or item.created_by != "user"
+    ):
+        raise HTTPException(status_code=404, detail="Study session not found.")
+    item.content = body.reflection
+    item.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(item)
     return _study_session_response(item)
