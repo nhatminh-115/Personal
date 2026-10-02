@@ -432,11 +432,11 @@ export function ChatPane({
           <div className="chat-composer__footer">
             <div className="composer-tools">
               <button className="icon-button" type="button" aria-label="Attach project object" title="Attach project file or object" onClick={onAttachRequest}><Paperclip size={16} /></button>
-              <button className={`composer-context ${contextOpen ? 'is-active' : ''}`} type="button" onClick={() => setContextOpen((value) => {
-                const next = !value;
+              <button className={`composer-context ${contextOpen ? 'is-active' : ''}`} type="button" onClick={() => {
+                const next = !contextOpen;
+                setContextOpen(next);
                 onContextPanelOpenChange?.(next);
-                return next;
-              })}>
+              }}>
                 <span className="composer-context__icon"><Layers3 size={13} /></span>
                 <span className="composer-context__copy">
                   <strong>Context</strong>
