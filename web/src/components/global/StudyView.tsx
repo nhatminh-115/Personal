@@ -234,12 +234,6 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                         <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
                         {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
                         <StudyReflectionEditor session={session} onSave={onSaveReflection} />
-              <StudyCardCollection
-                cards={cards.filter((card) => card.session_id === session.id)}
-                onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
-                onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
-                onDelete={(cardId) => onDeleteCard(cardId, session.id)}
-              />
                         <StudyCardCollection
                           cards={cards.filter((card) => card.session_id === session.id)}
                           onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
@@ -290,6 +284,12 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
               <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
               <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+              <StudyCardCollection
+                cards={cards.filter((card) => card.session_id === session.id)}
+                onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+              />
             </article>
           ))}
         </section>
