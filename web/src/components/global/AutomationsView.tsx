@@ -1,5 +1,7 @@
 import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
 import { useState } from 'react';
+import type { ApprovalDetail } from '../../types';
+import { api } from '../../services/api';
 import type { AutomationRecord, ProjectRecord } from '../../data/workspaceData';
 
 interface AutomationInput {
@@ -17,12 +19,13 @@ interface AutomationsViewProps {
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
+  onApprovalResolved: (automationId: string) => void;
 }
 
 const intervalUnits = { minutes: 60, hours: 3600, days: 86400 } as const;
 type IntervalUnit = keyof typeof intervalUnits;
 
-export function AutomationsView({ projects, automations, onCreate, onToggle, onRunNow }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, onCreate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -33,6 +36,57 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [unit, setUnit] = useState<IntervalUnit>('days');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [approvalReview, setApprovalReview] = useState<{ automation: AutomationRecord; approval: ApprovalDetail } | null>(null);
+  const [approvalLoading, setApprovalLoading] = useState(false);
+  const [approvalError, setApprovalError] = useState('');
+  const [approvalNotes, setApprovalNotes] = useState('');
+
+  const openApprovalReview = async (automation: AutomationRecord) => {
+    const runId = automation.latestExecution?.runId;
+    if (!runId || automation.latestExecution?.status !== 'waiting_for_approval' || approvalLoading) return;
+    setApprovalLoading(true);
+    setApprovalError('');
+    setApprovalNotes('');
+    try {
+      const run = await api.fetchRunDetails(runId);
+      const requests = run.events.filter((event) => event.event_type === 'approval_requested').reverse();
+      for (const event of requests) {
+        const approvalId = event.payload.approval_id;
+        if (typeof approvalId !== 'string') continue;
+        const approval = await api.fetchApproval(approvalId);
+        if (approval.status === 'pending') {
+          setApprovalReview({ automation, approval });
+          return;
+        }
+      }
+      setApprovalError('This automation run no longer has a pending approval.');
+    } catch (cause) {
+      setApprovalError(cause instanceof Error ? cause.message : 'Could not load the pending approval.');
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
+
+  const decideApproval = async (decision: 'approved' | 'rejected') => {
+    if (!approvalReview || approvalLoading) return;
+    setApprovalLoading(true);
+    setApprovalError('');
+    try {
+      const result = await api.submitApproval(approvalReview.approval.id, decision, approvalNotes.trim() || undefined);
+      if (result.execution_status === 'waiting_for_approval' && result.approval_id) {
+        const nextApproval = await api.fetchApproval(result.approval_id);
+        setApprovalReview({ ...approvalReview, approval: nextApproval });
+        setApprovalNotes('');
+        return;
+      }
+      setApprovalReview(null);
+      onApprovalResolved(approvalReview.automation.id);
+    } catch (cause) {
+      setApprovalError(cause instanceof Error ? cause.message : 'Could not submit the approval decision.');
+    } finally {
+      setApprovalLoading(false);
+    }
+  };
 
   const create = async () => {
     if (saving || !name.trim() || !instruction.trim() || (scope === 'project' && !projectId)) return;
@@ -81,7 +135,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                 <p>{automation.description}</p>
                 {live ? <details className="automation-instruction"><summary>Instruction</summary><p>{automation.instruction}</p></details> : null}
                 <div className="automation-trigger"><Clock3 size={12} /><strong>{automation.trigger}</strong></div>
-                {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}</div> : null}
+                {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}{automation.latestExecution.status === 'waiting_for_approval' ? <button type="button" onClick={() => void openApprovalReview(automation)} disabled={approvalLoading}>{approvalLoading ? 'Loading approval…' : 'Review approval'}</button> : null}</div> : null}
                 {live ? <div className="automation-steps">{automation.actions.map((action) => <span key={action}><Check size={10} /> {action}</span>)}</div> : null}
                 <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
               </div>
@@ -90,6 +144,21 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
           );
         })}
       </div>
+
+      {approvalReview ? (
+        <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !approvalLoading) setApprovalReview(null); }}>
+          <div className="automation-create-modal automation-approval-modal" role="dialog" aria-modal="true" aria-labelledby="automation-approval-title">
+            <div className="modal-head"><div><span className="eyebrow">TOOL APPROVAL</span><strong id="automation-approval-title">{approvalReview.automation.name}</strong></div><button className="icon-button" type="button" onClick={() => setApprovalReview(null)} disabled={approvalLoading} aria-label="Close"><X size={15} /></button></div>
+            <p>This automation run is paused until you decide whether AURA may continue.</p>
+            <div className="automation-approval-detail"><span>Tool</span><strong>{approvalReview.approval.tool_name}</strong></div>
+            <div className="automation-approval-detail"><span>Risk</span><strong>{approvalReview.approval.risk_level}</strong></div>
+            <label><span>Requested input</span><pre>{JSON.stringify(approvalReview.approval.tool_input, null, 2)}</pre></label>
+            <label><span>Decision note (optional)</span><input value={approvalNotes} onChange={(event) => setApprovalNotes(event.target.value)} maxLength={1000} /></label>
+            {approvalError ? <p className="automation-form-error" role="alert">{approvalError}</p> : null}
+            <div className="automation-approval-actions"><button type="button" className="secondary-button" disabled={approvalLoading} onClick={() => void decideApproval('rejected')}>Reject</button><button type="button" className="primary-soft-button" disabled={approvalLoading} onClick={() => void decideApproval('approved')}>{approvalLoading ? 'Submitting…' : 'Approve and continue'}</button></div>
+          </div>
+        </div>
+      ) : null}
 
       {creating ? (
         <div className="modal-scrim" role="presentation" onMouseDown={() => !saving && setCreating(false)}>
