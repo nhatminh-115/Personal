@@ -1358,6 +1358,19 @@ export default function App() {
     }
   }, [pushToast]);
 
+  const startStudyFromNote = useCallback(async (note: WorkspaceNote) => {
+    if (note.source !== 'live') return;
+    try {
+      const session = await api.startStudySession(note.id, note.title, note.id);
+      setStudySessions((current) => [session, ...current]);
+      studySessionsLoaded.current = true;
+      setFocusedStudySessionId(session.id);
+      pushToast('Study session started', `${note.title} · linked to its saved Note and privacy setting.`);
+    } catch (error) {
+      pushToast('Study session was not started', executionErrorText(error));
+    }
+  }, [pushToast]);
+
   const startStudyFromResearchClaim = useCallback(async (objectId: string, title: string, projectName: string) => {
     try {
       const session = await api.startStudySession(objectId, title, objectId, projectName);
@@ -1874,7 +1887,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
