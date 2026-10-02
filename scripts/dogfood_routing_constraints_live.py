@@ -1,7 +1,9 @@
 """Zero-invocation routing constraints smoke against the configured model catalog.
 
-The script reads the current catalog and uses unsaved profile drafts with /v1/routing/preview.
-It never refreshes/probes providers or calls a model; unknown provider/model metadata stays unknown.
+GET /v1/models performs its normal provider discovery snapshot, which can make
+local model-list HTTP requests. The script does not call explicit refresh or
+capability-probe endpoints and never invokes a model. Unknown provider/model
+metadata stays unknown.
 """
 import asyncio
 import json
@@ -95,7 +97,7 @@ async def run_live_dogfood() -> None:
             cloud = configured_model(providers, local=False)
             if local is None:
                 print("ROUTING CONSTRAINTS DOGFOOD NOT EXECUTED — no available provider is explicitly classified as local.")
-                print("No model refresh, provider probe, installation, or invocation was attempted.")
+                print("No explicit refresh, capability probe, installation, or model invocation was attempted; GET /v1/models performs its normal provider discovery.")
                 raise SystemExit(2)
             if cloud is None:
                 print("ROUTING CONSTRAINTS DOGFOOD NOT EXECUTED — no available provider is explicitly classified as cloud/hosted.")
