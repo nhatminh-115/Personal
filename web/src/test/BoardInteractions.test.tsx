@@ -245,6 +245,9 @@ describe('Compiled Context Preview', () => {
       estimated_tokens: 22,
       prompt_text: 'The reviewed finding is ready.',
       privacy_requirement: 'internal',
+      required_capabilities: ['code_graph.read'],
+      available_capabilities: [],
+      missing_capabilities: ['code_graph.read'],
       objects: [
         {
           object_id: 'bridge-preview',
@@ -277,6 +280,7 @@ describe('Compiled Context Preview', () => {
     expect(onPreviewContext).toHaveBeenCalledOnce();
     expect(screen.getByText('22 estimated tokens')).toBeInTheDocument();
     expect(screen.getByText(/1 selected · 2 included/)).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Unavailable required capabilities: code_graph.read');
     fireEvent.click(screen.getByText('Inspect compiled text'));
     expect(screen.getByText('The reviewed finding is ready.')).toBeInTheDocument();
   });

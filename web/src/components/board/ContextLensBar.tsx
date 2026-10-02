@@ -99,6 +99,8 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
               <span>{contextPreview.objects?.filter((object) => object.selected_by_user).length ?? 0} selected · {contextPreview.objects?.length ?? 0} included</span>
               <span>Privacy: {contextPreview.privacy_requirement ?? 'Unclassified'}</span>
               {(contextPreview.required_capabilities?.length ?? 0) > 0 ? <span>Capabilities: {contextPreview.required_capabilities?.join(', ')}</span> : null}
+              {(contextPreview.available_capabilities?.length ?? 0) > 0 ? <span>Available providers: {contextPreview.available_capabilities?.join(', ')}</span> : null}
+              {(contextPreview.missing_capabilities?.length ?? 0) > 0 ? <p className="context-preview__error" role="alert">Unavailable required capabilities: {contextPreview.missing_capabilities?.join(', ')}. Configure a capability provider before asking AURA to use this context.</p> : null}
               {contextPreview.requires_tools || contextPreview.requires_vision || contextPreview.requires_structured_output || contextPreview.requires_long_context ? (
                 <span>Requirements: {[
                   contextPreview.requires_tools && 'tools',

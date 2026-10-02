@@ -423,6 +423,8 @@ export interface WorkspaceContextPreview extends CompiledContextManifest {
   privacy_requirement?: RoutingPrivacy | null;
   privacy_sources?: Array<{ object_id: string; privacy_policy: RoutingPrivacy }>;
   required_capabilities?: string[];
+  available_capabilities?: string[];
+  missing_capabilities?: string[];
   requires_tools?: boolean;
   requires_vision?: boolean;
   requires_structured_output?: boolean;
