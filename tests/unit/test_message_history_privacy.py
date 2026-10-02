@@ -73,3 +73,42 @@ async def test_unsupported_history_privacy_classification_fails_closed(test_db_s
             session_id="unknown-history-privacy-session",
             user_message="Continue.",
         )
+
+
+@pytest.mark.asyncio
+async def test_extracted_project_memory_keeps_source_turn_privacy(test_db_session):
+    memory_service = SQLMemoryService(db=test_db_session)
+    state = {
+        "run_id": "private-candidate-run",
+        "session_id": "private-candidate-session",
+        "project_name": "Atlas",
+        "user_message": "Project Atlas uses Python 3.12",
+        "final_response": "Noted.",
+        "execution_status": RunStatus.COMPLETED.value,
+        "tool_results": [],
+        "metadata": {
+            "routing_context_dict": {
+                "privacy_requirement": "local_only",
+            },
+        },
+    }
+
+    await update_memory_node(
+        state,
+        {"configurable": {"memory_service": memory_service}},
+    )
+
+    project_memories = await memory_service.get_project_memories("Atlas")
+    assert len(project_memories) == 1
+    assert project_memories[0].metadata_json["privacy_policy"] == "local_only"
+
+    assembled = await ContextAssembler(memory_service).assemble_context(
+        session_id=state["session_id"],
+        user_message="",
+        project_name="Atlas",
+    )
+    assert assembled.privacy_requirement == "local_only"
+    assert assembled.privacy_memory_sources == [{
+        "memory_id": project_memories[0].id,
+        "privacy_policy": "local_only",
+    }]
