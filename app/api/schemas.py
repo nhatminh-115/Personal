@@ -281,6 +281,7 @@ class WorkspaceSearchResult(BaseModel):
     project_name: Optional[str] = None
     created_by: str
     verification_status: Optional[str] = None
+    related_object_id: Optional[str] = None
     updated_at: datetime
 
 

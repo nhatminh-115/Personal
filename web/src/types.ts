@@ -458,6 +458,7 @@ export interface WorkspaceSearchResult {
   project_name: string | null;
   created_by: string;
   verification_status?: string | null;
+  related_object_id?: string | null;
   updated_at: string;
   source?: 'workspace' | 'connected-folder';
   connection_id?: string;
