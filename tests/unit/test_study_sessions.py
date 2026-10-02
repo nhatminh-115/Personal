@@ -381,6 +381,8 @@ async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
         json={"question": "Where should the material stay?", "answer": "On the device."},
     )
     assert card_response.status_code == 201
+    from app.db.models import WorkspaceObjectModel
+
     card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
     assert card is not None
     assert card.metadata_json["privacy_policy"] == "local_only"
