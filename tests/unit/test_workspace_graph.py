@@ -1,11 +1,48 @@
 """Durable shared workspace graph API invariants."""
 
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.memory.service import SQLMemoryService
 from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
+from app.core.errors import ContextSelectionError
+from app.memory.context_compiler import MAX_COMPILED_OBJECTS, WorkspaceContextCompiler
+
+
+@pytest.mark.asyncio
+async def test_context_compiler_rejects_excess_roots_before_database_reads():
+    db = AsyncMock()
+
+    with pytest.raises(ContextSelectionError) as error:
+        await WorkspaceContextCompiler(db).compile(
+            "aura", [f"selected-{index}" for index in range(MAX_COMPILED_OBJECTS + 1)]
+        )
+
+    assert error.value.details["object_limit"] == MAX_COMPILED_OBJECTS
+    db.execute.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_context_compiler_rejects_excess_provenance_edges_before_loading_sources():
+    db = AsyncMock()
+    root = SimpleNamespace(id="context-root", object_type="context_set")
+    root_result, linked_result, edge_result = (MagicMock() for _ in range(3))
+    root_result.scalars.return_value = [root]
+    linked_result.scalars.return_value = []
+    edge_result.scalars.return_value = [
+        SimpleNamespace(source_object_id=f"source-{index}", target_object_id=root.id)
+        for index in range(MAX_COMPILED_OBJECTS + 1)
+    ]
+    db.execute.side_effect = [root_result, linked_result, edge_result]
+
+    with pytest.raises(ContextSelectionError) as error:
+        await WorkspaceContextCompiler(db).compile("aura", [root.id])
+
+    assert error.value.details["object_limit"] == MAX_COMPILED_OBJECTS
+    assert db.execute.await_count == 3
 
 
 @pytest.mark.asyncio
@@ -608,6 +645,31 @@ async def test_selected_context_tool_requirement_survives_empty_tool_registry(as
     selected_model = next(event for event in run["events"] if event["event_type"] == "model_selected")
     assert selected_model["payload"]["requires_tools"] is True
     assert selected_model["payload"]["model"] != "mock-default"
+
+
+@pytest.mark.asyncio
+async def test_project_memory_local_only_blocks_cloud_model_before_provider_call(async_client, test_db_session):
+    from app.memory.service import SQLMemoryService
+    from app.models.router import model_router
+
+    memory = await SQLMemoryService(test_db_session).store_project_memory(
+        "aura",
+        "private-research",
+        "This project's research must stay on-device.",
+        metadata={"privacy_policy": "local_only"},
+    )
+    calls_before = len(model_router.get_provider("mock").call_history)
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "project-memory-local-only-session",
+        "project_name": "aura",
+        "message": "Summarize my project memory.",
+        "model_override": "openai:gpt-4o",
+    })
+
+    assert response.status_code == 403
+    assert response.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
 
 
 @pytest.mark.asyncio

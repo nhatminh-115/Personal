@@ -165,12 +165,16 @@ class WorkspaceNoteResponse(BaseModel):
 class StudySessionWrite(BaseModel):
     track_id: str = Field(min_length=1, max_length=128)
     track_title: str = Field(min_length=1, max_length=255)
+    material_id: Optional[str] = Field(default=None, max_length=36)
+    material_project_name: Optional[str] = Field(default=None, max_length=128)
 
 
 class StudySessionResponse(BaseModel):
     id: str
     track_id: str
     track_title: str
+    material_id: Optional[str] = None
+    material_project_name: Optional[str] = None
     status: Literal["in_progress", "completed"]
     started_at: datetime
     completed_at: Optional[datetime] = None
@@ -223,6 +227,7 @@ class WorkspaceSearchResult(BaseModel):
     excerpt: str
     project_name: Optional[str] = None
     created_by: str
+    verification_status: Optional[str] = None
     updated_at: datetime
 
 
@@ -402,4 +407,3 @@ class ResearchInspectorResponse(BaseModel):
     evidence: List[Dict[str, Any]] = Field(default_factory=list)
     claims: List[Dict[str, Any]] = Field(default_factory=list)
     status: str = "unknown"
-

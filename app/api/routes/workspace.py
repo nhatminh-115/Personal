@@ -145,6 +145,11 @@ async def search_workspace(
             excerpt=excerpt,
             project_name=item.project_name,
             created_by=item.created_by,
+            verification_status=(
+                metadata.get("verification_status")
+                if item.object_type == "research_claim" and isinstance(metadata.get("verification_status"), str)
+                else None
+            ),
             updated_at=item.updated_at,
         ))
     return response

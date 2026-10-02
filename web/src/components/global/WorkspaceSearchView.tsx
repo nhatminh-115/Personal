@@ -6,7 +6,11 @@ interface WorkspaceSearchViewProps {
   results: WorkspaceSearchResult[];
   loading: boolean;
   error: string | null;
-  onOpenProject: (name: string) => void;
+  onOpenProject: (name: string, objectId: string) => void;
+  onOpenNote: (objectId: string) => void;
+  onOpenLibraryItem: (objectId: string) => void;
+  onOpenStudySession: (objectId: string) => void;
+  onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
   onOpenFile: (result: WorkspaceSearchResult) => void;
 }
 
@@ -16,9 +20,10 @@ const TYPE_LABELS: Record<string, string> = {
   research_artifact: 'Research',
   context_bridge: 'Context Bridge',
   file_reference: 'Library reference',
+  study_session: 'Study session',
 };
 
-export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenFile }: WorkspaceSearchViewProps) {
+export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onStudyResearchClaim, onOpenFile }: WorkspaceSearchViewProps) {
   return (
     <section className="workspace-search" aria-labelledby="workspace-search-title">
       <header className="workspace-search__header">
@@ -49,10 +54,16 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
               <div className="workspace-search__meta">
                 <span>{result.source === 'connected-folder' ? 'Connected file' : TYPE_LABELS[result.object_type] ?? result.object_type.replace(/_/g, ' ')}</span>
                 {result.source === 'connected-folder' ? <span>{result.connection_name} · {result.size?.toLocaleString()} B</span>
-                  : result.project_name ? <button type="button" onClick={() => onOpenProject(result.project_name!)}>{result.project_name}<ArrowUpRight size={12} /></button>
+                  : result.object_type === 'manual_note' && !result.project_name ? <><span>Personal workspace</span><button type="button" onClick={() => onOpenNote(result.object_id)}>Open note <ArrowUpRight size={12} /></button></>
+                    : result.object_type === 'file_reference' && !result.project_name ? <><span>Library</span><button type="button" onClick={() => onOpenLibraryItem(result.object_id)}>Open in Library <ArrowUpRight size={12} /></button></>
+                    : result.object_type === 'study_session' ? <><span>Study</span><button type="button" onClick={() => onOpenStudySession(result.object_id)}>Open session <ArrowUpRight size={12} /></button></>
+                    : result.project_name ? <><span>{result.project_name}</span><button type="button" onClick={() => onOpenProject(result.project_name!, result.object_id)}>Open in Board <ArrowUpRight size={12} /></button></>
                     : <span>Personal workspace</span>}
                 <time dateTime={result.updated_at}>{new Date(result.updated_at).toLocaleDateString()}</time>
                 {result.source === 'connected-folder' ? <button type="button" onClick={() => onOpenFile(result)}>Open file <ArrowUpRight size={12} /></button> : null}
+                {result.object_type === 'research_claim' && result.verification_status === 'verified' && result.project_name ? (
+                  <button type="button" onClick={() => onStudyResearchClaim?.(result.object_id, result.title, result.project_name!)}>Study verified finding <ArrowUpRight size={12} /></button>
+                ) : null}
               </div>
             </div>
           </article>

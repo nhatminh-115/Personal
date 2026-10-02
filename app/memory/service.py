@@ -384,13 +384,21 @@ class SQLMemoryService(MemoryService):
         await self.db.refresh(new_memory)
         return new_memory
 
-    async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
+    async def get_project_memories(
+        self,
+        project_name: str,
+        is_active_only: bool = True,
+        limit: Optional[int] = None,
+    ) -> List[MemoryModel]:
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
             MemoryModel.project_name == project_name,
         )
         if is_active_only:
             query = query.where(MemoryModel.is_active.is_(True))
+        query = query.order_by(MemoryModel.confidence.desc(), MemoryModel.updated_at.desc(), MemoryModel.id)
+        if limit is not None:
+            query = query.limit(limit)
         result = await self.db.execute(query)
         return list(result.scalars().all())
 

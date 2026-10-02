@@ -16,7 +16,6 @@ import {
   initialNotes,
   projectArtifacts,
   projects,
-  studyTracks,
   type AutomationRecord,
   type ChatThreadRecord,
   type LibraryItem,
@@ -272,6 +271,9 @@ export default function App() {
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
+  const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
+  const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
+  const [focusedStudySessionId, setFocusedStudySessionId] = useState<string | null>(null);
   const workspaceSearchRequest = useRef(0);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
@@ -326,7 +328,7 @@ export default function App() {
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? AURA_TAB;
   const activeFilePreview = activeTab.previewId ? filePreviews[activeTab.previewId] ?? null : null;
   const projectThreads = useMemo(() => chatThreads.filter((thread) => thread.projectId === activeProjectId), [activeProjectId, chatThreads]);
-  const workspaceGraphProjectName = activeProject && projectThreads.some((thread) => thread.source === 'live') ? activeProject.name : null;
+  const workspaceGraphProjectName = activeProject && (activeProject.source === 'user' || projectThreads.some((thread) => thread.source === 'live')) ? activeProject.name : null;
   const workspaceSessionIds = useMemo(() => projectThreads
     .filter((thread) => thread.source === 'live' && thread.sessionId)
     .map((thread) => thread.sessionId!), [projectThreads]);
@@ -1312,17 +1314,29 @@ export default function App() {
     return () => { active = false; };
   }, [pushToast, surface]);
 
-  const startStudySession = useCallback(async (trackId: string) => {
-    const track = studyTracks.find((item) => item.id === trackId);
-    if (!track) return;
+  const startStudySession = useCallback(async (item: LibraryItem) => {
+    if (item.source !== 'imported' || item.syncState !== 'synced') return;
     try {
-      const session = await api.startStudySession(track.id, track.title);
+      const session = await api.startStudySession(item.id, item.name, item.id);
       setStudySessions((current) => [session, ...current]);
-      pushToast('Study session started', `${track.title} · this session is saved in your workspace.`);
+      pushToast('Study session started', `${item.name} · linked to its Library reference.`);
     } catch (error) {
       pushToast('Study session was not started', executionErrorText(error));
     }
   }, [pushToast]);
+
+  const startStudyFromResearchClaim = useCallback(async (objectId: string, title: string, projectName: string) => {
+    try {
+      const session = await api.startStudySession(objectId, title, objectId, projectName);
+      setStudySessions((current) => [session, ...current]);
+      studySessionsLoaded.current = true;
+      setFocusedStudySessionId(session.id);
+      pushToast('Study session started', `${session.track_title} · linked to a verified Research finding.`);
+      handleSidebarNavigate('study');
+    } catch (error) {
+      pushToast('Study session was not started', executionErrorText(error));
+    }
+  }, [handleSidebarNavigate, pushToast]);
 
   const completeStudySession = useCallback(async (sessionId: string) => {
     try {
@@ -1596,6 +1610,30 @@ export default function App() {
     });
   };
 
+  const handleOpenWorkspaceSearchResult = (projectName: string, objectId: string) => {
+    const project = projectCatalog.find((item) => item.name === projectName);
+    if (!project) return;
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    setFocusNodeId(objectId);
+    openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: project.id, mode: 'board' });
+  };
+
+  const handleOpenWorkspaceSearchNote = (objectId: string) => {
+    setFocusedWorkspaceNoteId(objectId);
+    handleSidebarNavigate('notes');
+  };
+
+  const handleOpenWorkspaceSearchLibraryItem = (objectId: string) => {
+    setFocusedLibraryItemId(objectId);
+    handleSidebarNavigate('library');
+  };
+
+  const handleOpenWorkspaceSearchStudySession = (objectId: string) => {
+    setFocusedStudySessionId(objectId);
+    handleSidebarNavigate('study');
+  };
+
   const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
   const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
 
@@ -1695,6 +1733,7 @@ export default function App() {
           <LibraryView
             projects={projectCatalog}
             items={libraryItems}
+            focusItemId={focusedLibraryItemId}
             connections={directoryConnections}
             directoryPickerSupported={supportsDirectoryPicker()}
             onOpenItem={(item) => void handleLibraryItem(item)}
@@ -1717,8 +1756,8 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
-        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} onOpenItem={(item) => void handleLibraryItem(item)} onStartSession={(trackId) => void startStudySession(trackId)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
@@ -1831,10 +1870,11 @@ export default function App() {
             results={workspaceSearch.results}
             loading={workspaceSearch.loading}
             error={workspaceSearch.error}
-            onOpenProject={(name) => {
-              const project = projectCatalog.find((item) => item.name === name);
-              if (project) openProject(project.id);
-            }}
+            onOpenProject={handleOpenWorkspaceSearchResult}
+            onOpenNote={handleOpenWorkspaceSearchNote}
+            onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
+            onOpenStudySession={handleOpenWorkspaceSearchStudySession}
+            onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
             onOpenFile={(result) => {
               if (!result.connection_id || !result.relative_path || !result.connection_name) return;
               const indexedFile: IndexedFolderFile = {

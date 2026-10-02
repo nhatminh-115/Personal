@@ -63,6 +63,11 @@ class WorkspaceContextCompiler:
         roots = list(dict.fromkeys(selected_ids))
         if not roots:
             return CompiledWorkspaceContext(project_name=project_name)
+        if len(roots) > MAX_COMPILED_OBJECTS:
+            raise ContextSelectionError(
+                "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+            )
 
         result = await self.db.execute(
             select(WorkspaceObjectModel).where(
@@ -91,6 +96,7 @@ class WorkspaceContextCompiler:
         included = set(roots)
         linked_sources: dict[str, list[str]] = {}
         expandable = [object_id for object_id in roots if objects[object_id].object_type in EXPANDABLE_CONTEXT_OBJECTS]
+        traversed_edges = 0
         while expandable:
             edge_result = await self.db.execute(
                 select(WorkspaceEdgeModel)
@@ -102,6 +108,12 @@ class WorkspaceContextCompiler:
                 .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
             )
             edges = list(edge_result.scalars())
+            traversed_edges += len(edges)
+            if traversed_edges > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
             candidate_ids = {edge.source_object_id for edge in edges if edge.source_object_id not in objects}
             if candidate_ids:
                 source_result = await self.db.execute(

@@ -139,7 +139,12 @@ class MemoryService(ABC):
         pass
 
     @abstractmethod
-    async def get_project_memories(self, project_name: str, is_active_only: bool = True) -> List[MemoryModel]:
+    async def get_project_memories(
+        self,
+        project_name: str,
+        is_active_only: bool = True,
+        limit: Optional[int] = None,
+    ) -> List[MemoryModel]:
         """Retrieve all knowledge scoped to a specific project."""
         pass
 

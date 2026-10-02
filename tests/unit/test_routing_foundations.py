@@ -1229,6 +1229,43 @@ async def test_profile_create_and_update_enforce_single_custom_default(test_db_s
 
 
 @pytest.mark.asyncio
+async def test_deleting_routing_profile_clears_assignments_and_restores_inheritance(
+    async_client: AsyncClient,
+    test_db_session: AsyncSession,
+):
+    profile = await async_client.post(
+        "/v1/routing/profiles",
+        json={"id": "delete-assigned-profile", "name": "Assigned profile", "is_default": True},
+    )
+    assert profile.status_code == 201
+    session_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id))
+    await test_db_session.commit()
+
+    project_assignment = await async_client.post(
+        "/v1/routing/assignments/Deletion%20Project?profile_id=delete-assigned-profile"
+    )
+    session_assignment = await async_client.put(
+        f"/v1/routing/sessions/{session_id}", json={"profile_id": "delete-assigned-profile"}
+    )
+    assert project_assignment.status_code == session_assignment.status_code == 200
+
+    deleted = await async_client.delete("/v1/routing/profiles/delete-assigned-profile")
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted_profile_id"] == "delete-assigned-profile"
+
+    project = await async_client.get("/v1/routing/assignments/Deletion%20Project")
+    session = await async_client.get(f"/v1/routing/sessions/{session_id}")
+    assert project.json()["routing_profile_id"] is None
+    assert session.json()["routing_profile_id"] is None
+
+    profile, scope = await resolve_routing_profile(
+        test_db_session, session_id=session_id, project_name="Deletion Project"
+    )
+    assert (profile.id, scope) == ("system-balanced", "system")
+
+
+@pytest.mark.asyncio
 async def test_routing_profile_database_index_rejects_a_second_custom_default(test_db_session: AsyncSession):
     from sqlalchemy.exc import IntegrityError
 

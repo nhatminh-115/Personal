@@ -97,6 +97,36 @@ describe('Routing Studio v2', () => {
     expect(screen.getByText('Backend semantic validation passed.')).toBeInTheDocument();
   });
 
+  it('requires profile edits to be saved or discarded before duplication', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Edited profile' } });
+
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Duplicate' })).toHaveAttribute(
+      'title', 'Save or discard profile edits before duplicating.',
+    );
+  });
+
+  it('deletes a dirty profile with one explicit confirmation and clears the discarded draft', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Unsaved rename' } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Unsaved profile edits will also be discarded.'));
+    expect(await screen.findByLabelText('Profile name')).toHaveValue('System Balanced');
+    expect(screen.queryByRole('button', { name: /Custom profile/i })).not.toBeInTheDocument();
+  });
+
   it('can reset the custom default to System Balanced transactionally', async () => {
     await openProject();
     fireEvent.click(screen.getByText(/System Balanced · system/i));
