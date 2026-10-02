@@ -180,6 +180,17 @@ async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
+    latest = (await _latest_executions(db, [job])).get(job.id)
+    if latest and latest.status in {
+        "queued",
+        "running",
+        RunStatus.WAITING_FOR_APPROVAL.value,
+        RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail="This automation already has a run awaiting execution or completion.",
+        )
     event = AURAEvent(
         event_type=EventType.TIMER_FIRED.value,
         source="automation",
