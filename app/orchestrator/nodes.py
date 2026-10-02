@@ -910,6 +910,24 @@ def determine_post_observe_route(state: AgentState) -> str:
     return "reason"
 
 
+def _state_privacy_policy(state: AgentState) -> Any:
+    """Resolve the effective turn privacy policy for durable message metadata."""
+    metadata = state.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    routing_context = metadata.get("routing_context_dict")
+    privacy_policy = (
+        routing_context.get("privacy_requirement")
+        if isinstance(routing_context, dict)
+        else None
+    )
+    if privacy_policy is None:
+        privacy_policy = metadata.get("privacy_requirement")
+    if hasattr(privacy_policy, "value"):
+        privacy_policy = privacy_policy.value
+    # Older callers without resolved routing metadata inherit the router's public default.
+    return "public" if privacy_policy is None else privacy_policy
+
+
 async def update_memory_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
     """Persist conversation messages and episodic interactions into long-term storage."""
     services = _get_services(config)
