@@ -264,4 +264,36 @@ describe('Study sessions use shared Library materials', () => {
     expect(screen.queryByText('No Study sources yet')).not.toBeInTheDocument();
   });
 
+  it('does not start a durable session from an unsaved local Note', () => {
+    const note: WorkspaceNote = {
+      id: 'local-note-1',
+      title: 'Draft note',
+      body: 'Not saved yet.',
+      updated: 'today',
+      tags: [],
+      projectIds: [],
+      source: 'local',
+    };
+    const onStartNoteSession = vi.fn();
+    render(<StudyView
+      libraryItems={[]}
+      notes={[note]}
+      sessions={[]}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onStartNoteSession={onStartNoteSession}
+      onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    expect(screen.getByText('Save this Note before starting a durable Study session.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Study this Note' })).not.toBeInTheDocument();
+    expect(onStartNoteSession).not.toHaveBeenCalled();
+  });
+
 });
