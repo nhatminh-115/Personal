@@ -125,3 +125,29 @@ async def test_workspace_search_exposes_only_research_claim_verification_status(
     ordinary = await async_client.get("/v1/workspace/search", params={"query": "ordinary-note-search-token"})
     assert ordinary.status_code == 200
     assert ordinary.json()[0]["verification_status"] is None
+
+
+@pytest.mark.asyncio
+async def test_workspace_search_links_learning_cards_to_their_study_session(async_client):
+    session = await async_client.post("/v1/study/sessions", json={
+        "track_id": "search-study-source",
+        "track_title": "Searchable Study session",
+    })
+    assert session.status_code == 201
+
+    card = await async_client.post(
+        f"/v1/study/sessions/{session.json()['id']}/cards",
+        json={"question": "What is searchable?", "answer": "A learning card in the workspace graph."},
+    )
+    assert card.status_code == 201
+
+    result = await async_client.get(
+        "/v1/workspace/search",
+        params={"query": "What is searchable?"},
+    )
+    assert result.status_code == 200
+    [match] = result.json()
+    assert match["object_id"] == card.json()["id"]
+    assert match["object_type"] == "study_card"
+    assert match["related_object_id"] == session.json()["id"]
+    assert "metadata_json" not in match
