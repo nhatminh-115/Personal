@@ -37,7 +37,7 @@ function makeFetch({
   return vi.fn().mockImplementation((url: string, options?: RequestInit) => {
     if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve(onModels?.() ?? { providers: [] }) });
     if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-    if (/\/v1\/sessions$/.test(url) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+    if (url.includes('/v1/sessions?') && options?.method !== 'POST') return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
     if (url.match(/\/v1\/sessions\/[^/]+$/) && options?.method !== 'POST') return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'sess', messages: [] }) });
 
     if (options?.method === 'POST' && url.includes('/v1/chat')) {

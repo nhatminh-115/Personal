@@ -180,6 +180,7 @@ class RunDetailResponse(BaseModel):
 class SessionSummaryResponse(BaseModel):
     id: str
     title: str
+    project_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

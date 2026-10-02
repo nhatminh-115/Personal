@@ -1,11 +1,14 @@
 """Integration tests for model override propagation into delegated specialists and inspector endpoints."""
 
 from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timedelta, timezone
 import pytest
+from fastapi import Response
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_db
+from app.api.routes.sessions import list_sessions
 from app.api.server import create_app
 from app.db.models import DelegationModel, MemoryModel, RunModel, SessionModel
 from app.models.router import model_router
@@ -37,6 +40,46 @@ async def test_sessions_list_endpoint(test_db_session: AsyncSession):
         assert "sess-list-2" in session_ids
 
     app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_sessions_list_uses_project_scoped_cursor_pages(test_db_session: AsyncSession):
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add_all([
+        SessionModel(
+            id=f"page-session-{index:03d}",
+            title=f"Session {index}",
+            project_name="Pagination Project" if index < 31 else "Other Project",
+            created_at=base_time + timedelta(seconds=index),
+            updated_at=base_time + timedelta(seconds=index),
+        )
+        for index in range(35)
+    ])
+    await test_db_session.commit()
+
+    first_response = Response()
+    first_page = await list_sessions(first_response, "Pagination Project", None, 10, test_db_session)
+    cursor = first_response.headers.get("X-Next-Cursor")
+    assert cursor
+    assert [item.id for item in first_page] == [f"page-session-{index:03d}" for index in range(30, 20, -1)]
+    assert all(item.project_name == "Pagination Project" for item in first_page)
+
+    second_response = Response()
+    second_page = await list_sessions(second_response, "Pagination Project", cursor, 10, test_db_session)
+    second_cursor = second_response.headers.get("X-Next-Cursor")
+    assert second_cursor
+    assert [item.id for item in second_page] == [f"page-session-{index:03d}" for index in range(20, 10, -1)]
+    assert {item.id for item in first_page}.isdisjoint(item.id for item in second_page)
+
+    last_response = Response()
+    last_page = await list_sessions(last_response, "Pagination Project", second_cursor, 10, test_db_session)
+    assert [item.id for item in last_page] == [f"page-session-{index:03d}" for index in range(10, 0, -1)]
+    final_response = Response()
+    final_page = await list_sessions(
+        final_response, "Pagination Project", last_response.headers.get("X-Next-Cursor"), 10, test_db_session,
+    )
+    assert [item.id for item in final_page] == ["page-session-000"]
+    assert "X-Next-Cursor" not in final_response.headers
 
 
 @pytest.mark.asyncio

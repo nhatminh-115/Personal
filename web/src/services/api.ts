@@ -189,9 +189,13 @@ export const api = {
     }));
   },
 
-  async fetchSessions(): Promise<SessionSummary[]> {
-    const res = await fetch(`${BASE_URL}/v1/sessions`);
-    return handleResponse<SessionSummary[]>(res);
+  async fetchSessions(projectName?: string, cursor?: string | null): Promise<{ items: SessionSummary[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: '25' });
+    if (projectName) params.set('project_name', projectName);
+    if (cursor) params.set('cursor', cursor);
+    const res = await fetch(`${BASE_URL}/v1/sessions?${params.toString()}`);
+    const items = await handleResponse<SessionSummary[]>(res);
+    return { items, nextCursor: res.headers?.get('X-Next-Cursor') ?? null };
   },
 
   async fetchSession(sessionId: string, cursor?: string | null): Promise<SessionDetail> {

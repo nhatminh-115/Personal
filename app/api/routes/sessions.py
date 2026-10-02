@@ -2,7 +2,7 @@
 
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,16 +16,37 @@ router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
 
 @router.get("", response_model=List[SessionSummaryResponse])
 async def list_sessions(
+    response: Response,
+    project_name: Optional[str] = Query(default=None, max_length=128),
+    cursor: Optional[str] = Query(default=None, max_length=512),
+    page_size: int = Query(default=25, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> List[SessionSummaryResponse]:
-    """List recent conversation sessions ordered by last update."""
-    stmt = select(SessionModel).order_by(SessionModel.updated_at.desc()).limit(50)
+    """List one bounded page of recent sessions, optionally scoped to a project."""
+    stmt = select(SessionModel)
+    if project_name:
+        stmt = stmt.where(SessionModel.project_name == project_name)
+    if cursor:
+        cursor_updated_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        stmt = stmt.where(
+            or_(
+                SessionModel.updated_at < cursor_updated_at,
+                and_(SessionModel.updated_at == cursor_updated_at, SessionModel.id < cursor_id),
+            )
+        )
+    stmt = stmt.order_by(SessionModel.updated_at.desc(), SessionModel.id.desc()).limit(page_size + 1)
     result = await db.execute(stmt)
-    sessions = list(result.scalars().all())
+    rows = list(result.scalars().all())
+    has_next_page = len(rows) > page_size
+    sessions = rows[:page_size]
+    if has_next_page and sessions:
+        last = sessions[-1]
+        response.headers["X-Next-Cursor"] = encode_timestamp_id_cursor(last.updated_at, last.id)
     return [
         SessionSummaryResponse(
             id=s.id,
             title=s.title,
+            project_name=s.project_name,
             created_at=s.created_at,
             updated_at=s.updated_at,
         )
