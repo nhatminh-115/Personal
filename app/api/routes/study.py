@@ -4,10 +4,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, text
+from sqlalchemy import delete as sa_delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import StudyReflectionWrite, StudySessionResponse, StudySessionWrite
+from app.api.schemas import StudyCardResponse, StudyCardWrite, StudyReflectionWrite, StudySessionResponse, StudySessionWrite
 from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 from app.db.session import get_db
 
@@ -175,6 +175,162 @@ async def start_study_session(
     await db.commit()
     await db.refresh(item)
     return _study_session_response(item)
+
+
+def _study_card_response(item: WorkspaceObjectModel) -> StudyCardResponse:
+    metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
+    return StudyCardResponse(
+        id=item.id,
+        session_id=metadata.get("study_session_id", ""),
+        question=item.title,
+        answer=item.content or "",
+        created_at=item.created_at,
+        updated_at=item.updated_at,
+    )
+
+
+async def _get_user_study_session(db: AsyncSession, session_id: str) -> WorkspaceObjectModel:
+    item = await db.get(WorkspaceObjectModel, session_id)
+    if (
+        item is None
+        or item.project_name is not None
+        or item.object_type != "study_session"
+        or item.created_by != "user"
+    ):
+        raise HTTPException(status_code=404, detail="Study session not found.")
+    return item
+
+
+@router.get("/cards", response_model=list[StudyCardResponse])
+async def list_study_cards(db: AsyncSession = Depends(get_db)) -> list[StudyCardResponse]:
+    result = await db.execute(
+        select(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "study_card",
+            WorkspaceObjectModel.created_by == "user",
+        )
+        .order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+    )
+    cards = []
+    for item in result.scalars():
+        metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
+        if isinstance(metadata.get("study_session_id"), str):
+            cards.append(_study_card_response(item))
+    return cards
+
+
+@router.post(
+    "/sessions/{session_id}/cards",
+    response_model=StudyCardResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_study_card(
+    session_id: str,
+    body: StudyCardWrite,
+    db: AsyncSession = Depends(get_db),
+) -> StudyCardResponse:
+    session = await _get_user_study_session(db, session_id)
+    if not body.question.strip() or not body.answer.strip():
+        raise HTTPException(status_code=422, detail="Study card question and answer must not be blank.")
+    session_metadata = session.metadata_json if isinstance(session.metadata_json, dict) else {}
+    card_metadata: dict[str, Any] = {
+        "study_session_id": session.id,
+        **(
+            {"privacy_policy": session_metadata["privacy_policy"]}
+            if isinstance(session_metadata.get("privacy_policy"), str)
+            else {}
+        ),
+    }
+    card = WorkspaceObjectModel(
+        project_name=None,
+        object_type="study_card",
+        created_by="user",
+        title=body.question,
+        content=body.answer,
+        metadata_json=card_metadata,
+    )
+    db.add(card)
+    await db.flush()
+
+    project_links = await db.execute(
+        select(WorkspaceObjectProjectLinkModel.project_name)
+        .where(WorkspaceObjectProjectLinkModel.object_id == session.id)
+        .order_by(WorkspaceObjectProjectLinkModel.project_name)
+    )
+    for project_name in project_links.scalars():
+        db.add(WorkspaceObjectProjectLinkModel(object_id=card.id, project_name=project_name))
+        db.add(WorkspaceEdgeModel(
+            project_name=project_name,
+            source_object_id=session.id,
+            target_object_id=card.id,
+            relation_type="contains_card",
+            edge_family="provenance",
+            created_by="user",
+        ))
+    await db.commit()
+    await db.refresh(card)
+    return _study_card_response(card)
+
+
+@router.put("/sessions/{session_id}/cards/{card_id}", response_model=StudyCardResponse)
+async def update_study_card(
+    session_id: str,
+    card_id: str,
+    body: StudyCardWrite,
+    db: AsyncSession = Depends(get_db),
+) -> StudyCardResponse:
+    await _get_user_study_session(db, session_id)
+    card = await db.get(WorkspaceObjectModel, card_id)
+    metadata = card.metadata_json if card and isinstance(card.metadata_json, dict) else {}
+    if (
+        card is None
+        or card.project_name is not None
+        or card.object_type != "study_card"
+        or card.created_by != "user"
+        or metadata.get("study_session_id") != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Study card not found.")
+    if not body.question.strip() or not body.answer.strip():
+        raise HTTPException(status_code=422, detail="Study card question and answer must not be blank.")
+    card.title = body.question
+    card.content = body.answer
+    card.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(card)
+    return _study_card_response(card)
+
+
+@router.delete("/sessions/{session_id}/cards/{card_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_study_card(
+    session_id: str,
+    card_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await _get_user_study_session(db, session_id)
+    card = await db.get(WorkspaceObjectModel, card_id)
+    metadata = card.metadata_json if card and isinstance(card.metadata_json, dict) else {}
+    if (
+        card is None
+        or card.project_name is not None
+        or card.object_type != "study_card"
+        or card.created_by != "user"
+        or metadata.get("study_session_id") != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Study card not found.")
+    await db.execute(
+        sa_delete(WorkspaceEdgeModel).where(
+            (WorkspaceEdgeModel.source_object_id == card_id)
+            | (WorkspaceEdgeModel.target_object_id == card_id)
+        )
+    )
+    await db.execute(
+        sa_delete(WorkspaceObjectProjectLinkModel).where(
+            WorkspaceObjectProjectLinkModel.object_id == card_id
+        )
+    )
+    await db.delete(card)
+    await db.commit()
 
 
 @router.put("/sessions/{session_id}/reflection", response_model=StudySessionResponse)
