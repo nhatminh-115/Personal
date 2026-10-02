@@ -512,6 +512,9 @@ async def preview_workspace_context(
         "available_capabilities": available_capabilities,
         "missing_capabilities": missing_capabilities,
         "requires_tools": compiled.requires_tools or capability_flags["requires_tools"] or bool(tool_capabilities),
+        "requires_vision": compiled.requires_vision or capability_flags["requires_vision"],
+        "requires_structured_output": compiled.requires_structured_output or capability_flags["requires_structured_output"],
+        "requires_long_context": compiled.requires_long_context or capability_flags["requires_long_context"],
     })
 
 

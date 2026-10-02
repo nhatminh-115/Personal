@@ -1184,6 +1184,35 @@ async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections
 
 
 @pytest.mark.asyncio
+async def test_context_preview_derives_all_routing_flags_from_required_capabilities(async_client):
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Routing requirements",
+        "content": "Preview and live routing must agree.",
+        "metadata_json": {
+            "required_capabilities": ["tools", "vision", "structured_output", "long_context"],
+            "requires_tools": False,
+            "requires_vision": False,
+            "requires_structured_output": False,
+            "requires_long_context": False,
+        },
+    })
+    assert created.status_code == 201
+
+    response = await async_client.post(
+        "/v1/workspace/projects/aura/context/preview",
+        json={"selected_object_ids": [created.json()["id"]]},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()
+    assert preview["requires_tools"] is True
+    assert preview["requires_vision"] is True
+    assert preview["requires_structured_output"] is True
+    assert preview["requires_long_context"] is True
+    assert preview["missing_capabilities"] == []
+
+@pytest.mark.asyncio
 async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_not_filter_models(
     async_client,
     monkeypatch,
