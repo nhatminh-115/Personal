@@ -160,6 +160,8 @@ pygments==2.21.0
     # via pytest
 pyjwt==2.14.0
     # via mcp
+pypdf==6.19.0
+    # via aura (pyproject.toml)
 pytest==9.1.1
     # via
     #   aura (pyproject.toml)

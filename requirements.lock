@@ -115,6 +115,8 @@ pydantic-core==2.46.5
     # via pydantic
 pydantic-settings==2.15.0
     # via aura (pyproject.toml)
+pypdf==6.19.0
+    # via aura (pyproject.toml)
 python-dotenv==1.2.3
     # via
     #   pydantic-settings
