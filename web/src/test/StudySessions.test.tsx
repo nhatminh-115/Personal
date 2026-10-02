@@ -19,7 +19,11 @@ describe('Study sessions use shared Library materials', () => {
       onBrowseLibrary: vi.fn(),
       onStartSession,
       sessions: [],
+      cards: [],
       onCompleteSession,
+      onCreateCard: vi.fn().mockResolvedValue(undefined),
+      onUpdateCard: vi.fn().mockResolvedValue(undefined),
+      onDeleteCard: vi.fn().mockResolvedValue(undefined),
       onSaveReflection: vi.fn().mockResolvedValue(undefined),
     };
     const { rerender } = render(<StudyView {...props} />);
@@ -46,6 +50,10 @@ describe('Study sessions use shared Library materials', () => {
         id: 'active-study-session', track_id: studyMaterial.id, track_title: studyMaterial.name,
         material_id: studyMaterial.id, status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
@@ -65,6 +73,10 @@ describe('Study sessions use shared Library materials', () => {
     render(<StudyView
       libraryItems={[preview]}
       sessions={[]}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
@@ -84,6 +96,10 @@ describe('Study sessions use shared Library materials', () => {
         id: 'legacy-session', track_id: 'german', track_title: 'German A1',
         status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
@@ -103,6 +119,10 @@ describe('Study sessions use shared Library materials', () => {
         material_id: studyMaterial.id, status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
       focusSessionId={sessionId}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
@@ -126,6 +146,10 @@ describe('Study sessions use shared Library materials', () => {
         status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
       }]}
       focusSessionId={sessionId}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
