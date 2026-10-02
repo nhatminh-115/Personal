@@ -532,6 +532,7 @@ class WorkspaceGraphResponse(BaseModel):
     objects: List[WorkspaceObjectResponse]
     edges: List[WorkspaceEdgeResponse]
     layout: WorkspaceLayoutResponse
+    objects_next_cursor: Optional[str] = None
     execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
     execution_history_truncated: bool = False
     execution_next_cursor: Optional[str] = None

@@ -57,6 +57,69 @@ async def test_workspace_api_rejects_oversized_metadata_and_layout_before_persis
 
 
 @pytest.mark.asyncio
+async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(async_client):
+    project_name = "graph-pagination"
+    for title in ("First", "Second", "Third"):
+        response = await async_client.post(
+            f"/v1/workspace/projects/{project_name}/objects",
+            json={"object_type": "manual_note", "title": title, "content": title},
+        )
+        assert response.status_code == 201
+
+    complete = (await async_client.get(f"/v1/workspace/projects/{project_name}/graph")).json()
+    object_ids = [item["id"] for item in complete["objects"]]
+    for source_id, target_id in zip(object_ids, object_ids[1:]):
+        edge = await async_client.post(
+            f"/v1/workspace/projects/{project_name}/edges",
+            json={
+                "source_object_id": source_id,
+                "target_object_id": target_id,
+                "relation_type": "related_to",
+                "edge_family": "semantic",
+            },
+        )
+        assert edge.status_code == 201
+
+    first = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={"object_page_size": 2},
+    )
+    assert first.status_code == 200
+    first_page = first.json()
+    assert [item["id"] for item in first_page["objects"]] == object_ids[:2]
+    assert first_page["objects_next_cursor"]
+    assert len(first_page["edges"]) == 1
+    assert first_page["layout"]["revision"] == 0
+
+    second = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={
+            "object_page_size": 2,
+            "object_cursor": first_page["objects_next_cursor"],
+            "include_project_state": "false",
+        },
+    )
+    assert second.status_code == 200
+    second_page = second.json()
+    assert [item["id"] for item in second_page["objects"]] == object_ids[2:]
+    assert second_page["objects_next_cursor"] is None
+    assert len(second_page["edges"]) == 1
+    assert second_page["execution_traces"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cursor", ["not-a-cursor", ""])
+async def test_workspace_graph_rejects_invalid_object_cursor(async_client, cursor):
+    response = await async_client.get(
+        "/v1/workspace/projects/cursor-validation/graph",
+        params={"object_cursor": cursor},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid workspace graph cursor."
+
+
+@pytest.mark.asyncio
 async def test_context_compiler_rejects_excess_roots_before_database_reads():
     db = AsyncMock()
 
@@ -426,6 +489,12 @@ async def test_context_compiler_follows_full_session_branch_ancestry(test_db_ses
         select(WorkspaceObjectModel).where(WorkspaceObjectModel.source_message_id.in_([message.id for message in messages]))
     )).scalars())
     object_by_message = {item.source_message_id: item for item in objects}
+    # Keep this fixture independent of timestamp precision and UUID ordering.
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    for index, message in enumerate(messages):
+        message.created_at = base_time + timedelta(seconds=index)
+        object_by_message[message.id].created_at = base_time + timedelta(seconds=index)
+    await test_db_session.commit()
     continuations = list((await test_db_session.execute(
         select(WorkspaceEdgeModel).where(
             WorkspaceEdgeModel.project_name == "aura",
@@ -448,6 +517,10 @@ async def test_context_compiler_follows_full_session_branch_ancestry(test_db_ses
     live_objects = list((await test_db_session.execute(
         select(WorkspaceObjectModel).where(WorkspaceObjectModel.source_message_id.in_([live_user.id, live_answer.id]))
     )).scalars())
+    live_object_by_message = {item.source_message_id: item for item in live_objects}
+    live_object_by_message[live_user.id].created_at = base_time + timedelta(seconds=len(messages))
+    live_object_by_message[live_answer.id].created_at = base_time + timedelta(seconds=len(messages) + 1)
+    await test_db_session.commit()
     live_answer_object = next(item for item in live_objects if item.source_message_id == live_answer.id)
 
     latest = await WorkspaceContextCompiler(test_db_session).compile("aura", [live_answer_object.id])

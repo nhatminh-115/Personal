@@ -324,6 +324,7 @@ export interface WorkspaceGraph {
   objects: WorkspaceObject[];
   edges: WorkspaceEdge[];
   layout: WorkspaceLayout;
+  objects_next_cursor?: string | null;
   execution_traces?: WorkspaceExecutionTrace[];
   execution_history_truncated?: boolean;
   execution_next_cursor?: string | null;

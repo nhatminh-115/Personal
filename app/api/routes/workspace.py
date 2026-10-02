@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import String, bindparam, case, delete as sa_delete, func, or_, select, text
+from sqlalchemy import String, and_, bindparam, case, delete as sa_delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -172,6 +172,7 @@ async def search_workspace(
 
 MAX_EXECUTION_GRAPH_RUNS = 100
 MAX_EXECUTION_GRAPH_EVENTS = 3_000
+MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE = 500
 
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked", "context_compiled",
@@ -633,39 +634,79 @@ async def _project_execution_history(
         execution_next_cursor=execution_next_cursor,
     )
 
+
+def _decode_workspace_graph_cursor(cursor: str) -> tuple[datetime, str]:
+    try:
+        encoded = cursor + "=" * (-len(cursor) % 4)
+        created_at_text, object_id = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+        created_at = datetime.fromisoformat(created_at_text)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        if not isinstance(object_id, str) or not object_id or len(object_id) > 36:
+            raise ValueError("invalid object ID")
+        return created_at, object_id
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid workspace graph cursor.") from exc
+
+
+def _encode_workspace_graph_cursor(item: WorkspaceObjectModel) -> str:
+    payload = json.dumps([item.created_at.isoformat(), item.id], separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
 async def get_workspace_graph(
     project_name: str,
     execution_cursor: str | None = Query(default=None, max_length=512),
     execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
+    object_cursor: str | None = Query(default=None, max_length=512),
+    object_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE),
+    include_project_state: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceGraphResponse:
-    objects = await _get_project_objects(db, project_name)
-    linked_ids = await db.execute(
-        select(WorkspaceObjectProjectLinkModel.object_id).where(
-            WorkspaceObjectProjectLinkModel.project_name == project_name
-        )
+    linked_ids = select(WorkspaceObjectProjectLinkModel.object_id).where(
+        WorkspaceObjectProjectLinkModel.project_name == project_name
     )
-    personal_notes = await db.execute(
-        select(WorkspaceObjectModel).where(
+    visible_filter = or_(
+        WorkspaceObjectModel.project_name == project_name,
+        and_(
             WorkspaceObjectModel.project_name.is_(None),
             WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
-            WorkspaceObjectModel.id.in_(linked_ids.scalars().all()),
-        ).order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+            WorkspaceObjectModel.id.in_(linked_ids),
+        ),
     )
-    objects.extend(personal_notes.scalars())
+    object_query = select(WorkspaceObjectModel).where(visible_filter)
+    if object_cursor is not None:
+        cursor_created_at, cursor_object_id = _decode_workspace_graph_cursor(object_cursor)
+        object_query = object_query.where(or_(
+            WorkspaceObjectModel.created_at > cursor_created_at,
+            (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
+        ))
+    object_result = await db.execute(
+        object_query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(object_page_size + 1)
+    )
+    object_rows = list(object_result.scalars())
+    objects_truncated = len(object_rows) > object_page_size
+    objects = object_rows[:object_page_size]
+    objects_next_cursor = _encode_workspace_graph_cursor(objects[-1]) if objects_truncated and objects else None
     object_ids = {item.id for item in objects}
     edge_result = await db.execute(
         select(WorkspaceEdgeModel)
-        .where(WorkspaceEdgeModel.project_name == project_name)
+        .where(
+            WorkspaceEdgeModel.project_name == project_name,
+            WorkspaceEdgeModel.target_object_id.in_(object_ids) if object_ids else False,
+            WorkspaceEdgeModel.source_object_id.in_(
+                select(WorkspaceObjectModel.id).where(visible_filter)
+            ),
+        )
         .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
     )
-    edges = [
-        edge for edge in edge_result.scalars()
-        if edge.source_object_id in object_ids and edge.target_object_id in object_ids
-    ]
-    layout = await db.get(WorkspaceLayoutModel, project_name)
-    execution_history = await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
+    edges = list(edge_result.scalars())
+    if include_project_state:
+        layout = await db.get(WorkspaceLayoutModel, project_name)
+        execution_history = await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
+    else:
+        layout = None
+        execution_history = WorkspaceExecutionHistoryResponse()
     return WorkspaceGraphResponse(
         project_name=project_name,
         objects=[_object_response(item) for item in objects],
@@ -676,6 +717,7 @@ async def get_workspace_graph(
             revision=layout.revision if layout else 0,
             updated_at=layout.updated_at if layout else None,
         ),
+        objects_next_cursor=objects_next_cursor,
         execution_traces=execution_history.execution_traces,
         execution_history_truncated=execution_history.execution_history_truncated,
         execution_next_cursor=execution_history.execution_next_cursor,
