@@ -75,6 +75,16 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
 
 
 @pytest.mark.asyncio
+async def test_get_missing_session_returns_404_without_creating_it(async_client: AsyncClient, test_db_session):
+    session_id = "read-only-session-lookup"
+
+    response = await async_client.get(f"/v1/sessions/{session_id}")
+
+    assert response.status_code == 404
+    assert await test_db_session.get(SessionModel, session_id) is None
+
+
+@pytest.mark.asyncio
 async def test_approval_rejection_flow(async_client: AsyncClient):
     session_id = "test-reject-sess"
 
