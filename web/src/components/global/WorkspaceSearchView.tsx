@@ -21,6 +21,7 @@ const TYPE_LABELS: Record<string, string> = {
   context_bridge: 'Context Bridge',
   file_reference: 'Library reference',
   study_session: 'Study session',
+  study_card: 'Learning card',
 };
 
 export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onStudyResearchClaim, onOpenFile }: WorkspaceSearchViewProps) {
@@ -56,6 +57,7 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
                 {result.source === 'connected-folder' ? <span>{result.connection_name} · {result.size?.toLocaleString()} B</span>
                   : result.object_type === 'manual_note' && !result.project_name ? <><span>Personal workspace</span><button type="button" onClick={() => onOpenNote(result.object_id)}>Open note <ArrowUpRight size={12} /></button></>
                     : result.object_type === 'file_reference' && !result.project_name ? <><span>Library</span><button type="button" onClick={() => onOpenLibraryItem(result.object_id)}>Open in Library <ArrowUpRight size={12} /></button></>
+                    : result.object_type === 'study_card' ? <><span>Study</span>{result.related_object_id ? <button type="button" onClick={() => onOpenStudySession(result.related_object_id!)}>Open Study session <ArrowUpRight size={12} /></button> : null}</>
                     : result.object_type === 'study_session' ? <><span>Study</span><button type="button" onClick={() => onOpenStudySession(result.object_id)}>Open session <ArrowUpRight size={12} /></button></>
                     : result.project_name ? <><span>{result.project_name}</span><button type="button" onClick={() => onOpenProject(result.project_name!, result.object_id)}>Open in Board <ArrowUpRight size={12} /></button></>
                     : <span>Personal workspace</span>}
