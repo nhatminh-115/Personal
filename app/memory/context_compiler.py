@@ -50,6 +50,8 @@ BRIDGE_SECTION_LABELS = {
     "observations": "Important observations",
     "failed": "Failed attempts",
     "artifacts": "Artifacts",
+    "constraints": "Constraints",
+    "decisions": "Decisions",
 }
 
 
