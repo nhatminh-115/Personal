@@ -1129,6 +1129,63 @@ async def test_workspace_edge_batch_restore_preserves_ids_and_rejects_invalid_ba
 
 
 @pytest.mark.asyncio
+async def test_context_bridge_inherits_privacy_through_omitted_context_set_ancestry(async_client):
+    from app.models.router import model_router
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Private source",
+        "content": "Private source body must not be copied into the Bridge.",
+        "metadata_json": {"privacy_policy": "local_only"},
+    })
+    assert source.status_code == 201
+    context_set = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_set",
+        "title": "Nested context set",
+        "content": "",
+        "metadata_json": {"privacy_policy": "public"},
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert context_set.status_code == 201
+    bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_bridge",
+        "title": "Reviewed handoff",
+        "content": "User-authored handoff note.",
+        "metadata_json": {
+            "privacy_policy": "public",
+            "bridge_options": {"conclusions": True},
+            "bridge_sections": {"conclusions": "Carry forward the reviewed result."},
+        },
+        "source_object_ids": [context_set.json()["id"]],
+    })
+    assert bridge.status_code == 201
+
+    preview = await async_client.post(
+        "/v1/workspace/projects/aura/context/preview",
+        json={"selected_object_ids": [bridge.json()["id"]]},
+    )
+    assert preview.status_code == 200
+    preview_data = preview.json()
+    assert preview_data["privacy_requirement"] == "local_only"
+    assert {item["object_id"] for item in preview_data["objects"]} == {bridge.json()["id"]}
+    assert "User-authored handoff note." in preview_data["prompt_text"]
+    assert "Carry forward the reviewed result." in preview_data["prompt_text"]
+    assert "Private source body must not be copied into the Bridge." not in preview_data["prompt_text"]
+    assert {item["object_id"] for item in preview_data["privacy_sources"]} >= {source.json()["id"]}
+
+    calls_before = len(model_router.get_provider("mock").call_history)
+    blocked = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-transitive-privacy-session",
+        "project_name": "aura",
+        "message": "Use the reviewed handoff.",
+        "model_override": "openai:gpt-4o",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+@pytest.mark.asyncio
 async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections_and_source_privacy(
     async_client,
     test_db_session,
