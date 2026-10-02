@@ -7,11 +7,12 @@ ResearchState snapshot, and MemoryModel records.
 
 from unittest.mock import AsyncMock, MagicMock
 import pytest
+import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel, SessionModel
 from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchQuery, ResearchSource, ResearchState, SourceStatus
-from scripts.dogfood_research_live import audit_dogfood_run
+from scripts.dogfood_research_live import audit_dogfood_run, write_audit_report
 
 
 @pytest.mark.asyncio
@@ -178,3 +179,18 @@ async def test_dogfood_audit_preflight(test_db_session: AsyncSession):
     assert report["evidence_count"] == 1
     assert report["claims_count"] == 1
     assert report["memory_count"] == 1
+
+
+def test_research_dogfood_audit_artifact_is_sanitized_and_persistent(tmp_path):
+    report = {
+        "parent_run_id": "run-safe",
+        "child_run_id": "child-safe",
+        "actual_model_provider": "openai",
+        "actual_model_name": "configured-model",
+        "tool_sequence": ["research_search", "extract_evidence"],
+        "queries_count": 2,
+        "claims_count": 1,
+    }
+    path = write_audit_report("run-safe", report, output_dir=tmp_path)
+    assert path.name == "research-run-safe.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == report
