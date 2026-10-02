@@ -94,6 +94,13 @@ jobs:
           python -c "import json, pathlib; data=json.loads(pathlib.Path('approval-after-restart.json').read_text()); assert data['status'] == 'approved', data; assert data['execution_status'] == 'completed', data; print({'run_id': data['run_id'], 'execution_status': data['execution_status']})"
           docker compose exec -T aura-app sh -c 'test "$(cat /app/workspace/aura-compose-smoke.txt)" = "persistent test"'
 
+          backup_path="${RUNNER_TEMP}/aura-compose-backup.tar.gz"
+          python scripts/backup_compose.py "${backup_path}"
+          python scripts/backup_compose.py --verify "${backup_path}"
+          python -c "import json, tarfile; archive=tarfile.open('${RUNNER_TEMP}/aura-compose-backup.tar.gz', 'r:gz'); data=json.load(archive.extractfile('manifest.json')); required={'postgres.dump', 'checkpoint/aura_checkpoints.db'}; assert required <= set(data['files']), data; assert all(archive.getmember(name).size > 0 for name in required), data; print({'backup_entries': sorted(data['files'])})"
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
+            http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-backup.json
+
       - name: Wait for PostgreSQL asyncpg connection
         run: |
           python -c "
