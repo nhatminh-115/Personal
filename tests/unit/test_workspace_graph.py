@@ -1670,3 +1670,59 @@ async def test_workspace_graph_marks_execution_history_truncated_at_event_limit(
     assert graph["execution_history_truncated"] is True
     [trace] = graph["execution_traces"]
     assert len(trace["events"]) == MAX_EXECUTION_GRAPH_EVENTS
+
+
+@pytest.mark.asyncio
+async def test_workspace_execution_history_cursor_pages_runs_without_overlap(async_client, test_db_session):
+    from datetime import datetime, timezone
+    from app.db.models import RunEventModel
+
+    session = SessionModel(id="paged-trace-session", title="Paged trace", metadata_json={}, project_name="aura")
+    run_ids = ["paged-trace-1", "paged-trace-2", "paged-trace-3"]
+    created_at = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    runs = [
+        RunModel(
+            id=run_id,
+            session_id=session.id,
+            status="completed",
+            user_message=run_id,
+            created_at=created_at,
+        )
+        for run_id in run_ids
+    ]
+    test_db_session.add_all([session, *runs])
+    await test_db_session.flush()
+    test_db_session.add_all([
+        RunEventModel(run_id=run.id, event_type="run_completed", payload={})
+        for run in runs
+    ])
+    await test_db_session.commit()
+
+    first_page = await async_client.get(
+        "/v1/workspace/projects/aura/graph",
+        params={"execution_page_size": 2},
+    )
+    assert first_page.status_code == 200
+    first = first_page.json()
+    assert [trace["run_id"] for trace in first["execution_traces"]] == sorted(run_ids, reverse=True)[:2]
+    assert first["execution_next_cursor"]
+    assert first["execution_history_truncated"] is True
+
+    second_page = await async_client.get(
+        "/v1/workspace/projects/aura/graph",
+        params={"execution_page_size": 2, "execution_cursor": first["execution_next_cursor"]},
+    )
+    assert second_page.status_code == 200
+    second = second_page.json()
+    assert [trace["run_id"] for trace in second["execution_traces"]] == [sorted(run_ids, reverse=True)[2]]
+    assert second["execution_next_cursor"] is None
+    assert second["execution_history_truncated"] is False
+
+
+@pytest.mark.asyncio
+async def test_workspace_execution_history_rejects_invalid_cursor(async_client):
+    response = await async_client.get(
+        "/v1/workspace/projects/aura/graph",
+        params={"execution_cursor": "not-a-valid-cursor"},
+    )
+    assert response.status_code == 422
