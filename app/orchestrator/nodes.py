@@ -930,6 +930,7 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             metadata={
                 "run_id": state["run_id"],
                 "context_object_ids": list(dict.fromkeys(state.get("context_object_ids", []))),
+                "privacy_policy": privacy_policy,
             },
         )
         persisted_user_message_id = user_message.id
