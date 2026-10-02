@@ -43,6 +43,7 @@ class MCPClientManager:
         self.policy = policy or mcp_security_policy
         self._servers: Dict[str, MCPServerConfig] = {}
         self._discovered_tools: Dict[str, List[MCPToolAdapter]] = {}
+        self._discovery_degraded: set[str] = set()
 
     def register_server(self, config: MCPServerConfig) -> None:
         """Register an MCP server configuration."""
@@ -69,6 +70,7 @@ class MCPClientManager:
                     if hasattr(self.registry, "_tools") and tool.name in self.registry._tools:
                         del self.registry._tools[tool.name]
                 del self._discovered_tools[server_id]
+            self._discovery_degraded.discard(server_id)
             del self._servers[server_id]
             self.registry.unregister_capability_provider(f"mcp.{server_id}")
             logger.info(f"Unregistered MCP server '{server_id}'", extra={"server_id": server_id})
@@ -254,6 +256,10 @@ class MCPClientManager:
             self._discovered_tools[server_id] = adapters
             discovered_names = {adapter.name for adapter in adapters}
             missing_declared_tools = set(config.capabilities_by_tool) - {adapter.mcp_tool_name for adapter in adapters}
+            if missing_declared_tools:
+                self._discovery_degraded.add(server_id)
+            else:
+                self._discovery_degraded.discard(server_id)
             self._sync_provider_metadata(
                 config,
                 CapabilityProviderHealth.DEGRADED if missing_declared_tools else CapabilityProviderHealth.HEALTHY,
@@ -266,6 +272,7 @@ class MCPClientManager:
             return adapters
 
         except Exception as e:
+            self._discovery_degraded.discard(server_id)
             self._sync_provider_metadata(config, CapabilityProviderHealth.UNAVAILABLE)
             logger.error(
                 f"Server-level failure during tool discovery on MCP server '{server_id}': {e}",
@@ -276,6 +283,35 @@ class MCPClientManager:
             return []
 
     async def call_tool(
+        self,
+        server_id: str,
+        tool_name: str,
+        arguments: Dict[str, Any],
+    ) -> ToolResult:
+        """Execute a tool and keep provider health aligned with transport outcomes."""
+        result = await self._call_tool(server_id, tool_name, arguments)
+        config = self._servers.get(server_id)
+        if config is None or not config.enabled:
+            return result
+
+        error_category = result.metadata.get("error_category") if result.metadata else None
+        if result.success:
+            health = (
+                CapabilityProviderHealth.DEGRADED
+                if server_id in self._discovery_degraded
+                else CapabilityProviderHealth.HEALTHY
+            )
+        elif error_category in {"timeout", "mcp_server_error"}:
+            health = CapabilityProviderHealth.DEGRADED
+        else:
+            # Validation, policy, and tool-level errors say nothing about transport health.
+            return result
+
+        discovered_names = {tool.name for tool in self._discovered_tools.get(server_id, [])}
+        self._sync_provider_metadata(config, health, discovered_names)
+        return result
+
+    async def _call_tool(
         self,
         server_id: str,
         tool_name: str,

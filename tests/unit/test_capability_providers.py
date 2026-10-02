@@ -13,6 +13,7 @@ from app.capabilities.registry import (
 )
 from app.mcp.config import MCPServerConfig, MCPTransportType
 from app.mcp.manager import MCPClientManager
+from app.tools.base import ToolResult
 from app.tools.registry import ToolRegistry
 
 
@@ -169,6 +170,12 @@ async def test_mcp_capability_requires_discovery_of_its_declared_tool():
     discovered = registry.capability_providers.get("mcp.graph-fixture")
     assert discovered is not None and discovered.health == CapabilityProviderHealth.DEGRADED
     assert registry.resolve_available_capabilities(["code_graph.impact"]) == []
+    discovered_tool = registry.get("mcp_graph-fixture_read_metric")
+    assert discovered_tool is not None
+    result = await discovered_tool.execute({"metric_name": "disk_space"})
+    assert result.success is True
+    still_degraded = registry.capability_providers.get("mcp.graph-fixture")
+    assert still_degraded is not None and still_degraded.health == CapabilityProviderHealth.DEGRADED
     with pytest.raises(UnresolvedCapabilitiesError):
         registry.resolve_capabilities(["code_graph.impact"])
     await manager.disconnect_all()
@@ -207,6 +214,51 @@ async def test_discovered_mcp_capability_reaches_coding_runtime_and_executes():
     assert result.success is True
     assert "graph_nodes" in result.output
 
+    await manager.disconnect_all()
+
+
+@pytest.mark.asyncio
+async def test_mcp_provider_health_tracks_transport_failures_and_recovery(monkeypatch):
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    manager.register_server(MCPServerConfig(
+        id="health-fixture",
+        name="Health fixture",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        allowed_tools=["read_metric"],
+        capabilities_by_tool={"read_metric": ["research.library.search"]},
+    ))
+    await manager.discover_tools("health-fixture")
+
+    async def call_result(result):
+        async def mocked_call(_server_id, _tool_name, _arguments):
+            return result
+        monkeypatch.setattr(manager, "_call_tool", mocked_call)
+        return await manager.call_tool("health-fixture", "read_metric", {})
+
+    business_error = ToolResult(success=False, output="", error="invalid query", metadata={})
+    await call_result(business_error)
+    provider = registry.capability_providers.get("mcp.health-fixture")
+    assert provider is not None and provider.health == CapabilityProviderHealth.HEALTHY
+
+    transport_error = ToolResult(
+        success=False,
+        output="",
+        error="connection dropped",
+        metadata={"error_category": "mcp_server_error"},
+    )
+    await call_result(transport_error)
+    provider = registry.capability_providers.get("mcp.health-fixture")
+    assert provider is not None and provider.health == CapabilityProviderHealth.DEGRADED
+    assert provider.health_checked_at is not None
+    assert registry.resolve_available_capabilities(["research.library.search"]) == ["mcp_health-fixture_read_metric"]
+
+    await call_result(ToolResult(success=True, output="ok", error=None, metadata={}))
+    provider = registry.capability_providers.get("mcp.health-fixture")
+    assert provider is not None and provider.health == CapabilityProviderHealth.HEALTHY
     await manager.disconnect_all()
 
 
