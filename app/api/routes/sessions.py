@@ -41,7 +41,9 @@ async def get_session_details(
     db: AsyncSession = Depends(get_db),
 ) -> SessionDetailResponse:
     """Inspect conversation history and state of a session."""
-    session = await mem_service.get_or_create_session(session_id)
+    session = await db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
     messages = await mem_service.get_session_messages(session_id, limit=100)
     message_ids = [message.id for message in messages]
     run_id_by_message: dict[str, str] = {}
