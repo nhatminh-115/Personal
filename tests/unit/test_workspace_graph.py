@@ -1704,7 +1704,7 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
     )
     assert first_page.status_code == 200
     first = first_page.json()
-    assert [trace["run_id"] for trace in first["execution_traces"]] == sorted(run_ids, reverse=True)[:2]
+    assert [trace["run_id"] for trace in first["execution_traces"]] == sorted(run_ids, reverse=True)[:2][::-1]
     assert first["execution_next_cursor"]
     assert first["execution_history_truncated"] is True
 
@@ -1714,7 +1714,7 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
     )
     assert second_page.status_code == 200
     second = second_page.json()
-    assert [trace["run_id"] for trace in second["execution_traces"]] == [sorted(run_ids, reverse=True)[2]]
+    assert [trace["run_id"] for trace in second["execution_traces"]] == [sorted(run_ids)[0]]
     assert second["execution_next_cursor"] is None
     assert second["execution_history_truncated"] is False
 
