@@ -107,9 +107,11 @@ class AssembledContext(BaseModel):
 def _apply_memory_privacy(context: AssembledContext, memory: MemoryModel, memory_kind: str) -> None:
     metadata = memory.metadata_json if isinstance(memory.metadata_json, dict) else {}
     classification = metadata.get("privacy_policy")
-    if classification is not None and (
-        not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER
-    ):
+    if classification is None:
+        # Data written before privacy metadata was durable has an unknown origin.
+        # Keep it on-device instead of silently treating it as public context.
+        classification = "local_only"
+    if not isinstance(classification, str) or classification not in PRIVACY_REQUIREMENT_ORDER:
         raise ContextSelectionError(
             f"{memory_kind} has an unsupported privacy classification.",
             {"memory_id": memory.id, "privacy_policy": classification if isinstance(classification, str) else "unknown"},
