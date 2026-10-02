@@ -938,7 +938,10 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
         # Save assistant final response if run completed or cancelled
         if state.get("execution_status") in {RunStatus.COMPLETED.value, RunStatus.CANCELLED.value}:
             assistant_message = await mem_service.save_message(
-                state["session_id"], role="assistant", content=final_resp, metadata={"run_id": state["run_id"]}
+                state["session_id"],
+                role="assistant",
+                content=final_resp,
+                metadata={"run_id": state["run_id"], "privacy_policy": privacy_policy},
             )
             persisted_assistant_message_id = assistant_message.id
 
