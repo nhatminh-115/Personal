@@ -58,7 +58,8 @@ describe('Persistent workspace graph Board projection', () => {
         events: [{ id: 'older-event', event_type: 'run_completed', created_at: '2026-10-01T00:00:00Z' }],
       }],
     };
-    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(savedGraph);
+    const initialGraph: WorkspaceGraph = { ...savedGraph, ...recentGraph };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(initialGraph);
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceExecutionHistory').mockImplementation(async (_projectName, cursor) => cursor ? olderGraph : recentGraph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
 
