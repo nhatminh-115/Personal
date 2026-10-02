@@ -9,6 +9,9 @@ from app.core.errors import ToolExecutionError, WorkspaceEscapeError
 from app.sandbox.workspace import resolve_workspace_path
 from app.tools.base import RiskLevel, Tool, ToolResult
 
+MAX_WORKSPACE_FILE_READ_BYTES = 256 * 1024
+MAX_WORKSPACE_DIRECTORY_ENTRIES = 500
+
 
 class ListWorkspaceFilesTool(Tool):
     """List files and directories inside the workspace sandbox."""
@@ -19,7 +22,10 @@ class ListWorkspaceFilesTool(Tool):
 
     @property
     def description(self) -> str:
-        return "List files and directories in the given workspace subpath."
+        return (
+            f"List up to {MAX_WORKSPACE_DIRECTORY_ENTRIES} files and directories in the given workspace subpath. "
+            "Choose a narrower subpath when a directory is larger."
+        )
 
     @property
     def required_capabilities(self) -> List[str]:
@@ -60,8 +66,22 @@ class ListWorkspaceFilesTool(Tool):
                     error=f"Path '{subpath}' is not a directory.",
                 )
 
+            entry_names = []
+            with os.scandir(target_dir) as iterator:
+                for entry in iterator:
+                    entry_names.append(entry.name)
+                    if len(entry_names) > MAX_WORKSPACE_DIRECTORY_ENTRIES:
+                        return ToolResult(
+                            success=False,
+                            output="",
+                            error=(
+                                f"Directory contains more than {MAX_WORKSPACE_DIRECTORY_ENTRIES} entries; "
+                                "list a narrower subpath."
+                            ),
+                        )
+
             entries = []
-            for entry in sorted(os.listdir(target_dir)):
+            for entry in sorted(entry_names):
                 entry_path = target_dir / entry
                 kind = "dir" if entry_path.is_dir() else "file"
                 entries.append(f"[{kind}] {entry}")
@@ -87,7 +107,10 @@ class ReadWorkspaceFileTool(Tool):
 
     @property
     def description(self) -> str:
-        return "Read the complete UTF-8 contents of a file located within the workspace."
+        return (
+            f"Read a regular UTF-8 file of up to {MAX_WORKSPACE_FILE_READ_BYTES} bytes "
+            "located within the workspace."
+        )
 
     @property
     def required_capabilities(self) -> List[str]:
@@ -123,18 +146,30 @@ class ReadWorkspaceFileTool(Tool):
                     output="",
                     error=f"File '{path}' does not exist in workspace.",
                 )
-            if target_file.is_dir():
+            if not target_file.is_file():
                 return ToolResult(
                     success=False,
                     output="",
-                    error=f"Target path '{path}' is a directory, not a file.",
+                    error=f"Target path '{path}' is not a regular file.",
                 )
 
-            content = target_file.read_text(encoding="utf-8", errors="replace")
+            with target_file.open("rb") as file_handle:
+                content_bytes = file_handle.read(MAX_WORKSPACE_FILE_READ_BYTES + 1)
+            if len(content_bytes) > MAX_WORKSPACE_FILE_READ_BYTES:
+                return ToolResult(
+                    success=False,
+                    output="",
+                    error=(
+                        f"File exceeds the {MAX_WORKSPACE_FILE_READ_BYTES}-byte read limit; "
+                        "use a narrower file or inspect it through the sandbox."
+                    ),
+                )
+
+            content = content_bytes.decode("utf-8", errors="replace")
             return ToolResult(
                 success=True,
                 output=content,
-                metadata={"path": str(path), "bytes": len(content)},
+                metadata={"path": str(path), "bytes": len(content_bytes)},
             )
         except WorkspaceEscapeError as e:
             return ToolResult(success=False, output="", error=str(e))
