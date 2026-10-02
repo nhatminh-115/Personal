@@ -43,6 +43,7 @@ export function SmartEdge({
   const isSemantic = kind === 'semantic';
   const isContext = kind === 'context';
   const isExecution = kind === 'execution';
+  const isSelectedContextProvenance = isExecution && data?.contextOrigin === 'selected';
 
   const pathResult = isSemantic
     ? getBezierPath({
@@ -69,7 +70,7 @@ export function SmartEdge({
   const label = getEdgeLabel(kind, data?.relationType);
   const stroke = selected
     ? '#89dceb'
-    : isContext
+    : isSelectedContextProvenance || isContext
       ? '#61c8db'
       : isExecution
         ? '#4f7680'
@@ -86,9 +87,9 @@ export function SmartEdge({
         interactionWidth={22}
         style={{
           stroke,
-          strokeWidth: selected ? 2.3 : isContext ? 2.05 : isExecution ? 1.35 : isSemantic ? 1.1 : 1.35,
-          strokeDasharray: isSemantic ? '5 7' : isExecution ? '4 5' : undefined,
-          opacity: selected ? 1 : isSemantic ? 0.64 : 0.9,
+          strokeWidth: selected ? 2.3 : isContext ? 2.05 : isSelectedContextProvenance ? 1.8 : isExecution ? 1.35 : isSemantic ? 1.1 : 1.35,
+          strokeDasharray: isSemantic ? '5 7' : isExecution && !isSelectedContextProvenance ? '4 5' : undefined,
+          opacity: selected ? 1 : isSelectedContextProvenance ? 0.95 : isSemantic ? 0.64 : 0.9,
         }}
       />
 
