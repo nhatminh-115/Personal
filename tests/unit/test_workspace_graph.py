@@ -1027,3 +1027,58 @@ async def test_workspace_edge_batch_restore_preserves_ids_and_rejects_invalid_ba
     assert context.json()["id"] in graph_ids
     assert "40000000-0000-4000-8000-000000000001" not in graph_ids
     assert "40000000-0000-4000-8000-000000000002" not in graph_ids
+
+
+@pytest.mark.asyncio
+async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections_and_source_privacy(
+    async_client,
+    test_db_session,
+):
+    from sqlalchemy import func, select
+    from app.db.models import RunModel
+
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Private source note",
+        "content": "Full source detail must stay behind the bridge.",
+        "metadata_json": {"privacy_policy": "local_only"},
+    })
+    assert source.status_code == 201
+    bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_bridge",
+        "title": "Reviewed handoff",
+        "content": "Carry the reviewed finding.",
+        "metadata_json": {
+            "bridge_options": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
+            "bridge_sections": {
+                "conclusions": "The regression test passes.",
+                "observations": "This section is not selected.",
+                "failed": "",
+                "artifacts": "",
+            },
+        },
+        "source_object_ids": [source.json()["id"]],
+    })
+    assert bridge.status_code == 201
+    runs_before = await test_db_session.scalar(select(func.count()).select_from(RunModel))
+
+    response = await async_client.post(
+        "/v1/workspace/projects/aura/context/preview",
+        json={"selected_object_ids": [bridge.json()["id"]]},
+    )
+
+    assert response.status_code == 200
+    preview = response.json()
+    assert preview["estimated_tokens"] > 0
+    assert preview["privacy_requirement"] == "local_only"
+    assert preview["objects"] == [{
+        "object_id": bridge.json()["id"],
+        "object_type": "context_bridge",
+        "selected_by_user": True,
+        "source_object_ids": [source.json()["id"]],
+        "selected_sections": {"conclusions": True, "observations": False, "failed": False, "artifacts": False},
+    }]
+    assert "The regression test passes." in preview["prompt_text"]
+    assert "This section is not selected." not in preview["prompt_text"]
+    assert "Full source detail must stay behind the bridge." not in preview["prompt_text"]
+    assert await test_db_session.scalar(select(func.count()).select_from(RunModel)) == runs_before
