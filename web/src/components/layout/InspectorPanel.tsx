@@ -28,6 +28,10 @@ export interface InspectorPanelProps {
   routingData?: RunRoutingDecision[] | null;
   researchData?: ResearchInspectorData | null;
   memories?: MemoryItem[];
+  memoryNextCursor?: string | null;
+  memoryPageLoading?: boolean;
+  memoryPageError?: string | null;
+  onLoadMoreMemories?: () => Promise<void>;
   onClose: () => void;
   onContextSelect?: (nodeId: string) => void;
 }
@@ -51,6 +55,10 @@ export function InspectorPanel({
   routingData,
   researchData,
   memories = [],
+  memoryNextCursor,
+  memoryPageLoading = false,
+  memoryPageError,
+  onLoadMoreMemories,
   onClose,
   onContextSelect,
 }: InspectorPanelProps) {
@@ -379,8 +387,8 @@ export function InspectorPanel({
           <div data-testid="inspector-memory">
             <div className="inspector-kpi">
               <span>Project Memory</span>
-              <strong>{memories.length} Persisted Items</strong>
-              <small>Retrieved from /v1/memory</small>
+              <strong>Showing {memories.length} item{memories.length === 1 ? '' : 's'}</strong>
+              <small>Persisted project memory · /v1/memory</small>
             </div>
             <div style={{ marginTop: 12 }}>
               {memories.length > 0 ? (
@@ -405,9 +413,21 @@ export function InspectorPanel({
                 ))
               ) : (
                 <div style={{ color: '#68808e', fontSize: 11.5, padding: 12 }}>
-                  No memories stored for this project yet.
+                  {memoryPageLoading ? 'Loading project memories…' : 'No memories stored for this project yet.'}
                 </div>
               )}
+              {memoryPageError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryPageError}</div> : null}
+              {memoryNextCursor || memoryPageError ? (
+                <button
+                  className="secondary-button"
+                  type="button"
+                  disabled={memoryPageLoading}
+                  onClick={() => { void onLoadMoreMemories?.(); }}
+                  style={{ margin: '8px 12px', fontSize: 10 }}
+                >
+                  {memoryPageLoading ? 'Loading…' : memoryPageError ? (memoryNextCursor ? 'Retry loading older memories' : 'Retry loading memories') : 'Load older memories'}
+                </button>
+              ) : null}
             </div>
           </div>
         ) : null}

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel
+from app.db.models import MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel
 
 
 @pytest.mark.asyncio
@@ -164,6 +164,40 @@ async def test_session_history_uses_cursor_pages_without_overlap(async_client: A
     assert {message["id"] for message in first_page["messages"]}.isdisjoint(
         message["id"] for message in second_page["messages"]
     )
+
+
+@pytest.mark.asyncio
+async def test_memory_inspector_uses_cursor_pages_without_overlap(async_client: AsyncClient, test_db_session):
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add_all([
+        MemoryModel(
+            id=str(index + 1).zfill(36),
+            memory_type="semantic",
+            project_name="Memory Pagination Project",
+            key=f"memory-{index:02d}",
+            content=f"Memory content {index}",
+            created_at=base_time + timedelta(seconds=index),
+        )
+        for index in range(31)
+    ])
+    await test_db_session.commit()
+
+    first_response = await async_client.get("/v1/memory", params={"project_name": "Memory Pagination Project"})
+    assert first_response.status_code == 200
+    first_page = first_response.json()
+    assert [item["key"] for item in first_page] == [f"memory-{index:02d}" for index in range(30, 5, -1)]
+    cursor = first_response.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second_response = await async_client.get(
+        "/v1/memory",
+        params={"project_name": "Memory Pagination Project", "cursor": cursor},
+    )
+    assert second_response.status_code == 200
+    second_page = second_response.json()
+    assert [item["key"] for item in second_page] == [f"memory-{index:02d}" for index in range(5, -1, -1)]
+    assert {item["id"] for item in first_page}.isdisjoint(item["id"] for item in second_page)
+    assert second_response.headers.get("X-Next-Cursor") is None
 
 
 @pytest.mark.asyncio

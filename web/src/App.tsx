@@ -375,7 +375,29 @@ export default function App() {
   const [effectiveRouting, setEffectiveRouting] = useState<EffectiveRouting | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [memoryNextCursor, setMemoryNextCursor] = useState<string | null>(null);
+  const [memoryPageLoading, setMemoryPageLoading] = useState(false);
+  const [memoryPageError, setMemoryPageError] = useState<string | null>(null);
+  const memoryPageRequestId = useRef(0);
   const [threadRoutingOverrides, setThreadRoutingOverrides] = useState<Record<string, { model: string | null; reasoning: ReasoningEffort | null }>>({});
+
+  const loadMemoryPage = useCallback(async (projectName: string, cursor?: string | null, append = false) => {
+    const requestId = ++memoryPageRequestId.current;
+    setMemoryPageLoading(true);
+    setMemoryPageError(null);
+    try {
+      const page = await api.fetchMemories(projectName, undefined, cursor);
+      if (requestId !== memoryPageRequestId.current) return;
+      setMemories((current) => append
+        ? [...current, ...page.items.filter((item) => !current.some((loaded) => loaded.id === item.id))]
+        : page.items);
+      setMemoryNextCursor(page.nextCursor);
+    } catch {
+      if (requestId === memoryPageRequestId.current) setMemoryPageError('Could not load project memories. Retry to continue.');
+    } finally {
+      if (requestId === memoryPageRequestId.current) setMemoryPageLoading(false);
+    }
+  }, []);
 
   const openRoutingStudio = () => {
     setRoutingOpen(false);
@@ -394,6 +416,12 @@ export default function App() {
     ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null })
     : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null };
   const activeThread = chatThreads.find((thread) => thread.id === activeThreadId) ?? null;
+
+  const loadMoreMemories = useCallback(async () => {
+    if (!activeProject?.name || memoryPageLoading) return;
+    const append = Boolean(memoryNextCursor && memories.length > 0);
+    await loadMemoryPage(activeProject.name, append ? memoryNextCursor : null, append);
+  }, [activeProject?.name, loadMemoryPage, memories.length, memoryNextCursor, memoryPageLoading]);
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
 
@@ -467,10 +495,18 @@ export default function App() {
   }, [activeProject?.name, activeThread?.id, activeThread?.sessionId, sessionAvailable]);
 
   useEffect(() => {
-    if (activeProject?.name) {
-      api.fetchMemories(activeProject.name).then(setMemories).catch(() => setMemories([]));
+    if (!activeProject?.name) {
+      memoryPageRequestId.current += 1;
+      setMemories([]);
+      setMemoryNextCursor(null);
+      setMemoryPageLoading(false);
+      setMemoryPageError(null);
+      return;
     }
-  }, [activeProject?.name]);
+    setMemories([]);
+    setMemoryNextCursor(null);
+    void loadMemoryPage(activeProject.name);
+  }, [activeProject?.name, loadMemoryPage]);
 
   const refreshInspectorData = useCallback(async (originatingThreadId: string, runId: string) => {
     try {
@@ -1103,9 +1139,7 @@ export default function App() {
         }
 
         api.fetchSessions().then(setSessions).catch(() => {});
-        if (activeProject?.name) {
-          api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
-        }
+        if (activeProject?.name) void loadMemoryPage(activeProject.name);
       } catch (err: any) {
         patchThreadLive(originatingThreadId, { runStatus: 'failed' });
         const errorMsg: ChatMessage = {
@@ -1128,6 +1162,7 @@ export default function App() {
       activeThreadOverrides,
       updateThreadMessages,
       refreshInspectorData,
+      loadMemoryPage,
       pushToast,
     ]
   );
@@ -1546,7 +1581,7 @@ export default function App() {
           void refreshInspectorData(originatingThreadId, runId);
         }
         if (activeProject?.name) {
-          api.fetchMemories(activeProject.name).then(setMemories).catch(() => {});
+          void loadMemoryPage(activeProject.name);
         }
       } catch (err: any) {
         patchThreadLive(originatingThreadId, { runStatus: 'failed' });
@@ -1561,6 +1596,7 @@ export default function App() {
       updateThreadMessages,
       refreshInspectorData,
       activeProject?.name,
+      loadMemoryPage,
     ]
   );
 
@@ -2089,6 +2125,10 @@ export default function App() {
             routingData={activeThreadLive.routingData}
             researchData={activeThreadLive.researchData}
             memories={memories}
+            memoryNextCursor={memoryNextCursor}
+            memoryPageLoading={memoryPageLoading}
+            memoryPageError={memoryPageError}
+            onLoadMoreMemories={loadMoreMemories}
             onClose={() => setInspectorOpen(false)}
             onContextSelect={openBoardNode}
           />
