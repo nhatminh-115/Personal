@@ -422,7 +422,7 @@ async def preview_workspace_context(
 ) -> WorkspaceContextPreviewResponse:
     """Compile selected project context for inspection without invoking a model or writing data."""
     compiled = await WorkspaceContextCompiler(db).compile(project_name, body.selected_object_ids)
-    _model_caps, tool_capabilities, _flags = split_context_capabilities(compiled.required_capabilities)
+    _model_caps, tool_capabilities, capability_flags = split_context_capabilities(compiled.required_capabilities)
     available_capabilities: list[str] = []
     missing_capabilities: list[str] = []
     if tool_capabilities:
@@ -436,6 +436,7 @@ async def preview_workspace_context(
         **compiled.model_dump(),
         "available_capabilities": available_capabilities,
         "missing_capabilities": missing_capabilities,
+        "requires_tools": compiled.requires_tools or capability_flags["requires_tools"] or bool(tool_capabilities),
     })
 
 
