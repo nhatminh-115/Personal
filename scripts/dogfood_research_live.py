@@ -50,10 +50,6 @@ RESEARCH_WORKLOAD = (
 )
 PROJECT_NAME = "Stateful_LLM_Architecture"
 
-DOGFOOD_DATABASE_URL = "sqlite+aiosqlite:///aura_dogfood_live.db"
-DOGFOOD_CHECKPOINT_DB_PATH = "./aura_dogfood_live_checkpoints.db"
-
-
 def validate_live_dogfood_environment() -> None:
     """Enforces fail-fast guards for live dogfood execution."""
     research_provider_mode = os.environ.get("RESEARCH_PROVIDER_MODE", "").lower()
@@ -92,26 +88,47 @@ def validate_live_dogfood_environment() -> None:
         sys.exit(1)
 
 
-def configure_dogfood_runtime() -> None:
-    """Configures the isolated dogfood environment and initializes runtime singletons."""
-    os.environ["DATABASE_URL"] = DOGFOOD_DATABASE_URL
-    os.environ["CHECKPOINT_DB_PATH"] = DOGFOOD_CHECKPOINT_DB_PATH
+def configure_dogfood_runtime(run_key: str, state_dir: Path | None = None) -> tuple[str, Path]:
+    """Configure unique run-scoped storage without deleting prior dogfood evidence."""
+    from sqlalchemy.engine import URL
 
-    # Clean up previous dogfood db artifacts if any
-    for p in ["aura_dogfood_live.db", "aura_dogfood_live_checkpoints.db"]:
-        if os.path.exists(p):
-            try:
-                os.remove(p)
-            except OSError:
-                pass
+    data_dir = Path(state_dir or ".aura_dogfood").resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    database_path = data_dir / f"research-{run_key}.db"
+    checkpoint_path = data_dir / f"research-{run_key}-checkpoints.db"
+    database_url = URL.create(
+        "sqlite+aiosqlite", database=str(database_path)
+    ).render_as_string(hide_password=False)
+    os.environ["DATABASE_URL"] = database_url
+    os.environ["CHECKPOINT_DB_PATH"] = str(checkpoint_path)
 
     from app.core.settings import settings
-    settings.DATABASE_URL = DOGFOOD_DATABASE_URL
-    settings.CHECKPOINT_DB_PATH = Path(DOGFOOD_CHECKPOINT_DB_PATH).resolve()
+    settings.DATABASE_URL = database_url
+    settings.CHECKPOINT_DB_PATH = checkpoint_path
 
     from app.db import session as db_session
-    db_session.configure_engine(DOGFOOD_DATABASE_URL)
+    db_session.configure_engine(database_url)
+    return database_url, checkpoint_path
 
+
+def pending_approval_report(run_id: str, approval_id: str) -> Dict[str, Any]:
+    """Describe a paused live run without approving or recording a decision."""
+    return {
+        "scenario": "research_live_dogfood",
+        "run_id": run_id,
+        "status": "waiting_for_approval",
+        "approval_id": approval_id,
+        "approval_decision_submitted": False,
+    }
+
+
+def write_pending_approval_report(run_id: str, approval_id: str, output_dir: Path | None = None) -> Path:
+    report = pending_approval_report(run_id, approval_id)
+    directory = Path(output_dir or "artifacts/dogfood").resolve()
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"research-pending-approval-{run_id}.json"
+    path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return path
 
 async def audit_dogfood_run(
     parent_run_id: str,
@@ -287,8 +304,9 @@ async def run_live_agent_dogfood():
     # 1. Validate live credentials fail-fast
     validate_live_dogfood_environment()
 
-    # 2. Configure isolated dogfood runtime environment and singletons
-    configure_dogfood_runtime()
+    # 2. Configure unique isolated dogfood runtime state for this run
+    run_key = uuid.uuid4().hex[:12]
+    database_url, checkpoint_path = configure_dogfood_runtime(run_key)
 
     # 3. Only then import modules that depend on settings/runtime
     from app.api.server import create_app, lifespan
@@ -302,8 +320,8 @@ async def run_live_agent_dogfood():
     print(f"Model Provider        : {settings.MODEL_PROVIDER} ({settings.OPENAI_MODEL_NAME})")
     print(f"Research Provider Mode: {settings.RESEARCH_PROVIDER_MODE} (Live Semantic Scholar + arXiv)")
     print(f"Target Project        : {PROJECT_NAME}")
-    print(f"Isolated Database URL : {settings.DATABASE_URL}")
-    print(f"Isolated Checkpoints  : {settings.CHECKPOINT_DB_PATH}")
+    print(f"Isolated Database URL : {database_url}")
+    print(f"Isolated Checkpoints  : {checkpoint_path}")
     print("=" * 80)
 
     # Initialize checkpointer against isolated path
@@ -342,35 +360,11 @@ async def run_live_agent_dogfood():
 
             print(f" -> Initial /v1/chat returned status='{run_status}' in {chat_duration:.2f}s (run_id='{parent_run_id}')")
 
-            # Handle approval flow via real API contract: POST /v1/approvals/{approval_id}/decision
-            approval_cycles = 0
-            max_approval_cycles = 10
-            current_approval_id = chat_response_data.get("approval_id")
-
-            while run_status == "waiting_for_approval" and current_approval_id and approval_cycles < max_approval_cycles:
-                approval_cycles += 1
-                print(f"\n[Approval {approval_cycles}/{max_approval_cycles}] Run requires authorization (approval_id='{current_approval_id}'). Submitting approval decision...")
-                appr_resp = await client.post(
-                    f"/v1/approvals/{current_approval_id}/decision",
-                    json={
-                        "decision": "approved",
-                        "decision_notes": "Live dogfood approval",
-                    },
-                )
-                if appr_resp.status_code != 200:
-                    print(f"[ERROR] /v1/approvals/{current_approval_id}/decision failed: {appr_resp.text}")
-                    sys.exit(1)
-
-                decision_data = appr_resp.json()
-                run_status = decision_data.get("execution_status")
-                current_approval_id = decision_data.get("approval_id") if run_status == "waiting_for_approval" else None
-                if decision_data.get("final_response"):
-                    chat_response_data["response"] = decision_data.get("final_response")
-                print(f" -> Decision processed. Execution status='{run_status}'")
-
-            if run_status == "waiting_for_approval":
-                print("[ERROR] Max approval cycles reached but run is still waiting for approval.")
-                sys.exit(1)
+            pending_approval_id = (
+                chat_response_data.get("approval_id")
+                if run_status == "waiting_for_approval"
+                else None
+            )
 
     print("\n" + "-" * 80)
     print("ROOT ORCHESTRATOR SYNTHESIS RESPONSE:")
@@ -378,6 +372,15 @@ async def run_live_agent_dogfood():
     final_text = chat_response_data.get("response", "")
     print(final_text if final_text else "[No response text returned]")
     print("-" * 80)
+
+    if pending_approval_id:
+        pending_report = write_pending_approval_report(parent_run_id, pending_approval_id)
+        print(
+            "LIVE DOGFOOD PAUSED FOR HUMAN APPROVAL — "
+            f"approval_id={pending_approval_id}. No decision was submitted."
+        )
+        print(f"Pending approval artifact: {pending_report}")
+        raise SystemExit(2)
 
     # --------------------------------------------------------------------------
     # 2. POST-RUN VERIFICATION & AUDIT TRACE INSPECTION
