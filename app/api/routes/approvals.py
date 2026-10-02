@@ -1,6 +1,6 @@
 import asyncio
 from typing import Any, Dict, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from langgraph.types import Command
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +17,7 @@ from app.api.schemas import (
     ApprovalDecisionResponse,
     ApprovalResponse,
 )
+from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
 from app.approvals.service import ApprovalService
 from app.core.errors import ApprovalNotFoundError
 from app.core.logging import logger
@@ -57,10 +58,23 @@ def _get_active_interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
 
 @router.get("/pending", response_model=List[ApprovalResponse])
 async def list_pending_approvals(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=10, ge=1, le=25),
     approval_service: ApprovalService = Depends(get_approval_service),
 ) -> List[ApprovalResponse]:
-    """Retrieve all pending approvals requiring user decision."""
-    approvals = await approval_service.get_pending_approvals()
+    """Retrieve one bounded page of pending approvals requiring user decision."""
+    cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor) if cursor is not None else (None, None)
+    approval_rows = await approval_service.get_pending_approvals_page(
+        after_created_at=cursor_created_at,
+        after_id=cursor_id,
+        limit=page_size + 1,
+    )
+    approvals = set_next_cursor_header(
+        response, approval_rows, page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
+    )
     return [
         ApprovalResponse(
             id=a.id,

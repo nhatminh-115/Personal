@@ -54,6 +54,24 @@ class ApprovalService:
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
+    async def get_pending_approvals_page(
+        self,
+        *,
+        after_created_at: Optional[datetime],
+        after_id: Optional[str],
+        limit: int,
+    ) -> List[ApprovalModel]:
+        """Fetch a bounded page of pending approvals in stable creation order."""
+        query = select(ApprovalModel).where(ApprovalModel.status == "pending")
+        if after_created_at is not None and after_id is not None:
+            query = query.where(
+                (ApprovalModel.created_at > after_created_at)
+                | ((ApprovalModel.created_at == after_created_at) & (ApprovalModel.id > after_id))
+            )
+        query = query.order_by(ApprovalModel.created_at.asc(), ApprovalModel.id).limit(limit)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
     async def get_approval_by_run(self, run_id: str) -> Optional[ApprovalModel]:
         """Fetch latest approval associated with a run ID."""
         query = (

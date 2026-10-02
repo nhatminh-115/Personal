@@ -70,6 +70,8 @@ requests to canonical AURA tool names only when a provider explicitly declares
 the mapping. Required capabilities fail closed. Optional capabilities are
 added only when an enabled provider currently supplies matching tools and do
 not block the specialist when unavailable.
+Pending approval reads use stable bounded pages (10 by default, 25 maximum)
+because approval records can carry sizeable tool inputs.
 
 MCP configuration is loaded from `MCP_CONFIG_PATH`. AURA discovers tools,
 applies its local MCP risk policy, validates arguments against the advertised
