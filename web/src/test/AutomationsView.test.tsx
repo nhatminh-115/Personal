@@ -172,6 +172,42 @@ describe('AutomationsView', () => {
     expect(screen.getByText('1 retries')).toBeInTheDocument();
     expect(api.fetchAutomationRuns).toHaveBeenCalledTimes(3);
   });
+  it('inspects persisted routing and filtered events without exposing instructions or raw tool payloads', async () => {
+    vi.clearAllMocks();
+    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue([
+      { event_id: 'event-1', run_id: 'run-history-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 },
+    ]);
+    vi.spyOn(api, 'fetchRunDetails').mockResolvedValue({
+      id: 'run-history-1', session_id: 'automation-session', status: 'completed', user_message: 'private automation instruction',
+      final_response: 'The weekly report is ready.', error_message: undefined, created_at: '2026-10-02T09:00:00Z', updated_at: '2026-10-02T09:01:00Z',
+      events: [
+        { id: 'event-model', event_type: 'model_selected', created_at: '2026-10-02T09:00:01Z', payload: { provider: 'ollama', model: 'qwen-local', agent_role: 'root' } },
+        { id: 'event-tool', event_type: 'tool_executed', created_at: '2026-10-02T09:00:02Z', payload: { tool_name: 'read_workspace_file', success: true, output: 'private raw tool output' } },
+        { id: 'event-thought', event_type: 'assistant_thought', created_at: '2026-10-02T09:00:03Z', payload: { content: 'hidden reasoning' } },
+      ],
+    });
+    vi.spyOn(api, 'fetchRunRouting').mockResolvedValue({
+      run_id: 'run-history-1', decisions: [{
+        run_id: 'run-history-1', snapshot: { winning_scope: 'project' },
+        model_selection: { provider: 'ollama', model: 'qwen-local', agent_role: 'root', winning_scope: 'project' },
+        reasoning_selection: null, fallback_events: [],
+      }],
+    });
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect run' }));
+    expect(await screen.findByRole('dialog', { name: 'Daily digest' })).toBeInTheDocument();
+    expect(screen.getByText('The weekly report is ready.')).toBeInTheDocument();
+    expect(screen.getAllByText('ollama · qwen-local').length).toBeGreaterThan(0);
+    expect(screen.getByText('read_workspace_file · succeeded')).toBeInTheDocument();
+    expect(screen.queryByText('private automation instruction')).not.toBeInTheDocument();
+    expect(screen.queryByText('private raw tool output')).not.toBeInTheDocument();
+    expect(screen.queryByText('hidden reasoning')).not.toBeInTheDocument();
+    expect(screen.getByText(/raw tool payloads are not included/i)).toBeInTheDocument();
+    expect(api.fetchRunDetails).toHaveBeenCalledWith('run-history-1');
+    expect(api.fetchRunRouting).toHaveBeenCalledWith('run-history-1');
+  });
   it('keeps example automations local and only allows live routines to run', () => {
     const onRunNow = vi.fn();
     const onToggle = vi.fn();

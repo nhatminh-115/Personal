@@ -1,6 +1,6 @@
 import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
 import { useRef, useState } from 'react';
-import type { ApprovalDetail } from '../../types';
+import type { ApprovalDetail, RunDetail, RunRoutingDecision, RunEvent } from '../../types';
 import { api } from '../../services/api';
 import type { AutomationRecord, ProjectRecord } from '../../data/workspaceData';
 
@@ -25,6 +25,23 @@ interface AutomationsViewProps {
 const intervalUnits = { minutes: 60, hours: 3600, days: 86400 } as const;
 type IntervalUnit = keyof typeof intervalUnits;
 
+function safeRunEventSummary(event: RunEvent): string | null {
+  const payload = event.payload;
+  const value = (key: string) => typeof payload[key] === 'string' ? payload[key] as string : '';
+  if (event.event_type === 'model_selected') return [value('provider'), value('model')].filter(Boolean).join(' · ') || 'Model selected';
+  if (event.event_type === 'reasoning_effort_selected') return value('selected_effort') || 'Reasoning selected';
+  if (event.event_type === 'tool_requested' || event.event_type === 'tool_executed') {
+    const tool = value('tool_name');
+    if (!tool) return null;
+    return event.event_type === 'tool_executed' ? `${tool} · ${payload.success === true ? 'succeeded' : payload.success === false ? 'failed' : 'finished'}` : `${tool} · requested`;
+  }
+  if (event.event_type.startsWith('delegation_')) return [value('specialist'), value('status')].filter(Boolean).join(' · ') || 'Specialist delegation';
+  if (event.event_type.startsWith('approval_')) return [value('tool_name'), value('risk_level')].filter(Boolean).join(' · ') || event.event_type.replace(/_/g, ' ');
+  if (event.event_type === 'fallback_blocked' || event.event_type === 'fallback_considered') return event.event_type.replace(/_/g, ' ');
+  if (['response_generated', 'run_completed', 'run_failed', 'run_cancelled'].includes(event.event_type)) return event.event_type.replace(/_/g, ' ');
+  return null;
+}
+
 export function AutomationsView({ projects, automations, onCreate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -46,6 +63,9 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [historyByAutomation, setHistoryByAutomation] = useState<Record<string, Awaited<ReturnType<typeof api.fetchAutomationRuns>>>>({});
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState('');
+  const [runReview, setRunReview] = useState<{ automation: AutomationRecord; detail: RunDetail; routing: RunRoutingDecision[] } | null>(null);
+  const [runLoadingId, setRunLoadingId] = useState<string | null>(null);
+  const [runError, setRunError] = useState('');
   const historyRequest = useRef(0);
 
   const loadRunHistory = async (automationId: string) => {
@@ -77,6 +97,19 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
     void loadRunHistory(automation.id);
   };
 
+  const inspectRun = async (automation: AutomationRecord, runId: string) => {
+    if (runLoadingId) return;
+    setRunLoadingId(runId);
+    setRunError('');
+    try {
+      const [detail, routing] = await Promise.all([api.fetchRunDetails(runId), api.fetchRunRouting(runId)]);
+      setRunReview({ automation, detail, routing: routing.decisions });
+    } catch (cause) {
+      setRunError(cause instanceof Error ? cause.message : 'Could not load the automation run.');
+    } finally {
+      setRunLoadingId(null);
+    }
+  };
   const openApprovalReview = async (automation: AutomationRecord) => {
     const runId = automation.latestExecution?.runId;
     if (!runId || automation.latestExecution?.status !== 'waiting_for_approval' || approvalLoading) return;
@@ -204,6 +237,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                         <button type="button" className="secondary-button" onClick={() => void loadRunHistory(automation.id)} disabled={historyLoadingId === automation.id}>{historyLoadingId === automation.id ? 'Refreshing…' : 'Refresh history'}</button>
                         {historyLoadingId === automation.id ? <p>Loading run history…</p> : null}
                         {historyError ? <p className="automation-form-error" role="alert">{historyError}</p> : null}
+                        {runError ? <p className="automation-form-error" role="alert">{runError}</p> : null}
                         {historyByAutomation[automation.id]?.length === 0 ? <p>No runs yet.</p> : null}
                         {historyByAutomation[automation.id]?.length ? (
                           <ol>
@@ -212,6 +246,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                                 <time dateTime={run.queued_at}>{run.queued_at}</time>
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
+                                <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title={run.status === 'queued' ? 'Run details are available after execution starts' : 'Inspect persisted run result and operational provenance'}>{runLoadingId === run.run_id ? 'Loading run…' : run.status === 'queued' ? 'Queued' : 'Inspect run'}</button>
                               </li>
                             ))}
                           </ol>
@@ -229,6 +264,33 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
         })}
       </div>
 
+      {runReview ? (
+        <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !runLoadingId) setRunReview(null); }}>
+          <div className="automation-create-modal automation-run-review" role="dialog" aria-modal="true" aria-labelledby="automation-run-review-title">
+            <div className="modal-head"><div><span className="eyebrow">AUTOMATION RUN</span><strong id="automation-run-review-title">{runReview.automation.name}</strong></div><button className="icon-button" type="button" onClick={() => setRunReview(null)} aria-label="Close run inspector"><X size={15} /></button></div>
+            <div className="automation-run-review__summary"><span>Status</span><strong>{runReview.detail.status.replace(/_/g, ' ')}</strong><span>Run</span><code>{runReview.detail.id}</code><span>Started</span><time dateTime={runReview.detail.created_at}>{runReview.detail.created_at}</time></div>
+            {runReview.detail.final_response ? <section><h3>Result</h3><p className="automation-run-review__result">{runReview.detail.final_response}</p></section> : null}
+            <section><h3>Routing decisions</h3>
+              {runReview.routing.length ? runReview.routing.map((decision) => {
+                const model = decision.model_selection ?? {};
+                const snapshot = decision.snapshot ?? {};
+                const provider = typeof model.provider === 'string' ? model.provider : '';
+                const modelName = typeof model.model === 'string' ? model.model : '';
+                const role = typeof model.agent_role === 'string' ? model.agent_role : typeof snapshot.role === 'string' ? snapshot.role : 'Run';
+                const scope = typeof model.winning_scope === 'string' ? model.winning_scope : typeof snapshot.winning_scope === 'string' ? snapshot.winning_scope : '';
+                return <div key={decision.run_id} className="automation-run-review__decision"><strong>{role}</strong><span>{[provider, modelName].filter(Boolean).join(' · ') || 'No model selection recorded'}</span>{scope ? <small>Scope: {scope}</small> : null}</div>;
+              }) : <p>No routing decisions were recorded.</p>}
+            </section>
+            <section><h3>Execution timeline</h3>
+              {runReview.detail.events.map((event) => {
+                const summary = safeRunEventSummary(event);
+                return summary ? <div key={event.id} className="automation-run-review__event"><time dateTime={event.created_at}>{event.created_at}</time><strong>{event.event_type.replace(/_/g, ' ')}</strong><span>{summary}</span></div> : null;
+              })}
+            </section>
+            <p className="modal-note">Timeline shows filtered operational events. User instructions and raw tool payloads are not included.</p>
+          </div>
+        </div>
+      ) : null}
       {approvalReview ? (
         <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !approvalLoading) setApprovalReview(null); }}>
           <div className="automation-create-modal automation-approval-modal" role="dialog" aria-modal="true" aria-labelledby="automation-approval-title">
