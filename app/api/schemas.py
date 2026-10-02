@@ -1,9 +1,10 @@
 """Pydantic schemas for API request and response DTOs."""
 
+import json
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from app.capabilities.registry import CapabilityProviderMetadata
 
 
@@ -146,6 +147,20 @@ class SessionSummaryResponse(BaseModel):
 
 
 # --- Shared Workspace Object Graph ---
+MAX_WORKSPACE_METADATA_BYTES = 64 * 1024
+MAX_WORKSPACE_LAYOUT_BYTES = 2 * 1024 * 1024
+
+
+def _validate_workspace_json_size(value: Dict[str, Any], max_bytes: int, field_name: str) -> Dict[str, Any]:
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, OverflowError, RecursionError, UnicodeEncodeError) as exc:
+        raise ValueError(f"{field_name} must contain finite JSON values.") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{field_name} must be {max_bytes} bytes or fewer when serialized as JSON.")
+    return value
+
+
 class WorkspaceObjectResponse(BaseModel):
     id: str
     project_name: Optional[str] = None
@@ -168,11 +183,21 @@ class WorkspaceObjectCreate(BaseModel):
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
     source_object_ids: List[str] = Field(default_factory=list, max_length=100)
 
+    @field_validator("metadata_json")
+    @classmethod
+    def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+
 
 class WorkspaceObjectUpdate(BaseModel):
     title: str = Field(max_length=255)
     content: str = Field(max_length=100_000)
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metadata_json")
+    @classmethod
+    def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
 
 
 class WorkspaceNoteWrite(BaseModel):
@@ -342,6 +367,11 @@ class WorkspaceEdgeCreate(BaseModel):
     edge_family: Literal["semantic", "context"]
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("metadata_json")
+    @classmethod
+    def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+
 
 class WorkspaceContextPreviewRequest(BaseModel):
     selected_object_ids: List[str] = Field(min_length=1, max_length=50)
@@ -383,6 +413,11 @@ class WorkspaceEdgeRestoreItem(BaseModel):
     edge_family: Literal["semantic", "context"]
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("metadata_json")
+    @classmethod
+    def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+
 
 class WorkspaceEdgeBatchRestore(BaseModel):
     edges: List[WorkspaceEdgeRestoreItem] = Field(min_length=1, max_length=200)
@@ -391,6 +426,11 @@ class WorkspaceEdgeBatchRestore(BaseModel):
 class WorkspaceLayoutWrite(BaseModel):
     layout: Dict[str, Any]
     expected_revision: int = Field(ge=0)
+
+    @field_validator("layout")
+    @classmethod
+    def validate_layout_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
+        return _validate_workspace_json_size(value, MAX_WORKSPACE_LAYOUT_BYTES, "layout")
 
 
 class WorkspaceLayoutResponse(BaseModel):
