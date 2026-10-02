@@ -54,7 +54,6 @@ import type {
   ModelCatalog,
   ResearchInspectorData,
   RunDetail,
-  SessionSummary,
   ToastMessage,
   WorkspaceNoteRecord,
   StudySessionRecord,
@@ -373,7 +372,10 @@ export default function App() {
   // Live Backend State
   const [catalog, setCatalog] = useState<ModelCatalog>({ providers: [] });
   const [effectiveRouting, setEffectiveRouting] = useState<EffectiveRouting | null>(null);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null);
+  const [sessionPageLoading, setSessionPageLoading] = useState(false);
+  const [sessionPageError, setSessionPageError] = useState<string | null>(null);
+  const sessionPageRequestId = useRef(0);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [memoryNextCursor, setMemoryNextCursor] = useState<string | null>(null);
   const [memoryPageLoading, setMemoryPageLoading] = useState(false);
@@ -398,6 +400,48 @@ export default function App() {
       if (requestId === memoryPageRequestId.current) setMemoryPageLoading(false);
     }
   }, []);
+
+  const loadProjectSessionPage = useCallback(async (project: ProjectRecord, cursor?: string | null, append = false) => {
+    const requestId = ++sessionPageRequestId.current;
+    if (!append) setSessionNextCursor(null);
+    setSessionPageLoading(true);
+    setSessionPageError(null);
+    try {
+      const page = await api.fetchSessions(project.name, cursor);
+      if (requestId !== sessionPageRequestId.current) return;
+      setSessionNextCursor(page.nextCursor);
+      setChatThreads((current) => {
+        const knownSessions = new Set(current.map((thread) => thread.sessionId).filter((id): id is string => Boolean(id)));
+        const restored = page.items
+          .filter((item) => item.project_name === project.name && !knownSessions.has(item.id))
+          .map((item): ChatThreadRecord => ({
+            id: `session-${item.id}`,
+            projectId: project.id,
+            title: item.title && item.title !== 'New Session' ? item.title : 'Restored chat',
+            summary: 'Saved live conversation',
+            updated: new Date(item.updated_at).toLocaleDateString(),
+            messages: [],
+            sessionId: item.id,
+            source: 'live',
+          }));
+        return append ? [...current, ...restored] : [...restored, ...current];
+      });
+    } catch {
+      if (requestId === sessionPageRequestId.current) setSessionPageError('Could not load saved chats. Retry to continue.');
+    } finally {
+      if (requestId === sessionPageRequestId.current) setSessionPageLoading(false);
+    }
+  }, []);
+
+  const loadOlderSessions = useCallback(async () => {
+    if (!activeProject || !sessionNextCursor || sessionPageLoading) return;
+    await loadProjectSessionPage(activeProject, sessionNextCursor, true);
+  }, [activeProject, loadProjectSessionPage, sessionNextCursor, sessionPageLoading]);
+
+  const retryLoadSessions = useCallback(async () => {
+    if (!activeProject || sessionPageLoading) return;
+    await loadProjectSessionPage(activeProject, sessionNextCursor, Boolean(sessionNextCursor));
+  }, [activeProject, loadProjectSessionPage, sessionNextCursor, sessionPageLoading]);
 
   const openRoutingStudio = () => {
     setRoutingOpen(false);
@@ -454,8 +498,13 @@ export default function App() {
 
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
-    api.fetchSessions().then(setSessions).catch(() => []);
   }, []);
+
+  useEffect(() => {
+    if (!activeProject) return;
+    void loadProjectSessionPage(activeProject);
+    return () => { sessionPageRequestId.current += 1; };
+  }, [activeProject?.id, activeProject?.name, loadProjectSessionPage]);
 
   useEffect(() => {
     const thread = activeThread;
@@ -532,7 +581,6 @@ export default function App() {
 
   // Ensure app-level live states are marked as accessed
   void catalog;
-  void sessions;
   void activeThreadLive;
 
   const pushToast = useCallback((title: string, detail?: string) => {
@@ -1138,7 +1186,7 @@ export default function App() {
           void refreshInspectorData(originatingThreadId, resp.run_id);
         }
 
-        api.fetchSessions().then(setSessions).catch(() => {});
+        if (activeProject) void loadProjectSessionPage(activeProject);
         if (activeProject?.name) void loadMemoryPage(activeProject.name);
       } catch (err: any) {
         patchThreadLive(originatingThreadId, { runStatus: 'failed' });
@@ -1160,6 +1208,7 @@ export default function App() {
       chatThreads,
       activeProject?.name,
       activeThreadOverrides,
+      loadProjectSessionPage,
       updateThreadMessages,
       refreshInspectorData,
       loadMemoryPage,
@@ -2019,6 +2068,11 @@ export default function App() {
             onNewThread={newThread}
             onUpdateMessages={updateThreadMessages}
             onLoadOlderMessages={loadOlderMessages}
+            onLoadOlderSessions={loadOlderSessions}
+            onRetryLoadSessions={retryLoadSessions}
+            hasOlderSessions={Boolean(sessionNextCursor)}
+            loadingOlderSessions={sessionPageLoading}
+            sessionLoadError={sessionPageError}
             onMessageFocus={handleChatMessageFocus}
             onBranchFromMessage={handleBranchFromChat}
             onContextObjectFocus={handleChatContextObjectFocus}
@@ -2067,6 +2121,11 @@ export default function App() {
                 onNewThread={newThread}
                 onUpdateMessages={updateThreadMessages}
                 onLoadOlderMessages={loadOlderMessages}
+                onLoadOlderSessions={loadOlderSessions}
+                onRetryLoadSessions={retryLoadSessions}
+                hasOlderSessions={Boolean(sessionNextCursor)}
+                loadingOlderSessions={sessionPageLoading}
+                sessionLoadError={sessionPageError}
                 onMessageFocus={handleChatMessageFocus}
                 onBranchFromMessage={handleBranchFromChat}
                 onContextObjectFocus={handleChatContextObjectFocus}

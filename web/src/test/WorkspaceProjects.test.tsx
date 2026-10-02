@@ -16,7 +16,7 @@ describe('Persistent workspace projects', () => {
       }
       if (url.endsWith('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
-      if (url.endsWith('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       if (url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     });

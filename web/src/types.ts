@@ -180,6 +180,7 @@ export interface ModelProbeResponse {
 export interface SessionSummary {
   id: string;
   title: string;
+  project_name?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -15,7 +15,7 @@ from app.api.dependencies import (
 from app.api.schemas import ChatRequest, ChatResponse
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus
+from app.db.models import RunModel, RunStatus, utc_now
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
@@ -60,7 +60,12 @@ async def chat_endpoint(
         )
 
     # 1. Ensure session exists
-    await mem_service.get_or_create_session(req.session_id)
+    session = await mem_service.get_or_create_session(req.session_id)
+    if session.title in {"New Session", f"Session {session.id[:8]}"}:
+        title = " ".join(req.message.split())
+        if title:
+            session.title = title[:255]
+    session.updated_at = utc_now()
     if req.project_name:
         try:
             await mem_service.attach_session_to_project(req.session_id, req.project_name)

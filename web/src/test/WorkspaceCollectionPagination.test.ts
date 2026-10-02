@@ -13,6 +13,19 @@ describe('workspace collection pagination', () => {
     vi.restoreAllMocks();
   });
 
+  it('fetches project-scoped session pages and tolerates responses without headers', async () => {
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [{ id: 'session-1' }] });
+    vi.stubGlobal('fetch', fetch);
+
+    const page = await api.fetchSessions('Research Project');
+
+    expect(page).toEqual({ items: [{ id: 'session-1' }], nextCursor: null });
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/sessions');
+    expect(url.searchParams.get('project_name')).toBe('Research Project');
+    expect(url.searchParams.get('page_size')).toBe('25');
+  });
+
   it('collects every notes page using the response cursor header', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse([{ id: 'note-1' }, { id: 'note-2' }], 'next-notes'))

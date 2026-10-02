@@ -9,7 +9,7 @@ describe('Persistent personal workspace Notes', () => {
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
-      if (url.endsWith('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       if (url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       if (url.endsWith('/v1/workspace/notes') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
@@ -70,7 +70,7 @@ describe('Persistent personal workspace Notes', () => {
       }]) } as Response);
       if (url.endsWith('/v1/workspace/notes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
-      if (url.endsWith('/v1/sessions') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     });
     await act(async () => { render(<App />); });

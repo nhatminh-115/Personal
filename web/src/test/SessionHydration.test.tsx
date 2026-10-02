@@ -35,8 +35,18 @@ describe('Session Hydration', () => {
       if (url.includes('/v1/memory')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
+      if (url.includes('/v1/sessions?')) {
+        return Promise.resolve({
+          ok: true,
+          headers: { get: () => null },
+          json: () => Promise.resolve([{
+            id: 'restored-session-1', title: 'Recovered conversation', project_name: 'Stateful Architecture',
+            created_at: '2024-01-01', updated_at: '2024-01-02',
+          }]),
+        });
+      }
       // Session list returns one live session
-      if (/\/v1\/sessions$/.test(url)) {
+      if (url.includes('/v1/sessions?')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([{ id: 'live-sess-1', title: 'Live', created_at: '2024-01-01', updated_at: '2024-01-01' }]) });
       }
       // Session detail returns a backend message
@@ -94,13 +104,25 @@ describe('Session Hydration', () => {
     expect(sessionDetailCalls.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('restores backend sessions into the matching project chat rail', async () => {
+    await act(async () => { render(<App />); });
+
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsButton = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsButton); });
+
+    expect(await screen.findByRole('button', { name: /Recovered conversation/ })).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/sessions?page_size=25&project_name=Stateful+Architecture'));
+  });
+
   it('loads older live messages with the next session cursor', async () => {
     const newerMessage = { ...BACKEND_MESSAGE, id: 'newer-message', content: 'Newest page message' };
     const olderMessage = { ...BACKEND_MESSAGE, id: 'older-message', content: 'Older page message' };
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
       if (url.includes('/v1/sessions/live-paged-session')) {
         const olderPage = url.includes('cursor=older-cursor');
         return Promise.resolve({ ok: true, json: () => Promise.resolve({
@@ -137,7 +159,7 @@ describe('Session Hydration', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
       if (url.includes('/v1/sessions/stale-load-session')) return Promise.resolve({ ok: false, status: 503, text: () => Promise.resolve('Unavailable') });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
@@ -164,7 +186,7 @@ describe('Session Hydration', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
       if (url.includes('/v1/routing-confirmations/pending')) {
         const scoped = url.includes('session_id=confirm-session');
         return Promise.resolve({ ok: true, json: () => Promise.resolve(scoped ? [{
@@ -199,7 +221,7 @@ describe('Session Hydration', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
       if (url.includes('/v1/sessions/')) return Promise.resolve({ ok: false, status: 500, text: () => Promise.resolve('Internal Server Error') });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
@@ -261,7 +283,7 @@ describe('Session Hydration', () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
-      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
       if (url.includes('/v1/sessions/live-dedup-sess')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'live-dedup-sess', messages: [backendMsg] }) });
       }

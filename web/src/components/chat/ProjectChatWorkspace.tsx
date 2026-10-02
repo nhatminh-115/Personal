@@ -24,6 +24,11 @@ export interface ProjectChatWorkspaceProps {
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   onContextObjectIdsChange?: (threadId: string, objectIds: string[]) => void;
   onLoadOlderMessages?: (threadId: string) => Promise<void>;
+  onLoadOlderSessions?: () => Promise<void>;
+  onRetryLoadSessions?: () => Promise<void>;
+  hasOlderSessions?: boolean;
+  loadingOlderSessions?: boolean;
+  sessionLoadError?: string | null;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -51,6 +56,11 @@ export function ProjectChatWorkspace({
   onStartLiveChat,
   onContextObjectIdsChange,
   onLoadOlderMessages,
+  onLoadOlderSessions,
+  onRetryLoadSessions,
+  hasOlderSessions = false,
+  loadingOlderSessions = false,
+  sessionLoadError,
   currentApproval,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
@@ -162,6 +172,18 @@ export function ProjectChatWorkspace({
             </button>
           ))}
         </div>
+        {loadingOlderSessions && !hasOlderSessions ? <div className="chat-thread-load-status" role="status">Loading saved chats…</div> : null}
+        {sessionLoadError ? (
+          <div className="chat-thread-load-error" role="alert">
+            <span>{sessionLoadError}</span>
+            <button type="button" disabled={loadingOlderSessions} onClick={() => void onRetryLoadSessions?.()}>Retry</button>
+          </div>
+        ) : null}
+        {hasOlderSessions ? (
+          <button className="chat-thread-load-more" type="button" disabled={loadingOlderSessions} onClick={() => void onLoadOlderSessions?.()}>
+            {loadingOlderSessions ? 'Loading saved chats…' : 'Load older chats'}
+          </button>
+        ) : null}
         <button className="new-chat-card" type="button" onClick={onNewThread}>
           <Sparkles size={14} />
           <span><strong>New chat</strong><small>Starts clean, keeps project context explicit</small></span>

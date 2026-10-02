@@ -20,6 +20,27 @@ const savedGraph: WorkspaceGraph = {
 };
 
 describe('Persistent workspace graph Board projection', () => {
+  it('exposes older saved chats and retries a failed page', () => {
+    const loadOlder = vi.fn().mockResolvedValue(undefined);
+    const retry = vi.fn().mockResolvedValue(undefined);
+    const thread = {
+      id: 'demo-thread', projectId: projects[0].id, title: 'Demo', summary: 'Sample', updated: 'today', messages: [], source: 'demo' as const,
+    };
+    render(
+      <ProjectChatWorkspace
+        project={projects[0]} threads={[thread]} activeThreadId={thread.id} libraryItems={[]} notes={[]}
+        onSelectThread={() => {}} onNewThread={() => {}} onUpdateMessages={() => {}}
+        hasOlderSessions onLoadOlderSessions={loadOlder} sessionLoadError="Could not load saved chats. Retry to continue."
+        onRetryLoadSessions={retry}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load older chats' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(loadOlder).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it('hydrates the project Board from backend objects and does not mix in demo seed nodes', async () => {
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(savedGraph);
     const attachSession = vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
