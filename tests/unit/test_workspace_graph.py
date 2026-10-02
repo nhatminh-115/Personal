@@ -392,7 +392,7 @@ async def test_context_compiler_follows_full_session_branch_ancestry(test_db_ses
     assert continuations[0].created_by == "system"
     assert continuations[0].edge_family == "context"
 
-    first_user, first_answer, second_user, second_answer = messages
+    second_answer = messages[-1]
     compiled = await WorkspaceContextCompiler(test_db_session).compile(
         "aura", [object_by_message[second_answer.id].id]
     )
@@ -409,7 +409,13 @@ async def test_context_compiler_follows_full_session_branch_ancestry(test_db_ses
     latest = await WorkspaceContextCompiler(test_db_session).compile("aura", [live_answer_object.id])
     for content in [*(content for _role, content in history), "Third question", "Third answer"]:
         assert content in latest.prompt_text
-    assert sum(edge.relation_type == "continues" for edge in continuations) == 1
+    all_continuations = list((await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == "aura",
+            WorkspaceEdgeModel.relation_type == "continues",
+        )
+    )).scalars())
+    assert len(all_continuations) == 2
 
 
 @pytest.mark.asyncio
