@@ -355,3 +355,103 @@ async def test_temporary_routing_overrides_propagate_to_specialist_snapshot(
     assert snapshot["reasoning_policy"] == expected_reasoning_policy
     assert snapshot["reasoning_effort"] == expected_reasoning_effort
     assert any(context.run_id == child.id for context in selected_contexts)
+
+
+@pytest.mark.asyncio
+async def test_root_then_child_routing_confirmations_resume_sequentially(
+    async_client, test_db_session, monkeypatch
+):
+    """A root route decision can lead to a separate child decision in one run."""
+    mock_provider = model_router.get_provider("mock")
+    mock_provider.queue_response(ModelResponse(
+        content="The root route is approved; delegate the review.",
+        tool_calls=[ToolCallRequest(
+            id="delegate-after-root-route-confirmation",
+            name="delegate_task",
+            arguments={
+                "specialist_name": "coding",
+                "task_description": "Review this change.",
+            },
+        )],
+    ))
+    mock_provider.queue_response(ModelResponse(content="Child review completed."))
+    mock_provider.queue_response(ModelResponse(content="The review is complete."))
+
+    root_run_id = None
+    contexts = []
+
+    def require_confirmation_per_run(context):
+        nonlocal root_run_id
+        contexts.append(context)
+        if context and root_run_id is None:
+            root_run_id = context.run_id
+        if context and not context.explicit_model_override:
+            raise RoutingConfirmationRequired(
+                "Cloud fallback requires confirmation.",
+                {"proposed_provider": "openai", "proposed_model": "gpt-4o-mini"},
+            )
+        if context and context.explicit_model_override:
+            return mock_provider, ModelSelection(
+                provider_name="mock",
+                model_name="mock-default",
+                reason=f"confirmed route {context.explicit_model_override}",
+            )
+        return mock_provider, ModelSelection(
+            provider_name="mock",
+            model_name="mock-default",
+            reason="deterministic test route",
+        )
+
+    monkeypatch.setattr(model_router, "select_model_for_task", require_confirmation_per_run)
+    started = await async_client.post(
+        "/v1/chat",
+        json={"session_id": "routing-confirm-root-then-child", "message": "Review this change."},
+    )
+    assert started.status_code == 200
+    root_data = started.json()
+    assert root_data["status"] == "waiting_for_routing_confirmation"
+    assert mock_provider.call_history == []
+
+    root_confirmation = await test_db_session.get(
+        RoutingConfirmationModel, root_data["routing_confirmation_id"]
+    )
+    assert root_confirmation.execution_run_id == root_confirmation.root_run_id
+
+    approved_root = await async_client.post(
+        f"/v1/routing-confirmations/{root_confirmation.id}/decision",
+        json={"decision": "approved"},
+    )
+    assert approved_root.status_code == 200
+    root_decision = approved_root.json()
+    assert root_decision["status"] == "approved"
+    assert root_decision["execution_status"] == "waiting_for_routing_confirmation"
+    child_confirmation_id = root_decision["next_routing_confirmation_id"]
+    assert child_confirmation_id
+
+    child_confirmation = await test_db_session.get(
+        RoutingConfirmationModel, child_confirmation_id
+    )
+    assert child_confirmation.root_run_id == root_data["run_id"]
+    assert child_confirmation.execution_run_id != child_confirmation.root_run_id
+    child_run = await test_db_session.get(RunModel, child_confirmation.execution_run_id)
+    assert child_run.status == "waiting_for_routing_confirmation"
+
+    approved_child = await async_client.post(
+        f"/v1/routing-confirmations/{child_confirmation.id}/decision",
+        json={"decision": "approved"},
+    )
+    assert approved_child.status_code == 200
+    assert approved_child.json()["status"] == "approved"
+    assert approved_child.json()["execution_status"] == "completed"
+    assert len(mock_provider.call_history) == 3
+    assert sum(
+        context and context.explicit_model_override == "openai:gpt-4o-mini"
+        for context in contexts
+    ) >= 2
+
+    root_run = await test_db_session.get(RunModel, root_data["run_id"])
+    child_run = await test_db_session.get(RunModel, child_confirmation.execution_run_id)
+    assert root_run.status == "completed"
+    assert child_run.status == "completed"
+    assert root_confirmation.status == "approved"
+    assert child_confirmation.status == "approved"
