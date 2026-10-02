@@ -82,8 +82,6 @@ async def start_study_session(
     body: StudySessionWrite,
     db: AsyncSession = Depends(get_db),
 ) -> StudySessionResponse:
-    await _lock_study_session_creation(db)
-    await _ensure_no_active_study_session(db)
     track_id = body.track_id.strip()
     track_title = body.track_title.strip()
     if not track_id or not track_title:
@@ -126,6 +124,8 @@ async def start_study_session(
         track_id = material.id
         track_title = material.title
         material_project_name = material.project_name if is_verified_research_claim else None
+    await _lock_study_session_creation(db)
+    await _ensure_no_active_study_session(db)
     item = WorkspaceObjectModel(
         project_name=None,
         object_type="study_session",
