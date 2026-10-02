@@ -7,10 +7,10 @@ import sys
 from scripts.dogfood_routing_constraints_live import configured_model, live_environment_error
 
 
-def test_preflight_requires_explicit_non_mock_credentials():
-    assert "MODEL_PROVIDER=openai" in live_environment_error({"MODEL_PROVIDER": "mock", "OPENAI_API_KEY": "secret"})
-    assert "OPENAI_API_KEY" in live_environment_error({"MODEL_PROVIDER": "openai", "OPENAI_API_KEY": ""})
-    assert live_environment_error({"MODEL_PROVIDER": "openai", "OPENAI_API_KEY": "configured"}) is None
+def test_zero_invocation_preview_does_not_require_model_credentials():
+    assert live_environment_error({}) is None
+    assert live_environment_error({"MODEL_PROVIDER": "mock"}) is None
+    assert live_environment_error({"MODEL_PROVIDER": "openai", "OPENAI_API_KEY": ""}) is None
 
 
 def test_configured_model_uses_explicit_provider_kind_and_exact_catalog_id():
