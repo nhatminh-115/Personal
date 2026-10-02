@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
@@ -175,38 +175,81 @@ async def set_automation_enabled(
 
 @router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationRunResponse:
-    result = await db.execute(
-        select(ScheduledJobModel)
-        .where(ScheduledJobModel.id == automation_id)
-        .with_for_update()
-    )
-    job = result.scalar_one_or_none()
+    job = await db.get(ScheduledJobModel, automation_id)
     if job is None or (job.metadata_json or {}).get("kind") != "automation":
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
-    if job.locked_at is not None:
-        raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
-    latest = (await _latest_executions(db, [job])).get(job.id)
-    if latest and latest.status in {
-        "queued",
-        "running",
-        RunStatus.WAITING_FOR_APPROVAL.value,
-        RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
-    }:
-        raise HTTPException(
-            status_code=409,
-            detail="This automation already has a run awaiting execution or completion.",
+
+    now = utc_now()
+    claim_token = f"manual-{uuid.uuid4().hex}"
+    stale_lock_cutoff = now - timedelta(seconds=60)
+    claim = await db.execute(
+        update(ScheduledJobModel)
+        .where(
+            and_(
+                ScheduledJobModel.id == automation_id,
+                ScheduledJobModel.is_active.is_(True),
+                or_(
+                    ScheduledJobModel.locked_at.is_(None),
+                    ScheduledJobModel.locked_at < stale_lock_cutoff,
+                ),
+            )
         )
-    event = AURAEvent(
-        event_type=EventType.TIMER_FIRED.value,
-        source="automation",
-        payload={**(job.payload_json or {}), "manual": True},
-        correlation_id=job.id,
-        idempotency_key=f"automation-manual-{job.id}-{uuid.uuid4()}",
+        .values(locked_at=now, locked_by=claim_token)
+        .execution_options(synchronize_session=False)
     )
-    queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
-    return AutomationRunResponse(event_id=queued.id)
+    await db.commit()
+    if claim.rowcount == 0:
+        current = await db.execute(
+            select(ScheduledJobModel)
+            .where(ScheduledJobModel.id == automation_id)
+            .execution_options(populate_existing=True)
+        )
+        current_job = current.scalar_one_or_none()
+        if current_job is None or (current_job.metadata_json or {}).get("kind") != "automation":
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        if not current_job.is_active:
+            raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
+        raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
+
+    try:
+        current = await db.execute(
+            select(ScheduledJobModel)
+            .where(ScheduledJobModel.id == automation_id)
+            .execution_options(populate_existing=True)
+        )
+        job = current.scalar_one()
+        latest = (await _latest_executions(db, [job])).get(job.id)
+        if latest and latest.status in {
+            "queued",
+            "running",
+            RunStatus.WAITING_FOR_APPROVAL.value,
+            RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
+        }:
+            raise HTTPException(
+                status_code=409,
+                detail="This automation already has a run awaiting execution or completion.",
+            )
+        event = AURAEvent(
+            event_type=EventType.TIMER_FIRED.value,
+            source="automation",
+            payload={**(job.payload_json or {}), "manual": True},
+            correlation_id=job.id,
+            idempotency_key=f"automation-manual-{job.id}-{uuid.uuid4()}",
+        )
+        queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
+        return AutomationRunResponse(event_id=queued.id)
+    finally:
+        await db.execute(
+            update(ScheduledJobModel)
+            .where(
+                ScheduledJobModel.id == automation_id,
+                ScheduledJobModel.locked_by == claim_token,
+            )
+            .values(locked_at=None, locked_by=None)
+        )
+        await db.commit()
 
 @router.get("/{automation_id}/runs", response_model=list[AutomationExecutionResponse])
 async def list_automation_runs(
