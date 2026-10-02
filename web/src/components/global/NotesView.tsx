@@ -76,7 +76,7 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
                   <select
                     aria-label="Note privacy classification"
                     value={active.privacyPolicy ?? ''}
-                    onChange={(event) => updateActive({ privacyPolicy: event.target.value || undefined })}
+                    onChange={(event) => updateActive({ privacyPolicy: event.target.value ? event.target.value as RoutingPrivacy : undefined })}
                   >
                     <option value="">Inherit global</option>
                     <option value="public">Public</option>
