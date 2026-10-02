@@ -241,6 +241,8 @@ function BridgeBody({ id, data }: { id: string; data: AuraNodeData }) {
           ['artifacts', 'Artifacts'],
           ['constraints', 'Constraints'],
           ['decisions', 'Decisions'],
+          ['constraints', 'Constraints'],
+          ['decisions', 'Decisions'],
         ] as const).map(([key, label]) => (
           <label key={key}>
             <input
