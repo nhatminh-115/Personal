@@ -152,7 +152,11 @@ class ContextAssembler:
 
         # 1. Working Memory: Recent conversation turns
         db_msgs = await self.mem_service.get_session_messages(session_id, limit=working_history_limit)
-        context.working_messages = [{"role": m.role, "content": m.content} for m in db_msgs]
+        for message in db_msgs:
+            if not message.content:
+                continue
+            _apply_memory_privacy(context, message, "Conversation history")
+            context.working_messages.append({"role": message.role, "content": message.content})
 
         # 2. Profile Memory: Global preferences (deduplicated by key)
         profile_memory_loader = getattr(self.mem_service, "get_profile_memories", None)
