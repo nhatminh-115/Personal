@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { initialEdges, initialNodes } from '../../data/mockData';
 import { useBoardHistory } from '../../hooks/useBoardHistory';
-import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity } from '../../types';
+import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity, RoutingPrivacy } from '../../types';
 import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
 import { ContextLensBar } from './ContextLensBar';
@@ -493,6 +493,24 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     [recordHistory, setNodes, toast, workspaceProjectName],
   );
 
+  const setPrivacyPolicy = useCallback(
+    (id: string, policy: RoutingPrivacy | null) => {
+      const node = nodesRef.current.find((item) => item.id === id);
+      if (!node || !['manual_note', 'context_bridge'].includes(node.data.workspaceObjectType ?? '')) return;
+      recordHistory();
+      const metadata = { ...(node.data.workspaceMetadata ?? {}) };
+      if (policy) metadata.privacy_policy = policy;
+      else delete metadata.privacy_policy;
+      const updatedNode = { ...node, data: { ...node.data, workspaceMetadata: metadata } };
+      setNodes((current) => current.map((item) => item.id === id ? updatedNode : item));
+      if (workspaceProjectName) {
+        void api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(updatedNode))
+          .catch(() => toast('Privacy setting was not saved', 'The previous saved classification remains active.'));
+      }
+    },
+    [recordHistory, setNodes, toast, workspaceProjectName],
+  );
+
   const updateBridgeOption = useCallback(
     (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => {
       if (!bridgeSectionSaveTimers.current.has(id)) recordHistory();
@@ -659,6 +677,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onCycleDensity: cycleDensity,
           onBranch: addBranch,
           onChangeBody: changeBody,
+          onSetPrivacyPolicy: setPrivacyPolicy,
           onBridgeApply: workspaceProjectName ? undefined : applyBridge,
           onBridgeOption: updateBridgeOption,
           onBridgeSection: updateBridgeSection,
@@ -666,7 +685,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onUseWorkspaceContext: workspaceProjectName ? onUseWorkspaceContext : undefined,
         },
       })),
-    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, onUseWorkspaceContext, updateBridgeOption, updateBridgeSection, workspaceProjectName],
+    [addBranch, applyBridge, changeBody, continueMerge, cycleDensity, executionNodes, layers, nodes, onUseWorkspaceContext, setPrivacyPolicy, updateBridgeOption, updateBridgeSection, workspaceProjectName],
   );
 
   const deleteEdges = useCallback(
