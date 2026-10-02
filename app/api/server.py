@@ -87,6 +87,7 @@ def create_app() -> FastAPI:
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
+        expose_headers=["X-Next-Cursor"],
     )
 
     # Register Routers
