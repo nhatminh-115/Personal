@@ -1253,3 +1253,75 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
     assert compiled["payload"]["resolved_tool_names"] == ["read_workspace_file"]
     assert "code_graph.read" not in selected["payload"]["required_capabilities"]
     assert selected["payload"]["requires_tools"] is True
+
+
+@pytest.mark.asyncio
+async def test_saved_context_set_expands_only_its_sources_in_preview_and_chat(
+    async_client, test_db_session
+):
+    from app.models.base import ModelRole
+    from app.models.router import model_router
+
+    async def create_note(title: str, content: str) -> str:
+        response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+            "object_type": "manual_note",
+            "title": title,
+            "content": content,
+        })
+        assert response.status_code == 201
+        return response.json()["id"]
+
+    first_id = await create_note("Migration constraint", "Keep the schema change reversible.")
+    second_id = await create_note("Deployment decision", "Deploy in two guarded stages.")
+    unrelated_id = await create_note("Unselected note", "Do not include this unrelated decision.")
+
+    saved = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_set",
+        "title": "Migration handoff",
+        "content": "",
+        "metadata_json": {"source_count": 2, "source_titles": ["Migration constraint", "Deployment decision"]},
+        "source_object_ids": [first_id, second_id],
+    })
+    assert saved.status_code == 201
+    context_set_id = saved.json()["id"]
+    assert saved.json()["created_by"] == "user"
+
+    preview = await async_client.post(
+        "/v1/workspace/projects/aura/context/preview",
+        json={"selected_object_ids": [context_set_id]},
+    )
+    assert preview.status_code == 200
+    preview_data = preview.json()
+    assert {item["object_id"] for item in preview_data["objects"]} == {
+        first_id,
+        second_id,
+        context_set_id,
+    }
+    selected = {item["object_id"]: item["selected_by_user"] for item in preview_data["objects"]}
+    assert selected == {first_id: False, second_id: False, context_set_id: True}
+    context_set_manifest = next(item for item in preview_data["objects"] if item["object_id"] == context_set_id)
+    assert context_set_manifest["source_object_ids"] == sorted([first_id, second_id])
+    assert "Keep the schema change reversible." in preview_data["prompt_text"]
+    assert "Deploy in two guarded stages." in preview_data["prompt_text"]
+    assert "Do not include this unrelated decision." not in preview_data["prompt_text"]
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "saved-context-set-session",
+        "project_name": "aura",
+        "message": "Continue the migration plan from this saved selection.",
+        "context_object_ids": [context_set_id],
+    })
+    assert response.status_code == 200
+    request = model_router.get_provider("mock").call_history[-1]
+    system_message = next(message for message in request.messages if message.role == ModelRole.SYSTEM)
+    assert "Keep the schema change reversible." in system_message.content
+    assert "Deploy in two guarded stages." in system_message.content
+    assert "Do not include this unrelated decision." not in system_message.content
+
+    run = (await async_client.get(f"/v1/runs/{response.json()['run_id']}")).json()
+    compiled_event = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert {item["object_id"] for item in compiled_event["payload"]["objects"]} == {
+        first_id,
+        second_id,
+        context_set_id,
+    }
