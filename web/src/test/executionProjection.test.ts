@@ -46,4 +46,62 @@ describe('execution trace projection', () => {
     expect(projection.nodes.map((node) => node.data.title).join(' ')).not.toContain('secret');
     expect(projection.nodes.map((node) => node.data.body).join(' ')).not.toContain('prompt');
   });
+
+  it('renders persisted model, reasoning, and fallback routing provenance', () => {
+    const trace: WorkspaceExecutionTrace = {
+      run_id: 'provenance-run',
+      session_id: 'session',
+      events: [
+        {
+          id: 'route',
+          event_type: 'model_selected',
+          created_at: '2026-10-02T00:00:00Z',
+          agent_role: 'root',
+          provider: 'ollama',
+          model: 'local-model',
+          profile_id: 'balanced',
+          profile_version: 3,
+          winning_scope: 'project',
+          privacy: 'local_only',
+          fallback_policy: 'none',
+        },
+        {
+          id: 'reasoning',
+          event_type: 'reasoning_effort_selected',
+          created_at: '2026-10-02T00:00:01Z',
+          reasoning_policy: 'adaptive',
+          reasoning_bounds: { min: 'low', max: 'high' },
+          selected_effort: 'medium',
+        },
+        {
+          id: 'fallback',
+          event_type: 'fallback_considered',
+          created_at: '2026-10-02T00:00:02Z',
+          fallback_policy: 'local_only',
+          primary_provider: 'cloud',
+          selected_provider: 'ollama',
+        },
+        {
+          id: 'blocked',
+          event_type: 'fallback_blocked',
+          created_at: '2026-10-02T00:00:03Z',
+          fallback_policy: 'ask_before_cloud',
+          privacy_boundary: 'confidential',
+          error_type: 'RoutingConfirmationRequired',
+          proposed_provider: 'cloud-provider',
+          proposed_model: 'exact-model',
+        },
+      ],
+    };
+
+    const nodes = projectExecutionGraph([trace], workspaceNodes).nodes;
+    const byId = new Map(nodes.map((node) => [node.id, node.data]));
+    expect(byId.get('execution-route')?.body).toContain('Profile balanced v3');
+    expect(byId.get('execution-route')?.body).toContain('Scope project');
+    expect(byId.get('execution-reasoning')?.title).toContain('medium');
+    expect(byId.get('execution-reasoning')?.body).toContain('Bounds low–high');
+    expect(byId.get('execution-fallback')?.body).toContain('cloud → ollama');
+    expect(byId.get('execution-blocked')?.body).toContain('Proposed cloud-provider:exact-model');
+  });
+
 });
