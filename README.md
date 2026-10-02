@@ -106,6 +106,10 @@ Compose persists PostgreSQL data and LangGraph checkpoints in separate named
 volumes (`postgres_data` and `checkpoint_data`); both are required to restore a
 durable run after container recreation.
 
+Create and verify a point-in-time archive of both stores with
+[`scripts/backup_compose.py`](scripts/backup_compose.py). See
+[`docs/compose-backup.md`](docs/compose-backup.md) for the restore procedure.
+
 ---
 
 ## Running the Server
