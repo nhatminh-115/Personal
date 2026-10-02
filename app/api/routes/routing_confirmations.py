@@ -230,6 +230,7 @@ async def decide_routing_confirmation(
                 status=item.status,
                 run_id=root_run.id,
                 execution_status=root_run.status,
+                approval_id=(next_interrupt or {}).get("approval_id"),
             )
 
         root_run.status = final_state.get("execution_status", RunStatus.COMPLETED.value)
