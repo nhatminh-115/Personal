@@ -160,6 +160,40 @@ describe('Session Hydration', () => {
     expect(loadButton).toBeEnabled();
   });
 
+  it('recovers pending routing confirmation for the selected live session', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/routing-confirmations/pending')) {
+        const scoped = url.includes('session_id=confirm-session');
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(scoped ? [{
+          id: 'pending-confirmation', root_run_id: 'pending-root-run', execution_run_id: 'pending-root-run',
+          session_id: 'confirm-session', proposed_provider: 'cloud-provider', proposed_model: 'private-model',
+          status: 'pending', created_at: '2026-01-01T00:00:00Z',
+        }] : []) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    const liveThread = {
+      id: 'stateful-live-confirm', projectId: 'stateful', title: 'Confirmation thread', summary: 'Resume routing',
+      updated: 'now', messages: [], sessionId: 'confirm-session', source: 'live', pinned: false,
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsBtn); });
+    await act(async () => { fireEvent.click(screen.getByText('Confirmation thread')); });
+
+    expect(await screen.findByRole('heading', { name: 'Cloud routing requires confirmation' })).toBeInTheDocument();
+    expect(screen.getByText('cloud-provider:private-model')).toBeInTheDocument();
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([url]) => String(url).includes('session_id=confirm-session'))).toBe(true);
+  });
+
   it('hydration failure does not destroy local thread messages', async () => {
     // Override fetch to fail the session detail call
     global.fetch = vi.fn().mockImplementation((url: string) => {

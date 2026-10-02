@@ -511,8 +511,20 @@ export const api = {
     return handleResponse<ChatResponse>(res);
   },
 
-  async fetchPendingRoutingConfirmations(): Promise<RoutingConfirmationDetail[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/pending`));
+  async fetchPendingRoutingConfirmations(sessionId: string): Promise<RoutingConfirmationDetail[]> {
+    const pending: RoutingConfirmationDetail[] = [];
+    let cursor: string | null = null;
+    do {
+      const params = new URLSearchParams();
+      params.set('session_id', sessionId);
+      params.set('page_size', '100');
+      if (cursor) params.set('cursor', cursor);
+      const query = params.size ? `?${params.toString()}` : '';
+      const response = await fetch(`${BASE_URL}/v1/routing-confirmations/pending${query}`);
+      pending.push(...await handleResponse<RoutingConfirmationDetail[]>(response));
+      cursor = response.headers?.get('X-Next-Cursor') ?? null;
+    } while (cursor);
+    return pending;
   },
 
   async fetchRoutingConfirmation(id: string): Promise<RoutingConfirmationDetail> {

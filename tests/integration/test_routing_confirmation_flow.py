@@ -1,10 +1,12 @@
 """Durable ask-before-cloud confirmation lifecycle tests."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from sqlalchemy import select
 
 from app.core.errors import RoutingConfirmationRequired
-from app.db.models import RunModel, RoutingConfirmationModel
+from app.db.models import RunModel, RoutingConfirmationModel, SessionModel
 from app.models.base import ModelResponse, ToolCallRequest
 from app.models.routing_policy import ModelSelection
 from app.models.router import model_router
@@ -111,6 +113,51 @@ async def test_rejected_routing_confirmation_never_calls_model(async_client, tes
     run = await test_db_session.get(RunModel, data["run_id"])
     assert run.status == "cancelled"
     assert run.final_response
+
+
+@pytest.mark.asyncio
+async def test_pending_routing_confirmations_use_cursor_pages_and_session_filter(async_client, test_db_session):
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    confirmation_ids = []
+    session_ids = []
+    for index in range(5):
+        session_id = f"pending-session-{index}"
+        run_id = str(index + 1).zfill(36)
+        confirmation_id = str(index + 101).zfill(36)
+        session_ids.append(session_id)
+        confirmation_ids.append(confirmation_id)
+        test_db_session.add(SessionModel(id=session_id, title="Pending confirmation"))
+        test_db_session.add(RunModel(id=run_id, session_id=session_id, user_message=f"message {index}"))
+        test_db_session.add(RoutingConfirmationModel(
+            id=confirmation_id,
+            root_run_id=run_id,
+            execution_run_id=run_id,
+            session_id=session_id,
+            proposed_provider="cloud",
+            proposed_model=f"model-{index}",
+            created_at=base_time + timedelta(seconds=index),
+        ))
+    await test_db_session.commit()
+
+    first_response = await async_client.get("/v1/routing-confirmations/pending", params={"page_size": 2})
+    assert first_response.status_code == 200
+    first_page = first_response.json()
+    assert [item["id"] for item in first_page] == confirmation_ids[:2]
+    cursor = first_response.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second_response = await async_client.get(
+        "/v1/routing-confirmations/pending", params={"page_size": 2, "cursor": cursor},
+    )
+    assert second_response.status_code == 200
+    assert [item["id"] for item in second_response.json()] == confirmation_ids[2:4]
+    assert set(confirmation_ids[:2]).isdisjoint(item["id"] for item in second_response.json())
+
+    filtered = await async_client.get(
+        "/v1/routing-confirmations/pending", params={"session_id": session_ids[-1]},
+    )
+    assert filtered.status_code == 200
+    assert [item["id"] for item in filtered.json()] == [confirmation_ids[-1]]
 
 
 @pytest.mark.asyncio
