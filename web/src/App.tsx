@@ -153,7 +153,11 @@ function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord
     tags: note.tags,
     project_names: note.projectIds.map((id) => projectCatalog.find((project) => project.id === id)?.name ?? id),
     pinned: note.pinned === true,
-    privacy_policy: note.privacyPolicy ?? null,
+    ...(note.privacyPolicy === undefined
+      ? { privacy_policy: null }
+      : ['public', 'internal', 'confidential', 'local_only'].includes(note.privacyPolicy)
+        ? { privacy_policy: note.privacyPolicy }
+        : {}),
   };
 }
 
