@@ -1582,6 +1582,81 @@ async def test_workspace_execution_graph_projects_sanitized_routing_provenance(a
     assert "secret" not in str(reasoning["reasoning_bounds"])
 
 @pytest.mark.asyncio
+async def test_workspace_graph_projects_automation_origin_without_instruction(async_client, test_db_session):
+    session = SessionModel(
+        id="automation-provenance-session",
+        title="Automation review",
+        metadata_json={},
+        project_name="Atlas",
+    )
+    run = RunModel(
+        id="automation-provenance-run",
+        session_id=session.id,
+        status="completed",
+        user_message="private automation instruction",
+    )
+    event = RunEventModel(
+        id="automation-triggered-event",
+        run_id=run.id,
+        event_type="automation_triggered",
+        created_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
+        payload={
+            "trigger_event_id": "event-safe-id",
+            "automation_id": "automation-safe-id",
+            "automation_name": "Atlas review",
+            "message": "private automation instruction",
+        },
+    )
+    test_db_session.add_all([session, run, event])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/Atlas/graph")
+    assert response.status_code == 200
+    trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
+    assert trace["events"] == [{
+        "id": event.id,
+        "event_type": "automation_triggered",
+        "created_at": event.created_at.isoformat(),
+        "agent_role": None,
+        "specialist": None,
+        "provider": None,
+        "model": None,
+        "tool_name": None,
+        "tool_call_id": None,
+        "child_run_id": None,
+        "status": None,
+        "success": None,
+        "error_category": None,
+        "risk_level": None,
+        "step": None,
+        "task_type": None,
+        "profile_id": None,
+        "profile_version": None,
+        "winning_scope": None,
+        "privacy": None,
+        "fallback_policy": None,
+        "selection_reason": None,
+        "reasoning_policy": None,
+        "reasoning_bounds": None,
+        "selected_effort": None,
+        "primary_provider": None,
+        "selected_provider": None,
+        "candidate_model": None,
+        "privacy_boundary": None,
+        "error_type": None,
+        "proposed_provider": None,
+        "proposed_model": None,
+        "trigger_event_id": "event-safe-id",
+        "automation_id": "automation-safe-id",
+        "automation_name": "Atlas review",
+        "context_objects": [],
+        "context_estimated_tokens": None,
+        "context_privacy_requirement": None,
+    }]
+    assert "private automation instruction" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_context_compilation_trace_exposes_only_safe_manifest_provenance(async_client, test_db_session):
     session = SessionModel(id="context-manifest-session", title="Context manifest", metadata_json={}, project_name="aura")
     run = RunModel(id="context-manifest-run", session_id=session.id, status="completed", user_message="private user message")
