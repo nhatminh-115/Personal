@@ -58,6 +58,7 @@ import type {
   ToastMessage,
   WorkspaceNoteRecord,
   StudySessionRecord,
+  StudyCardRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
   WorkspaceSearchResult,
@@ -294,6 +295,7 @@ export default function App() {
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
   const [studySessions, setStudySessions] = useState<StudySessionRecord[]>([]);
+  const [studyCards, setStudyCards] = useState<StudyCardRecord[]>([]);
   const studySessionsLoaded = useRef(false);
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -1334,12 +1336,13 @@ export default function App() {
   useEffect(() => {
     if (surface !== 'study' || studySessionsLoaded.current) return;
     let active = true;
-    void api.fetchStudySessions().then((sessions) => {
+    void Promise.all([api.fetchStudySessions(), api.fetchStudyCards()]).then(([sessions, cards]) => {
       if (!active) return;
       setStudySessions(sessions);
+      setStudyCards(cards);
       studySessionsLoaded.current = true;
     }).catch((error: unknown) => {
-      if (active) pushToast('Could not load Study sessions', executionErrorText(error));
+      if (active) pushToast('Could not load Study workspace', executionErrorText(error));
     });
     return () => { active = false; };
   }, [pushToast, surface]);
@@ -1382,6 +1385,24 @@ export default function App() {
     const session = await api.updateStudySessionReflection(sessionId, reflection);
     setStudySessions((current) => current.map((item) => item.id === session.id ? session : item));
     pushToast('Learning reflection saved', 'It is stored with this Study session and can be reused as workspace context.');
+  }, [pushToast]);
+
+  const createStudyCard = useCallback(async (sessionId: string, question: string, answer: string) => {
+    const card = await api.createStudyCard(sessionId, question, answer);
+    setStudyCards((current) => [...current, card]);
+    pushToast('Learning card saved', 'It is linked to this session and its source in the workspace graph.');
+  }, [pushToast]);
+
+  const updateStudyCard = useCallback(async (cardId: string, sessionId: string, question: string, answer: string) => {
+    const card = await api.updateStudyCard(cardId, sessionId, question, answer);
+    setStudyCards((current) => current.map((item) => item.id === card.id ? card : item));
+    pushToast('Learning card updated', 'The user-authored card was saved to the workspace graph.');
+  }, [pushToast]);
+
+  const deleteStudyCard = useCallback(async (cardId: string, sessionId: string) => {
+    await api.deleteStudyCard(cardId, sessionId);
+    setStudyCards((current) => current.filter((item) => item.id !== cardId));
+    pushToast('Learning card deleted', 'Its project links and provenance edge were removed.');
   }, [pushToast]);
 
   useEffect(() => () => {
@@ -1841,7 +1862,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
