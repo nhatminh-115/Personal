@@ -142,6 +142,44 @@ async def test_pausing_automation_moves_next_run_and_blocks_manual_run(async_cli
 
 
 @pytest.mark.asyncio
+async def test_pause_and_resume_preserve_an_active_dispatch_lease(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Leased routine",
+        "instruction": "Review the project status.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+
+    job = await test_db_session.get(ScheduledJobModel, automation_id)
+    assert job is not None
+    job.locked_at = utc_now()
+    job.locked_by = "sched-active-worker"
+    await test_db_session.commit()
+
+    paused = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": False})
+    assert paused.status_code == 200
+    await test_db_session.refresh(job)
+    assert job.locked_by == "sched-active-worker"
+    assert job.locked_at is not None
+
+    resumed = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True})
+    assert resumed.status_code == 200
+    await test_db_session.refresh(job)
+    assert job.locked_by == "sched-active-worker"
+    assert job.locked_at is not None
+
+    while_dispatching = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert while_dispatching.status_code == 409
+    assert "already dispatching" in while_dispatching.text.lower()
+
+    job.locked_at = None
+    job.locked_by = None
+    await test_db_session.commit()
+    after_dispatch = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert after_dispatch.status_code == 202
+
+
+@pytest.mark.asyncio
 async def test_automation_status_tracks_persisted_root_run_state(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Approval routine", "instruction": "Update the project plan.", "interval_seconds": 3600,

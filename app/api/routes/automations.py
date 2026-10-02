@@ -159,8 +159,6 @@ async def set_automation_enabled(
         raise HTTPException(status_code=404, detail="Automation not found.")
     was_enabled = job.is_active
     job.is_active = body.enabled
-    job.locked_at = None
-    job.locked_by = None
     if body.enabled and not was_enabled:
         try:
             interval = max(60, int(float(job.schedule_expression)))
