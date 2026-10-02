@@ -340,3 +340,47 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     deleted = await async_client.delete(f"/v1/study/sessions/{session_id}/cards/{card['id']}")
     assert deleted.status_code == 204
     assert (await async_client.get("/v1/study/cards")).json() == []
+
+
+async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Local study note",
+        "body": "Keep this material on the device.",
+        "project_names": ["research-project"],
+        "privacy_policy": "local_only",
+    })
+    assert note_response.status_code == 201
+    note = note_response.json()
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": "stale-note-id",
+        "track_title": "Stale note title",
+        "material_id": note["id"],
+    })
+    assert started.status_code == 201
+    session = started.json()
+    assert session["track_id"] == note["id"]
+    assert session["track_title"] == "Local study note"
+    assert session["material_id"] == note["id"]
+    assert session["material_project_name"] is None
+
+    graph = (await async_client.get("/v1/workspace/projects/research-project/graph")).json()
+    assert any(item["id"] == session["id"] for item in graph["objects"])
+    [source_edge] = [
+        edge for edge in graph["edges"]
+        if edge["source_object_id"] == note["id"] and edge["target_object_id"] == session["id"]
+    ]
+    assert source_edge["relation_type"] == "studied_from"
+    assert source_edge["edge_family"] == "provenance"
+
+    card_response = await async_client.post(
+        f"/v1/study/sessions/{session['id']}/cards",
+        json={"question": "Where should the material stay?", "answer": "On the device."},
+    )
+    assert card_response.status_code == 201
+    card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
+    assert card is not None
+    assert card.metadata_json["privacy_policy"] == "local_only"
