@@ -454,12 +454,15 @@ describe('Routing Studio v2', () => {
     expect(screen.queryByRole('dialog', { name: 'Routing Studio' })).not.toBeInTheDocument();
   });
 
-  it('offers cloud routing cancellation or settings changes without a fake continue action', () => {
-    render(<RoutingConfirmationNotice proposal={{ provider: 'cloud', model: 'model-x' }} onCancel={vi.fn()} onOpenStudio={vi.fn()} onChangeRouting={vi.fn()} />);
+  it('submits approve and reject decisions for a durable cloud routing confirmation', () => {
+    const onConfirm = vi.fn();
+    const onCancel = vi.fn();
+    render(<RoutingConfirmationNotice proposal={{ provider: 'cloud', model: 'model-x' }} onConfirm={onConfirm} onCancel={onCancel} />);
     expect(screen.getByText(/Cloud routing requires confirmation/i)).toBeInTheDocument();
-    expect(screen.getByText('Proposed:')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Change routing' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /approve and continue/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/cloud:model-x/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }));
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onCancel).toHaveBeenCalledOnce();
   });
 });
