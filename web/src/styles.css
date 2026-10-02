@@ -6149,6 +6149,14 @@ html {
 .automation-execution-status strong { color: #8ba4ae; font-weight: 600; }
 .automation-execution-status.is-failed { color: #d18c84; }
 .automation-execution-status.is-waiting_for_approval { color: #d7b57c; }
+.automation-execution-status button { margin-left: auto; border: 1px solid rgba(215,181,124,.28); border-radius: 7px; background: rgba(215,181,124,.06); color: #dbc28f; padding: 5px 8px; font: inherit; cursor: pointer; }
+.automation-execution-status button:disabled { opacity: .55; cursor: wait; }
+.automation-approval-modal { width: min(560px, calc(100vw - 32px)); max-height: min(80vh, 760px); overflow: auto; }
+.automation-approval-modal > p { color: #80939c; font-size: 12px; line-height: 1.5; }
+.automation-approval-detail { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid rgba(149,179,197,.08); color: #657b86; font-size: 11px; }
+.automation-approval-detail strong { color: #b0c0c5; }
+.automation-approval-modal pre { max-height: 260px; overflow: auto; margin: 0; padding: 10px; border-radius: 8px; background: #090f15; color: #a7b8bd; font: 11px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.automation-approval-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 
 .workspace-search {
   width: min(900px, calc(100% - 48px));
