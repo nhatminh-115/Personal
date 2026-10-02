@@ -351,7 +351,7 @@ export const api = {
   },
 
   async fetchAutomations(): Promise<AutomationRecordResponse[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations`));
+    return fetchAllCursorPages<AutomationRecordResponse>('/v1/automations');
   },
 
   async fetchAutomationRuns(id: string, limit = 10): Promise<AutomationExecutionRecord[]> {

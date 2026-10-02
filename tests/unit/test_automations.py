@@ -51,6 +51,35 @@ async def test_automation_crud_and_manual_run_are_persisted(async_client, test_d
 
 
 @pytest.mark.asyncio
+async def test_automation_collection_uses_bounded_keyset_pages(async_client):
+    for index in range(3):
+        created = await async_client.post("/v1/automations", json={
+            "name": f"Automation {index}",
+            "instruction": f"Run task {index}.",
+            "interval_seconds": 3600,
+        })
+        assert created.status_code == 201
+
+    full = (await async_client.get("/v1/automations")).json()
+    first = await async_client.get("/v1/automations", params={"page_size": 2})
+    assert first.status_code == 200
+    assert [item["id"] for item in first.json()] == [item["id"] for item in full[:2]]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/automations", params={"page_size": 2, "cursor": cursor})
+    assert [item["id"] for item in second.json()] == [item["id"] for item in full[2:]]
+    assert second.headers.get("X-Next-Cursor") is None
+
+
+@pytest.mark.asyncio
+async def test_automation_collection_rejects_invalid_cursor(async_client):
+    response = await async_client.get("/v1/automations", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid pagination cursor."
+
+
+@pytest.mark.asyncio
 async def test_run_now_blocks_overlapping_queued_or_waiting_runs(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Single-flight routine",
