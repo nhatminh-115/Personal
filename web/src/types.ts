@@ -323,6 +323,7 @@ export interface StudySessionRecord {
   material_id?: string | null;
   material_project_name?: string | null;
   status: 'in_progress' | 'completed';
+  reflection: string;
   started_at: string;
   completed_at?: string | null;
 }
