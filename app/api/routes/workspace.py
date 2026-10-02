@@ -311,6 +311,7 @@ async def _workspace_note_responses(
             tags=[tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else [],
             project_names=projects_by_note[item.id],
             pinned=metadata.get("pinned") is True,
+            privacy_policy=metadata.get("privacy_policy") if isinstance(metadata.get("privacy_policy"), str) else None,
             created_at=item.created_at,
             updated_at=item.updated_at,
         ))
@@ -521,7 +522,10 @@ async def create_personal_workspace_note(
         created_by="user",
         title=body.title,
         content=body.body,
-        metadata_json=metadata,
+        metadata_json={
+            **metadata,
+            **({"privacy_policy": body.privacy_policy} if body.privacy_policy is not None else {}),
+        },
     )
     db.add(item)
     await db.flush()
@@ -547,7 +551,13 @@ async def update_personal_workspace_note(
         raise HTTPException(status_code=404, detail="Personal workspace note not found.")
     item.title = body.title
     item.content = body.body
-    item.metadata_json = {**(item.metadata_json or {}), **_note_metadata(body)}
+    metadata = {**(item.metadata_json or {}), **_note_metadata(body)}
+    if "privacy_policy" in body.model_fields_set:
+        if body.privacy_policy is None:
+            metadata.pop("privacy_policy", None)
+        else:
+            metadata["privacy_policy"] = body.privacy_policy
+    item.metadata_json = metadata
     item.updated_at = datetime.now(timezone.utc)
     await _sync_workspace_note_links(db, item, body.project_names)
     await db.commit()
