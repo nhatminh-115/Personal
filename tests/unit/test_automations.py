@@ -152,6 +152,16 @@ async def test_automation_event_uses_effective_project_profile_but_stays_local_o
         project_name="Atlas",
         routing_profile_id=profile_id,
     ))
+    test_db_session.add(ScheduledJobModel(
+        id="automation-atlas",
+        name="Atlas review",
+        job_type=JobType.RECURRING.value,
+        schedule_expression="3600",
+        payload_json={},
+        is_active=True,
+        next_run_at=utc_now() + timedelta(hours=1),
+        metadata_json={"kind": "automation"},
+    ))
     await test_db_session.commit()
 
     observed = {}
@@ -208,3 +218,16 @@ async def test_automation_event_uses_effective_project_profile_but_stays_local_o
     )).scalars().all()
     assert len(routing_events) == 1
     assert routing_events[0].payload["privacy_policy"] == "local_only"
+
+    automation_events = (await test_db_session.execute(
+        select(RunEventModel).where(
+            RunEventModel.run_id == run_id,
+            RunEventModel.event_type == "automation_triggered",
+        )
+    )).scalars().all()
+    assert len(automation_events) == 1
+    assert automation_events[0].payload == {
+        "trigger_event_id": event_id,
+        "automation_id": "automation-atlas",
+        "automation_name": "Atlas review",
+    }
