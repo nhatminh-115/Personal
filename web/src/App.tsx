@@ -1348,6 +1348,12 @@ export default function App() {
     }
   }, [pushToast]);
 
+  const saveStudyReflection = useCallback(async (sessionId: string, reflection: string) => {
+    const session = await api.updateStudySessionReflection(sessionId, reflection);
+    setStudySessions((current) => current.map((item) => item.id === session.id ? session : item));
+    pushToast('Learning reflection saved', 'It is stored with this Study session and can be reused as workspace context.');
+  }, [pushToast]);
+
   useEffect(() => () => {
     noteSyncTimers.current.forEach((timer) => window.clearTimeout(timer));
     noteSyncTimers.current.clear();
@@ -1757,7 +1763,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
