@@ -115,7 +115,7 @@ class WorkspaceContextCompiler:
             .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
             .where(
                 WorkspaceObjectModel.project_name.is_(None),
-                WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+                WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
                 WorkspaceObjectProjectLinkModel.project_name == project_name,
                 WorkspaceObjectModel.id.in_(set(roots) - set(objects)),
             )
@@ -163,7 +163,7 @@ class WorkspaceContextCompiler:
                     .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
                     .where(
                         WorkspaceObjectModel.project_name.is_(None),
-                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
                         WorkspaceObjectProjectLinkModel.project_name == project_name,
                         WorkspaceObjectModel.id.in_(candidate_ids - set(objects)),
                     )
@@ -242,7 +242,7 @@ class WorkspaceContextCompiler:
                     .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
                     .where(
                         WorkspaceObjectModel.project_name.is_(None),
-                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
                         WorkspaceObjectProjectLinkModel.project_name == project_name,
                         WorkspaceObjectModel.id.in_(missing_provenance_ids - set(objects)),
                     )
