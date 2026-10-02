@@ -306,7 +306,7 @@ async def test_project_context_can_select_a_personal_note_and_board_delete_only_
 
     call_count = len(model_router.get_provider("mock").call_history)
     blocked = await async_client.post("/v1/chat", json={
-        "session_id": "personal-note-cloud-boundary-session",
+        "session_id": "note-cloud-boundary",
         "project_name": "aura",
         "message": "This local note must remain local.",
         "model_override": "openai:gpt-4o",
@@ -321,7 +321,7 @@ async def test_project_context_can_select_a_personal_note_and_board_delete_only_
         "body": "Not linked to this project.",
     })
     rejected_selection = await async_client.post("/v1/chat", json={
-        "session_id": "unlinked-personal-note-context-session",
+        "session_id": "unlinked-note-context",
         "project_name": "aura",
         "message": "Do not include an unlinked note.",
         "context_object_ids": [unlinked.json()["id"]],
@@ -1435,7 +1435,7 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
     )
     try:
         available_provider = await async_client.post("/v1/chat", json={
-            "session_id": "available-context-capability-provider",
+            "session_id": "available-capability-provider",
             "project_name": "aura",
             "message": "Find the impacted callers.",
             "context_object_ids": [object_id],
@@ -1494,7 +1494,7 @@ async def test_confidential_context_never_exposes_cloud_capability_tools(async_c
 
         calls_before = len(model_router.get_provider('mock').call_history)
         response = await async_client.post('/v1/chat', json={
-            'session_id': 'confidential-cloud-capability-session',
+            'session_id': 'cloud-capability-session',
             'project_name': 'aura',
             'message': 'Analyze this private context.',
             'context_object_ids': [note.json()['id']],
