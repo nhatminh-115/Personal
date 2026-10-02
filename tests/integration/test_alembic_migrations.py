@@ -67,6 +67,11 @@ def test_alembic_upgrade_downgrade_cycle():
         }
         assert expected_tables.issubset(tables), f"Missing tables: {expected_tables - tables}"
 
+        message_columns = {
+            col["name"]: col for col in inspector.get_columns("messages")
+        }
+        assert message_columns["metadata_json"]["nullable"] is False
+
         workspace_object_columns = {
             col["name"]: col for col in inspector.get_columns("workspace_objects")
         }
