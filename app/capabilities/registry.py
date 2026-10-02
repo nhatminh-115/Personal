@@ -88,33 +88,39 @@ class CapabilityProviderRegistry:
     def __init__(self) -> None:
         self._metadata: Dict[str, CapabilityProviderMetadata] = {}
         self._capability_tools: Dict[str, Dict[str, List[str]]] = {}
+        self._declared_capability_tools: Dict[str, Dict[str, List[str]]] = {}
 
     def register(
         self,
         metadata: CapabilityProviderMetadata,
         capability_tools: Optional[Dict[str, List[str]]] = None,
+        declared_capability_tools: Optional[Dict[str, List[str]]] = None,
     ) -> None:
         bindings = {capability: list(dict.fromkeys(names)) for capability, names in (capability_tools or {}).items()}
-        undeclared = set(bindings) - set(metadata.capabilities)
+        declared = {
+            capability: list(dict.fromkeys(names))
+            for capability, names in (declared_capability_tools if declared_capability_tools is not None else capability_tools or {}).items()
+        }
+        undeclared = (set(bindings) | set(declared)) - set(metadata.capabilities)
         if undeclared:
             raise ValueError(f"Provider '{metadata.provider_id}' binds undeclared capabilities: {sorted(undeclared)}")
-        if any(not names for names in bindings.values()):
+        if any(not names for mapping in (bindings, declared) for names in mapping.values()):
             raise ValueError("Capability bindings must reference at least one canonical AURA tool.")
         # Pydantic's frozen models can still contain mutable lists. Keep the
         # inventory isolated from both registration inputs and read results.
         self._metadata[metadata.provider_id] = metadata.model_copy(deep=True)
         self._capability_tools[metadata.provider_id] = bindings
+        self._declared_capability_tools[metadata.provider_id] = declared
 
     def register_provider(self, provider: CapabilityProvider) -> None:
         """Register any structural provider implementation through the typed boundary."""
-        self.register(
-            provider.metadata,
-            {capability: list(tool_names) for capability, tool_names in provider.capability_tools.items()},
-        )
+        bindings = {capability: list(tool_names) for capability, tool_names in provider.capability_tools.items()}
+        self.register(provider.metadata, bindings, declared_capability_tools=bindings)
 
     def unregister(self, provider_id: str) -> None:
         self._metadata.pop(provider_id, None)
         self._capability_tools.pop(provider_id, None)
+        self._declared_capability_tools.pop(provider_id, None)
 
     def get(self, provider_id: str) -> Optional[CapabilityProviderMetadata]:
         metadata = self._metadata.get(provider_id)
@@ -123,6 +129,13 @@ class CapabilityProviderRegistry:
     def get_capability_tools(self, provider_id: str) -> Dict[str, List[str]]:
         """Return a defensive copy of the provider's abstract-capability bindings."""
         return {capability: list(names) for capability, names in self._capability_tools.get(provider_id, {}).items()}
+
+    def get_declared_capability_tools(self, provider_id: str) -> Dict[str, List[str]]:
+        """Return configured capability mappings, including unverified MCP declarations."""
+        return {
+            capability: list(names)
+            for capability, names in self._declared_capability_tools.get(provider_id, {}).items()
+        }
 
     def list_providers(self) -> List[CapabilityProviderMetadata]:
         return [
