@@ -879,6 +879,41 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
 
 
 @pytest.mark.asyncio
+async def test_workspace_edges_cannot_forge_execution_or_provenance(async_client):
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Source", "content": "User-authored source.",
+    })
+    target = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note", "title": "Target", "content": "User-authored target.",
+    })
+    source_id, target_id = source.json()["id"], target.json()["id"]
+
+    for family in ("execution", "provenance"):
+        created = await async_client.post("/v1/workspace/projects/aura/edges", json={
+            "source_object_id": source_id,
+            "target_object_id": target_id,
+            "relation_type": "fabricated",
+            "edge_family": family,
+        })
+        assert created.status_code == 422
+
+        restored = await async_client.post(
+            "/v1/workspace/projects/aura/edges/batch-restore",
+            json={"edges": [{
+                "id": "30000000-0000-4000-8000-000000000099",
+                "source_object_id": source_id,
+                "target_object_id": target_id,
+                "relation_type": "fabricated",
+                "edge_family": family,
+            }]},
+        )
+        assert restored.status_code == 422
+
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert graph["edges"] == []
+
+
+@pytest.mark.asyncio
 async def test_workspace_edge_deletion_preserves_system_edges_and_batches_atomically(
     async_client,
     test_db_session,

@@ -292,7 +292,7 @@ class WorkspaceEdgeCreate(BaseModel):
     source_object_id: str
     target_object_id: str
     relation_type: str = Field(min_length=1, max_length=48)
-    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    edge_family: Literal["semantic", "context"]
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -333,7 +333,7 @@ class WorkspaceEdgeRestoreItem(BaseModel):
     source_object_id: str = Field(min_length=1, max_length=36)
     target_object_id: str = Field(min_length=1, max_length=36)
     relation_type: str = Field(min_length=1, max_length=48)
-    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    edge_family: Literal["semantic", "context"]
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
 
 

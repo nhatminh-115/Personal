@@ -329,7 +329,7 @@ export const api = {
 
   async createWorkspaceEdge(projectName: string, input: {
     source_object_id: string; target_object_id: string; relation_type: string;
-    edge_family: WorkspaceEdge['edge_family']; metadata_json?: Record<string, unknown>;
+    edge_family: Extract<WorkspaceEdge['edge_family'], 'semantic' | 'context'>; metadata_json?: Record<string, unknown>;
   }): Promise<WorkspaceEdge> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
