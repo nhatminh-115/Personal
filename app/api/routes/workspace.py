@@ -518,7 +518,7 @@ async def preview_workspace_context(
     missing_capabilities: list[str] = []
     if tool_capabilities:
         try:
-            tool_registry.resolve_capabilities(tool_capabilities)
+            tool_registry.resolve_capabilities(tool_capabilities, privacy_requirement=compiled.privacy_requirement)
             available_capabilities = tool_capabilities
         except UnresolvedCapabilitiesError as exc:
             missing_capabilities = exc.capabilities
