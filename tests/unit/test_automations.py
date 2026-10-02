@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 import uuid
 
@@ -85,6 +86,38 @@ async def test_run_now_blocks_overlapping_queued_or_waiting_runs(async_client, t
     await test_db_session.commit()
     completed_run_allows_next = await async_client.post(f"/v1/automations/{automation_id}/run")
     assert completed_run_allows_next.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_concurrent_run_now_requests_queue_only_one_event(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Concurrent routine",
+        "instruction": "Review the project status.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+
+    from fastapi import HTTPException
+    from app.api.routes.automations import run_automation_now
+    from app.api.schemas import AutomationRunResponse
+
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+
+    async def trigger():
+        async with factory() as session:
+            try:
+                return await run_automation_now(automation_id, db=session)
+            except HTTPException as error:
+                return error.status_code
+
+    results = await asyncio.gather(trigger(), trigger())
+    assert sum(isinstance(result, AutomationRunResponse) for result in results) == 1
+    assert sum(result == 409 for result in results) == 1
+
+    events = list((await test_db_session.execute(
+        select(EventRecordModel).where(EventRecordModel.correlation_id == automation_id)
+    )).scalars())
+    assert len(events) == 1
 
 
 @pytest.mark.asyncio
