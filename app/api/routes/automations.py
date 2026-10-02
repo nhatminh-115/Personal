@@ -92,13 +92,18 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
             EventStatus.PROCESSING.value: "running",
             EventStatus.PROCESSED.value: "completed",
             EventStatus.FAILED.value: "failed",
-            EventStatus.DEAD_LETTER.value: "failed",
+            EventStatus.DEAD_LETTER.value: "dead_letter",
         }.get(event.status, event.status)
+        execution_status = (
+            "dead_letter"
+            if event.status == EventStatus.DEAD_LETTER.value
+            else run.status if run is not None else event_status
+        )
         response[automation_id] = AutomationExecutionResponse(
             event_id=event.id,
             run_id=run_id,
             queued_at=event.occurred_at,
-            status=run.status if run is not None else event_status,
+            status=execution_status,
             retry_count=event.retry_count,
         )
     return response
@@ -306,14 +311,18 @@ async def list_automation_runs(
         EventStatus.PROCESSING.value: "running",
         EventStatus.PROCESSED.value: "completed",
         EventStatus.FAILED.value: "failed",
-        EventStatus.DEAD_LETTER.value: "failed",
+        EventStatus.DEAD_LETTER.value: "dead_letter",
     }
     return [
         AutomationExecutionResponse(
             event_id=event.id,
             run_id=run_id,
             queued_at=event.occurred_at,
-            status=runs[run_id].status if run_id in runs else event_status.get(event.status, event.status),
+            status=(
+                "dead_letter"
+                if event.status == EventStatus.DEAD_LETTER.value
+                else runs[run_id].status if run_id in runs else event_status.get(event.status, event.status)
+            ),
             retry_count=event.retry_count,
         )
         for event, run_id in zip(events, run_ids)
