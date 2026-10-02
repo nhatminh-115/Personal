@@ -47,7 +47,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
             <Bot size={13} /> Ask AURA
           </button>
           {onPreviewContext ? (
-            <button type="button" aria-expanded={previewOpen} onClick={() => {
+            <button type="button" aria-expanded={previewOpen} disabled={contextPreviewLoading} onClick={() => {
               const opening = !previewOpen;
               setPreviewOpen(opening);
               if (opening) onPreviewContext();
