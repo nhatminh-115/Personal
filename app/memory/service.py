@@ -116,6 +116,32 @@ class SQLMemoryService(MemoryService):
                     replied_user_ids.add(pending_user.id)
                 pending_user = None
 
+        existing_continuations = await self.db.execute(
+            select(WorkspaceEdgeModel.source_object_id, WorkspaceEdgeModel.target_object_id).where(
+                WorkspaceEdgeModel.project_name == project_name,
+                WorkspaceEdgeModel.relation_type == "continues",
+            )
+        )
+        continuation_pairs = {(source_id, target_id) for source_id, target_id in existing_continuations.all()}
+        previous_assistant: Optional[WorkspaceObjectModel] = None
+        for message in messages:
+            item = objects_by_message[message.id]
+            if message.role == "user":
+                pair = (previous_assistant.id, item.id) if previous_assistant else None
+                if pair and pair not in continuation_pairs:
+                    self.db.add(WorkspaceEdgeModel(
+                        project_name=project_name,
+                        source_object_id=pair[0],
+                        target_object_id=pair[1],
+                        relation_type="continues",
+                        edge_family="context",
+                        created_by="system",
+                        metadata_json={},
+                    ))
+                    continuation_pairs.add(pair)
+            elif message.role == "assistant":
+                previous_assistant = item
+
         await self.db.commit()
         await self.db.refresh(session)
         return session
@@ -157,6 +183,29 @@ class SQLMemoryService(MemoryService):
             )
             self.db.add(workspace_object)
             await self.db.flush()
+
+            if role == "user":
+                prior_assistant_result = await self.db.execute(
+                    select(WorkspaceObjectModel)
+                    .where(
+                        WorkspaceObjectModel.session_id == session_id,
+                        WorkspaceObjectModel.object_type == "conversation_turn",
+                        WorkspaceObjectModel.created_by == "assistant",
+                    )
+                    .order_by(WorkspaceObjectModel.created_at.desc(), WorkspaceObjectModel.id.desc())
+                    .limit(1)
+                )
+                prior_assistant = prior_assistant_result.scalar_one_or_none()
+                if prior_assistant is not None:
+                    self.db.add(WorkspaceEdgeModel(
+                        project_name=session.project_name,
+                        source_object_id=prior_assistant.id,
+                        target_object_id=workspace_object.id,
+                        relation_type="continues",
+                        edge_family="context",
+                        created_by="system",
+                        metadata_json={},
+                    ))
 
             if role == "user" and isinstance(metadata, dict):
                 selected_context_ids = metadata.get("context_object_ids")

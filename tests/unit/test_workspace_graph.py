@@ -361,6 +361,64 @@ async def test_live_conversation_messages_are_project_graph_objects(test_db_sess
 
 
 @pytest.mark.asyncio
+async def test_context_compiler_follows_full_session_branch_ancestry(test_db_session):
+    from sqlalchemy import select
+    from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
+
+    service = SQLMemoryService(test_db_session)
+    session = await service.get_or_create_session("branch-ancestry-session")
+    history = [
+        ("user", "First question"),
+        ("assistant", "First answer"),
+        ("user", "Second question"),
+        ("assistant", "Second answer"),
+    ]
+    messages = [await service.save_message(session.id, role, content) for role, content in history]
+
+    await service.attach_session_to_project(session.id, "aura")
+    await service.attach_session_to_project(session.id, "aura")
+
+    objects = list((await test_db_session.execute(
+        select(WorkspaceObjectModel).where(WorkspaceObjectModel.source_message_id.in_([message.id for message in messages]))
+    )).scalars())
+    object_by_message = {item.source_message_id: item for item in objects}
+    continuations = list((await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == "aura",
+            WorkspaceEdgeModel.relation_type == "continues",
+        )
+    )).scalars())
+    assert len(continuations) == 1
+    assert continuations[0].created_by == "system"
+    assert continuations[0].edge_family == "context"
+
+    second_answer = messages[-1]
+    compiled = await WorkspaceContextCompiler(test_db_session).compile(
+        "aura", [object_by_message[second_answer.id].id]
+    )
+    for _role, content in history:
+        assert content in compiled.prompt_text
+
+    live_user = await service.save_message(session.id, "user", "Third question")
+    live_answer = await service.save_message(session.id, "assistant", "Third answer")
+    live_objects = list((await test_db_session.execute(
+        select(WorkspaceObjectModel).where(WorkspaceObjectModel.source_message_id.in_([live_user.id, live_answer.id]))
+    )).scalars())
+    live_answer_object = next(item for item in live_objects if item.source_message_id == live_answer.id)
+
+    latest = await WorkspaceContextCompiler(test_db_session).compile("aura", [live_answer_object.id])
+    for content in [*(content for _role, content in history), "Third question", "Third answer"]:
+        assert content in latest.prompt_text
+    all_continuations = list((await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == "aura",
+            WorkspaceEdgeModel.relation_type == "continues",
+        )
+    )).scalars())
+    assert len(all_continuations) == 2
+
+
+@pytest.mark.asyncio
 async def test_session_cannot_be_reassigned_to_another_project(async_client, test_db_session):
     service = SQLMemoryService(test_db_session)
     session = await service.get_or_create_session("project-bound-session")
