@@ -114,6 +114,8 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
     second_event = await test_db_session.get(EventRecordModel, second.json()["event_id"])
     first_event.retry_count = 1
     second_event.retry_count = 2
+    first_event.occurred_at = utc_now() - timedelta(minutes=1)
+    second_event.occurred_at = utc_now()
 
     session_id = str(uuid.uuid4())
     second_run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{second_event.id}"))
