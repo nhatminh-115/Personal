@@ -43,7 +43,7 @@ import {
   type DirectoryConnection,
   type IndexedFolderFile,
 } from './lib/folderConnections';
-import { api, ApiError } from './services/api';
+import { api } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
@@ -269,8 +269,7 @@ export default function App() {
   const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
   const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
-  const [routingConfirmation, setRoutingConfirmation] = useState<{ provider?: string; model?: string } | null>(null);
-  const [auraOpen, setAuraOpen] = useState(false);
+    const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(params.get('focus'));
@@ -363,6 +362,7 @@ export default function App() {
     runDetail: RunDetail | null;
     researchData: ResearchInspectorData | null;
     routingData: RunRoutingDecision[] | null;
+    routingConfirmation: { id: string; provider: string; model: string } | null;
   }
 
   // Live Backend State
@@ -386,8 +386,8 @@ export default function App() {
 
   /** Convenience accessor — live state for the currently active thread only */
   const activeThreadLive: ThreadLiveState = activeThreadId
-    ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null })
-    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null };
+    ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null })
+    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null };
   const activeThread = chatThreads.find((thread) => thread.id === activeThreadId) ?? null;
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
@@ -415,13 +415,36 @@ export default function App() {
   function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
     setThreadLiveStates((prev) => ({
       ...prev,
-      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null }, ...(prev[threadId] ?? {}), ...patch },
+      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null }, ...(prev[threadId] ?? {}), ...patch },
     }));
   }
 
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
     api.fetchSessions().then(setSessions).catch(() => []);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.fetchPendingRoutingConfirmations().then((pending) => {
+      if (cancelled || !Array.isArray(pending)) return;
+      setThreadLiveStates((current) => {
+        const next = { ...current };
+        for (const item of pending) {
+          const thread = chatThreads.find((candidate) => candidate.source === 'live' && candidate.sessionId === item.session_id);
+          if (!thread) continue;
+          next[thread.id] = {
+            ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null },
+            ...(current[thread.id] ?? {}),
+            runId: item.root_run_id,
+            runStatus: 'waiting_for_routing_confirmation',
+            routingConfirmation: { id: item.id, provider: item.proposed_provider, model: item.proposed_model },
+          };
+        }
+        return next;
+      });
+    }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -983,7 +1006,10 @@ export default function App() {
 
         patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
 
-        if (resp.status === 'waiting_for_approval' && resp.approval_id) {
+        if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
+          const confirmation = await api.fetchRoutingConfirmation(resp.routing_confirmation_id);
+          patchThreadLive(originatingThreadId, { routingConfirmation: { id: confirmation.id, provider: confirmation.proposed_provider, model: confirmation.proposed_model }, approval: null });
+        } else if (resp.status === 'waiting_for_approval' && resp.approval_id) {
           const appDetail = await api.fetchApproval(resp.approval_id);
           // Typed binding: register originating thread in the approvalOrigins map
           setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
@@ -1038,9 +1064,6 @@ export default function App() {
         }
       } catch (err: any) {
         patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-        if (err instanceof ApiError && err.code === 'RoutingConfirmationRequired') {
-          setRoutingConfirmation({ provider: err.details?.proposed_provider, model: err.details?.proposed_model });
-        }
         const errorMsg: ChatMessage = {
           id: `live-err-${nonce}`,
           role: 'assistant',
@@ -1116,7 +1139,10 @@ export default function App() {
           // overrides from the previous conversation are deliberately not copied.
           const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
-          if (resp.status === 'waiting_for_approval' && resp.approval_id) {
+          if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
+            const confirmation = await api.fetchRoutingConfirmation(resp.routing_confirmation_id);
+            patchThreadLive(originatingThreadId, { routingConfirmation: { id: confirmation.id, provider: confirmation.proposed_provider, model: confirmation.proposed_model }, approval: null });
+          } else if (resp.status === 'waiting_for_approval' && resp.approval_id) {
             const appDetail = await api.fetchApproval(resp.approval_id);
             // Typed binding: record which thread owns this approval
             setApprovalOrigins((prev) => ({ ...prev, [appDetail.id]: originatingThreadId }));
@@ -1145,9 +1171,6 @@ export default function App() {
           if (resp.run_id) void refreshInspectorData(originatingThreadId, resp.run_id);
         } catch (err: any) {
           patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-          if (err instanceof ApiError && err.code === 'RoutingConfirmationRequired') {
-            setRoutingConfirmation({ provider: err.details?.proposed_provider, model: err.details?.proposed_model });
-          }
           updateThreadMessages(originatingThreadId, (prev) => [...prev, { id: `live-err-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-err-node-${nonce}`, content: `Error: ${executionErrorText(err)}`, timestamp: 'just now', status: 'Failed' }]);
         }
       })();
@@ -1465,6 +1488,54 @@ export default function App() {
     ]
   );
 
+  const handleRoutingConfirmationDecision = useCallback(async (decision: 'approved' | 'rejected') => {
+    const confirmation = activeThreadLive.routingConfirmation;
+    const originatingThreadId = activeThreadId;
+    if (!confirmation || !originatingThreadId) return;
+
+    patchThreadLive(originatingThreadId, { runStatus: 'resuming_routing' });
+    try {
+      const result = await api.decideRoutingConfirmation(confirmation.id, decision);
+      patchThreadLive(originatingThreadId, {
+        runStatus: result.execution_status,
+        routingConfirmation: null,
+      });
+
+      if (result.execution_status === 'waiting_for_routing_confirmation' && result.next_routing_confirmation_id) {
+        const next = await api.fetchRoutingConfirmation(result.next_routing_confirmation_id);
+        patchThreadLive(originatingThreadId, {
+          routingConfirmation: { id: next.id, provider: next.proposed_provider, model: next.proposed_model },
+        });
+      } else if (result.execution_status === 'waiting_for_approval' && result.approval_id) {
+        const approval = await api.fetchApproval(result.approval_id);
+        setApprovalOrigins((current) => ({ ...current, [approval.id]: originatingThreadId }));
+        patchThreadLive(originatingThreadId, { approval });
+      } else if (result.final_response) {
+        const detail = await api.fetchRunDetails(result.run_id).catch(() => null);
+        if (detail) patchThreadLive(originatingThreadId, { runDetail: detail });
+        const events = detail?.events ?? [];
+        const assistantMsg: ChatMessage = {
+          id: `live-routing-confirmation-${Date.now()}`,
+          role: 'assistant',
+          branch: 'Root',
+          content: result.final_response,
+          timestamp: 'just now',
+          created_at: new Date().toISOString(),
+          status: result.execution_status === 'completed' ? 'Completed' : 'Cancelled',
+          execution: events.length ? mapRunEventsToExecutionSteps(events) : undefined,
+          provenance: contextProvenanceFromRunEvents(events),
+          contextTokens: compiledContextTokenCount(events),
+          ...routingSummaryFromRunEvents(events),
+        };
+        updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
+      }
+      void refreshInspectorData(originatingThreadId, result.run_id);
+    } catch (error) {
+      patchThreadLive(originatingThreadId, { runStatus: 'waiting_for_routing_confirmation' });
+      pushToast('Routing decision failed', executionErrorText(error));
+    }
+  }, [activeThreadLive.routingConfirmation, activeThreadId, updateThreadMessages, refreshInspectorData, pushToast]);
+
   const automationFromRecord = useCallback((record: AutomationRecordResponse, catalog: ProjectRecord[]): AutomationRecord => {
     const project = record.project_name
       ? catalog.find((item) => item.name.toLowerCase() === record.project_name!.toLowerCase())
@@ -1704,11 +1775,11 @@ export default function App() {
           onRefreshModels={async () => { try { setCatalog(await api.refreshModels()); } catch (error) { pushToast('Model discovery failed', executionErrorText(error)); } }}
         />
       </Suspense> : null}
-      {routingConfirmation ? <RoutingConfirmationNotice
-        proposal={routingConfirmation}
-        onCancel={() => setRoutingConfirmation(null)}
-        onOpenStudio={() => { setRoutingConfirmation(null); openRoutingStudio(); }}
-        onChangeRouting={() => { setRoutingConfirmation(null); setActiveModelLock(null); openRoutingStudio(); }}
+      {activeThreadLive.routingConfirmation ? <RoutingConfirmationNotice
+        proposal={{ provider: activeThreadLive.routingConfirmation.provider, model: activeThreadLive.routingConfirmation.model }}
+        busy={activeThreadLive.runStatus === 'resuming_routing'}
+        onCancel={() => void handleRoutingConfirmationDecision('rejected')}
+        onConfirm={() => void handleRoutingConfirmationDecision('approved')}
       /> : null}
 
       <WorkspaceChrome

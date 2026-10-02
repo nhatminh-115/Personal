@@ -331,11 +331,44 @@ class DelegationRuntime:
         try:
             # Check if child graph is already initialized/suspended
             child_snapshot = await graph.aget_state(child_config)
-            if child_snapshot.next:
-                # Interrupted / paused graph being resumed from durable checkpoint
-                final_state = await graph.ainvoke(Command(resume={}), config=child_config)
-            else:
-                final_state = await graph.ainvoke(initial_state, config=child_config)
+            try:
+                if child_snapshot.next:
+                    # Interrupted / paused graph being resumed from durable checkpoint
+                    final_state = await graph.ainvoke(Command(resume={}), config=child_config)
+                else:
+                    final_state = await graph.ainvoke(initial_state, config=child_config)
+            except GraphInterrupt:
+                child_snapshot = await graph.aget_state(child_config)
+                active_interrupt = next((
+                    getattr(interrupt_item, "value", interrupt_item)
+                    for task in getattr(child_snapshot, "tasks", ())
+                    for interrupt_item in getattr(task, "interrupts", ())
+                    if isinstance(getattr(interrupt_item, "value", interrupt_item), dict)
+                ), None)
+                if not isinstance(active_interrupt, dict) or active_interrupt.get("kind") != "routing_confirmation":
+                    raise
+                child_run.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
+                await db.commit()
+                await trace_service.record_event(
+                    run_id=request.parent_run_id,
+                    session_id=request.session_id,
+                    event_type="routing_confirmation_requested",
+                    payload={
+                        "confirmation_id": active_interrupt.get("confirmation_id"),
+                        "execution_run_id": child_run_id,
+                        "proposed_provider": active_interrupt.get("proposed_provider"),
+                        "proposed_model": active_interrupt.get("proposed_model"),
+                    },
+                )
+                parent_decision = interrupt({
+                    **active_interrupt,
+                    "root_run_id": request.parent_run_id,
+                    "execution_run_id": child_run_id,
+                })
+                final_state = await graph.ainvoke(
+                    Command(resume=parent_decision),
+                    config=child_config,
+                )
 
             # Check if child graph was suspended for human approval
             post_child_snapshot = await graph.aget_state(child_config)

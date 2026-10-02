@@ -166,6 +166,27 @@ async def chat_endpoint(
         # 6. Check if execution was suspended via interrupt()
         if "__interrupt__" in result_state and len(result_state["__interrupt__"]) > 0:
             interrupt_val = result_state["__interrupt__"][0].value
+            if isinstance(interrupt_val, dict) and interrupt_val.get("kind") == "routing_confirmation":
+                confirmation_id = interrupt_val.get("confirmation_id")
+                run_record.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
+                run_record.final_response = "Cloud routing requires your confirmation."
+                execution_run_id = interrupt_val.get("execution_run_id")
+                if isinstance(execution_run_id, str) and execution_run_id != run_id:
+                    execution_run = await db.get(RunModel, execution_run_id)
+                    if execution_run is not None:
+                        execution_run.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
+                await db.commit()
+                return ChatResponse(
+                    run_id=run_id,
+                    session_id=req.session_id,
+                    status=RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
+                    response=run_record.final_response,
+                    routing_confirmation_id=confirmation_id,
+                    proposed_provider=interrupt_val.get("proposed_provider"),
+                    proposed_model=interrupt_val.get("proposed_model"),
+                    tool_results=[],
+                )
+
             approval_id = interrupt_val.get("approval_id")
             tool_name = interrupt_val.get("tool_name")
             risk_level = interrupt_val.get("risk_level")

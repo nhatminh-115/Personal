@@ -269,12 +269,38 @@ export interface WorkspaceGraph {
 export interface ChatResponse {
   run_id: string;
   session_id: string;
-  status: 'completed' | 'waiting_for_approval' | 'failed' | 'cancelled';
+  status: 'completed' | 'waiting_for_approval' | 'waiting_for_routing_confirmation' | 'failed' | 'cancelled';
   response?: string;
   approval_id?: string;
+  routing_confirmation_id?: string;
+  proposed_provider?: string;
+  proposed_model?: string;
   user_message_id?: string;
   assistant_message_id?: string;
   tool_results: any[];
+}
+
+export interface RoutingConfirmationDetail {
+  id: string;
+  root_run_id: string;
+  execution_run_id: string;
+  session_id: string;
+  proposed_provider: string;
+  proposed_model: string;
+  status: 'pending' | 'approved' | 'rejected';
+  decision_notes?: string | null;
+  created_at: string;
+  decided_at?: string | null;
+}
+
+export interface RoutingConfirmationDecisionResponse {
+  confirmation_id: string;
+  status: 'approved' | 'rejected';
+  run_id: string;
+  execution_status: string;
+  final_response?: string | null;
+  next_routing_confirmation_id?: string | null;
+  approval_id?: string | null;
 }
 
 export interface ApprovalDetail {

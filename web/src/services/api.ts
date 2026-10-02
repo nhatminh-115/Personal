@@ -1,6 +1,8 @@
 import {
   ApprovalDecisionResponse,
   ApprovalDetail,
+  RoutingConfirmationDetail,
+  RoutingConfirmationDecisionResponse,
   ChatResponse,
   MemoryItem,
   ModelCatalog,
@@ -396,6 +398,26 @@ export const api = {
       body: JSON.stringify(payload),
     });
     return handleResponse<ChatResponse>(res);
+  },
+
+  async fetchPendingRoutingConfirmations(): Promise<RoutingConfirmationDetail[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/pending`));
+  },
+
+  async fetchRoutingConfirmation(id: string): Promise<RoutingConfirmationDetail> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}`));
+  },
+
+  async decideRoutingConfirmation(
+    id: string,
+    decision: 'approved' | 'rejected',
+    decisionNotes?: string,
+  ): Promise<RoutingConfirmationDecisionResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision, ...(decisionNotes ? { decision_notes: decisionNotes } : {}) }),
+    }));
   },
 
   async fetchApproval(approvalId: string): Promise<ApprovalDetail> {
