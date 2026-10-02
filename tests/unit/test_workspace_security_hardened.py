@@ -1,11 +1,22 @@
 """Unit tests for hardened workspace security, including symlink/junction escape prevention."""
 
 import os
+import stat
 from pathlib import Path
 import pytest
 
 from app.core.errors import WorkspaceEscapeError
 from app.sandbox.workspace import resolve_workspace_path
+
+
+def test_workspace_root_is_created_with_private_permissions(tmp_path: Path):
+    if os.name == "nt":
+        pytest.skip("POSIX workspace mode bits are not available on Windows")
+
+    workspace = tmp_path / "private-root"
+    resolve_workspace_path(".", custom_root=workspace)
+
+    assert stat.S_IMODE(workspace.stat().st_mode) == 0o700
 
 
 def test_absolute_path_outside_workspace_rejected(setup_test_workspace: Path):
