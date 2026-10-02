@@ -21,7 +21,8 @@ from app.observability.tracer import TraceService
 from app.orchestrator.state import AgentState
 
 from app.tools.base import RiskLevel
-from app.tools.registry import ToolRegistry, UnresolvedCapabilitiesError, tool_registry
+from app.capabilities.registry import UnresolvedCapabilitiesError
+from app.tools.registry import ToolRegistry, tool_registry
 
 
 def _get_services(config: Optional[RunnableConfig]) -> Dict[str, Any]:
