@@ -74,7 +74,7 @@ async def test_workspace_collection_rejects_invalid_cursor(async_client):
         headers={"Origin": "http://localhost:5173"},
     )
     assert response.status_code == 422
-    assert response.json()["detail"] == "Invalid workspace cursor."
+    assert response.json()["detail"] == "Invalid pagination cursor."
     assert "x-next-cursor" in response.headers.get("access-control-expose-headers", "").lower()
 
 

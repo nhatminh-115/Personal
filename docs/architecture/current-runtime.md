@@ -91,8 +91,8 @@ Workspace objects and edges provide a shared substrate for conversation turns,
 manual notes, context bridges, context sets, branches, and operational
 provenance. Semantic relationships may cycle; context-flow edges are validated
 to remain acyclic. Board layout is stored separately from object relationships.
-Project, personal note, and Library collection reads use bounded keyset pages;
-the API returns arrays with an `X-Next-Cursor` response header, and the
+Project, personal note, Library, and Study collection reads use bounded keyset
+pages; the API returns arrays with an `X-Next-Cursor` response header, and the
 workspace client transparently loads subsequent pages.
 
 Chat requests may select project-scoped workspace object IDs. The Context

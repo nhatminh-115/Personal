@@ -3,11 +3,16 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete as sa_delete, select, text
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from sqlalchemy import and_, delete as sa_delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import StudyCardResponse, StudyCardWrite, StudyReflectionWrite, StudySessionResponse, StudySessionWrite
+from app.api.pagination import (
+    MAX_COLLECTION_PAGE_SIZE,
+    decode_timestamp_id_cursor,
+    set_next_cursor_header,
+)
 from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 from app.db.session import get_db
 from app.memory.context_compiler import WorkspaceContextCompiler, stricter_privacy_requirement
@@ -37,17 +42,32 @@ def _study_session_response(item: WorkspaceObjectModel) -> StudySessionResponse:
 
 
 @router.get("/sessions", response_model=list[StudySessionResponse])
-async def list_study_sessions(db: AsyncSession = Depends(get_db)) -> list[StudySessionResponse]:
-    result = await db.execute(
-        select(WorkspaceObjectModel)
-        .where(
-            WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type == "study_session",
-            WorkspaceObjectModel.created_by == "user",
-        )
-        .order_by(WorkspaceObjectModel.created_at.desc(), WorkspaceObjectModel.id)
+async def list_study_sessions(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[StudySessionResponse]:
+    query = select(WorkspaceObjectModel).where(
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "study_session",
+        WorkspaceObjectModel.created_by == "user",
     )
-    return [_study_session_response(item) for item in result.scalars()]
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(or_(
+            WorkspaceObjectModel.created_at < cursor_created_at,
+            and_(WorkspaceObjectModel.created_at == cursor_created_at, WorkspaceObjectModel.id > cursor_id),
+        ))
+    result = await db.execute(
+        query.order_by(WorkspaceObjectModel.created_at.desc(), WorkspaceObjectModel.id).limit(page_size + 1)
+    )
+    items = set_next_cursor_header(
+        response, list(result.scalars()), page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
+    )
+    return [_study_session_response(item) for item in items]
 
 
 async def _lock_study_session_creation(db: AsyncSession) -> None:
@@ -221,18 +241,33 @@ async def _get_user_study_session(db: AsyncSession, session_id: str) -> Workspac
 
 
 @router.get("/cards", response_model=list[StudyCardResponse])
-async def list_study_cards(db: AsyncSession = Depends(get_db)) -> list[StudyCardResponse]:
+async def list_study_cards(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[StudyCardResponse]:
+    query = select(WorkspaceObjectModel).where(
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "study_card",
+        WorkspaceObjectModel.created_by == "user",
+    )
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(or_(
+            WorkspaceObjectModel.created_at > cursor_created_at,
+            and_(WorkspaceObjectModel.created_at == cursor_created_at, WorkspaceObjectModel.id > cursor_id),
+        ))
     result = await db.execute(
-        select(WorkspaceObjectModel)
-        .where(
-            WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type == "study_card",
-            WorkspaceObjectModel.created_by == "user",
-        )
-        .order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+        query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(page_size + 1)
+    )
+    items = set_next_cursor_header(
+        response, list(result.scalars()), page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
     )
     cards = []
-    for item in result.scalars():
+    for item in items:
         metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
         if isinstance(metadata.get("study_session_id"), str):
             cards.append(_study_card_response(item))

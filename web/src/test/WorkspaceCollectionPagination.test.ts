@@ -28,4 +28,16 @@ describe('workspace collection pagination', () => {
     expect(secondUrl.searchParams.get('page_size')).toBe('100');
     expect(secondUrl.searchParams.get('cursor')).toBe('next-notes');
   });
+
+  it('uses the same paged loader for Study cards', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse([{ id: 'card-1' }], 'next-cards'))
+      .mockResolvedValueOnce(jsonResponse([{ id: 'card-2' }]));
+    vi.stubGlobal('fetch', fetch);
+
+    const cards = await api.fetchStudyCards();
+
+    expect(cards.map((card) => card.id)).toEqual(['card-1', 'card-2']);
+    expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').searchParams.get('cursor')).toBe('next-cards');
+  });
 });
