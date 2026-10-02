@@ -149,6 +149,7 @@ class WorkspaceNoteWrite(BaseModel):
     tags: List[str] = Field(default_factory=list, max_length=32)
     project_names: List[str] = Field(default_factory=list, max_length=64)
     pinned: bool = False
+    privacy_policy: Optional[Literal["public", "internal", "confidential", "local_only"]] = None
 
 
 class WorkspaceNoteResponse(BaseModel):
@@ -158,6 +159,7 @@ class WorkspaceNoteResponse(BaseModel):
     tags: List[str]
     project_names: List[str]
     pinned: bool
+    privacy_policy: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

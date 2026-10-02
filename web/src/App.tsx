@@ -141,6 +141,7 @@ function workspaceNoteFromRecord(record: WorkspaceNoteRecord, projectCatalog: Pr
     tags: record.tags,
     projectIds: record.project_names.map((name) => projectCatalog.find((project) => project.name === name)?.id ?? name),
     pinned: record.pinned,
+    privacyPolicy: record.privacy_policy ?? undefined,
     source: 'live',
   };
 }
@@ -152,6 +153,11 @@ function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord
     tags: note.tags,
     project_names: note.projectIds.map((id) => projectCatalog.find((project) => project.id === id)?.name ?? id),
     pinned: note.pinned === true,
+    ...(note.privacyPolicy === undefined
+      ? { privacy_policy: null }
+      : ['public', 'internal', 'confidential', 'local_only'].includes(note.privacyPolicy)
+        ? { privacy_policy: note.privacyPolicy }
+        : {}),
   };
 }
 
@@ -162,6 +168,7 @@ function workspaceNoteFingerprint(note: WorkspaceNote): string {
     tags: note.tags,
     projectIds: [...note.projectIds].sort(),
     pinned: note.pinned === true,
+    privacyPolicy: note.privacyPolicy ?? null,
   });
 }
 

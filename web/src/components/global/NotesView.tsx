@@ -1,6 +1,7 @@
 import { Link2, NotebookPen, Pin, Plus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectRecord, WorkspaceNote } from '../../data/workspaceData';
+import type { RoutingPrivacy } from '../../types';
 
 interface NotesViewProps {
   projects: ProjectRecord[];
@@ -69,7 +70,26 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
           <>
             <div className="note-editor-panel__meta">
               <span className="eyebrow">{active.projectIds.length ? 'LINKED NOTE' : 'PERSONAL NOTE'}</span>
-              <button className={`pin-note ${active.pinned ? 'is-active' : ''}`} type="button" onClick={() => updateActive({ pinned: !active.pinned })}><Pin size={13} /> {active.pinned ? 'Pinned' : 'Pin'}</button>
+              <div className="note-editor-panel__controls">
+                <label className="note-privacy-control">
+                  <span>Privacy</span>
+                  <select
+                    aria-label="Note privacy classification"
+                    value={active.privacyPolicy ?? ''}
+                    onChange={(event) => updateActive({ privacyPolicy: event.target.value ? event.target.value as RoutingPrivacy : undefined })}
+                  >
+                    <option value="">Inherit global</option>
+                    <option value="public">Public</option>
+                    <option value="internal">Internal</option>
+                    <option value="confidential">Confidential</option>
+                    <option value="local_only">Local only</option>
+                    {active.privacyPolicy && !(['public', 'internal', 'confidential', 'local_only'] as string[]).includes(active.privacyPolicy)
+                      ? <option value={active.privacyPolicy} disabled>Unsupported: {active.privacyPolicy}</option>
+                      : null}
+                  </select>
+                </label>
+                <button className={`pin-note ${active.pinned ? 'is-active' : ''}`} type="button" onClick={() => updateActive({ pinned: !active.pinned })}><Pin size={13} /> {active.pinned ? 'Pinned' : 'Pin'}</button>
+              </div>
             </div>
             <input className="note-title-input" value={active.title} onChange={(event) => updateActive({ title: event.target.value })} />
             <textarea className="note-body-input" value={active.body} onChange={(event) => updateActive({ body: event.target.value })} placeholder="Write anything…" />

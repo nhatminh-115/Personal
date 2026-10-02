@@ -313,6 +313,7 @@ export interface WorkspaceNoteRecord {
   tags: string[];
   project_names: string[];
   pinned: boolean;
+  privacy_policy?: string | null;
   created_at: string;
   updated_at: string;
 }
