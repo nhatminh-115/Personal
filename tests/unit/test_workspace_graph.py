@@ -1410,6 +1410,60 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
 
 
 @pytest.mark.asyncio
+async def test_confidential_context_never_exposes_cloud_capability_tools(async_client):
+    from app.capabilities.registry import CapabilityProviderHealth, CapabilityProviderMetadata, NetworkRequirement, PrivacyBoundary
+    from app.models.router import model_router
+    from app.tools.registry import tool_registry
+
+    note = await async_client.post('/v1/workspace/projects/aura/objects', json={
+        'object_type': 'manual_note',
+        'title': 'Private code context',
+        'content': 'Confidential source context.',
+        'metadata_json': {
+            'privacy_policy': 'confidential',
+            'required_capabilities': ['code_graph.read'],
+        },
+    })
+    assert note.status_code == 201
+
+    provider_id = 'test.cloud-code-graph'
+    tool_registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id=provider_id,
+            name='Cloud Code Graph',
+            health=CapabilityProviderHealth.HEALTHY,
+            capabilities=['code_graph.read'],
+            privacy_boundary=PrivacyBoundary.CLOUD,
+            network_requirement=NetworkRequirement.INTERNET,
+        ),
+        {'code_graph.read': ['read_workspace_file']},
+    )
+    try:
+        preview = await async_client.post(
+            '/v1/workspace/projects/aura/context/preview',
+            json={'selected_object_ids': [note.json()['id']]},
+        )
+        assert preview.status_code == 200
+        assert preview.json()['privacy_requirement'] == 'confidential'
+        assert preview.json()['available_capabilities'] == []
+        assert preview.json()['missing_capabilities'] == ['code_graph.read']
+
+        calls_before = len(model_router.get_provider('mock').call_history)
+        response = await async_client.post('/v1/chat', json={
+            'session_id': 'confidential-cloud-capability-session',
+            'project_name': 'aura',
+            'message': 'Analyze this private context.',
+            'context_object_ids': [note.json()['id']],
+        })
+    finally:
+        tool_registry.unregister_capability_provider(provider_id)
+
+    assert response.status_code == 422
+    assert response.json()['code'] == 'ContextSelectionError'
+    assert response.json()['details']['missing_capabilities'] == ['code_graph.read']
+    assert len(model_router.get_provider('mock').call_history) == calls_before
+
+@pytest.mark.asyncio
 async def test_saved_context_set_expands_only_its_sources_in_preview_and_chat(
     async_client, test_db_session
 ):

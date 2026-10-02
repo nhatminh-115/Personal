@@ -115,11 +115,24 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             model_capabilities, tool_capabilities, capability_flags = split_context_capabilities(
                 compiled_context.required_capabilities
             )
+            routing_context = updated_metadata.get("routing_context_dict")
+            effective_privacy = (
+                routing_context.get("privacy_requirement")
+                if isinstance(routing_context, dict)
+                else updated_metadata.get("privacy_requirement")
+            )
+            effective_privacy = stricter_privacy_requirement(
+                effective_privacy if isinstance(effective_privacy, str) else None,
+                compiled_context.privacy_requirement,
+            )
             tool_registry_for_context: ToolRegistry = services["tool_registry"]
             resolved_tool_names: list[str] = []
             if tool_capabilities:
                 try:
-                    resolved_tool_names = tool_registry_for_context.resolve_capabilities(tool_capabilities)
+                    resolved_tool_names = tool_registry_for_context.resolve_capabilities(
+                        tool_capabilities,
+                        privacy_requirement=effective_privacy,
+                    )
                 except UnresolvedCapabilitiesError as exc:
                     raise ContextSelectionError(
                         "Selected workspace context requires an unavailable capability provider.",
@@ -129,11 +142,8 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             routing_context = updated_metadata.get("routing_context_dict")
             if isinstance(routing_context, dict):
                 routing_context = dict(routing_context)
-                if compiled_context.privacy_requirement:
-                    routing_context["privacy_requirement"] = stricter_privacy_requirement(
-                        routing_context.get("privacy_requirement"),
-                        compiled_context.privacy_requirement,
-                    )
+                if effective_privacy:
+                    routing_context["privacy_requirement"] = effective_privacy
                 routing_context["required_capabilities"] = sorted(set(
                     routing_context.get("required_capabilities", [])
                 ) | set(model_capabilities))

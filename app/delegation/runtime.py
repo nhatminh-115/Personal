@@ -32,13 +32,18 @@ class DelegationRuntime:
         self.registry = registry or specialist_registry
         self.base_tool_registry = base_tool_registry or tool_registry
 
-    def _resolve_specialist_tools(self, spec: SpecialistDefinition) -> list[str]:
-        """Resolve required tools strictly, then add only currently available optional tools."""
+    def _resolve_specialist_tools(
+        self,
+        spec: SpecialistDefinition,
+        privacy_requirement: Optional[str] = None,
+    ) -> list[str]:
+        """Resolve required tools under the run's privacy boundary, then add safe optional tools."""
         allowed = spec.allowed_tools or None
         if spec.requested_runtime_capabilities:
             resolved = self.base_tool_registry.resolve_capabilities(
                 spec.requested_runtime_capabilities,
                 allowed_tool_names=allowed,
+                privacy_requirement=privacy_requirement,
             )
         else:
             resolved = list(spec.allowed_tools)
@@ -47,6 +52,7 @@ class DelegationRuntime:
                 self.base_tool_registry.resolve_available_capabilities(
                     spec.optional_runtime_capabilities,
                     allowed_tool_names=allowed,
+                    privacy_requirement=privacy_requirement,
                 )
             )
         return list(dict.fromkeys(resolved))
@@ -263,7 +269,13 @@ class DelegationRuntime:
             )
 
         # 5. Build Scoped Tool Registry for the specialist
-        resolved_tools = self._resolve_specialist_tools(spec)
+        routing_context = (request.context or {}).get("routing_context_dict")
+        privacy_requirement = (
+            routing_context.get("privacy_requirement")
+            if isinstance(routing_context, dict)
+            else None
+        )
+        resolved_tools = self._resolve_specialist_tools(spec, privacy_requirement)
         scoped_tools = ScopedToolRegistry(self.base_tool_registry, resolved_tools)
 
         # 6. Prepare Child Initial AgentState

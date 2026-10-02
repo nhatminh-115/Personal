@@ -299,15 +299,32 @@ def test_optional_code_graph_tools_are_exposed_only_when_a_provider_is_available
             network_requirement=NetworkRequirement.UNKNOWN,
         ),
         {
-            "code_graph.context": ["read_workspace_file"],
-            "code_graph.impact": ["list_workspace_files"],
+            "code_graph.context": ["read_document_section"],
+            "code_graph.impact": ["research_search"],
         },
     )
 
     exposed = set(runtime._resolve_specialist_tools(coding))
     assert required <= exposed
-    assert {"read_workspace_file", "list_workspace_files"} <= exposed
+    assert {"read_document_section", "research_search"} <= exposed
+    assert set(runtime._resolve_specialist_tools(coding, "confidential")) == required
     assert registry.resolve_available_capabilities(["code_graph.trace"]) == []
+
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id="mcp.trusted-local-graph",
+            name="Trusted local graph",
+            health=CapabilityProviderHealth.HEALTHY,
+            capabilities=["code_graph.context"],
+            privacy_boundary=PrivacyBoundary.LOCAL,
+            network_requirement=NetworkRequirement.NONE,
+        ),
+        {"code_graph.context": ["read_document_section"]},
+    )
+    strict_exposed = set(runtime._resolve_specialist_tools(coding, "local_only"))
+    assert required <= strict_exposed
+    assert "read_document_section" in strict_exposed
+    assert "research_search" not in strict_exposed
 
     registry.register_capability_provider(
         CapabilityProviderMetadata(
@@ -321,6 +338,52 @@ def test_optional_code_graph_tools_are_exposed_only_when_a_provider_is_available
     )
     assert registry.resolve_available_capabilities(["code_graph.trace"]) == []
 
+
+def test_strict_privacy_filters_cloud_and_unknown_capability_providers():
+    registry = ToolRegistry()
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id='test.local-graph', name='Local graph',
+            capabilities=['code_graph.query'],
+            privacy_boundary=PrivacyBoundary.LOCAL,
+            network_requirement=NetworkRequirement.LOCAL,
+        ),
+        {'code_graph.query': ['read_workspace_file']},
+    )
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id='test.cloud-graph', name='Cloud graph',
+            capabilities=['code_graph.query'],
+            privacy_boundary=PrivacyBoundary.CLOUD,
+            network_requirement=NetworkRequirement.INTERNET,
+        ),
+        {'code_graph.query': ['research_search']},
+    )
+    registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id='test.unknown-parser', name='Unknown parser',
+            capabilities=['document.parse'],
+            privacy_boundary=PrivacyBoundary.LOCAL,
+            network_requirement=NetworkRequirement.UNKNOWN,
+        ),
+        {'document.parse': ['read_document_section']},
+    )
+
+    assert registry.resolve_available_capabilities(
+        ['code_graph.query'], privacy_requirement='confidential',
+    ) == ['read_workspace_file']
+    assert registry.resolve_available_capabilities(
+        ['code_graph.query'], privacy_requirement='local_only',
+    ) == ['read_workspace_file']
+    assert registry.resolve_available_capabilities(
+        ['document.parse'], privacy_requirement='confidential',
+    ) == []
+    from app.capabilities.registry import UnresolvedCapabilitiesError
+    with pytest.raises(UnresolvedCapabilitiesError, match='document.parse'):
+        registry.resolve_capabilities(['document.parse'], privacy_requirement='local_only')
+    assert set(registry.resolve_available_capabilities(['code_graph.query'])) == {
+        'read_workspace_file', 'research_search',
+    }
 
 def test_native_or_external_provider_can_implement_the_typed_provider_boundary():
     registry = ToolRegistry()
