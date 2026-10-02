@@ -194,6 +194,9 @@ class PersistentScheduler:
             job = await db.get(ScheduledJobModel, candidate.id)
             if not job:
                 continue
+            # The claim uses synchronize_session=False; refresh before releasing
+            # the lease or the ORM may treat locked_at=None as unchanged.
+            await db.refresh(job)
 
             if job.job_type != JobType.ONE_SHOT.value and await self._automation_has_active_execution(db, job):
                 try:
