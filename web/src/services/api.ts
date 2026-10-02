@@ -71,6 +71,23 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function fetchAllCursorPages<T>(path: string, pageSize = 100): Promise<T[]> {
+  const items: T[] = [];
+  let cursor: string | null = null;
+  do {
+    const params = new URLSearchParams();
+    if (cursor) {
+      params.set('page_size', String(pageSize));
+      params.set('cursor', cursor);
+    }
+    const query = params.toString();
+    const response = await fetch(`${BASE_URL}${path}${query ? `?${query}` : ''}`);
+    items.push(...await handleResponse<T[]>(response));
+    cursor = response.headers?.get('X-Next-Cursor') ?? null;
+  } while (cursor);
+  return items;
+}
+
 export const api = {
   async fetchCapabilityProviders(): Promise<CapabilityProvidersResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/capabilities/providers`));
@@ -239,7 +256,7 @@ export const api = {
   },
 
   async fetchWorkspaceNotes(): Promise<WorkspaceNoteRecord[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`));
+    return fetchAllCursorPages<WorkspaceNoteRecord>('/v1/workspace/notes');
   },
 
   async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
@@ -313,11 +330,11 @@ export const api = {
   },
 
   async fetchWorkspaceLibrary(): Promise<WorkspaceLibraryReferenceRecord[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`));
+    return fetchAllCursorPages<WorkspaceLibraryReferenceRecord>('/v1/workspace/library');
   },
 
   async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`));
+    return fetchAllCursorPages<WorkspaceProjectRecord>('/v1/workspace/projects');
   },
 
   async searchWorkspace(query: string, projectName?: string): Promise<WorkspaceSearchResult[]> {

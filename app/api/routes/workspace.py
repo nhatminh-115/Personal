@@ -4,7 +4,7 @@ import base64
 import json
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import String, and_, bindparam, case, delete as sa_delete, func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,14 +52,44 @@ from app.capabilities.registry import UnresolvedCapabilitiesError
 from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
+MAX_WORKSPACE_COLLECTION_PAGE_SIZE = 500
+
+
+def _descending_timestamp_cursor_filter(timestamp_column, id_column, cursor: str):
+    cursor_created_at, cursor_id = _decode_workspace_cursor(cursor)
+    return or_(
+        timestamp_column < cursor_created_at,
+        and_(timestamp_column == cursor_created_at, id_column > cursor_id),
+    )
+
+
+def _set_next_cursor(response: Response, rows: list, page_size: int, timestamp_field: str = "created_at") -> list:
+    if len(rows) > page_size:
+        item = rows[page_size - 1]
+        response.headers["X-Next-Cursor"] = _encode_workspace_cursor(item, getattr(item, timestamp_field))
+        return rows[:page_size]
+    return rows
 
 
 @router.get("/projects", response_model=list[WorkspaceProjectResponse])
-async def list_workspace_projects(db: AsyncSession = Depends(get_db)) -> list[WorkspaceProjectResponse]:
+async def list_workspace_projects(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceProjectResponse]:
+    query = select(WorkspaceProjectModel)
+    if cursor is not None:
+        cursor_created_at, cursor_id = _decode_workspace_cursor(cursor)
+        query = query.where(or_(
+            WorkspaceProjectModel.created_at > cursor_created_at,
+            and_(WorkspaceProjectModel.created_at == cursor_created_at, WorkspaceProjectModel.id > cursor_id),
+        ))
     result = await db.execute(
-        select(WorkspaceProjectModel).order_by(WorkspaceProjectModel.created_at, WorkspaceProjectModel.id)
+        query.order_by(WorkspaceProjectModel.created_at, WorkspaceProjectModel.id).limit(page_size + 1)
     )
-    return [WorkspaceProjectResponse.model_validate(item, from_attributes=True) for item in result.scalars()]
+    items = _set_next_cursor(response, list(result.scalars()), page_size)
+    return [WorkspaceProjectResponse.model_validate(item, from_attributes=True) for item in items]
 
 
 @router.post("/projects", response_model=WorkspaceProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -636,7 +666,7 @@ async def _project_execution_history(
     )
 
 
-def _decode_workspace_graph_cursor(cursor: str) -> tuple[datetime, str]:
+def _decode_workspace_cursor(cursor: str) -> tuple[datetime, str]:
     try:
         encoded = cursor + "=" * (-len(cursor) % 4)
         created_at_text, object_id = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
@@ -647,11 +677,14 @@ def _decode_workspace_graph_cursor(cursor: str) -> tuple[datetime, str]:
             raise ValueError("invalid object ID")
         return created_at, object_id
     except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise HTTPException(status_code=422, detail="Invalid workspace graph cursor.") from exc
+        raise HTTPException(status_code=422, detail="Invalid workspace cursor.") from exc
 
 
-def _encode_workspace_graph_cursor(item: WorkspaceObjectModel) -> str:
-    payload = json.dumps([item.created_at.isoformat(), item.id], separators=(",", ":"))
+def _encode_workspace_cursor(
+    item: WorkspaceObjectModel | WorkspaceProjectModel | WorkspaceEdgeModel,
+    created_at: datetime | None = None,
+) -> str:
+    payload = json.dumps([(created_at or item.created_at).isoformat(), item.id], separators=(",", ":"))
     return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
 
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
@@ -689,7 +722,7 @@ async def get_workspace_graph(
         object_rows = []
     else:
         if object_cursor is not None:
-            cursor_created_at, cursor_object_id = _decode_workspace_graph_cursor(object_cursor)
+            cursor_created_at, cursor_object_id = _decode_workspace_cursor(object_cursor)
             object_query = object_query.where(or_(
                 WorkspaceObjectModel.created_at > cursor_created_at,
                 (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
@@ -700,7 +733,7 @@ async def get_workspace_graph(
         object_rows = list(object_result.scalars())
     objects_truncated = len(object_rows) > object_page_size
     objects = object_rows[:object_page_size]
-    objects_next_cursor = _encode_workspace_graph_cursor(objects[-1]) if objects_truncated and objects else None
+    objects_next_cursor = _encode_workspace_cursor(objects[-1]) if objects_truncated and objects else None
 
     edge_query = select(WorkspaceEdgeModel).where(
         WorkspaceEdgeModel.project_name == project_name,
@@ -712,7 +745,7 @@ async def get_workspace_graph(
         edges_next_cursor = None
     else:
         if edge_cursor is not None:
-            cursor_created_at, cursor_edge_id = _decode_workspace_graph_cursor(edge_cursor)
+            cursor_created_at, cursor_edge_id = _decode_workspace_cursor(edge_cursor)
             edge_query = edge_query.where(or_(
                 WorkspaceEdgeModel.created_at > cursor_created_at,
                 (WorkspaceEdgeModel.created_at == cursor_created_at) & (WorkspaceEdgeModel.id > cursor_edge_id),
@@ -723,7 +756,7 @@ async def get_workspace_graph(
         edge_rows = list(edge_result.scalars())
         edges_truncated = len(edge_rows) > edge_page_size
         edges = edge_rows[:edge_page_size]
-        edges_next_cursor = _encode_workspace_graph_cursor(edges[-1]) if edges_truncated and edges else None
+        edges_next_cursor = _encode_workspace_cursor(edges[-1]) if edges_truncated and edges else None
     if include_project_state:
         layout = await db.get(WorkspaceLayoutModel, project_name)
         execution_history = await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
@@ -760,17 +793,26 @@ async def get_workspace_execution_history(
 
 
 @router.get("/notes", response_model=list[WorkspaceNoteResponse])
-async def list_personal_workspace_notes(db: AsyncSession = Depends(get_db)) -> list[WorkspaceNoteResponse]:
-    result = await db.execute(
-        select(WorkspaceObjectModel)
-        .where(
-            WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type == "manual_note",
-            WorkspaceObjectModel.created_by == "user",
-        )
-        .order_by(WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id)
+async def list_personal_workspace_notes(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceNoteResponse]:
+    query = select(WorkspaceObjectModel).where(
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "manual_note",
+        WorkspaceObjectModel.created_by == "user",
     )
-    return await _workspace_note_responses(db, list(result.scalars()))
+    if cursor is not None:
+        query = query.where(_descending_timestamp_cursor_filter(
+            WorkspaceObjectModel.updated_at, WorkspaceObjectModel.id, cursor,
+        ))
+    result = await db.execute(
+        query.order_by(WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id).limit(page_size + 1)
+    )
+    items = _set_next_cursor(response, list(result.scalars()), page_size, "updated_at")
+    return await _workspace_note_responses(db, items)
 
 
 @router.post("/notes", response_model=WorkspaceNoteResponse, status_code=status.HTTP_201_CREATED)
@@ -829,17 +871,26 @@ async def update_personal_workspace_note(
 
 
 @router.get("/library", response_model=list[WorkspaceLibraryReferenceResponse])
-async def list_personal_library_references(db: AsyncSession = Depends(get_db)) -> list[WorkspaceLibraryReferenceResponse]:
-    result = await db.execute(
-        select(WorkspaceObjectModel)
-        .where(
-            WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type == "file_reference",
-            WorkspaceObjectModel.created_by == "user",
-        )
-        .order_by(WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id)
+async def list_personal_library_references(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceLibraryReferenceResponse]:
+    query = select(WorkspaceObjectModel).where(
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "file_reference",
+        WorkspaceObjectModel.created_by == "user",
     )
-    return await _workspace_library_responses(db, list(result.scalars()))
+    if cursor is not None:
+        query = query.where(_descending_timestamp_cursor_filter(
+            WorkspaceObjectModel.updated_at, WorkspaceObjectModel.id, cursor,
+        ))
+    result = await db.execute(
+        query.order_by(WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id).limit(page_size + 1)
+    )
+    items = _set_next_cursor(response, list(result.scalars()), page_size, "updated_at")
+    return await _workspace_library_responses(db, items)
 
 
 @router.post("/library", response_model=WorkspaceLibraryReferenceResponse, status_code=status.HTTP_201_CREATED)

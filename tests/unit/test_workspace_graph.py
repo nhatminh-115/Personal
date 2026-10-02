@@ -121,7 +121,7 @@ async def test_workspace_graph_rejects_invalid_cursor(async_client, cursor_name,
     )
 
     assert response.status_code == 422
-    assert response.json()["detail"] == "Invalid workspace graph cursor."
+    assert response.json()["detail"] == "Invalid workspace cursor."
 
 
 @pytest.mark.asyncio
