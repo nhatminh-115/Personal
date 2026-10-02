@@ -876,3 +876,74 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
     serialized = response.text
     for private_value in ("private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
         assert private_value not in serialized
+
+
+@pytest.mark.asyncio
+async def test_workspace_edge_deletion_preserves_system_edges_and_batches_atomically(
+    async_client,
+    test_db_session,
+):
+    from app.db.models import WorkspaceEdgeModel
+
+    created = []
+    for title in ("Edge source", "Edge target", "Edge third"):
+        response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+            "object_type": "manual_note",
+            "title": title,
+            "content": title,
+        })
+        assert response.status_code == 201
+        created.append(response.json()["id"])
+
+    user_edges = []
+    for source_id, target_id in ((created[0], created[1]), (created[1], created[2])):
+        response = await async_client.post("/v1/workspace/projects/aura/edges", json={
+            "source_object_id": source_id,
+            "target_object_id": target_id,
+            "relation_type": "related_to",
+            "edge_family": "semantic",
+        })
+        assert response.status_code == 201
+        user_edges.append(response.json()["id"])
+
+    system_edge = WorkspaceEdgeModel(
+        id="30000000-0000-4000-8000-000000000001",
+        project_name="aura",
+        source_object_id=created[0],
+        target_object_id=created[2],
+        relation_type="reply",
+        edge_family="context",
+        created_by="system",
+    )
+    test_db_session.add(system_edge)
+    await test_db_session.commit()
+
+    protected_single = await async_client.delete(
+        f"/v1/workspace/projects/aura/edges/{system_edge.id}"
+    )
+    assert protected_single.status_code == 409
+
+    mixed_batch = await async_client.request(
+        "DELETE",
+        "/v1/workspace/projects/aura/edges",
+        json={"edge_ids": [user_edges[0], system_edge.id]},
+    )
+    assert mixed_batch.status_code == 409
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    remaining_ids = {edge["id"] for edge in graph["edges"]}
+    assert set(user_edges) <= remaining_ids
+    assert system_edge.id in remaining_ids
+
+    deleted_batch = await async_client.request(
+        "DELETE",
+        "/v1/workspace/projects/aura/edges",
+        json={"edge_ids": [user_edges[0]]},
+    )
+    assert deleted_batch.status_code == 204
+    deleted_single = await async_client.delete(
+        f"/v1/workspace/projects/aura/edges/{user_edges[1]}"
+    )
+    assert deleted_single.status_code == 204
+
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert [edge["id"] for edge in graph["edges"]] == [system_edge.id]
