@@ -76,10 +76,11 @@ export function ProjectChatWorkspace({
   const isLiveThread = activeThread?.source === 'live' || Boolean(activeThread?.sessionId);
 
   useEffect(() => {
-    if (!isLiveThread || !contextPanelOpen) {
+    if (!isLiveThread) {
       setLiveWorkspaceContext([]);
       return;
     }
+    if (!contextPanelOpen) return;
     let active = true;
     setLiveWorkspaceContext([]);
     void api.fetchWorkspaceGraph(project.name).then((graph) => {

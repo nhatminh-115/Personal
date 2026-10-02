@@ -187,6 +187,7 @@ export function ChatPane({
     if (onSendMessage && isLiveThread) {
       setDraft('');
       setContextOpen(false);
+      onContextPanelOpenChange?.(false);
       setRunPhase('routing');
       try {
         await onSendMessage(
@@ -216,6 +217,7 @@ export function ChatPane({
     onMessagesChange((current) => [...current, userMessage]);
     setDraft('');
     setContextOpen(false);
+    onContextPanelOpenChange?.(false);
     setRunPhase('routing');
 
     timersRef.current = [
@@ -251,7 +253,7 @@ export function ChatPane({
         timersRef.current = [];
       }, 1550),
     ];
-  }, [contextTokens, draft, includedContext, isLiveThread, onMessagesChange, onSendMessage, runPhase, workMode]);
+  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runPhase, workMode]);
 
 
   return (
