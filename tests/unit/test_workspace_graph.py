@@ -1082,3 +1082,68 @@ async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections
     assert "This section is not selected." not in preview["prompt_text"]
     assert "Full source detail must stay behind the bridge." not in preview["prompt_text"]
     assert await test_db_session.scalar(select(func.count()).select_from(RunModel)) == runs_before
+
+
+@pytest.mark.asyncio
+async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_not_filter_models(
+    async_client,
+    monkeypatch,
+):
+    from app.capabilities.registry import (
+        CapabilityProviderHealth,
+        CapabilityProviderMetadata,
+        NetworkRequirement,
+        PrivacyBoundary,
+    )
+    from app.models.router import model_router
+    from app.tools.registry import tool_registry
+
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Code graph requirement",
+        "content": "Use the code graph for impact analysis.",
+        "metadata_json": {"required_capabilities": ["code_graph.read"], "requires_tools": True},
+    })
+    assert created.status_code == 201
+    object_id = created.json()["id"]
+    mock_provider = model_router.get_provider("mock")
+    calls_before = len(mock_provider.call_history)
+
+    missing_provider = await async_client.post("/v1/chat", json={
+        "session_id": "missing-context-capability-provider",
+        "project_name": "aura",
+        "message": "Find the impacted callers.",
+        "context_object_ids": [object_id],
+    })
+    assert missing_provider.status_code == 422
+    assert missing_provider.json()["code"] == "ContextSelectionError"
+    assert missing_provider.json()["details"]["missing_capabilities"] == ["code_graph.read"]
+    assert len(mock_provider.call_history) == calls_before
+
+    provider_id = "test.context-code-graph"
+    tool_registry.register_capability_provider(
+        CapabilityProviderMetadata(
+            provider_id=provider_id,
+            name="Test Code Graph",
+            health=CapabilityProviderHealth.HEALTHY,
+            capabilities=["code_graph.read"],
+            privacy_boundary=PrivacyBoundary.LOCAL,
+            network_requirement=NetworkRequirement.NONE,
+        ),
+        {"code_graph.read": ["read_workspace_file"]},
+    )
+    try:
+        available_provider = await async_client.post("/v1/chat", json={
+            "session_id": "available-context-capability-provider",
+            "project_name": "aura",
+            "message": "Find the impacted callers.",
+            "context_object_ids": [object_id],
+        })
+    finally:
+        tool_registry.unregister_capability_provider(provider_id)
+
+    assert available_provider.status_code == 200
+    run = (await async_client.get(f"/v1/runs/{available_provider.json()['run_id']}")).json()
+    selected = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    assert "code_graph.read" not in selected["payload"]["required_capabilities"]
+    assert selected["payload"]["requires_tools"] is True
