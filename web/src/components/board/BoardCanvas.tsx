@@ -1278,6 +1278,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
       {selectedNodes.length > 1 ? (
         <ContextLensBar
+          key={selectedNodes.map((node) => node.id).join(':')}
           nodes={selectedNodes}
           onAsk={askSelected}
           onPreviewContext={workspaceProjectName ? previewSelectedContext : undefined}
