@@ -104,4 +104,44 @@ describe('execution trace projection', () => {
     expect(byId.get('execution-blocked')?.body).toContain('Proposed cloud-provider:exact-model');
   });
 
+
+  it('connects directly selected and linked context objects to the compilation event', () => {
+    const selected = {
+      id: 'selected-note',
+      type: 'aura',
+      position: { x: -300, y: 20 },
+      data: { kind: 'note', title: 'Selected constraint', body: '', density: 'compact', layer: 'knowledge' },
+    } as AuraFlowNode;
+    const linked = {
+      id: 'linked-bridge',
+      type: 'aura',
+      position: { x: -300, y: 180 },
+      data: { kind: 'bridge', title: 'Linked handoff', body: '', density: 'compact', layer: 'knowledge' },
+    } as AuraFlowNode;
+    const trace: WorkspaceExecutionTrace = {
+      run_id: 'context-run',
+      session_id: 'session',
+      events: [{
+        id: 'compile',
+        event_type: 'context_compiled',
+        created_at: '2026-10-02T00:00:00Z',
+        context_objects: [
+          { object_id: selected.id, object_type: 'manual_note', selected_by_user: true, source_object_ids: [] },
+          { object_id: linked.id, object_type: 'context_bridge', selected_by_user: false, source_object_ids: [selected.id] },
+        ],
+        context_estimated_tokens: 42,
+        context_privacy_requirement: 'internal',
+      }],
+    };
+
+    const projection = projectExecutionGraph([trace], [selected, linked]);
+    const contextNode = projection.nodes.find((node) => node.id === 'execution-compile');
+    expect(contextNode?.data.title).toBe('Context compiled · 2 objects');
+    expect(contextNode?.data.body).toBe('1 selected · 1 linked · about 42 tokens · Privacy internal');
+    const provenanceEdges = projection.edges.filter((edge) => edge.target === 'execution-compile');
+    expect(provenanceEdges).toHaveLength(2);
+    expect(provenanceEdges.find((edge) => edge.source === selected.id)?.data?.contextOrigin).toBe('selected');
+    expect(provenanceEdges.find((edge) => edge.source === linked.id)?.data?.contextOrigin).toBe('linked');
+  });
+
 });
