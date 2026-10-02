@@ -202,7 +202,7 @@ describe('Persistent workspace graph Board projection', () => {
     await screen.findByText('Privacy note');
     fireEvent.click(container.querySelector('[data-id="privacy-note"] button[title^="Current density"]')!);
     await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
-    const privacySelect = screen.getByRole('combobox', { name: 'Privacy classification' });
+    const privacySelect = container.querySelector<HTMLSelectElement>('select[aria-label="Privacy classification"]')!;
     expect(privacySelect).toHaveValue('');
 
     fireEvent.change(privacySelect, { target: { value: 'local_only' } });
