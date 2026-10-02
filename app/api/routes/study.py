@@ -140,7 +140,7 @@ async def start_study_session(
         # The source object is the durable identity. Keep its canonical title
         # and project scope without copying source content into the session.
         track_id = material.id
-        track_title = material.title
+        track_title = material.title or "Untitled source"
         material_project_name = material.project_name if is_verified_research_claim else None
     await _lock_study_session_creation(db)
     await _ensure_no_active_study_session(db)
