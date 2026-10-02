@@ -427,7 +427,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     void api.fetchPendingRoutingConfirmations().then((pending) => {
-      if (cancelled) return;
+      if (cancelled || !Array.isArray(pending)) return;
       setThreadLiveStates((current) => {
         const next = { ...current };
         for (const item of pending) {
