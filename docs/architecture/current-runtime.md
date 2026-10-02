@@ -48,6 +48,12 @@ Strict LangGraph MessagePack deserialization is enabled by
 backup; deployments that need durable recovery must preserve both configured
 stores.
 
+Outbox workers renew processing leases while handlers run and reclaim leases
+left by crashed workers. Proactive event runs use deterministic run IDs; a
+retry resumes a persisted LangGraph checkpoint, or starts the run if the
+process stopped before the first checkpoint. Completed and approval-paused
+runs are not invoked again by duplicate event delivery.
+
 ## Routing and model calls
 
 Routing profiles can be assigned at system/default, project, or session scope;

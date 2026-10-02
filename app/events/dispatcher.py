@@ -50,12 +50,17 @@ class EventToAgentBridge:
 
         async with self.session_factory() as db:
             existing_run = await db.get(RunModel, run_id)
-            if existing_run is not None:
+            if existing_run is not None and existing_run.status != RunStatus.RUNNING.value:
                 logger.info(
                     "Skipping duplicate event delivery for an existing run",
                     extra={"run_id": run_id, "event_id": event.id},
                 )
                 return {"run_id": run_id, "execution_status": existing_run.status}
+            if existing_run is not None:
+                # The persisted run is the source of truth if a retried event
+                # carries stale or altered session/message fields.
+                session_id = existing_run.session_id
+                message = existing_run.user_message
 
             mem_service = SQLMemoryService(db)
             approval_service = ApprovalService(db)
@@ -100,10 +105,24 @@ class EventToAgentBridge:
                 # even when an assigned profile allows cloud routing.
                 routing_context.privacy_requirement = PrivacyPolicy.LOCAL_ONLY
                 routing_context.fallback_policy = FallbackPolicy.LOCAL_ONLY
+            profile_id = profile.id
+            profile_version = profile.version
+            if existing_run is not None:
+                prior_snapshot = existing_run.routing_snapshot_json if isinstance(existing_run.routing_snapshot_json, dict) else {}
+                prior_context = prior_snapshot.get("routing_context")
+                if isinstance(prior_context, dict):
+                    try:
+                        routing_context = RoutingContext.model_validate(prior_context)
+                        profile_id = str(prior_snapshot.get("profile_id") or profile_id)
+                        prior_version = prior_snapshot.get("profile_version")
+                        if isinstance(prior_version, int) and not isinstance(prior_version, bool):
+                            profile_version = prior_version
+                    except (TypeError, ValueError):
+                        logger.warning("Stored event run routing context is invalid; using current profile resolution", extra={"run_id": run_id})
             routing_context_dict = routing_context.model_dump(mode="json")
             routing_snapshot = {
-                "profile_id": profile.id,
-                "profile_version": profile.version,
+                "profile_id": profile_id,
+                "profile_version": profile_version,
                 "winning_scope": routing_context.winning_scope,
                 "role": "root",
                 "is_lock_all": routing_context.is_lock_all,
@@ -112,46 +131,48 @@ class EventToAgentBridge:
                 "explicit_model_override": routing_context.explicit_model_override,
                 "reasoning_policy": routing_context.reasoning_policy.value if routing_context.reasoning_policy else None,
                 "reasoning_effort": routing_context.reasoning_effort.value if routing_context.reasoning_effort else None,
+                "routing_context": routing_context_dict,
             }
             run_metadata = dict(payload.get("metadata") or {})
             run_metadata["routing_context_dict"] = routing_context_dict
-            run_metadata["routing_profile_id"] = profile.id
-            run_metadata["routing_profile_version"] = profile.version
+            run_metadata["routing_profile_id"] = profile_id
+            run_metadata["routing_profile_version"] = profile_version
             run_metadata["winning_scope"] = routing_context.winning_scope
 
-            run_record = RunModel(
-                id=run_id,
-                session_id=session_id,
-                status=RunStatus.RUNNING.value,
-                user_message=message,
-                routing_snapshot_json=routing_snapshot,
-            )
-            db.add(run_record)
-            await db.commit()
+            if existing_run is None:
+                run_record = RunModel(
+                    id=run_id,
+                    session_id=session_id,
+                    status=RunStatus.RUNNING.value,
+                    user_message=message,
+                    routing_snapshot_json=routing_snapshot,
+                )
+                db.add(run_record)
+                await db.commit()
 
-            await trace_service.record_event(
-                run_id=run_id,
-                session_id=session_id,
-                event_type="routing_profile_resolved",
-                payload=routing_snapshot,
-            )
-            if automation_id:
                 await trace_service.record_event(
                     run_id=run_id,
                     session_id=session_id,
-                    event_type="automation_triggered",
-                    payload={
-                        "trigger_event_id": event.id,
-                        "automation_id": automation_id,
-                        "automation_name": automation_name,
-                    },
+                    event_type="routing_profile_resolved",
+                    payload=routing_snapshot,
                 )
-            await trace_service.record_event(
-                run_id=run_id,
-                session_id=session_id,
-                event_type="request_received",
-                payload={"trigger_event_id": event.id, "message": message},
-            )
+                if automation_id:
+                    await trace_service.record_event(
+                        run_id=run_id,
+                        session_id=session_id,
+                        event_type="automation_triggered",
+                        payload={
+                            "trigger_event_id": event.id,
+                            "automation_id": automation_id,
+                            "automation_name": automation_name,
+                        },
+                    )
+                await trace_service.record_event(
+                    run_id=run_id,
+                    session_id=session_id,
+                    event_type="request_received",
+                    payload={"trigger_event_id": event.id, "message": message},
+                )
 
             compiled_graph = await get_compiled_graph()
             initial_state = create_initial_agent_state(
@@ -176,7 +197,18 @@ class EventToAgentBridge:
                 }
             }
 
-            final_state = await compiled_graph.ainvoke(initial_state, config=config)
+            if existing_run is None:
+                final_state = await compiled_graph.ainvoke(initial_state, config=config)
+            else:
+                checkpoint = await compiled_graph.aget_state(config)
+                if checkpoint and checkpoint.next:
+                    final_state = await compiled_graph.ainvoke(None, config=config)
+                elif checkpoint and checkpoint.values:
+                    final_state = checkpoint.values
+                else:
+                    # The process may have stopped after committing the run but
+                    # before LangGraph wrote its first checkpoint.
+                    final_state = await compiled_graph.ainvoke(initial_state, config=config)
 
             # Update run record in DB
             db_run = await db.get(RunModel, run_id)
