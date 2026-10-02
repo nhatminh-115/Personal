@@ -15,6 +15,7 @@ async def test_study_session_lifecycle_persists_in_the_shared_workspace_graph(as
     assert session["track_id"] == "german"
     assert session["track_title"] == "German A1"
     assert session["status"] == "in_progress"
+    assert session["reflection"] == ""
     assert session["completed_at"] is None
 
     persisted = await async_client.get("/v1/study/sessions")
@@ -149,6 +150,13 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert started.json()["material_project_name"] == "research-project"
     assert started.json()["track_title"] == verified.title
 
+    saved_reflection = await async_client.put(
+        f"/v1/study/sessions/{started.json()['id']}/reflection",
+        json={"reflection": "Separate the verified claim from its supporting evidence."},
+    )
+    assert saved_reflection.status_code == 200
+    assert saved_reflection.json()["reflection"] == "Separate the verified claim from its supporting evidence."
+
     graph_response = await async_client.get("/v1/workspace/projects/research-project/graph")
     assert graph_response.status_code == 200
     graph = graph_response.json()
@@ -169,6 +177,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     )
     assert [item.object_id for item in compiled.objects] == [started.json()["id"]]
     assert "A verified finding" in compiled.prompt_text
+    assert "Separate the verified claim from its supporting evidence." in compiled.prompt_text
     assert "Supported by cited evidence." not in compiled.prompt_text
     assert compiled.privacy_requirement == "local_only"
     assert compiled.privacy_sources == [
