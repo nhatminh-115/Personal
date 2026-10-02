@@ -60,10 +60,10 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.privacy_boundary == PrivacyBoundary.UNKNOWN
     assert provider.network_requirement == NetworkRequirement.UNKNOWN
     assert provider.capabilities == ["research.library.search"]
-    bindings = registry.get_capability_tools("mcp.docs")
+    bindings = registry.capability_providers.get_capability_tools("mcp.docs")
     assert bindings == {"research.library.search": ["find_documents"]}
     bindings["research.library.search"].append("mutated")
-    assert registry.get_capability_tools("mcp.docs") == {"research.library.search": ["find_documents"]}
+    assert registry.capability_providers.get_capability_tools("mcp.docs") == {"research.library.search": ["find_documents"]}
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
     assert "sensitive-token" not in provider.model_dump_json()
 
