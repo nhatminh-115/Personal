@@ -45,7 +45,8 @@ from app.db.models import (
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.memory.context_compiler import WorkspaceContextCompiler, split_context_capabilities
-from app.tools.registry import ToolRegistry, UnresolvedCapabilitiesError
+from app.capabilities.registry import UnresolvedCapabilitiesError
+from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 
