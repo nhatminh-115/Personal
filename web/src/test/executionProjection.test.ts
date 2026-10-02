@@ -144,4 +144,25 @@ describe('execution trace projection', () => {
     expect(provenanceEdges.find((edge) => edge.source === linked.id)?.data?.contextOrigin).toBe('linked');
   });
 
+
+  it('renders automation origin and trigger IDs as execution provenance', () => {
+    const trace: WorkspaceExecutionTrace = {
+      run_id: 'automation-run',
+      session_id: 'session',
+      events: [{
+        id: 'automation-trigger',
+        event_type: 'automation_triggered',
+        created_at: '2026-10-02T00:00:00Z',
+        trigger_event_id: 'event-123',
+        automation_id: 'automation-456',
+        automation_name: 'Atlas review',
+      }],
+    };
+    const node = projectExecutionGraph([trace], workspaceNodes).nodes[0];
+    expect(node.data.title).toBe('Automation · Atlas review');
+    expect(node.data.body).toBe('Trigger event event-123');
+    expect(node.data.chip).toBe('AUTOMATION');
+    expect(node.data.body).not.toContain('instruction');
+  });
+
 });
