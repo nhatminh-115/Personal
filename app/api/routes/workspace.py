@@ -31,7 +31,7 @@ from app.api.schemas import (
     WorkspaceObjectUpdate,
     WorkspaceSessionResponse,
 )
-from app.api.dependencies import get_memory_service
+from app.api.dependencies import get_memory_service, get_tool_registry
 from app.db.models import (
     RunEventModel,
     RunModel,
@@ -44,7 +44,8 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.memory.base import MemoryService
-from app.memory.context_compiler import WorkspaceContextCompiler
+from app.memory.context_compiler import WorkspaceContextCompiler, split_context_capabilities
+from app.tools.registry import ToolRegistry, UnresolvedCapabilitiesError
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 
@@ -417,10 +418,25 @@ async def preview_workspace_context(
     project_name: str,
     body: WorkspaceContextPreviewRequest,
     db: AsyncSession = Depends(get_db),
+    tool_registry: ToolRegistry = Depends(get_tool_registry),
 ) -> WorkspaceContextPreviewResponse:
     """Compile selected project context for inspection without invoking a model or writing data."""
     compiled = await WorkspaceContextCompiler(db).compile(project_name, body.selected_object_ids)
-    return WorkspaceContextPreviewResponse.model_validate(compiled.model_dump())
+    _model_caps, tool_capabilities, _flags = split_context_capabilities(compiled.required_capabilities)
+    available_capabilities: list[str] = []
+    missing_capabilities: list[str] = []
+    if tool_capabilities:
+        try:
+            tool_registry.resolve_capabilities(tool_capabilities)
+            available_capabilities = tool_capabilities
+        except UnresolvedCapabilitiesError as exc:
+            missing_capabilities = exc.capabilities
+            available_capabilities = sorted(set(tool_capabilities) - set(missing_capabilities))
+    return WorkspaceContextPreviewResponse.model_validate({
+        **compiled.model_dump(),
+        "available_capabilities": available_capabilities,
+        "missing_capabilities": missing_capabilities,
+    })
 
 
 @router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
