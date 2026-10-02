@@ -102,13 +102,35 @@ class OutboxWorker:
         if not records:
             return 0
 
-        # Mark claimed
+        # An expired PROCESSING lease means the previous delivery attempt was
+        # interrupted. Count that retry so repeated worker crashes eventually
+        # reach the same dead-letter bound as handler failures.
+        claimed_records: List[EventRecordModel] = []
         for rec in records:
+            if rec.status == EventStatus.PROCESSING.value:
+                next_retry_count = rec.retry_count + 1
+                if next_retry_count >= rec.max_attempts:
+                    rec.status = EventStatus.DEAD_LETTER.value
+                    rec.retry_count = next_retry_count
+                    rec.error_message = "Processing lease expired; maximum attempts exceeded."
+                    rec.locked_at = None
+                    rec.locked_by = None
+                    logger.error(
+                        "Event moved to DEAD_LETTER after repeated processing lease expiration",
+                        extra={"event_id": rec.id, "retry_count": next_retry_count},
+                    )
+                    continue
+                rec.retry_count = next_retry_count
+                rec.error_message = "Processing lease expired; retrying."
             rec.status = EventStatus.PROCESSING.value
             rec.locked_at = now
             rec.locked_by = self.worker_id
+            claimed_records.append(rec)
 
         await db.commit()
+        records = claimed_records
+        if not records:
+            return 0
 
         processed_count = 0
         heartbeat_stopped = asyncio.Event()
