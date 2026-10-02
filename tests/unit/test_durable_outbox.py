@@ -168,7 +168,19 @@ async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_
         locked_at=utc_now(),
         locked_by="active-worker",
     )
-    test_db_session.add_all([event, actively_claimed])
+    exhausted = EventRecordModel(
+        event_type="crash-recovery.event",
+        source="unit_test",
+        payload_json={"durable": True},
+        status=EventStatus.PROCESSING.value,
+        retry_count=2,
+        max_attempts=3,
+        occurred_at=utc_now() - timedelta(minutes=4),
+        next_attempt_at=utc_now() - timedelta(minutes=4),
+        locked_at=utc_now() - timedelta(minutes=3),
+        locked_by="exhausted-worker",
+    )
+    test_db_session.add_all([event, actively_claimed, exhausted])
     await test_db_session.commit()
 
     processed = await worker.process_outbox_batch(test_db_session)
@@ -177,10 +189,14 @@ async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_
     assert processed == 1
     assert received == [event.id]
     assert event.status == EventStatus.PROCESSED.value
+    assert event.retry_count == 1
     assert event.locked_at is None
     assert event.locked_by is None
     assert actively_claimed.status == EventStatus.PROCESSING.value
     assert actively_claimed.locked_by == "active-worker"
+    assert exhausted.status == EventStatus.DEAD_LETTER.value
+    assert exhausted.retry_count == exhausted.max_attempts
+    assert "maximum attempts exceeded" in exhausted.error_message
 
 
 @pytest.mark.asyncio
