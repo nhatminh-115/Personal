@@ -289,6 +289,12 @@ export interface WorkspaceExecutionTrace {
   events: WorkspaceExecutionEvent[];
 }
 
+export interface WorkspaceExecutionHistory {
+  execution_traces: WorkspaceExecutionTrace[];
+  execution_history_truncated: boolean;
+  execution_next_cursor?: string | null;
+}
+
 export interface WorkspaceGraph {
   project_name: string;
   objects: WorkspaceObject[];

@@ -454,6 +454,12 @@ class WorkspaceExecutionTraceResponse(BaseModel):
     events: List[WorkspaceExecutionEventResponse] = Field(default_factory=list)
 
 
+class WorkspaceExecutionHistoryResponse(BaseModel):
+    execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
+    execution_history_truncated: bool = False
+    execution_next_cursor: Optional[str] = None
+
+
 class WorkspaceGraphResponse(BaseModel):
     project_name: str
     objects: List[WorkspaceObjectResponse]

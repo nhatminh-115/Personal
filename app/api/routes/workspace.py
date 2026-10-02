@@ -17,6 +17,7 @@ from app.api.schemas import (
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
     WorkspaceExecutionEventResponse,
+    WorkspaceExecutionHistoryResponse,
     WorkspaceExecutionTraceResponse,
     WorkspaceGraphResponse,
     WorkspaceLayoutResponse,
@@ -523,38 +524,14 @@ async def preview_workspace_context(
     })
 
 
-@router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
-async def get_workspace_graph(
+
+
+async def _project_execution_history(
+    db: AsyncSession,
     project_name: str,
-    execution_cursor: str | None = Query(default=None, max_length=512),
-    execution_page_size: int = Query(default=100, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
-) -> WorkspaceGraphResponse:
-    objects = await _get_project_objects(db, project_name)
-    linked_ids = await db.execute(
-        select(WorkspaceObjectProjectLinkModel.object_id).where(
-            WorkspaceObjectProjectLinkModel.project_name == project_name
-        )
-    )
-    personal_notes = await db.execute(
-        select(WorkspaceObjectModel).where(
-            WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
-            WorkspaceObjectModel.id.in_(linked_ids.scalars().all()),
-        ).order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
-    )
-    objects.extend(personal_notes.scalars())
-    object_ids = {item.id for item in objects}
-    edge_result = await db.execute(
-        select(WorkspaceEdgeModel)
-        .where(WorkspaceEdgeModel.project_name == project_name)
-        .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
-    )
-    edges = [
-        edge for edge in edge_result.scalars()
-        if edge.source_object_id in object_ids and edge.target_object_id in object_ids
-    ]
-    layout = await db.get(WorkspaceLayoutModel, project_name)
+    execution_cursor: str | None,
+    execution_page_size: int,
+) -> WorkspaceExecutionHistoryResponse:
     session_result = await db.execute(select(SessionModel.id).where(SessionModel.project_name == project_name))
     session_ids = list(session_result.scalars())
     cursor_created_at: datetime | None = None
@@ -591,6 +568,7 @@ async def get_workspace_graph(
         cursor_payload = json.dumps([oldest_run.created_at.isoformat(), oldest_run.id], separators=(",", ":"))
         execution_next_cursor = base64.urlsafe_b64encode(cursor_payload.encode("utf-8")).decode("ascii").rstrip("=")
 
+    events_truncated = False
     execution_traces: list[WorkspaceExecutionTraceResponse] = []
     if runs:
         run_ids = [run.id for run in runs]
@@ -611,14 +589,21 @@ async def get_workspace_graph(
         for run_events in events_by_run.values():
             run_events.reverse()
 
-        run_id_set = set(run_ids)
-        project_objects = [item for item in objects if item.metadata_json.get("run_id") in run_id_set]
+        turn_result = await db.execute(
+            select(WorkspaceObjectModel.id, WorkspaceObjectModel.metadata_json)
+            .where(
+                WorkspaceObjectModel.project_name == project_name,
+                WorkspaceObjectModel.object_type == "conversation_turn",
+                WorkspaceObjectModel.metadata_json["run_id"].as_string().in_(run_ids),
+            )
+        )
         turn_objects_by_run: dict[str, dict[str, str]] = {}
-        for item in project_objects:
-            run_id = item.metadata_json.get("run_id")
-            role = item.metadata_json.get("role")
+        for object_id, metadata in turn_result:
+            metadata = metadata if isinstance(metadata, dict) else {}
+            run_id = metadata.get("run_id")
+            role = metadata.get("role")
             if isinstance(run_id, str) and role in {"user", "assistant"}:
-                turn_objects_by_run.setdefault(run_id, {})[role] = item.id
+                turn_objects_by_run.setdefault(run_id, {})[role] = object_id
         for run in reversed(runs):
             events = events_by_run[run.id]
             if not events:
@@ -632,6 +617,45 @@ async def get_workspace_graph(
                 response_object_id=turn_objects.get("assistant"),
                 events=events,
             ))
+    return WorkspaceExecutionHistoryResponse(
+        execution_traces=execution_traces,
+        execution_history_truncated=events_truncated,
+        execution_next_cursor=execution_next_cursor,
+    )
+
+@router.get("/projects/{project_name}/graph", response_model=WorkspaceGraphResponse)
+async def get_workspace_graph(
+    project_name: str,
+    execution_cursor: str | None = Query(default=None, max_length=512),
+    execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceGraphResponse:
+    objects = await _get_project_objects(db, project_name)
+    linked_ids = await db.execute(
+        select(WorkspaceObjectProjectLinkModel.object_id).where(
+            WorkspaceObjectProjectLinkModel.project_name == project_name
+        )
+    )
+    personal_notes = await db.execute(
+        select(WorkspaceObjectModel).where(
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
+            WorkspaceObjectModel.id.in_(linked_ids.scalars().all()),
+        ).order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+    )
+    objects.extend(personal_notes.scalars())
+    object_ids = {item.id for item in objects}
+    edge_result = await db.execute(
+        select(WorkspaceEdgeModel)
+        .where(WorkspaceEdgeModel.project_name == project_name)
+        .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+    )
+    edges = [
+        edge for edge in edge_result.scalars()
+        if edge.source_object_id in object_ids and edge.target_object_id in object_ids
+    ]
+    layout = await db.get(WorkspaceLayoutModel, project_name)
+    execution_history = await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
     return WorkspaceGraphResponse(
         project_name=project_name,
         objects=[_object_response(item) for item in objects],
@@ -642,10 +666,21 @@ async def get_workspace_graph(
             revision=layout.revision if layout else 0,
             updated_at=layout.updated_at if layout else None,
         ),
-        execution_traces=execution_traces,
-        execution_history_truncated=bool(runs) and events_truncated,
-        execution_next_cursor=execution_next_cursor,
+        execution_traces=execution_history.execution_traces,
+        execution_history_truncated=execution_history.execution_history_truncated,
+        execution_next_cursor=execution_history.execution_next_cursor,
     )
+
+
+@router.get("/projects/{project_name}/execution", response_model=WorkspaceExecutionHistoryResponse)
+async def get_workspace_execution_history(
+    project_name: str,
+    execution_cursor: str | None = Query(default=None, max_length=512),
+    execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceExecutionHistoryResponse:
+    """Return one sanitized execution-history page without loading workspace objects or layout."""
+    return await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
 
 
 @router.get("/notes", response_model=list[WorkspaceNoteResponse])

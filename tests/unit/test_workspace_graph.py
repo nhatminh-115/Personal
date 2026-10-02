@@ -1699,7 +1699,7 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
     await test_db_session.commit()
 
     first_page = await async_client.get(
-        "/v1/workspace/projects/aura/graph",
+        "/v1/workspace/projects/aura/execution",
         params={"execution_page_size": 2},
     )
     assert first_page.status_code == 200
@@ -1709,7 +1709,7 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
     assert first["execution_history_truncated"] is False
 
     second_page = await async_client.get(
-        "/v1/workspace/projects/aura/graph",
+        "/v1/workspace/projects/aura/execution",
         params={"execution_page_size": 2, "execution_cursor": first["execution_next_cursor"]},
     )
     assert second_page.status_code == 200

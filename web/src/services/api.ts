@@ -19,6 +19,7 @@ import {
   ReasoningEffort,
   WorkspaceEdge,
   WorkspaceGraph,
+  WorkspaceExecutionHistory,
   WorkspaceLayout,
   WorkspaceNoteRecord,
   WorkspaceObject,
@@ -181,6 +182,13 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected_object_ids: [...new Set(selectedObjectIds)] }),
     }));
+  },
+
+  async fetchWorkspaceExecutionHistory(projectName: string, executionCursor?: string | null): Promise<WorkspaceExecutionHistory> {
+    const params = new URLSearchParams();
+    if (executionCursor) params.set('execution_cursor', executionCursor);
+    const query = params.size ? `?${params.toString()}` : '';
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/execution${query}`));
   },
 
   async fetchWorkspaceGraph(projectName: string, executionCursor?: string | null): Promise<WorkspaceGraph> {
