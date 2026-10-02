@@ -1325,3 +1325,104 @@ async def test_saved_context_set_expands_only_its_sources_in_preview_and_chat(
         second_id,
         context_set_id,
     }
+
+@pytest.mark.asyncio
+async def test_workspace_execution_graph_projects_sanitized_routing_provenance(async_client, test_db_session):
+    session = SessionModel(
+        id="routing-provenance-session",
+        title="Routing provenance",
+        metadata_json={},
+        project_name="aura",
+    )
+    run = RunModel(
+        id="routing-provenance-run",
+        session_id=session.id,
+        status="failed",
+        user_message="private user prompt",
+    )
+    occurred = datetime(2026, 10, 2, tzinfo=timezone.utc)
+    events = [
+        RunEventModel(
+            id="routing-model-event",
+            run_id=run.id,
+            event_type="model_selected",
+            created_at=occurred,
+            payload={
+                "agent_role": "root",
+                "task_type": "research",
+                "provider": "ollama",
+                "model": "local-model",
+                "profile_id": "profile-safe",
+                "profile_version": 4,
+                "winning_scope": "project",
+                "privacy": "local_only",
+                "fallback_policy": "none",
+                "selection_reason": "explicit_profile_route",
+                "prompt": "private model prompt",
+            },
+        ),
+        RunEventModel(
+            id="routing-reasoning-event",
+            run_id=run.id,
+            event_type="reasoning_effort_selected",
+            created_at=occurred + timedelta(seconds=1),
+            payload={
+                "policy_mode": "adaptive",
+                "configured_bounds": {"min": "low", "max": "high", "secret": "omit"},
+                "selected_effort": "medium",
+                "private_reasoning": "never expose",
+            },
+        ),
+        RunEventModel(
+            id="routing-fallback-event",
+            run_id=run.id,
+            event_type="fallback_considered",
+            created_at=occurred + timedelta(seconds=2),
+            payload={
+                "fallback_policy": "local_only",
+                "primary_provider": "cloud",
+                "selected_provider": "ollama",
+                "candidate_model": "local-model",
+                "private_reason": "omit this",
+            },
+        ),
+        RunEventModel(
+            id="routing-blocked-event",
+            run_id=run.id,
+            event_type="fallback_blocked",
+            created_at=occurred + timedelta(seconds=3),
+            payload={
+                "policy": "ask_before_cloud",
+                "error_type": "RoutingConfirmationRequired",
+                "privacy_boundary": "confidential",
+                "proposed_provider": "cloud-provider",
+                "proposed_model": "exact-model",
+                "private_reason": "omit this too",
+            },
+        ),
+    ]
+    test_db_session.add_all([session, run, *events])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/aura/graph")
+    assert response.status_code == 200
+    trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
+    model, reasoning, fallback, blocked = trace["events"]
+    assert (
+        model["task_type"], model["profile_id"], model["profile_version"],
+        model["winning_scope"], model["privacy"], model["fallback_policy"],
+    ) == ("research", "profile-safe", 4, "project", "local_only", "none")
+    assert (reasoning["reasoning_policy"], reasoning["reasoning_bounds"], reasoning["selected_effort"]) == (
+        "adaptive", {"min": "low", "max": "high"}, "medium",
+    )
+    assert (
+        fallback["fallback_policy"], fallback["primary_provider"], fallback["selected_provider"],
+        fallback["candidate_model"],
+    ) == ("local_only", "cloud", "ollama", "local-model")
+    assert (
+        blocked["fallback_policy"], blocked["privacy_boundary"], blocked["error_type"],
+        blocked["proposed_provider"], blocked["proposed_model"],
+    ) == ("ask_before_cloud", "confidential", "RoutingConfirmationRequired", "cloud-provider", "exact-model")
+    for private_value in ("private user prompt", "private model prompt", "never expose", "omit this"):
+        assert private_value not in response.text
+    assert "secret" not in str(reasoning["reasoning_bounds"])

@@ -247,6 +247,23 @@ export interface WorkspaceExecutionEvent {
   error_category?: string | null;
   risk_level?: string | null;
   step?: number | null;
+  task_type?: string | null;
+  profile_id?: string | null;
+  profile_version?: number | null;
+  winning_scope?: string | null;
+  privacy?: string | null;
+  fallback_policy?: string | null;
+  selection_reason?: string | null;
+  reasoning_policy?: string | null;
+  reasoning_bounds?: { min?: string | null; max?: string | null } | null;
+  selected_effort?: string | null;
+  primary_provider?: string | null;
+  selected_provider?: string | null;
+  candidate_model?: string | null;
+  privacy_boundary?: string | null;
+  error_type?: string | null;
+  proposed_provider?: string | null;
+  proposed_model?: string | null;
 }
 
 export interface WorkspaceExecutionTrace {
