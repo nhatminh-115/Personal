@@ -5,6 +5,7 @@ import stat
 from unittest.mock import MagicMock
 
 import pytest
+from app.core.errors import AURAError
 from app.sandbox.docker_runtime import DockerSandboxRuntime
 from app.sandbox.mock_runtime import MockSandboxRuntime
 from app.sandbox.spec import ExecutionResult, SandboxConfig
@@ -140,3 +141,22 @@ def test_docker_runtime_creates_workspace_with_private_permissions(tmp_path, mon
 
     assert result.exit_code == 0
     assert stat.S_IMODE(workspace.stat().st_mode) == 0o700
+
+
+def test_docker_runtime_never_pulls_missing_sandbox_image(tmp_path, monkeypatch):
+    from app.sandbox import docker_runtime as docker_runtime_module
+
+    class FakeImageNotFound(Exception):
+        pass
+
+    monkeypatch.setattr(docker_runtime_module, "ImageNotFound", FakeImageNotFound)
+    client = MagicMock()
+    client.images.get.side_effect = FakeImageNotFound("missing image")
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    with pytest.raises(AURAError, match="will not pull sandbox images automatically"):
+        runtime._execute_sync(["true"], SandboxConfig(workspace_dir=str(tmp_path)))
+
+    client.images.pull.assert_not_called()
+    client.containers.create.assert_not_called()

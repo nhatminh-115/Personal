@@ -126,6 +126,13 @@ default allows the local Vite origins only. AURA's API has no user
 authentication, so keep it on loopback unless it is placed behind an
 authenticated access layer.
 
+Before using sandbox execution, build the trusted local image once:
+```powershell
+docker build -t aura-coding-sandbox:latest -f docker/coding_sandbox.Dockerfile .
+```
+AURA does not pull a missing sandbox image automatically. If you set
+`AURA_SANDBOX_IMAGE`, build or provide that trusted image locally first.
+
 Interactive OpenAPI documentation is available at:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`

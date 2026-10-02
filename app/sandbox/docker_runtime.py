@@ -13,10 +13,10 @@ from app.sandbox.spec import ExecutionResult, SandboxConfig
 
 try:
     import docker
-    from docker.errors import DockerException
+    from docker.errors import ImageNotFound
 except ImportError:
     docker = None
-    DockerException = Exception
+    ImageNotFound = Exception
 
 
 class DockerSandboxRuntime(SandboxRuntime):
@@ -80,15 +80,16 @@ class DockerSandboxRuntime(SandboxRuntime):
         timed_out = False
 
         try:
-            # Ensure image is present locally, pull if necessary
+            # Sandbox images are trusted local build artifacts; never pull an
+            # unverified image implicitly before executing user workspace code.
             try:
                 client.images.get(cfg.image)
-            except Exception:
-                logger.info(f"Pulling Docker image '{cfg.image}'...")
-                try:
-                    client.images.pull(cfg.image)
-                except Exception as pull_err:
-                    logger.warning(f"Could not pull Docker image '{cfg.image}': {pull_err}")
+            except ImageNotFound as exc:
+                raise AURAError(
+                    f"Sandbox image '{cfg.image}' is not available locally. Build it from "
+                    "docker/coding_sandbox.Dockerfile or make a trusted image available locally; "
+                    "AURA will not pull sandbox images automatically."
+                ) from exc
 
             container = client.containers.create(
                 image=cfg.image,
