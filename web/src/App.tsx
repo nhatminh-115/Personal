@@ -43,7 +43,7 @@ import {
   type DirectoryConnection,
   type IndexedFolderFile,
 } from './lib/folderConnections';
-import { api, ApiError } from './services/api';
+import { api } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
@@ -387,7 +387,7 @@ export default function App() {
   /** Convenience accessor — live state for the currently active thread only */
   const activeThreadLive: ThreadLiveState = activeThreadId
     ? (threadLiveStates[activeThreadId] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null })
-    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null };
+    : { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null };
   const activeThread = chatThreads.find((thread) => thread.id === activeThreadId) ?? null;
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
@@ -422,6 +422,29 @@ export default function App() {
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
     api.fetchSessions().then(setSessions).catch(() => []);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.fetchPendingRoutingConfirmations().then((pending) => {
+      if (cancelled) return;
+      setThreadLiveStates((current) => {
+        const next = { ...current };
+        for (const item of pending) {
+          const thread = chatThreads.find((candidate) => candidate.source === 'live' && candidate.sessionId === item.session_id);
+          if (!thread) continue;
+          next[thread.id] = {
+            ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null },
+            ...(current[thread.id] ?? {}),
+            runId: item.root_run_id,
+            runStatus: 'waiting_for_routing_confirmation',
+            routingConfirmation: { id: item.id, provider: item.proposed_provider, model: item.proposed_model },
+          };
+        }
+        return next;
+      });
+    }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -1041,9 +1064,6 @@ export default function App() {
         }
       } catch (err: any) {
         patchThreadLive(originatingThreadId, { runStatus: 'failed' });
-        if (err instanceof ApiError && err.code === 'RoutingConfirmationRequired') {
-          setRoutingConfirmation({ provider: err.details?.proposed_provider, model: err.details?.proposed_model });
-        }
         const errorMsg: ChatMessage = {
           id: `live-err-${nonce}`,
           role: 'assistant',
