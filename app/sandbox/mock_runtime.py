@@ -49,29 +49,6 @@ class MockSandboxRuntime(SandboxRuntime):
             if re.search(pat, command):
                 return res
 
-        if "pytest" in command:
-            import subprocess
-            import sys
-            from pathlib import Path
-            from app.core.settings import settings
-            ws = Path(settings.AURA_WORKSPACE_ROOT) if settings.AURA_WORKSPACE_ROOT else None
-            if ws and ws.exists() and list(ws.glob("test_*.py")):
-                try:
-                    cmd_args = [sys.executable, "-m", "pytest", "-v"]
-                    proc = subprocess.run(cmd_args, cwd=str(ws), capture_output=True, text=True, timeout=15.0)
-                    cfg = config or self._config
-                    stdout, truncated = self._truncate_output(proc.stdout, cfg.max_output_bytes)
-                    stderr, _ = self._truncate_output(proc.stderr, cfg.max_output_bytes)
-                    return ExecutionResult(
-                        exit_code=proc.returncode,
-                        stdout=stdout,
-                        stderr=stderr,
-                        duration_ms=25.0,
-                        metadata={"mock": True, "real_pytest": True, "exit_code": proc.returncode},
-                    )
-                except Exception:
-                    pass
-
         cfg = config or self._config
         stdout_raw = f"[MockSandbox stdout]: {command}\nDone."
         stdout, truncated = self._truncate_output(stdout_raw, cfg.max_output_bytes)
