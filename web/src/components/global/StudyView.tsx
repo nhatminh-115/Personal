@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { ArrowRight, BookOpenText, Play } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, BookOpenText, Play, Save } from 'lucide-react';
 import type { LibraryItem } from '../../data/workspaceData';
 import type { StudySessionRecord } from '../../types';
 import './StudyView.css';
@@ -11,6 +11,7 @@ interface StudyViewProps {
   onStartSession: (item: LibraryItem) => void;
   sessions: StudySessionRecord[];
   onCompleteSession: (sessionId: string) => void;
+  onSaveReflection: (sessionId: string, reflection: string) => Promise<void>;
   focusSessionId?: string | null;
 }
 
@@ -18,7 +19,49 @@ function isStudyMaterial(item: LibraryItem) {
   return item.collection === 'Study' || item.collection === 'Research';
 }
 
-export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession, focusSessionId }: StudyViewProps) {
+function StudyReflectionEditor({ session, onSave }: { session: StudySessionRecord; onSave: (sessionId: string, reflection: string) => Promise<void> }) {
+  const savedReflection = session.reflection ?? '';
+  const [draft, setDraft] = useState(savedReflection);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => setDraft(savedReflection), [session.id, savedReflection]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onSave(session.id, draft);
+    } catch {
+      setError('Could not save this reflection. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="study-reflection">
+      <label htmlFor={`study-reflection-${session.id}`}>What did you learn?</label>
+      <textarea
+        id={`study-reflection-${session.id}`}
+        value={draft}
+        maxLength={12000}
+        rows={3}
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder="Write a reflection or key ideas to remember…"
+      />
+      <div className="study-reflection__footer">
+        <small>{draft.length.toLocaleString()} / 12,000</small>
+        <button type="button" disabled={saving || draft === savedReflection} onClick={() => void save()}>
+          <Save size={13} /> {saving ? 'Saving…' : 'Save reflection'}
+        </button>
+      </div>
+      {error ? <p role="alert" className="study-reflection__error">{error}</p> : null}
+    </div>
+  );
+}
+
+export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const materialIds = new Set(materials.map((item) => item.id));
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
@@ -72,6 +115,7 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                       >
                         <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
                         {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
+                        <StudyReflectionEditor session={session} onSave={onSaveReflection} />
                       </article>
                     ))}
                   </div>
@@ -109,6 +153,7 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
               <strong>{session.track_title}</strong>
               <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
+              <StudyReflectionEditor session={session} onSave={onSaveReflection} />
             </article>
           ))}
         </section>
