@@ -1616,6 +1616,18 @@ export default function App() {
     }
   }, [automationFromRecord, projectCatalog, pushToast]);
 
+  const refreshAutomationAfterApproval = useCallback(async (automationId: string) => {
+    try {
+      const records = await api.fetchAutomations();
+      const record = records.find((item) => item.id === automationId);
+      if (!record) return;
+      const updated = automationFromRecord(record, projectCatalog);
+      setAutomations((current) => current.map((item) => item.id === automationId ? updated : item));
+    } catch (error) {
+      pushToast('Could not refresh automation status', executionErrorText(error));
+    }
+  }, [automationFromRecord, projectCatalog, pushToast]);
+
   useEffect(() => {
     if (surface !== 'automations' || automationsLoaded.current) return;
     let active = true;
@@ -1863,7 +1875,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (
