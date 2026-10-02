@@ -25,6 +25,22 @@ def test_sandbox_config_hardened_defaults():
     assert cfg.container_workspace_mount == "/workspace"
 
 
+def test_coding_sandbox_pytest_matches_development_lockfile():
+    from pathlib import Path
+    import re
+
+    repository_root = Path(__file__).resolve().parents[2]
+    lockfile = (repository_root / "requirements-dev.lock").read_text(encoding="utf-8")
+    dockerfile = (repository_root / "docker" / "coding_sandbox.Dockerfile").read_text(encoding="utf-8")
+
+    locked_pytest = re.search(r"(?m)^pytest==([^\s;]+)", lockfile)
+    installed_pytest = re.search(r"(?m)^RUN pip install --no-cache-dir pytest==([^\s]+)$", dockerfile)
+
+    assert locked_pytest is not None
+    assert installed_pytest is not None
+    assert installed_pytest.group(1) == locked_pytest.group(1)
+
+
 @pytest.mark.asyncio
 async def test_mock_sandbox_runtime_execution_and_custom_responses():
     """Verify MockSandboxRuntime handles commands, python execution, and custom simulated outputs."""
