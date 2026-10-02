@@ -285,7 +285,9 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
 
     tool_defs = registry.get_tool_definitions()
 
-    meta = state.get("metadata", {}) or {}
+    # This is checkpointed run state; keep decisions scoped to this execution.
+    # Temporary approval must never mutate a persisted routing profile.
+    meta = dict(state.get("metadata", {}) or {})
     delegation = state.get("delegation_context", {}) or {}
     
     # Reconstruct from pre-resolved context dict if available
@@ -310,6 +312,10 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             run_id=state["run_id"],
             requires_tools=bool(tool_defs) or bool(meta.get("requires_tools") or delegation.get("requires_tools")),
         )
+
+    # Keep an approved route for later model calls in this run only.
+    # Delegated children resolve their own role policy and confirmation.
+    meta["routing_context_dict"] = routing_ctx.model_dump(mode="json")
 
     reserved_output_tokens = 2048
     estimated_input_tokens = _estimate_prompt_tokens(chat_messages, tool_defs)
@@ -437,6 +443,9 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             )
         provider, selection = router.select_model_for_task(routing_ctx)
 
+    # Persist the post-confirmation exact route only after selection succeeds.
+    meta["routing_context_dict"] = routing_ctx.model_dump(mode="json")
+
     model_req = ModelRequest(
         messages=chat_messages,
         tools=tool_defs,
@@ -561,6 +570,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             "messages": messages,
             "tool_requests": formatted_calls,
             "current_plan": f"Plan to invoke tools: {[tc['name'] for tc in formatted_calls]}",
+            "metadata": meta,
         }
 
     # Direct / Final response
@@ -581,6 +591,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
         "messages": messages,
         "final_response": response.content,
         "execution_status": RunStatus.COMPLETED.value,
+        "metadata": meta,
     }
 
 
