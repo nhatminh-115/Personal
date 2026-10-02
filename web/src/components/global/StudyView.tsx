@@ -1,14 +1,16 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpenText, Play, Save } from 'lucide-react';
-import type { LibraryItem } from '../../data/workspaceData';
+import type { LibraryItem, WorkspaceNote } from '../../data/workspaceData';
 import type { StudyCardRecord, StudySessionRecord } from '../../types';
 import './StudyView.css';
 
 interface StudyViewProps {
   libraryItems: LibraryItem[];
+  notes?: WorkspaceNote[];
   onOpenItem: (item: LibraryItem) => void;
   onBrowseLibrary: () => void;
   onStartSession: (item: LibraryItem) => void;
+  onStartNoteSession?: (note: WorkspaceNote) => void;
   sessions: StudySessionRecord[];
   cards?: StudyCardRecord[];
   onCompleteSession: (sessionId: string) => void;
@@ -178,16 +180,17 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = [], onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
-  const materialIds = new Set(materials.map((item) => item.id));
+  const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
+  const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
   const activeWorkspaceSession = sessions.find((session) => session.status === 'in_progress');
 
   useEffect(() => {
     if (!focusSessionId) return;
     document.getElementById(`study-session-${focusSessionId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [focusSessionId, sessions, libraryItems]);
+  }, [focusSessionId, sessions, libraryItems, notes]);
 
   return (
     <section className="study-view">
@@ -195,7 +198,7 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
         <div>
           <span className="eyebrow">STUDY</span>
           <h1>Study from the sources already in your workspace.</h1>
-          <p>Study keeps a durable session linked to each Library reference. It does not copy or upload file contents.</p>
+          <p>Study keeps durable sessions linked to saved Library references, Notes, or verified Research findings. It does not copy source text into the session.</p>
         </div>
         <button className="secondary-button" type="button" onClick={onBrowseLibrary}>Browse Library</button>
       </div>
@@ -261,14 +264,70 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
             );
           })}
         </div>
-      ) : (
+      ) : studyNotes.length ? null : (
         <div className="study-track-empty">
           <BookOpenText size={22} />
           <h2>No Study sources yet</h2>
-          <p>Add a personal reference to the Study or Research collection in Library, then start a session from it here.</p>
+          <p>Add a personal Study or Research reference to Library, or save a Note, then start a session from it here.</p>
           <button className="primary-button" type="button" onClick={onBrowseLibrary}>Open Library</button>
         </div>
       )}
+
+      {studyNotes.length ? (
+        <section className="study-note-sources" aria-label="Saved Notes for Study">
+          <h2>Saved Notes</h2>
+          <div className="study-track-grid">
+            {studyNotes.map((note) => {
+              const noteSessions = sessions.filter((session) => (session.material_id ?? session.track_id) === note.id);
+              const activeSession = noteSessions.find((session) => session.status === 'in_progress');
+              const completedCount = noteSessions.filter((session) => session.status === 'completed').length;
+              const canStartSession = note.source === 'live' && !activeSession && !activeWorkspaceSession;
+              return (
+                <article key={note.id} className="study-track-card study-track-card--cyan">
+                  <div className="study-track-card__top">
+                    <span className="study-track-icon"><BookOpenText size={18} /></span>
+                    <div><strong>{note.title || 'Untitled Note'}</strong><small>Saved Note · {note.projectIds.length} project links</small></div>
+                    <span>{completedCount} complete</span>
+                  </div>
+                  <p className="study-material-detail">{note.body || 'No note text added.'}</p>
+                  {note.privacyPolicy ? <p className="study-material-note">Privacy · {note.privacyPolicy.replaceAll('_', ' ')}</p> : null}
+                  {noteSessions.length ? (
+                    <div className="study-session-list" aria-label={`${note.title || 'Note'} sessions`}>
+                      {noteSessions.map((session) => (
+                        <article
+                          id={`study-session-${session.id}`}
+                          key={session.id}
+                          className={`study-session-row${session.id === focusSessionId ? ' is-focused' : ''}`}
+                          tabIndex={-1}
+                        >
+                          <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
+                          {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
+                          <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+                          <StudyCardCollection
+                            cards={cards.filter((card) => card.session_id === session.id)}
+                            onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                            onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                            onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+                          />
+                        </article>
+                      ))}
+                    </div>
+                  ) : null}
+                  {activeSession ? null : canStartSession ? (
+                    <button className="study-start-button" type="button" onClick={() => onStartNoteSession?.(note)}>
+                      <Play size={13} /> Study this Note
+                    </button>
+                  ) : activeWorkspaceSession ? (
+                    <p className="study-material-note">Finish “{activeWorkspaceSession.track_title}” before starting another Study session.</p>
+                  ) : (
+                    <p className="study-material-note">{note.source === 'live' ? 'Study session unavailable.' : 'Save this Note before starting a durable Study session.'}</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {unlinkedSessions.length ? (
         <section className="study-history" aria-label="Earlier Study sessions">
