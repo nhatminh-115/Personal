@@ -98,7 +98,10 @@ OPENAI_API_KEY=your-api-key-here
 ```
 
 For PostgreSQL, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL. The
-included Docker Compose file starts PostgreSQL and the API service.
+included Docker Compose file starts PostgreSQL and the API service, applies
+Alembic migrations to `head`, and then starts the API. This automatic migration
+step is scoped to the single-service Compose setup; deployments using the image
+directly should run `python -m alembic upgrade head` as a separate release step.
 
 ---
 
