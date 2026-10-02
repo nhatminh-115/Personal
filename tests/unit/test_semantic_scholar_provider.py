@@ -140,6 +140,30 @@ async def test_semantic_scholar_timeout_handling(mock_cache):
             assert results == []
 
 
+@pytest.mark.asyncio
+async def test_semantic_scholar_requests_verify_tls_for_search_and_fetch(mock_cache):
+    provider = SemanticScholarResearchProvider(api_key="test-api-key", cache=mock_cache)
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+    response.json.return_value = {}
+    clients = []
+
+    def make_client(**kwargs):
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        client.get = AsyncMock(return_value=response)
+        clients.append((kwargs, client))
+        return client
+
+    with patch("app.research.providers.semantic_scholar.httpx.AsyncClient", side_effect=make_client):
+        assert await provider.search("tls verification") == []
+        assert await provider.fetch_source("paper-123") is None
+
+    assert len(clients) == 2
+    assert all(kwargs.get("verify") is True for kwargs, _ in clients)
+
+
 def test_semantic_scholar_headers_with_and_without_api_key():
     p_with_key = SemanticScholarResearchProvider(api_key="secret-key-12345")
     headers = p_with_key._get_headers()
