@@ -511,20 +511,17 @@ export const api = {
     return handleResponse<ChatResponse>(res);
   },
 
-  async fetchPendingRoutingConfirmations(sessionId: string): Promise<RoutingConfirmationDetail[]> {
-    const pending: RoutingConfirmationDetail[] = [];
-    let cursor: string | null = null;
-    do {
-      const params = new URLSearchParams();
-      params.set('session_id', sessionId);
-      params.set('page_size', '100');
-      if (cursor) params.set('cursor', cursor);
-      const query = params.size ? `?${params.toString()}` : '';
-      const response = await fetch(`${BASE_URL}/v1/routing-confirmations/pending${query}`);
-      pending.push(...await handleResponse<RoutingConfirmationDetail[]>(response));
-      cursor = response.headers?.get('X-Next-Cursor') ?? null;
-    } while (cursor);
-    return pending;
+  async fetchPendingRoutingConfirmations(sessionId: string, pageSize = 25, cursor?: string | null): Promise<{
+    items: RoutingConfirmationDetail[];
+    nextCursor: string | null;
+  }> {
+    const params = new URLSearchParams({ session_id: sessionId, page_size: String(pageSize) });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/routing-confirmations/pending?${params.toString()}`);
+    return {
+      items: await handleResponse<RoutingConfirmationDetail[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
   },
 
   async fetchRoutingConfirmation(id: string): Promise<RoutingConfirmationDetail> {

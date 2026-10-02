@@ -142,7 +142,7 @@ async def test_pending_routing_confirmations_use_cursor_pages_and_session_filter
     first_response = await async_client.get("/v1/routing-confirmations/pending", params={"page_size": 2})
     assert first_response.status_code == 200
     first_page = first_response.json()
-    assert [item["id"] for item in first_page] == confirmation_ids[:2]
+    assert [item["id"] for item in first_page] == confirmation_ids[-2:][::-1]
     cursor = first_response.headers.get("X-Next-Cursor")
     assert cursor
 
@@ -150,8 +150,8 @@ async def test_pending_routing_confirmations_use_cursor_pages_and_session_filter
         "/v1/routing-confirmations/pending", params={"page_size": 2, "cursor": cursor},
     )
     assert second_response.status_code == 200
-    assert [item["id"] for item in second_response.json()] == confirmation_ids[2:4]
-    assert set(confirmation_ids[:2]).isdisjoint(item["id"] for item in second_response.json())
+    assert [item["id"] for item in second_response.json()] == confirmation_ids[1:3][::-1]
+    assert set(confirmation_ids[-2:]).isdisjoint(item["id"] for item in second_response.json())
 
     filtered = await async_client.get(
         "/v1/routing-confirmations/pending", params={"session_id": session_ids[-1]},

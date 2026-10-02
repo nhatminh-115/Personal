@@ -101,11 +101,11 @@ async def list_pending_routing_confirmations(
     if cursor is not None:
         cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
         query = query.where(
-            (RoutingConfirmationModel.created_at > cursor_created_at)
-            | ((RoutingConfirmationModel.created_at == cursor_created_at) & (RoutingConfirmationModel.id > cursor_id))
+            (RoutingConfirmationModel.created_at < cursor_created_at)
+            | ((RoutingConfirmationModel.created_at == cursor_created_at) & (RoutingConfirmationModel.id < cursor_id))
         )
     result = await db.execute(
-        query.order_by(RoutingConfirmationModel.created_at, RoutingConfirmationModel.id).limit(page_size + 1)
+        query.order_by(RoutingConfirmationModel.created_at.desc(), RoutingConfirmationModel.id.desc()).limit(page_size + 1)
     )
     rows = list(result.scalars())
     items = set_next_cursor_header(

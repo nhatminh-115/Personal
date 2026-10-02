@@ -433,11 +433,11 @@ export default function App() {
     const thread = activeThread;
     if (thread?.source !== 'live' || !thread.sessionId) return;
     let cancelled = false;
-    void api.fetchPendingRoutingConfirmations(thread.sessionId).then((pending) => {
+    void api.fetchPendingRoutingConfirmations(thread.sessionId, 1).then(({ items }) => {
       if (cancelled) return;
       setThreadLiveStates((current) => {
         const existing = current[thread.id] ?? { runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null };
-        const nextConfirmation = pending[pending.length - 1];
+        const nextConfirmation = items[0];
         if (!nextConfirmation) {
           if (!existing.routingConfirmation && existing.runStatus !== 'waiting_for_routing_confirmation') return current;
           return { ...current, [thread.id]: { ...existing, runId: null, runStatus: null, routingConfirmation: null } };
@@ -1605,12 +1605,24 @@ export default function App() {
         };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
       }
+      if (result.execution_status !== 'waiting_for_approval') {
+        const thread = chatThreads.find((item) => item.id === originatingThreadId);
+        if (thread?.sessionId) {
+          const { items } = await api.fetchPendingRoutingConfirmations(thread.sessionId, 1);
+          const nextConfirmation = items[0];
+          patchThreadLive(originatingThreadId, nextConfirmation ? {
+            runId: nextConfirmation.root_run_id,
+            runStatus: 'waiting_for_routing_confirmation',
+            routingConfirmation: { id: nextConfirmation.id, provider: nextConfirmation.proposed_provider, model: nextConfirmation.proposed_model },
+          } : { routingConfirmation: null });
+        }
+      }
       void refreshInspectorData(originatingThreadId, result.run_id);
     } catch (error) {
       patchThreadLive(originatingThreadId, { runStatus: 'waiting_for_routing_confirmation' });
       pushToast('Routing decision failed', executionErrorText(error));
     }
-  }, [activeThreadLive.routingConfirmation, activeThreadId, updateThreadMessages, refreshInspectorData, pushToast]);
+  }, [activeThreadLive.routingConfirmation, activeThreadId, chatThreads, updateThreadMessages, refreshInspectorData, pushToast]);
 
   const automationFromRecord = useCallback((record: AutomationRecordResponse, catalog: ProjectRecord[]): AutomationRecord => {
     const project = record.project_name
