@@ -627,7 +627,7 @@ async def _project_execution_history(
 async def get_workspace_graph(
     project_name: str,
     execution_cursor: str | None = Query(default=None, max_length=512),
-    execution_page_size: int = Query(default=100, ge=1, le=100),
+    execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceGraphResponse:
     objects = await _get_project_objects(db, project_name)
@@ -676,7 +676,7 @@ async def get_workspace_graph(
 async def get_workspace_execution_history(
     project_name: str,
     execution_cursor: str | None = Query(default=None, max_length=512),
-    execution_page_size: int = Query(default=100, ge=1, le=100),
+    execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceExecutionHistoryResponse:
     """Return one sanitized execution-history page without loading workspace objects or layout."""
