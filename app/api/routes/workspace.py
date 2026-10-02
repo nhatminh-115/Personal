@@ -159,6 +159,13 @@ async def search_workspace(
                 if item.object_type == "research_claim" and isinstance(metadata.get("verification_status"), str)
                 else None
             ),
+            related_object_id=(
+                metadata.get("study_session_id")
+                if item.object_type == "study_card"
+                and isinstance(metadata.get("study_session_id"), str)
+                and len(metadata["study_session_id"]) <= 36
+                else None
+            ),
             updated_at=item.updated_at,
         ))
     return response
