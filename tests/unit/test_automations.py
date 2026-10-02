@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.db.models import EventRecordModel, JobType, ProjectRoutingAssignmentModel, RunEventModel, RoutingProfileModel, RunModel, RunStatus, ScheduledJobModel, SessionModel, utc_now
+from app.db.models import EventRecordModel, EventStatus, JobType, ProjectRoutingAssignmentModel, RunEventModel, RoutingProfileModel, RunModel, RunStatus, ScheduledJobModel, SessionModel, utc_now
 from app.events.dispatcher import EventToAgentBridge
 from app.events.types import AURAEvent, EventType
 
@@ -255,6 +255,7 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
     second_event = await test_db_session.get(EventRecordModel, second.json()["event_id"])
     first_event.retry_count = 1
     second_event.retry_count = 2
+    second_event.status = EventStatus.DEAD_LETTER.value
     first_event.occurred_at = utc_now() - timedelta(minutes=1)
     second_event.occurred_at = utc_now()
 
@@ -274,11 +275,15 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
     history = response.json()
     assert [item["event_id"] for item in history] == [second_event.id, first_event.id]
     assert history[0]["run_id"] == second_run_id
-    assert history[0]["status"] == "failed"
+    assert history[0]["status"] == "dead_letter"
     assert history[0]["retry_count"] == 2
     assert history[1]["status"] == "failed"
     assert history[1]["retry_count"] == 1
     assert all("instruction" not in item and "response" not in item for item in history)
+
+    listed = await async_client.get("/v1/automations")
+    listed_automation = next(item for item in listed.json() if item["id"] == automation_id)
+    assert listed_automation["latest_execution"]["status"] == "dead_letter"
 
     limited = await async_client.get(f"/v1/automations/{automation_id}/runs?limit=1")
     assert [item["event_id"] for item in limited.json()] == [second_event.id]
