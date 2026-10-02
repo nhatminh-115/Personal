@@ -141,6 +141,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                         routing_context.get(key, False)
                         or getattr(compiled_context, key)
                         or capability_flags[key]
+                        or (key == "requires_tools" and bool(tool_capabilities))
                     )
                 updated_metadata["routing_context_dict"] = routing_context
             else:
@@ -150,7 +151,7 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                     updated_metadata[key] = bool(
                         updated_metadata.get(key, False)
                         or getattr(compiled_context, key)
-                        or capability_flags[key]
+                        or (key == "requires_tools" and bool(tool_capabilities))
                     )
                 if compiled_context.privacy_requirement:
                     updated_metadata["privacy_requirement"] = stricter_privacy_requirement(
