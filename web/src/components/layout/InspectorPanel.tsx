@@ -490,11 +490,17 @@ export function InspectorPanel({
                 <div className="inspector-row"><span>Approval</span><strong>{formatProviderValue(provider.approval_requirement)}</strong></div>
                 <div className="inspector-row"><span>Health checked</span><strong>{provider.health_checked_at ?? 'Not checked'}</strong></div>
                 <div className="inspector-row"><span>Capabilities</span><strong>{formatProviderList(provider.capabilities)}</strong></div>
-                <div className="inspector-capability-bindings" aria-label="Capability to AURA tool bindings">
-                  <strong>Capability → AURA tools</strong>
+                <div className="inspector-capability-bindings" aria-label="Configured capability to AURA tool mappings">
+                  <strong>Configured capability → AURA tools</strong>
+                  {Object.entries(provider.declared_capability_tools ?? {}).length ? Object.entries(provider.declared_capability_tools).map(([capability, tools]) => (
+                    <div className="inspector-capability-binding" key={capability}><span>{capability}</span><strong>{tools.length ? tools.join(' · ') : 'No tools declared'}</strong></div>
+                  )) : <span>No capability mappings declared</span>}
+                </div>
+                <div className="inspector-capability-bindings" aria-label="Verified available capability to AURA tool bindings">
+                  <strong>Verified available capability → AURA tools</strong>
                   {Object.entries(provider.capability_tools ?? {}).length ? Object.entries(provider.capability_tools).map(([capability, tools]) => (
-                    <div className="inspector-capability-binding" key={capability}><span>{capability}</span><strong>{tools.length ? tools.join(' · ') : 'No tools bound'}</strong></div>
-                  )) : <span>No tools bound</span>}
+                    <div className="inspector-capability-binding" key={capability}><span>{capability}</span><strong>{tools.length ? tools.join(' · ') : 'No tools available'}</strong></div>
+                  )) : <span>No tools verified available</span>}
                 </div>
               </section>
             ))}

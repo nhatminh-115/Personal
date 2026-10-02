@@ -27,10 +27,12 @@ async def test_provider_inventory_exposes_metadata_without_runtime_secrets(async
     assert workspace["privacy_boundary"] == "local"
     assert workspace["network_requirement"] == "none"
     assert workspace["capabilities"] == ["workspace.files.read", "workspace.files.write"]
-    assert workspace["capability_tools"] == {
+    expected_workspace_bindings = {
         "workspace.files.read": ["list_workspace_files", "read_workspace_file"],
         "workspace.files.write": ["write_workspace_file"],
     }
+    assert workspace["capability_tools"] == expected_workspace_bindings
+    assert workspace["declared_capability_tools"] == expected_workspace_bindings
     research = providers["aura.research"]
     assert research["privacy_boundary"] == "unknown"
     assert research["network_requirement"] == "unknown"
@@ -63,16 +65,19 @@ async def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mapping
     assert provider.privacy_boundary == PrivacyBoundary.UNKNOWN
     assert provider.network_requirement == NetworkRequirement.UNKNOWN
     assert provider.capabilities == ["research.library.search"]
+    expected_bindings = {"research.library.search": ["mcp_docs_read_metric"]}
     assert registry.capability_providers.get_capability_tools("mcp.docs") == {}
+    assert registry.capability_providers.get_declared_capability_tools("mcp.docs") == expected_bindings
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
 
     await manager.discover_tools("docs")
     provider = registry.capability_providers.get("mcp.docs")
     assert provider is not None and provider.health == CapabilityProviderHealth.HEALTHY
     bindings = registry.capability_providers.get_capability_tools("mcp.docs")
-    assert bindings == {"research.library.search": ["mcp_docs_read_metric"]}
+    assert bindings == expected_bindings
+    assert registry.capability_providers.get_declared_capability_tools("mcp.docs") == expected_bindings
     bindings["research.library.search"].append("mutated")
-    assert registry.capability_providers.get_capability_tools("mcp.docs") == {"research.library.search": ["mcp_docs_read_metric"]}
+    assert registry.capability_providers.get_capability_tools("mcp.docs") == expected_bindings
     assert registry.resolve_available_capabilities(["research.library.search"]) == ["mcp_docs_read_metric"]
     assert "sensitive-token" not in provider.model_dump_json()
     await manager.disconnect_all()

@@ -108,13 +108,18 @@ class ToolRegistry:
         self,
         metadata: CapabilityProviderMetadata,
         capability_tools: Optional[Dict[str, List[str]]] = None,
+        declared_capability_tools: Optional[Dict[str, List[str]]] = None,
     ) -> None:
-        """Register a provider only when every binding resolves to a canonical AURA tool."""
+        """Register verified tools and separately retain configured declarations."""
         bindings = capability_tools or {}
         missing_tools = sorted({name for names in bindings.values() for name in names if name not in self._tools})
         if missing_tools:
             raise ValueError(f"Provider '{metadata.provider_id}' references unregistered tools: {missing_tools}")
-        self.capability_providers.register(metadata, bindings)
+        self.capability_providers.register(
+            metadata,
+            bindings,
+            declared_capability_tools=declared_capability_tools,
+        )
 
     def register_provider(self, provider: CapabilityProvider) -> None:
         """Accept any provider implementing the typed metadata/binding boundary."""

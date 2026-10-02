@@ -81,8 +81,11 @@ class MCPClientManager:
     ) -> None:
         """Expose declared, sanitized MCP provider facts without exposing credentials or endpoints."""
         capability_tools: Dict[str, List[str]] = {}
+        declared_capability_tools: Dict[str, List[str]] = {}
         for mcp_tool_name, capabilities in config.capabilities_by_tool.items():
             canonical_name = f"mcp_{config.id}_{mcp_tool_name}"
+            for capability in capabilities:
+                declared_capability_tools.setdefault(capability, []).append(canonical_name)
             # A declaration is configuration only. Bind it to runtime capabilities
             # after tools/list confirms that the provider actually exposes it.
             if discovered_tool_names is None or canonical_name not in discovered_tool_names:
@@ -107,7 +110,11 @@ class MCPClientManager:
             permissions=config.permissions,
             approval_requirement=config.approval_requirement,
         )
-        self.registry.capability_providers.register(metadata, capability_tools)
+        self.registry.register_capability_provider(
+            metadata,
+            capability_tools,
+            declared_capability_tools=declared_capability_tools,
+        )
 
     def get_server_config(self, server_id: str) -> Optional[MCPServerConfig]:
         """Retrieve server configuration by ID."""

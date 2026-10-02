@@ -298,6 +298,7 @@ export interface CapabilityProviderMetadata {
   enabled: boolean;
   capabilities: string[];
   capability_tools: Record<string, string[]>;
+  declared_capability_tools: Record<string, string[]>;
   privacy_boundary: 'unknown' | 'local' | 'cloud' | 'mixed';
   network_requirement: 'unknown' | 'none' | 'local' | 'internet';
   data_touched?: string[] | null;
