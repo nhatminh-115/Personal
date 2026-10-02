@@ -200,3 +200,29 @@ def test_docker_runtime_reads_log_streams_only_to_output_limit(tmp_path, monkeyp
     assert all(call.kwargs.get("stream") is True for call in container.logs.call_args_list)
     assert len(result.stdout.encode("utf-8")) <= 1024 + 100
     assert len(result.stderr.encode("utf-8")) <= 1024
+
+
+@pytest.mark.asyncio
+async def test_run_python_uses_exclusive_private_temporary_script(tmp_path, monkeypatch):
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "is_available", lambda: True)
+    observed = {}
+
+    def inspect_script(command_args, config):
+        assert command_args[0] == "python"
+        script_path = tmp_path / os.path.basename(command_args[1])
+        observed["path"] = script_path
+        observed["content"] = script_path.read_text(encoding="utf-8")
+        observed["mode"] = stat.S_IMODE(script_path.stat().st_mode)
+        return ExecutionResult(exit_code=0, stdout="ok", stderr="")
+
+    monkeypatch.setattr(runtime, "_execute_sync", inspect_script)
+    result = await runtime.run_python("print('private payload')", SandboxConfig(workspace_dir=str(tmp_path)))
+
+    assert result.exit_code == 0
+    assert observed["content"] == "print('private payload')"
+    assert observed["path"].name.startswith(".sandbox_exec_")
+    assert observed["path"].suffix == ".py"
+    if os.name != "nt":
+        assert observed["mode"] == 0o600
+    assert not observed["path"].exists()
