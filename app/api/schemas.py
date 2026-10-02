@@ -470,8 +470,12 @@ class WorkspaceGraphResponse(BaseModel):
     execution_next_cursor: Optional[str] = None
 
 
+class CapabilityProviderResponse(CapabilityProviderMetadata):
+    capability_tools: Dict[str, List[str]] = Field(default_factory=dict)
+
+
 class CapabilityProvidersResponse(BaseModel):
-    providers: List[CapabilityProviderMetadata] = Field(default_factory=list)
+    providers: List[CapabilityProviderResponse] = Field(default_factory=list)
 
 
 class WorkspaceSessionResponse(BaseModel):
