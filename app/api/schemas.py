@@ -440,6 +440,9 @@ class WorkspaceExecutionEventResponse(BaseModel):
     error_type: Optional[str] = None
     proposed_provider: Optional[str] = None
     proposed_model: Optional[str] = None
+    trigger_event_id: Optional[str] = None
+    automation_id: Optional[str] = None
+    automation_name: Optional[str] = None
     context_objects: List[WorkspaceContextManifestItemResponse] = Field(default_factory=list)
     context_estimated_tokens: Optional[int] = None
     context_privacy_requirement: Optional[str] = None

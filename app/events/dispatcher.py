@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus, SessionModel
+from app.db.models import RunModel, RunStatus, ScheduledJobModel, SessionModel
 from app.db.session import async_session_factory
 from app.models.base import FallbackPolicy, PrivacyPolicy, RoutingContext
 from app.models.routing_resolver import apply_routing_profile_to_context, resolve_routing_profile
@@ -79,7 +79,22 @@ class EventToAgentBridge:
                 context=RoutingContext(session_id=session_id, run_id=run_id),
                 winning_scope=winning_scope,
             )
-            is_automation = bool(payload.get("automation_id"))
+            raw_automation_id = payload.get("automation_id")
+            automation_record = (
+                await db.get(ScheduledJobModel, raw_automation_id)
+                if isinstance(raw_automation_id, str) and raw_automation_id
+                else None
+            )
+            automation_metadata = (
+                automation_record.metadata_json if automation_record and isinstance(automation_record.metadata_json, dict) else {}
+            )
+            is_automation = automation_metadata.get("kind") == "automation"
+            automation_id = automation_record.id if is_automation and automation_record else None
+            automation_name = (
+                automation_record.name[:128]
+                if is_automation and automation_record and isinstance(automation_record.name, str)
+                else None
+            )
             if is_automation:
                 # Scheduled/manual automation turns are always local-only,
                 # even when an assigned profile allows cloud routing.
@@ -120,6 +135,17 @@ class EventToAgentBridge:
                 event_type="routing_profile_resolved",
                 payload=routing_snapshot,
             )
+            if automation_id:
+                await trace_service.record_event(
+                    run_id=run_id,
+                    session_id=session_id,
+                    event_type="automation_triggered",
+                    payload={
+                        "trigger_event_id": event.id,
+                        "automation_id": automation_id,
+                        "automation_name": automation_name,
+                    },
+                )
             await trace_service.record_event(
                 run_id=run_id,
                 session_id=session_id,

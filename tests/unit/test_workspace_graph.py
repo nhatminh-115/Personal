@@ -1582,6 +1582,47 @@ async def test_workspace_execution_graph_projects_sanitized_routing_provenance(a
     assert "secret" not in str(reasoning["reasoning_bounds"])
 
 @pytest.mark.asyncio
+async def test_workspace_graph_projects_automation_origin_without_instruction(async_client, test_db_session):
+    session = SessionModel(
+        id="automation-provenance-session",
+        title="Automation review",
+        metadata_json={},
+        project_name="Atlas",
+    )
+    run = RunModel(
+        id="automation-provenance-run",
+        session_id=session.id,
+        status="completed",
+        user_message="private automation instruction",
+    )
+    event = RunEventModel(
+        id="automation-triggered-event",
+        run_id=run.id,
+        event_type="automation_triggered",
+        created_at=datetime(2026, 10, 2, tzinfo=timezone.utc),
+        payload={
+            "trigger_event_id": "event-safe-id",
+            "automation_id": "automation-safe-id",
+            "automation_name": "Atlas review",
+            "message": "private automation instruction",
+        },
+    )
+    test_db_session.add_all([session, run, event])
+    await test_db_session.commit()
+
+    response = await async_client.get("/v1/workspace/projects/Atlas/graph")
+    assert response.status_code == 200
+    trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
+    assert len(trace["events"]) == 1
+    projected = trace["events"][0]
+    assert (projected["event_type"], projected["trigger_event_id"], projected["automation_id"], projected["automation_name"]) == (
+        "automation_triggered", "event-safe-id", "automation-safe-id", "Atlas review",
+    )
+    assert "message" not in projected
+    assert "private automation instruction" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_context_compilation_trace_exposes_only_safe_manifest_provenance(async_client, test_db_session):
     session = SessionModel(id="context-manifest-session", title="Context manifest", metadata_json={}, project_name="aura")
     run = RunModel(id="context-manifest-run", session_id=session.id, status="completed", user_message="private user message")

@@ -269,6 +269,9 @@ export interface WorkspaceExecutionEvent {
   error_type?: string | null;
   proposed_provider?: string | null;
   proposed_model?: string | null;
+  trigger_event_id?: string | null;
+  automation_id?: string | null;
+  automation_name?: string | null;
   context_objects?: Array<{
     object_id: string;
     object_type: string;
