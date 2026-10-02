@@ -97,7 +97,7 @@ async def test_study_session_rejects_non_study_library_material(async_client: As
 
 @pytest.mark.asyncio
 async def test_study_session_can_link_only_verified_project_research_claims(async_client: AsyncClient, test_db_session):
-    from app.db.models import WorkspaceObjectModel
+    from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
 
     verified = WorkspaceObjectModel(
         id="10000000-0000-4000-8000-000000000001",
@@ -106,7 +106,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         created_by="research",
         title="A verified finding",
         content="Supported by cited evidence.",
-        metadata_json={"verification_status": "verified", "privacy_policy": "local_only"},
+        metadata_json={"verification_status": "verified", "privacy_policy": "public"},
     )
     pending = WorkspaceObjectModel(
         id="10000000-0000-4000-8000-000000000002",
@@ -117,7 +117,25 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         content="This is still uncertain.",
         metadata_json={"verification_status": "unsupported"},
     )
-    test_db_session.add_all([verified, pending])
+    evidence = WorkspaceObjectModel(
+        id="10000000-0000-4000-8000-000000000003",
+        project_name="research-project",
+        object_type="research_evidence",
+        created_by="research",
+        title="Internal evidence",
+        content="Sensitive source excerpt.",
+        metadata_json={"privacy_policy": "local_only"},
+    )
+    test_db_session.add_all([verified, pending, evidence])
+    test_db_session.add(WorkspaceEdgeModel(
+        id="20000000-0000-4000-8000-000000000001",
+        project_name="research-project",
+        source_object_id=evidence.id,
+        target_object_id=verified.id,
+        relation_type="supports_claim",
+        edge_family="provenance",
+        created_by="research",
+    ))
     await test_db_session.commit()
 
     started = await async_client.post("/v1/study/sessions", json={
@@ -153,8 +171,13 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert "A verified finding" in compiled.prompt_text
     assert "Supported by cited evidence." not in compiled.prompt_text
     assert compiled.privacy_requirement == "local_only"
-    assert compiled.privacy_sources == [{"object_id": verified.id, "privacy_policy": "local_only"}]
+    assert compiled.privacy_sources == [
+        {"object_id": verified.id, "privacy_policy": "public"},
+        {"object_id": evidence.id, "privacy_policy": "local_only"},
+    ]
     assert compiled.objects[0].source_object_ids == [verified.id]
+    assert evidence.id not in compiled.prompt_text
+    assert evidence.content not in compiled.prompt_text
 
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
