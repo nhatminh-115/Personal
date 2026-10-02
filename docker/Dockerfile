@@ -10,13 +10,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY pyproject.toml README.md ./
+COPY requirements.lock pyproject.toml README.md ./
 COPY app/ ./app/
 RUN uv venv /opt/venv --python 3.12
 ENV VIRTUAL_ENV=/opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-RUN uv pip install --no-cache-dir .
+RUN uv pip install --no-cache-dir -r requirements.lock \
+    && uv pip install --no-cache-dir --no-deps .
 
 # Runtime Stage
 FROM python:3.12-slim AS runner
