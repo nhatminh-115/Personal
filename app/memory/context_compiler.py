@@ -11,6 +11,39 @@ from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObj
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch", "conversation_turn"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
+# Model traits and AURA tool-provider capabilities share one workspace metadata
+# field today. Split them before routing so tool namespaces are never required
+# to appear in a model's capability list.
+MODEL_ROUTING_CAPABILITIES = frozenset({"general", "code", "reasoning", "research", "fast", "local"})
+CAPABILITY_ROUTING_FLAGS = {
+    "tools": "requires_tools",
+    "tool_calling": "requires_tools",
+    "vision": "requires_vision",
+    "structured_output": "requires_structured_output",
+    "long_context": "requires_long_context",
+}
+
+
+def split_context_capabilities(capabilities: list[str]) -> tuple[list[str], list[str], dict[str, bool]]:
+    """Separate model-routing constraints from abstract AURA tool capabilities."""
+    model_capabilities: set[str] = set()
+    tool_capabilities: set[str] = set()
+    flags = {
+        "requires_tools": False,
+        "requires_vision": False,
+        "requires_structured_output": False,
+        "requires_long_context": False,
+    }
+    for capability in capabilities:
+        if capability in CAPABILITY_ROUTING_FLAGS:
+            flags[CAPABILITY_ROUTING_FLAGS[capability]] = True
+        elif capability in MODEL_ROUTING_CAPABILITIES:
+            model_capabilities.add(capability)
+        else:
+            tool_capabilities.add(capability)
+    return sorted(model_capabilities), sorted(tool_capabilities), flags
+
+
 PRIVACY_REQUIREMENT_ORDER = {"public": 0, "internal": 1, "confidential": 2, "local_only": 3}
 BRIDGE_SECTION_LABELS = {
     "conclusions": "Conclusions",
