@@ -258,6 +258,19 @@ async def create_study_card(
         if isinstance(session_metadata.get("privacy_policy"), str)
         else None
     )
+    source_id = session_metadata.get("material_id")
+    if isinstance(source_id, str):
+        source = await db.get(WorkspaceObjectModel, source_id)
+        source_metadata = source.metadata_json if source and isinstance(source.metadata_json, dict) else {}
+        if source is not None and source.object_type == "manual_note" and source.created_by == "user":
+            source_privacy = source_metadata.get("privacy_policy")
+            if source_privacy is not None:
+                if source_privacy not in {"public", "internal", "confidential", "local_only"}:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Study source has an unsupported privacy classification.",
+                    )
+                privacy_requirement = stricter_privacy_requirement(privacy_requirement, source_privacy)
     project_links = await db.execute(
         select(WorkspaceObjectProjectLinkModel.project_name)
         .where(WorkspaceObjectProjectLinkModel.object_id == session.id)
