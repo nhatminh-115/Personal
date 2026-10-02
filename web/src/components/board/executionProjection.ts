@@ -4,7 +4,50 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
   switch (event.event_type) {
     case 'model_selected': {
       const role = event.agent_role === 'root' ? 'Root' : event.agent_role ? `${event.agent_role} specialist` : 'Agent';
-      return { title: `${role} · ${event.model ?? 'model selected'}`, body: event.provider ? `Provider: ${event.provider}` : 'Route selected', chip: 'ROUTER' };
+      const routeDetails = [
+        event.profile_id ? `Profile ${event.profile_id}${event.profile_version != null ? ` v${event.profile_version}` : ''}` : null,
+        event.winning_scope ? `Scope ${event.winning_scope}` : null,
+        event.privacy ? `Privacy ${event.privacy}` : null,
+        event.fallback_policy ? `Fallback ${event.fallback_policy}` : null,
+        event.selection_reason ? `Reason ${event.selection_reason}` : null,
+      ].filter(Boolean);
+      const route = [event.provider ? `Provider: ${event.provider}` : null, ...routeDetails].filter(Boolean).join(' · ');
+      return { title: `${role} · ${event.model ?? 'model selected'}`, body: route || 'Route selected', chip: 'ROUTER' };
+    }
+    case 'reasoning_effort_selected': {
+      const bounds = event.reasoning_bounds && (event.reasoning_bounds.min || event.reasoning_bounds.max)
+        ? `Bounds ${event.reasoning_bounds.min ?? '?'}–${event.reasoning_bounds.max ?? '?'}`
+        : null;
+      const details = [
+        event.reasoning_policy ? `Policy ${event.reasoning_policy}` : null,
+        bounds,
+      ].filter(Boolean);
+      return {
+        title: `Reasoning · ${event.selected_effort ?? 'effort selected'}`,
+        body: details.join(' · ') || 'Reasoning policy selected',
+        chip: 'REASONING',
+      };
+    }
+    case 'fallback_considered': {
+      const providerFlow = [event.primary_provider, event.selected_provider].filter(Boolean).join(' → ');
+      const details = [
+        event.fallback_policy ? `Policy ${event.fallback_policy}` : null,
+        providerFlow ? `Provider ${providerFlow}` : null,
+        event.candidate_model ? `Candidate ${event.candidate_model}` : null,
+      ].filter(Boolean);
+      return { title: 'Fallback candidate evaluated', body: details.join(' · ') || 'Fallback policy evaluated', chip: 'FALLBACK' };
+    }
+    case 'fallback_blocked': {
+      const proposed = event.proposed_provider
+        ? `Proposed ${event.proposed_provider}${event.proposed_model ? `:${event.proposed_model}` : ''}`
+        : null;
+      const details = [
+        event.fallback_policy ? `Policy ${event.fallback_policy}` : null,
+        event.privacy_boundary ? `Privacy ${event.privacy_boundary}` : null,
+        event.error_type,
+        proposed,
+      ].filter(Boolean);
+      return { title: 'Fallback blocked', body: details.join(' · ') || 'Fallback was blocked by routing policy', chip: 'FALLBACK' };
     }
     case 'delegation_started':
       return { title: `Delegate · ${event.specialist ?? 'specialist'}`, body: 'Child runtime started', chip: 'SPECIALIST' };
