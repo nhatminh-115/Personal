@@ -1186,6 +1186,68 @@ async def test_context_bridge_inherits_privacy_through_omitted_context_set_ances
     assert len(model_router.get_provider("mock").call_history) == calls_before
 
 @pytest.mark.asyncio
+async def test_context_bridge_inherits_privacy_from_provenance_ancestors(async_client, test_db_session):
+    from app.db.models import WorkspaceEdgeModel
+    from app.models.router import model_router
+
+    private_source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Private evidence",
+        "content": "Confidential evidence body must stay out of the Bridge.",
+        "metadata_json": {"privacy_policy": "confidential"},
+    })
+    assert private_source.status_code == 201
+    derived_source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Reviewed finding",
+        "content": "A user-authored finding derived from confidential evidence.",
+        "metadata_json": {"privacy_policy": "public"},
+    })
+    assert derived_source.status_code == 201
+    test_db_session.add(WorkspaceEdgeModel(
+        project_name="aura",
+        source_object_id=private_source.json()["id"],
+        target_object_id=derived_source.json()["id"],
+        relation_type="supports",
+        edge_family="provenance",
+        created_by="research",
+        metadata_json={},
+    ))
+    await test_db_session.commit()
+
+    bridge = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "context_bridge",
+        "title": "Finding handoff",
+        "content": "Use the reviewed finding.",
+        "metadata_json": {"privacy_policy": "public"},
+        "source_object_ids": [derived_source.json()["id"]],
+    })
+    assert bridge.status_code == 201
+    preview = await async_client.post(
+        "/v1/workspace/projects/aura/context/preview",
+        json={"selected_object_ids": [bridge.json()["id"]]},
+    )
+    assert preview.status_code == 200
+    preview_data = preview.json()
+    assert preview_data["privacy_requirement"] == "confidential"
+    assert {item["object_id"] for item in preview_data["objects"]} == {bridge.json()["id"]}
+    assert "Use the reviewed finding." in preview_data["prompt_text"]
+    assert "Confidential evidence body must stay out of the Bridge." not in preview_data["prompt_text"]
+    assert {item["object_id"] for item in preview_data["privacy_sources"]} >= {private_source.json()["id"]}
+
+    calls_before = len(model_router.get_provider("mock").call_history)
+    blocked = await async_client.post("/v1/chat", json={
+        "session_id": "bridge-provenance-privacy-session",
+        "project_name": "aura",
+        "message": "Continue the finding.",
+        "model_override": "openai:gpt-4o",
+        "context_object_ids": [bridge.json()["id"]],
+    })
+    assert blocked.status_code == 403
+    assert blocked.json()["code"] == "PrivacyBoundaryViolation"
+    assert len(model_router.get_provider("mock").call_history) == calls_before
+
+@pytest.mark.asyncio
 async def test_workspace_context_preview_is_read_only_and_honors_bridge_sections_and_source_privacy(
     async_client,
     test_db_session,
