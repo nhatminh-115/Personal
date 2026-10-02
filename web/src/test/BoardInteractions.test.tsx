@@ -285,3 +285,53 @@ describe('Compiled Context Preview', () => {
     expect(screen.getByText('The reviewed finding is ready.')).toBeInTheDocument();
   });
 });
+
+describe('Context Set save interaction', () => {
+  it('saves the selected objects through the Context Lens action', () => {
+    const onSaveContextSet = vi.fn();
+    const selectedNodes = [
+      {
+        id: 'selected-bridge',
+        position: { x: 0, y: 0 },
+        data: {
+          kind: 'bridge',
+          title: 'Reviewed handoff',
+          body: 'Selected conclusion',
+          density: 'compact',
+          layer: 'knowledge',
+          workspaceObjectType: 'context_bridge',
+        },
+      },
+      {
+        id: 'selected-note',
+        position: { x: 120, y: 0 },
+        data: {
+          kind: 'note',
+          title: 'Source note',
+          body: 'Supporting context',
+          density: 'compact',
+          layer: 'knowledge',
+          workspaceObjectType: 'manual_note',
+        },
+      },
+    ] as AuraFlowNode[];
+
+    render(
+      <ContextLensBar
+        nodes={selectedNodes}
+        onAsk={vi.fn()}
+        onCreateNote={vi.fn()}
+        onCreateBridge={vi.fn()}
+        onCreateBranch={vi.fn()}
+        onSaveContextSet={onSaveContextSet}
+        mergeTargets={[]}
+        onMergeInto={vi.fn()}
+        onClear={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('2 objects selected')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Save Context Set/i }));
+    expect(onSaveContextSet).toHaveBeenCalledOnce();
+  });
+});
