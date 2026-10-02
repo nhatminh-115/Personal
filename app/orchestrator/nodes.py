@@ -949,18 +949,8 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             # privacy boundary attached so retrieval cannot route private content to a
             # less restrictive model later.
             if state.get("tool_results"):
-                routing_context = (state.get("metadata") or {}).get("routing_context_dict")
-                privacy_policy = (
-                    routing_context.get("privacy_requirement")
-                    if isinstance(routing_context, dict)
-                    else (state.get("metadata") or {}).get("privacy_requirement")
-                )
-                if hasattr(privacy_policy, "value"):
-                    privacy_policy = privacy_policy.value
-                if privacy_policy is None:
-                    # Legacy callers without a resolved routing context use the router's
-                    # public default. Explicit but unknown classifications fail closed.
-                    privacy_policy = "public"
+                # Explicitly unknown classifications fail closed and cannot be
+                # retained as episodic context.
                 if isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
                     tool_summary = ", ".join(tr["name"] for tr in state["tool_results"])
                     await mem_service.record_episodic_memory(
