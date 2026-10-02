@@ -92,6 +92,12 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
         chip: 'CONTEXT',
       };
     }
+    case 'automation_triggered':
+      return {
+        title: `Automation · ${event.automation_name ?? event.automation_id ?? 'Scheduled run'}`,
+        body: event.trigger_event_id ? `Trigger event ${event.trigger_event_id}` : 'Automation started a run',
+        chip: 'AUTOMATION',
+      };
     case 'run_completed':
     default:
       return { title: 'Run completed', body: 'Execution finished', chip: 'RUN' };
