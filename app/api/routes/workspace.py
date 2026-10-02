@@ -161,7 +161,7 @@ async def search_workspace(
     return response
 
 EXECUTION_GRAPH_EVENT_TYPES = {
-    "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked",
+    "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked", "context_compiled",
     "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
     "approval_requested", "approval_granted", "approval_rejected", "response_generated",
     "run_completed", "run_failed", "run_cancelled",
@@ -188,6 +188,44 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
             key: bounds[key][:32] if isinstance(bounds.get(key), str) else None
             for key in ("min", "max")
         }
+    context_objects = []
+    raw_context_objects = payload.get("objects") if event_type == "context_compiled" else None
+    if isinstance(raw_context_objects, list):
+        for item in raw_context_objects[:128]:
+            if not isinstance(item, dict):
+                continue
+            object_id = item.get("object_id")
+            object_type = item.get("object_type")
+            if not isinstance(object_id, str) or not object_id or len(object_id) > 256:
+                continue
+            if not isinstance(object_type, str) or not object_type or len(object_type) > 64:
+                continue
+            raw_source_ids = item.get("source_object_ids")
+            source_object_ids = []
+            if isinstance(raw_source_ids, list):
+                source_object_ids = list(dict.fromkeys(
+                    value for value in raw_source_ids[:128]
+                    if isinstance(value, str) and value and len(value) <= 256
+                ))
+            raw_sections = item.get("selected_sections")
+            selected_sections = None
+            if isinstance(raw_sections, dict):
+                selected_sections = {
+                    key: value for key, value in list(raw_sections.items())[:32]
+                    if isinstance(key, str) and key and len(key) <= 64
+                    and (value is None or isinstance(value, bool))
+                }
+            context_objects.append({
+                "object_id": object_id,
+                "object_type": object_type,
+                "selected_by_user": item.get("selected_by_user") if isinstance(item.get("selected_by_user"), bool) else False,
+                "source_object_ids": source_object_ids,
+                "selected_sections": selected_sections,
+            })
+    context_estimated_tokens = payload.get("estimated_tokens")
+    if not isinstance(context_estimated_tokens, int) or isinstance(context_estimated_tokens, bool) or context_estimated_tokens < 0:
+        context_estimated_tokens = None
+
     profile_version = payload.get("profile_version")
     return WorkspaceExecutionEventResponse(
         id=event.id,
@@ -223,6 +261,9 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
         error_type=safe_text("error_type") if event_type == "fallback_blocked" else None,
         proposed_provider=safe_text("proposed_provider") if event_type == "fallback_blocked" else None,
         proposed_model=safe_text("proposed_model") if event_type == "fallback_blocked" else None,
+        context_objects=context_objects,
+        context_estimated_tokens=context_estimated_tokens if event_type == "context_compiled" else None,
+        context_privacy_requirement=safe_text("privacy_requirement") if event_type == "context_compiled" else None,
     )
 
 
