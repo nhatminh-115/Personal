@@ -52,6 +52,12 @@ jobs:
         run: |
           docker build -t aura-coding-sandbox:latest -f docker/coding_sandbox.Dockerfile .
 
+      - name: Build AURA API Docker image
+        run: docker build -t aura-app:ci -f docker/Dockerfile .
+
+      - name: Validate Docker Compose configuration
+        run: docker compose config --quiet
+
       - name: Wait for PostgreSQL asyncpg connection
         run: |
           python -c "
