@@ -173,3 +173,91 @@
   color: #f09b87;
   font-size: 8px;
 }
+
+
+.study-cards {
+  flex: 1 0 100%;
+  display: grid;
+  gap: 8px;
+  padding-top: 9px;
+}
+
+.study-cards__heading {
+  color: #9eb2bc;
+  font-size: 8px;
+}
+
+.study-card {
+  display: grid;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 1px solid rgba(149, 179, 197, .1);
+  border-radius: 8px;
+  background: rgba(7, 15, 20, .2);
+  color: #a8bec8;
+  font-size: 9px;
+}
+
+.study-card > strong {
+  color: #c0d0d6;
+  line-height: 1.5;
+}
+
+.study-card p {
+  margin: 0;
+  color: #8ea5af;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.study-card__edit {
+  display: grid;
+  gap: 7px;
+}
+
+.study-card__edit label {
+  display: grid;
+  gap: 4px;
+  color: #a8bec8;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.study-card__edit input,
+.study-card__edit textarea {
+  width: 100%;
+  border: 1px solid rgba(149, 179, 197, .14);
+  border-radius: 7px;
+  padding: 7px 9px;
+  background: rgba(7, 15, 20, .35);
+  color: #c4d3d9;
+  font: inherit;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.study-card__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.study-card__actions button,
+.study-card__edit > button,
+.study-card__reveal {
+  justify-self: start;
+  border: 1px solid rgba(94, 210, 224, .16);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: rgba(94, 210, 224, .05);
+  color: #90cbd2;
+  cursor: pointer;
+  font: inherit;
+  font-size: 8px;
+}
+
+.study-card__actions button:disabled,
+.study-card__edit > button:disabled {
+  opacity: .5;
+  cursor: default;
+}
