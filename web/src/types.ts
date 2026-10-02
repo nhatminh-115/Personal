@@ -297,6 +297,7 @@ export interface CapabilityProviderMetadata {
   health_checked_at?: string | null;
   enabled: boolean;
   capabilities: string[];
+  capability_tools: Record<string, string[]>;
   privacy_boundary: 'unknown' | 'local' | 'cloud' | 'mixed';
   network_requirement: 'unknown' | 'none' | 'local' | 'internet';
   data_touched?: string[] | null;
