@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
     WorkspaceEdgeBatchDelete,
+    WorkspaceEdgeBatchRestore,
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
     WorkspaceExecutionEventResponse,
@@ -817,6 +818,82 @@ async def delete_workspace_edges(
         )
     )
     await db.commit()
+
+
+@router.post(
+    "/projects/{project_name}/edges/batch-restore",
+    response_model=list[WorkspaceEdgeResponse],
+    status_code=status.HTTP_201_CREATED,
+)
+async def restore_workspace_edges(
+    project_name: str,
+    body: WorkspaceEdgeBatchRestore,
+    db: AsyncSession = Depends(get_db),
+) -> list[WorkspaceEdgeResponse]:
+    """Restore a bounded set of user edges with stable IDs after validating the whole batch."""
+    edges = body.edges
+    edge_ids = [edge.id for edge in edges]
+    if len(set(edge_ids)) != len(edge_ids):
+        raise HTTPException(status_code=422, detail="Restored workspace edge IDs must be unique.")
+    if any(edge.source_object_id == edge.target_object_id for edge in edges):
+        raise HTTPException(status_code=422, detail="An object cannot be related to itself.")
+
+    await _lock_project_graph(db, project_name)
+    existing_ids = await db.execute(
+        select(WorkspaceEdgeModel.id).where(WorkspaceEdgeModel.id.in_(edge_ids))
+    )
+    if existing_ids.scalars().first() is not None:
+        raise HTTPException(status_code=409, detail="One or more workspace edge IDs are already in use.")
+
+    endpoint_ids = [endpoint_id for edge in edges for endpoint_id in (edge.source_object_id, edge.target_object_id)]
+    objects = await _project_objects_by_ids(db, project_name, endpoint_ids)
+    if len(objects) != len(set(endpoint_ids)):
+        raise HTTPException(status_code=404, detail="Both edge endpoints must exist in this project.")
+
+    context_edges = await db.execute(
+        select(WorkspaceEdgeModel.source_object_id, WorkspaceEdgeModel.target_object_id).where(
+            WorkspaceEdgeModel.project_name == project_name,
+            WorkspaceEdgeModel.edge_family == "context",
+        )
+    )
+    adjacency: dict[str, set[str]] = {}
+    for source_id, target_id in context_edges:
+        adjacency.setdefault(source_id, set()).add(target_id)
+
+    restored: list[WorkspaceEdgeModel] = []
+    for item in edges:
+        if item.edge_family == "context":
+            pending = [item.target_object_id]
+            visited: set[str] = set()
+            while pending:
+                current = pending.pop()
+                if current == item.source_object_id:
+                    raise HTTPException(status_code=409, detail="Context-flow edges must form a DAG.")
+                if current in visited:
+                    continue
+                visited.add(current)
+                pending.extend(adjacency.get(current, ()))
+            adjacency.setdefault(item.source_object_id, set()).add(item.target_object_id)
+        restored.append(WorkspaceEdgeModel(
+            id=item.id,
+            project_name=project_name,
+            source_object_id=item.source_object_id,
+            target_object_id=item.target_object_id,
+            relation_type=item.relation_type,
+            edge_family=item.edge_family,
+            created_by="user",
+            metadata_json=item.metadata_json,
+        ))
+
+    db.add_all(restored)
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="Workspace edges could not be restored.") from exc
+    for edge in restored:
+        await db.refresh(edge)
+    return [_edge_response(edge) for edge in restored]
 
 
 @router.delete("/projects/{project_name}/edges/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)

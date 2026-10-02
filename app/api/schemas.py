@@ -300,6 +300,19 @@ class WorkspaceEdgeBatchDelete(BaseModel):
     edge_ids: List[str] = Field(min_length=1, max_length=200)
 
 
+class WorkspaceEdgeRestoreItem(BaseModel):
+    id: str = Field(min_length=1, max_length=36)
+    source_object_id: str = Field(min_length=1, max_length=36)
+    target_object_id: str = Field(min_length=1, max_length=36)
+    relation_type: str = Field(min_length=1, max_length=48)
+    edge_family: Literal["semantic", "context", "execution", "provenance"]
+    metadata_json: Dict[str, Any] = Field(default_factory=dict)
+
+
+class WorkspaceEdgeBatchRestore(BaseModel):
+    edges: List[WorkspaceEdgeRestoreItem] = Field(min_length=1, max_length=200)
+
+
 class WorkspaceLayoutWrite(BaseModel):
     layout: Dict[str, Any]
     expected_revision: int = Field(ge=0)

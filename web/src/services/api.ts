@@ -335,6 +335,17 @@ export const api = {
     }));
   },
 
+  async restoreWorkspaceEdges(
+    projectName: string,
+    edges: Array<Pick<WorkspaceEdge, 'id' | 'source_object_id' | 'target_object_id' | 'relation_type' | 'edge_family' | 'metadata_json'>>,
+  ): Promise<WorkspaceEdge[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ edges }),
+    }));
+  },
+
   async deleteWorkspaceEdge(projectName: string, edgeId: string): Promise<void> {
     await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
   },

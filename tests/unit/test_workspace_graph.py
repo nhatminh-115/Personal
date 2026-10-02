@@ -947,3 +947,83 @@ async def test_workspace_edge_deletion_preserves_system_edges_and_batches_atomic
 
     graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
     assert [edge["id"] for edge in graph["edges"]] == [system_edge.id]
+
+
+@pytest.mark.asyncio
+async def test_workspace_edge_batch_restore_preserves_ids_and_rejects_invalid_batches_atomically(async_client):
+    object_ids = []
+    for title in ("Restore source", "Restore target", "Restore third"):
+        response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+            "object_type": "manual_note",
+            "title": title,
+            "content": title,
+        })
+        assert response.status_code == 201
+        object_ids.append(response.json()["id"])
+
+    created = await async_client.post("/v1/workspace/projects/aura/edges", json={
+        "source_object_id": object_ids[0],
+        "target_object_id": object_ids[1],
+        "relation_type": "related_to",
+        "edge_family": "semantic",
+        "metadata_json": {"label": "stable"},
+    })
+    assert created.status_code == 201
+    edge = created.json()
+    deleted = await async_client.request(
+        "DELETE",
+        "/v1/workspace/projects/aura/edges",
+        json={"edge_ids": [edge["id"]]},
+    )
+    assert deleted.status_code == 204
+
+    restored = await async_client.post(
+        "/v1/workspace/projects/aura/edges/batch-restore",
+        json={"edges": [{
+            "id": edge["id"],
+            "source_object_id": edge["source_object_id"],
+            "target_object_id": edge["target_object_id"],
+            "relation_type": edge["relation_type"],
+            "edge_family": edge["edge_family"],
+            "metadata_json": edge["metadata_json"],
+        }]},
+    )
+    assert restored.status_code == 201
+    assert restored.json()[0]["id"] == edge["id"]
+    assert restored.json()[0]["created_by"] == "user"
+    assert restored.json()[0]["metadata_json"] == {"label": "stable"}
+
+    context = await async_client.post("/v1/workspace/projects/aura/edges", json={
+        "source_object_id": object_ids[0],
+        "target_object_id": object_ids[1],
+        "relation_type": "bridges_to",
+        "edge_family": "context",
+    })
+    assert context.status_code == 201
+
+    invalid_batch = await async_client.post(
+        "/v1/workspace/projects/aura/edges/batch-restore",
+        json={"edges": [
+            {
+                "id": "40000000-0000-4000-8000-000000000001",
+                "source_object_id": object_ids[1],
+                "target_object_id": object_ids[0],
+                "relation_type": "bridges_to",
+                "edge_family": "context",
+            },
+            {
+                "id": "40000000-0000-4000-8000-000000000002",
+                "source_object_id": object_ids[2],
+                "target_object_id": object_ids[0],
+                "relation_type": "related_to",
+                "edge_family": "semantic",
+            },
+        ]},
+    )
+    assert invalid_batch.status_code == 409
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    graph_ids = {item["id"] for item in graph["edges"]}
+    assert edge["id"] in graph_ids
+    assert context.json()["id"] in graph_ids
+    assert "40000000-0000-4000-8000-000000000001" not in graph_ids
+    assert "40000000-0000-4000-8000-000000000002" not in graph_ids
