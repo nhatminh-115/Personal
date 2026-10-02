@@ -443,6 +443,9 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             )
         provider, selection = router.select_model_for_task(routing_ctx)
 
+    # Persist the post-confirmation exact route only after selection succeeds.
+    meta["routing_context_dict"] = routing_ctx.model_dump(mode="json")
+
     model_req = ModelRequest(
         messages=chat_messages,
         tools=tool_defs,
