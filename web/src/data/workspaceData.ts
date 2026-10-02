@@ -240,6 +240,7 @@ export interface WorkspaceNote {
   tags: string[];
   projectIds: string[];
   pinned?: boolean;
+  privacyPolicy?: string;
   source?: 'demo' | 'local' | 'live';
 }
 
