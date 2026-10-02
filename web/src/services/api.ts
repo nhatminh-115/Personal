@@ -23,6 +23,7 @@ import {
   WorkspaceNoteRecord,
   WorkspaceObject,
   StudySessionRecord,
+  StudyCardRecord,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
   WorkspaceSearchResult,
@@ -225,6 +226,32 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reflection }),
+    }));
+  },
+
+  async fetchStudyCards(): Promise<StudyCardRecord[]> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/cards`));
+  },
+
+  async createStudyCard(sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, answer }),
+    }));
+  },
+
+  async updateStudyCard(cardId: string, sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, answer }),
+    }));
+  },
+
+  async deleteStudyCard(cardId: string, sessionId: string): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
+      method: 'DELETE',
     }));
   },
 
