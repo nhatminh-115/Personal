@@ -175,11 +175,18 @@ async def set_automation_enabled(
 
 @router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationRunResponse:
-    job = await db.get(ScheduledJobModel, automation_id)
+    result = await db.execute(
+        select(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id)
+        .with_for_update()
+    )
+    job = result.scalar_one_or_none()
     if job is None or (job.metadata_json or {}).get("kind") != "automation":
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
+    if job.locked_at is not None:
+        raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
     latest = (await _latest_executions(db, [job])).get(job.id)
     if latest and latest.status in {
         "queued",
