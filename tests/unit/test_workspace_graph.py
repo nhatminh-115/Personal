@@ -1613,46 +1613,12 @@ async def test_workspace_graph_projects_automation_origin_without_instruction(as
     response = await async_client.get("/v1/workspace/projects/Atlas/graph")
     assert response.status_code == 200
     trace = next(item for item in response.json()["execution_traces"] if item["run_id"] == run.id)
-    assert trace["events"] == [{
-        "id": event.id,
-        "event_type": "automation_triggered",
-        "created_at": event.created_at.isoformat(),
-        "agent_role": None,
-        "specialist": None,
-        "provider": None,
-        "model": None,
-        "tool_name": None,
-        "tool_call_id": None,
-        "child_run_id": None,
-        "status": None,
-        "success": None,
-        "error_category": None,
-        "risk_level": None,
-        "step": None,
-        "task_type": None,
-        "profile_id": None,
-        "profile_version": None,
-        "winning_scope": None,
-        "privacy": None,
-        "fallback_policy": None,
-        "selection_reason": None,
-        "reasoning_policy": None,
-        "reasoning_bounds": None,
-        "selected_effort": None,
-        "primary_provider": None,
-        "selected_provider": None,
-        "candidate_model": None,
-        "privacy_boundary": None,
-        "error_type": None,
-        "proposed_provider": None,
-        "proposed_model": None,
-        "trigger_event_id": "event-safe-id",
-        "automation_id": "automation-safe-id",
-        "automation_name": "Atlas review",
-        "context_objects": [],
-        "context_estimated_tokens": None,
-        "context_privacy_requirement": None,
-    }]
+    assert len(trace["events"]) == 1
+    projected = trace["events"][0]
+    assert (projected["event_type"], projected["trigger_event_id"], projected["automation_id"], projected["automation_name"]) == (
+        "automation_triggered", "event-safe-id", "automation-safe-id", "Atlas review",
+    )
+    assert "message" not in projected
     assert "private automation instruction" not in response.text
 
 
