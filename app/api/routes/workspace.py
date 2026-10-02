@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
+    WorkspaceEdgeBatchDelete,
     WorkspaceEdgeCreate,
     WorkspaceEdgeResponse,
     WorkspaceExecutionEventResponse,
@@ -787,11 +788,53 @@ async def create_workspace_edge(
     return _edge_response(edge)
 
 
+@router.delete("/projects/{project_name}/edges", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_workspace_edges(
+    project_name: str,
+    body: WorkspaceEdgeBatchDelete,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    """Atomically delete selected user-authored edges after validating every target."""
+    edge_ids = list(dict.fromkeys(body.edge_ids))
+    await _lock_project_graph(db, project_name)
+    result = await db.execute(
+        select(WorkspaceEdgeModel)
+        .where(
+            WorkspaceEdgeModel.project_name == project_name,
+            WorkspaceEdgeModel.id.in_(edge_ids),
+        )
+        .with_for_update()
+    )
+    edges = list(result.scalars())
+    if len(edges) != len(edge_ids):
+        raise HTTPException(status_code=404, detail="One or more workspace edges were not found in this project.")
+    if any(edge.created_by != "user" for edge in edges):
+        raise HTTPException(status_code=409, detail="System-created workspace edges cannot be deleted.")
+    await db.execute(
+        sa_delete(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == project_name,
+            WorkspaceEdgeModel.id.in_(edge_ids),
+        )
+    )
+    await db.commit()
+
+
 @router.delete("/projects/{project_name}/edges/{edge_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_workspace_edge(project_name: str, edge_id: str, db: AsyncSession = Depends(get_db)) -> None:
-    edge = await db.get(WorkspaceEdgeModel, edge_id)
-    if edge is None or edge.project_name != project_name:
+    await _lock_project_graph(db, project_name)
+    result = await db.execute(
+        select(WorkspaceEdgeModel)
+        .where(
+            WorkspaceEdgeModel.id == edge_id,
+            WorkspaceEdgeModel.project_name == project_name,
+        )
+        .with_for_update()
+    )
+    edge = result.scalar_one_or_none()
+    if edge is None:
         raise HTTPException(status_code=404, detail="Workspace edge not found.")
+    if edge.created_by != "user":
+        raise HTTPException(status_code=409, detail="System-created workspace edges cannot be deleted.")
     await db.delete(edge)
     await db.commit()
 
