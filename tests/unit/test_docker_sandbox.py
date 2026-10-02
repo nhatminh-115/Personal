@@ -160,3 +160,43 @@ def test_docker_runtime_never_pulls_missing_sandbox_image(tmp_path, monkeypatch)
 
     client.images.pull.assert_not_called()
     client.containers.create.assert_not_called()
+
+
+def test_docker_runtime_reads_log_streams_only_to_output_limit(tmp_path, monkeypatch):
+    class LargeLogStream:
+        def __init__(self):
+            self.chunks_yielded = 0
+            self.closed = False
+
+        def __iter__(self):
+            for _ in range(1000):
+                self.chunks_yielded += 1
+                yield b"x" * 2048
+
+        def close(self):
+            self.closed = True
+
+    stdout_stream = LargeLogStream()
+    stderr_stream = LargeLogStream()
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.side_effect = [stdout_stream, stderr_stream]
+    client = MagicMock()
+    client.containers.create.return_value = container
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    result = runtime._execute_sync(
+        ["true"],
+        SandboxConfig(workspace_dir=str(tmp_path), max_output_bytes=1024),
+    )
+
+    assert result.exit_code == 0
+    assert result.metadata.get("truncated") is True
+    assert stdout_stream.chunks_yielded == 1
+    assert stderr_stream.chunks_yielded == 1
+    assert stdout_stream.closed and stderr_stream.closed
+    assert all(call.kwargs.get("stream") is True for call in container.logs.call_args_list)
+    assert len(result.stdout.encode("utf-8")) <= 1024 + 100
+    assert len(result.stderr.encode("utf-8")) <= 1024
