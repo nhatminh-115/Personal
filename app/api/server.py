@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.routes import approvals, automations, capabilities, chat, memory, models, runs, sessions, routing, routing_confirmations, study, workspace
+from app.api.middleware import RequestBodyLimitMiddleware
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -79,6 +80,7 @@ def create_app() -> FastAPI:
         for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
         if origin.strip()
     ]
+    app.add_middleware(RequestBodyLimitMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

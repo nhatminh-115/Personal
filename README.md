@@ -124,7 +124,8 @@ The API and PostgreSQL ports in Docker Compose are also bound to loopback.
 `CORS_ALLOWED_ORIGINS` accepts a comma-separated list for the browser UI; its
 default allows the local Vite origins only. AURA's API has no user
 authentication, so keep it on loopback unless it is placed behind an
-authenticated access layer.
+authenticated access layer. Requests with bodies larger than 10 MiB are rejected
+with HTTP 413 before endpoint parsing.
 
 Before using sandbox execution, build the trusted local image once:
 ```powershell
