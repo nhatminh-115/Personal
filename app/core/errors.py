@@ -101,6 +101,11 @@ class RoutingConfirmationRequired(AuraError):
     pass
 
 
+class RoutingConfirmationRejected(AuraError):
+    """A user rejected a persisted ask-before-cloud routing proposal."""
+    pass
+
+
 class PrivacyBoundaryViolation(AuraError):
     """Raised when a requested model/route violates a strict privacy boundary (e.g. local_only)."""
     pass
