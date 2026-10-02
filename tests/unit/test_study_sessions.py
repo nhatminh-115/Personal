@@ -340,3 +340,114 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     deleted = await async_client.delete(f"/v1/study/sessions/{session_id}/cards/{card['id']}")
     assert deleted.status_code == 204
     assert (await async_client.get("/v1/study/cards")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Local study note",
+        "body": "Keep this material on the device.",
+        "project_names": ["research-project"],
+        "privacy_policy": "local_only",
+    })
+    assert note_response.status_code == 201
+    note = note_response.json()
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": "stale-note-id",
+        "track_title": "Stale note title",
+        "material_id": note["id"],
+    })
+    assert started.status_code == 201
+    session = started.json()
+    assert session["track_id"] == note["id"]
+    assert session["track_title"] == "Local study note"
+    assert session["material_id"] == note["id"]
+    assert session["material_project_name"] is None
+
+    graph = (await async_client.get("/v1/workspace/projects/research-project/graph")).json()
+    study_object = next(item for item in graph["objects"] if item["id"] == session["id"])
+    assert study_object["content"] == ""
+    [source_edge] = [
+        edge for edge in graph["edges"]
+        if edge["source_object_id"] == note["id"] and edge["target_object_id"] == session["id"]
+    ]
+    assert source_edge["relation_type"] == "studied_from"
+    assert source_edge["edge_family"] == "provenance"
+
+    card_response = await async_client.post(
+        f"/v1/study/sessions/{session['id']}/cards",
+        json={"question": "Where should the material stay?", "answer": "On the device."},
+    )
+    assert card_response.status_code == 201
+    from app.db.models import WorkspaceObjectModel
+
+    card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
+    assert card is not None
+    assert card.metadata_json["privacy_policy"] == "local_only"
+
+
+@pytest.mark.asyncio
+async def test_study_session_rejects_unknown_note_privacy_classification(async_client: AsyncClient):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Classified note",
+        "body": "Source content.",
+        "project_names": ["aura"],
+    })
+    assert note_response.status_code == 201
+    note_id = note_response.json()["id"]
+
+    updated = await async_client.put(f"/v1/workspace/projects/aura/objects/{note_id}", json={
+        "title": "Classified note",
+        "content": "Source content.",
+        "metadata_json": {"privacy_policy": "unspecified"},
+    })
+    assert updated.status_code == 200
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": note_id,
+        "track_title": "Classified note",
+        "material_id": note_id,
+    })
+    assert started.status_code == 422
+    assert started.json()["detail"] == "Study source has an unsupported privacy classification."
+
+
+@pytest.mark.asyncio
+async def test_study_card_uses_current_privacy_from_unlinked_note(async_client: AsyncClient, test_db_session):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Personal study source",
+        "body": "Private source text.",
+        "privacy_policy": "internal",
+    })
+    assert note_response.status_code == 201
+    note_id = note_response.json()["id"]
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": note_id,
+        "track_title": "Personal study source",
+        "material_id": note_id,
+    })
+    assert started.status_code == 201
+
+    updated = await async_client.put(f"/v1/workspace/notes/{note_id}", json={
+        "title": "Personal study source",
+        "body": "Private source text.",
+        "project_names": [],
+        "privacy_policy": "local_only",
+    })
+    assert updated.status_code == 200
+
+    card_response = await async_client.post(
+        f"/v1/study/sessions/{started.json()['id']}/cards",
+        json={"question": "Where is this note stored?", "answer": "Locally."},
+    )
+    assert card_response.status_code == 201
+    from app.db.models import WorkspaceObjectModel
+
+    card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
+    assert card is not None
+    assert card.metadata_json["privacy_policy"] == "local_only"

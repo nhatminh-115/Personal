@@ -91,7 +91,9 @@ async def start_study_session(
     material_project_name = body.material_project_name.strip() if body.material_project_name else None
     is_verified_research_claim = False
     is_library_material = False
+    is_personal_note = False
     material_project_names: list[str] = []
+    material_privacy_policy: str | None = None
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
         material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
@@ -102,13 +104,28 @@ async def start_study_session(
             and material.created_by == "user"
             and material_metadata.get("collection") in {"Study", "Research"}
         )
-        if is_library_material:
+        is_personal_note = (
+            material is not None
+            and material.project_name is None
+            and material.object_type == "manual_note"
+            and material.created_by == "user"
+        )
+        if is_library_material or is_personal_note:
             linked_projects = await db.execute(
                 select(WorkspaceObjectProjectLinkModel.project_name)
                 .where(WorkspaceObjectProjectLinkModel.object_id == material.id)
                 .order_by(WorkspaceObjectProjectLinkModel.project_name)
             )
             material_project_names = list(linked_projects.scalars())
+        if is_personal_note:
+            privacy = material_metadata.get("privacy_policy")
+            if privacy is not None:
+                if privacy not in {"public", "internal", "confidential", "local_only"}:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Study source has an unsupported privacy classification.",
+                    )
+                material_privacy_policy = privacy
 
         is_verified_research_claim = (
             material is not None
@@ -118,12 +135,12 @@ async def start_study_session(
             and material.created_by == "research"
             and material_metadata.get("verification_status") == "verified"
         )
-        if not (is_library_material or is_verified_research_claim):
+        if not (is_library_material or is_personal_note or is_verified_research_claim):
             raise HTTPException(status_code=404, detail="Study source not found or not eligible.")
-        # The source object is the durable identity. Keep its canonical title and
-        # project scope without copying research or file contents.
+        # The source object is the durable identity. Keep its canonical title
+        # and project scope without copying source content into the session.
         track_id = material.id
-        track_title = material.title
+        track_title = material.title or "Untitled source"
         material_project_name = material.project_name if is_verified_research_claim else None
     await _lock_study_session_creation(db)
     await _ensure_no_active_study_session(db)
@@ -138,6 +155,7 @@ async def start_study_session(
             "status": "in_progress",
             **({"material_id": material_id} if material_id else {}),
             **({"material_project_name": material_project_name} if material_project_name else {}),
+            **({"privacy_policy": material_privacy_policy} if material_privacy_policy else {}),
         },
     )
     db.add(item)
@@ -157,9 +175,9 @@ async def start_study_session(
             edge_family="provenance",
             created_by="user",
         ))
-    elif is_library_material and material_id:
-        # A Study session follows the Library reference into the same project graphs
-        # without copying the referenced file contents into the session.
+    elif (is_library_material or is_personal_note) and material_id:
+        # Study follows a saved Library reference or Note into the same project
+        # graphs without copying its content into the session.
         for project_name in material_project_names:
             db.add(WorkspaceObjectProjectLinkModel(
                 object_id=item.id,
@@ -240,6 +258,19 @@ async def create_study_card(
         if isinstance(session_metadata.get("privacy_policy"), str)
         else None
     )
+    source_id = session_metadata.get("material_id")
+    if isinstance(source_id, str):
+        source = await db.get(WorkspaceObjectModel, source_id)
+        source_metadata = source.metadata_json if source and isinstance(source.metadata_json, dict) else {}
+        if source is not None and source.object_type == "manual_note" and source.created_by == "user":
+            source_privacy = source_metadata.get("privacy_policy")
+            if source_privacy is not None:
+                if source_privacy not in {"public", "internal", "confidential", "local_only"}:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Study source has an unsupported privacy classification.",
+                    )
+                privacy_requirement = stricter_privacy_requirement(privacy_requirement, source_privacy)
     project_links = await db.execute(
         select(WorkspaceObjectProjectLinkModel.project_name)
         .where(WorkspaceObjectProjectLinkModel.object_id == session.id)
