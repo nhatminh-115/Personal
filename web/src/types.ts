@@ -417,6 +417,18 @@ export interface CompiledContextManifest {
   capability_requirements?: Record<string, boolean>;
 }
 
+export interface WorkspaceContextPreview extends CompiledContextManifest {
+  project_name: string;
+  prompt_text: string;
+  privacy_requirement?: RoutingPrivacy | null;
+  privacy_sources?: Array<{ object_id: string; privacy_policy: RoutingPrivacy }>;
+  required_capabilities?: string[];
+  requires_tools?: boolean;
+  requires_vision?: boolean;
+  requires_structured_output?: boolean;
+  requires_long_context?: boolean;
+}
+
 export interface RunDetail {
   id: string;
   session_id: string;
