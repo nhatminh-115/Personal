@@ -471,7 +471,8 @@ class WorkspaceGraphResponse(BaseModel):
 
 
 class CapabilityProviderResponse(CapabilityProviderMetadata):
-    capability_tools: Dict[str, List[str]] = Field(default_factory=dict)
+    capability_tools: Dict[str, List[str]] = Field(default_factory=dict, description="Bindings verified against available AURA tools")
+    declared_capability_tools: Dict[str, List[str]] = Field(default_factory=dict, description="Configured bindings not necessarily discovered or usable")
 
 
 class CapabilityProvidersResponse(BaseModel):
