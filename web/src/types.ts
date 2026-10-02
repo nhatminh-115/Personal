@@ -53,12 +53,16 @@ export interface AuraNodeData extends Record<string, unknown> {
     observations: boolean;
     failed: boolean;
     artifacts: boolean;
+    constraints: boolean;
+    decisions: boolean;
   };
   bridgeSections?: {
     conclusions: string;
     observations: string;
     failed: string;
     artifacts: string;
+    constraints: string;
+    decisions: string;
   };
   bridgeNote?: string;
   mergeItems?: string[];
@@ -68,8 +72,8 @@ export interface AuraNodeData extends Record<string, unknown> {
   onChangeBody?: (id: string, body: string) => void;
   onSetPrivacyPolicy?: (id: string, policy: RoutingPrivacy | null) => void;
   onBridgeApply?: (id: string) => void;
-  onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => void;
-  onBridgeSection?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: string) => void;
+  onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: boolean) => void;
+  onBridgeSection?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: string) => void;
   onContinueMerge?: (id: string) => void;
   onUseWorkspaceContext?: (id: string) => void;
 }
@@ -126,7 +130,7 @@ export interface ChatMessage {
   onBranch?: (id: string) => void;
   onChangeBody?: (id: string, body: string) => void;
   onBridgeApply?: (id: string) => void;
-  onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts', value: boolean) => void;
+  onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: boolean) => void;
   onContinueMerge?: (id: string) => void;
 }
 
