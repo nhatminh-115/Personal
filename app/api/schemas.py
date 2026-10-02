@@ -7,12 +7,26 @@ from uuid import UUID
 from pydantic import BaseModel, Field, field_validator
 from app.capabilities.registry import CapabilityProviderMetadata
 
+MAX_CHAT_METADATA_BYTES = 64 * 1024
+MAX_WORKSPACE_METADATA_BYTES = 64 * 1024
+MAX_WORKSPACE_LAYOUT_BYTES = 2 * 1024 * 1024
+
+
+def _validate_json_size(value: Dict[str, Any], max_bytes: int, field_name: str) -> Dict[str, Any]:
+    try:
+        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError, OverflowError, RecursionError) as exc:
+        raise ValueError(f"{field_name} must contain finite JSON values.") from exc
+    if len(encoded) > max_bytes:
+        raise ValueError(f"{field_name} must be {max_bytes} bytes or fewer when serialized as JSON.")
+    return value
+
 
 # --- Chat Schemas ---
 class ChatRequest(BaseModel):
-    session_id: str = Field(..., description="Unique UUID of the conversation session")
+    session_id: str = Field(..., min_length=1, max_length=36, description="Unique UUID of the conversation session")
     message: str = Field(..., min_length=1, description="User query or instruction")
-    project_name: Optional[str] = Field(default=None, description="Optional project context scope")
+    project_name: Optional[str] = Field(default=None, max_length=128, description="Optional project context scope")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
     model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
     reasoning_override: Optional[Literal["instant", "low", "medium", "high", "max"]] = None
@@ -25,6 +39,20 @@ class ChatRequest(BaseModel):
         max_length=50,
         description="Explicit project workspace objects to compile into this turn's context",
     )
+
+    @field_validator("metadata")
+    @classmethod
+    def validate_metadata_size(cls, value: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if value is None:
+            return None
+        return _validate_json_size(value, MAX_CHAT_METADATA_BYTES, "metadata")
+
+    @field_validator("context_object_ids")
+    @classmethod
+    def validate_context_object_ids(cls, value: List[str]) -> List[str]:
+        if any(not object_id or len(object_id) > 36 for object_id in value):
+            raise ValueError("context_object_ids must contain non-empty object IDs of 36 characters or fewer.")
+        return value
 
 
 class ChatResponse(BaseModel):
@@ -147,20 +175,6 @@ class SessionSummaryResponse(BaseModel):
 
 
 # --- Shared Workspace Object Graph ---
-MAX_WORKSPACE_METADATA_BYTES = 64 * 1024
-MAX_WORKSPACE_LAYOUT_BYTES = 2 * 1024 * 1024
-
-
-def _validate_workspace_json_size(value: Dict[str, Any], max_bytes: int, field_name: str) -> Dict[str, Any]:
-    try:
-        encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
-    except (TypeError, ValueError, OverflowError, RecursionError, UnicodeEncodeError) as exc:
-        raise ValueError(f"{field_name} must contain finite JSON values.") from exc
-    if len(encoded) > max_bytes:
-        raise ValueError(f"{field_name} must be {max_bytes} bytes or fewer when serialized as JSON.")
-    return value
-
-
 class WorkspaceObjectResponse(BaseModel):
     id: str
     project_name: Optional[str] = None
@@ -186,7 +200,7 @@ class WorkspaceObjectCreate(BaseModel):
     @field_validator("metadata_json")
     @classmethod
     def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
-        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+        return _validate_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
 
 
 class WorkspaceObjectUpdate(BaseModel):
@@ -197,7 +211,7 @@ class WorkspaceObjectUpdate(BaseModel):
     @field_validator("metadata_json")
     @classmethod
     def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
-        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+        return _validate_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
 
 
 class WorkspaceNoteWrite(BaseModel):
@@ -370,7 +384,7 @@ class WorkspaceEdgeCreate(BaseModel):
     @field_validator("metadata_json")
     @classmethod
     def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
-        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+        return _validate_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
 
 
 class WorkspaceContextPreviewRequest(BaseModel):
@@ -416,7 +430,7 @@ class WorkspaceEdgeRestoreItem(BaseModel):
     @field_validator("metadata_json")
     @classmethod
     def validate_metadata_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
-        return _validate_workspace_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
+        return _validate_json_size(value, MAX_WORKSPACE_METADATA_BYTES, "metadata_json")
 
 
 class WorkspaceEdgeBatchRestore(BaseModel):
@@ -430,7 +444,7 @@ class WorkspaceLayoutWrite(BaseModel):
     @field_validator("layout")
     @classmethod
     def validate_layout_size(cls, value: Dict[str, Any]) -> Dict[str, Any]:
-        return _validate_workspace_json_size(value, MAX_WORKSPACE_LAYOUT_BYTES, "layout")
+        return _validate_json_size(value, MAX_WORKSPACE_LAYOUT_BYTES, "layout")
 
 
 class WorkspaceLayoutResponse(BaseModel):

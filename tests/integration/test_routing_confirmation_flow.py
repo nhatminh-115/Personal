@@ -334,7 +334,7 @@ async def test_temporary_routing_overrides_propagate_to_specialist_snapshot(
     response = await async_client.post(
         "/v1/chat",
         json={
-            "session_id": f"routing-propagation-{specialist_name}-{expected_reasoning_effort}-{expected_lock}",
+            "session_id": f"rt-{specialist_name}-{expected_reasoning_effort}-{expected_lock}",
             "message": "Run the delegated task.",
             **overrides,
         },
