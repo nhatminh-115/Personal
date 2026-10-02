@@ -8,6 +8,8 @@ from pydantic import BaseModel, Field, field_validator
 from app.capabilities.registry import CapabilityProviderMetadata
 
 MAX_CHAT_METADATA_BYTES = 64 * 1024
+MAX_APPROVAL_EDITED_INPUT_BYTES = 2 * 1024 * 1024
+MAX_APPROVAL_DECISION_NOTES_CHARS = 4_000
 MAX_WORKSPACE_METADATA_BYTES = 64 * 1024
 MAX_WORKSPACE_LAYOUT_BYTES = 2 * 1024 * 1024
 
@@ -85,7 +87,7 @@ class RoutingConfirmationResponse(BaseModel):
 
 class RoutingConfirmationDecisionRequest(BaseModel):
     decision: Literal["approved", "rejected"]
-    decision_notes: Optional[str] = None
+    decision_notes: Optional[str] = Field(default=None, max_length=MAX_APPROVAL_DECISION_NOTES_CHARS)
 
 
 class RoutingConfirmationDecisionResponse(BaseModel):
@@ -115,8 +117,15 @@ class ApprovalResponse(BaseModel):
 
 class ApprovalDecisionRequest(BaseModel):
     decision: Literal["approved", "rejected", "edited"]
-    decision_notes: Optional[str] = None
+    decision_notes: Optional[str] = Field(default=None, max_length=MAX_APPROVAL_DECISION_NOTES_CHARS)
     edited_input: Optional[Dict[str, Any]] = None
+
+    @field_validator("edited_input")
+    @classmethod
+    def validate_edited_input_size(cls, value: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        if value is None:
+            return None
+        return _validate_json_size(value, MAX_APPROVAL_EDITED_INPUT_BYTES, "edited_input")
 
 
 class ApprovalDecisionResponse(BaseModel):
