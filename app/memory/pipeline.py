@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from app.core.logging import logger
 from app.db.models import MemoryModel
 from app.memory.base import MemoryService, MemoryType
+from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER
 
 
 class MemoryCandidate(BaseModel):
@@ -135,8 +136,12 @@ class MemoryCandidatePipeline:
         session_id: str,
         run_id: str,
         memory_service: MemoryService,
+        privacy_policy: Optional[str] = None,
     ) -> List[MemoryModel]:
         """Commit memory candidates with automatic superseding and deduplication."""
+        if privacy_policy is not None and privacy_policy not in PRIVACY_REQUIREMENT_ORDER:
+            return []
+
         saved_memories: List[MemoryModel] = []
 
         for cand in candidates:
@@ -144,6 +149,8 @@ class MemoryCandidatePipeline:
             metadata["source_session_id"] = session_id
             metadata["source_run_id"] = run_id
             metadata["confidence"] = cand.confidence
+            if privacy_policy is not None:
+                metadata["privacy_policy"] = privacy_policy
 
             if cand.memory_type == MemoryType.PROJECT and cand.project_name:
                 key = cand.key or "general"
