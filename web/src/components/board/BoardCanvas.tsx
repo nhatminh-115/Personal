@@ -325,6 +325,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionTraces(projected.executionTraces);
       setExecutionNextCursor(projected.executionNextCursor);
       setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+      setExecutionTraces(projected.executionTraces);
+      setExecutionNextCursor(projected.executionNextCursor);
+      setExecutionHistoryTruncated(projected.executionHistoryTruncated);
       layoutRevision.current = graph.layout.revision;
       nodesRef.current = projected.nodes;
       edgesRef.current = projected.edges;
@@ -337,6 +340,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       try {
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+        setExecutionTraces(projected.executionTraces);
+        setExecutionNextCursor(projected.executionNextCursor);
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
@@ -616,6 +622,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }).then(async () => {
           const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
           const projected = mapWorkspaceGraph(graph);
+          setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+          setExecutionTraces(projected.executionTraces);
+          setExecutionNextCursor(projected.executionNextCursor);
           recordHistory();
           layoutRevision.current = graph.layout.revision;
           nodesRef.current = projected.nodes;
@@ -880,6 +889,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+        setExecutionTraces(projected.executionTraces);
+        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
@@ -933,6 +945,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+        setExecutionTraces(projected.executionTraces);
+        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
@@ -996,6 +1011,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         await api.createWorkspaceObject(workspaceProjectName, mergeInput);
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
+        setExecutionTraces(projected.executionTraces);
+        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
