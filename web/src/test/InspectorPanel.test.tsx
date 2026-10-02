@@ -1,6 +1,7 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 import { InspectorPanel } from '../components/layout/InspectorPanel';
+import { api } from '../services/api';
 import type { MemoryItem, ResearchInspectorData, RunDetail } from '../types';
 
 const sampleRunDetail: RunDetail = {
@@ -248,6 +249,36 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText(/research · research-co/i)).toBeInTheDocument();
     expect(screen.getByText('research-bridge')).toBeInTheDocument();
     expect(screen.getByText('paper-evidence')).toBeInTheDocument();
+  });
+
+  it('loads and displays sanitized capability provider metadata on demand', async () => {
+    const fetchProviders = vi.spyOn(api, 'fetchCapabilityProviders').mockResolvedValue({
+      providers: [{
+        provider_id: 'aura.workspace',
+        name: 'AURA Workspace',
+        version: null,
+        health: 'unknown',
+        health_checked_at: null,
+        enabled: true,
+        capabilities: ['workspace.read', 'code_graph.query'],
+        privacy_boundary: 'local',
+        network_requirement: 'unknown',
+        data_touched: null,
+        permissions: null,
+        approval_requirement: 'unknown',
+      }],
+    });
+    render(<InspectorPanel onClose={vi.fn()} />);
+    expect(fetchProviders).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('inspector-tab-capabilities'));
+    await waitFor(() => expect(fetchProviders).toHaveBeenCalledOnce());
+    expect(await screen.findByText('AURA Workspace')).toBeInTheDocument();
+    expect(screen.getByText('aura.workspace')).toBeInTheDocument();
+    expect(screen.getByText('Local')).toBeInTheDocument();
+    expect(screen.getByText('workspace.read · code_graph.query')).toBeInTheDocument();
+    expect(screen.getAllByText('Unknown').length).toBeGreaterThan(1);
+    expect(screen.queryByText(/endpoint|credential|secret/i)).not.toBeInTheDocument();
   });
 
   it('does not invent context usage when a run has no compiled manifest event', () => {

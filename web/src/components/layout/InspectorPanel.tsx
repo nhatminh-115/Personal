@@ -17,7 +17,9 @@ import type {
   EffectiveRouting,
   RunRoutingDecision,
   CompiledContextManifest,
+  CapabilityProviderMetadata,
 } from '../../types';
+import { api } from '../../services/api';
 
 export interface InspectorPanelProps {
   selectedNode?: AuraFlowNode;
@@ -30,7 +32,7 @@ export interface InspectorPanelProps {
   onContextSelect?: (nodeId: string) => void;
 }
 
-export type InspectorTab = 'routing' | 'execution' | 'research' | 'memory' | 'context' | 'object';
+export type InspectorTab = 'routing' | 'execution' | 'research' | 'memory' | 'context' | 'capabilities' | 'object';
 
 const tabs: { id: InspectorTab; label: string; icon: any }[] = [
   { id: 'routing', label: 'Routing', icon: Route },
@@ -38,6 +40,7 @@ const tabs: { id: InspectorTab; label: string; icon: any }[] = [
   { id: 'research', label: 'Research', icon: Search },
   { id: 'memory', label: 'Memory', icon: Database },
   { id: 'context', label: 'Context', icon: Network },
+  { id: 'capabilities', label: 'Capabilities', icon: Network },
   { id: 'object', label: 'Object', icon: Box },
 ];
 
@@ -54,9 +57,25 @@ export function InspectorPanel({
   const [tab, setTab] = useState<InspectorTab>('execution');
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
+  const [capabilityProviders, setCapabilityProviders] = useState<CapabilityProviderMetadata[]>([]);
+  const [capabilityState, setCapabilityState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
+  const [capabilityError, setCapabilityError] = useState<string | null>(null);
 
   const toggleEvent = (id: string) => {
     setExpandedEvents((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const loadCapabilityProviders = async () => {
+    setCapabilityState('loading');
+    setCapabilityError(null);
+    try {
+      const inventory = await api.fetchCapabilityProviders();
+      setCapabilityProviders(inventory.providers);
+      setCapabilityState('loaded');
+    } catch {
+      setCapabilityError('Provider inventory is unavailable. Check the AURA connection and retry.');
+      setCapabilityState('error');
+    }
   };
 
   const toggleEvidence = (id: string) => {
@@ -98,7 +117,10 @@ export function InspectorPanel({
             type="button"
             key={id}
             data-testid={`inspector-tab-${id}`}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              if (id === 'capabilities' && (capabilityState === 'idle' || capabilityState === 'error')) void loadCapabilityProviders();
+            }}
           >
             <Icon size={13} />
             <span>{label}</span>
@@ -444,6 +466,35 @@ export function InspectorPanel({
           </>
         ) : null}
 
+        {tab === 'capabilities' ? (
+          <div data-testid="inspector-capabilities">
+            <div className="inspector-kpi">
+              <span>Capability providers</span>
+              <strong>{capabilityProviders.length} registered</strong>
+              <small>Sanitized runtime inventory · no provider invocation</small>
+            </div>
+            {capabilityState === 'loading' ? <div className="inspector-empty">Loading provider inventory…</div> : null}
+            {capabilityError ? <div className="inspector-empty" role="alert">{capabilityError}<button type="button" onClick={() => void loadCapabilityProviders()}>Retry</button></div> : null}
+            {capabilityState === 'loaded' && capabilityProviders.length === 0 ? <div className="inspector-empty">No capability providers are registered.</div> : null}
+            {capabilityProviders.map((provider) => (
+              <section className="inspector-group" key={provider.provider_id}>
+                <h4>{provider.name}</h4>
+                <div className="inspector-row"><span>Provider ID</span><strong>{provider.provider_id}</strong></div>
+                <div className="inspector-row"><span>Version</span><strong>{provider.version ?? 'Unknown'}</strong></div>
+                <div className="inspector-row"><span>Health</span><strong>{provider.health === 'unknown' ? 'Unknown' : formatProviderValue(provider.health)}</strong></div>
+                <div className="inspector-row"><span>Enabled</span><strong>{provider.enabled ? 'Yes' : 'No'}</strong></div>
+                <div className="inspector-row"><span>Privacy boundary</span><strong>{formatProviderValue(provider.privacy_boundary)}</strong></div>
+                <div className="inspector-row"><span>Network</span><strong>{formatProviderValue(provider.network_requirement)}</strong></div>
+                <div className="inspector-row"><span>Data touched</span><strong>{formatProviderList(provider.data_touched)}</strong></div>
+                <div className="inspector-row"><span>Permissions</span><strong>{formatProviderList(provider.permissions)}</strong></div>
+                <div className="inspector-row"><span>Approval</span><strong>{formatProviderValue(provider.approval_requirement)}</strong></div>
+                <div className="inspector-row"><span>Health checked</span><strong>{provider.health_checked_at ?? 'Not checked'}</strong></div>
+                <div className="inspector-row"><span>Capabilities</span><strong>{formatProviderList(provider.capabilities)}</strong></div>
+              </section>
+            ))}
+          </div>
+        ) : null}
+
         {tab === 'object' ? (
           <InspectorGroup
             title="Metadata"
@@ -472,4 +523,15 @@ function InspectorGroup({ title, rows }: { title: string; rows: [string, string]
       ))}
     </section>
   );
+}
+
+
+function formatProviderValue(value: string | null | undefined): string {
+  if (!value || value === 'unknown') return 'Unknown';
+  return value.split('_').map((part) => part[0]?.toUpperCase() + part.slice(1)).join(' ');
+}
+
+function formatProviderList(values: string[] | null | undefined): string {
+  if (values == null) return 'Unknown';
+  return values.length ? values.join(' · ') : 'None declared';
 }
