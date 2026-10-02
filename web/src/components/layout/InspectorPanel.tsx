@@ -122,6 +122,8 @@ export function InspectorPanel({
               {decision.memory_privacy_sources?.length ? <div className="inspector-row"><span>Memory privacy sources</span><strong>{decision.memory_privacy_sources.map((source) => `${source.memory_id} · ${source.privacy_policy}`).join(' | ')}</strong></div> : null}
               <div className="inspector-row"><span>Selected model</span><strong>{decision.model_selection ? `${decision.model_selection.provider}:${decision.model_selection.model}` : decision.snapshot.explicit_model_override ?? 'Pending'}</strong></div>
               <div className="inspector-row"><span>Reasoning</span><strong>{decision.reasoning_selection?.selected_effort ?? decision.snapshot.reasoning_effort ?? 'Unknown'}</strong></div>
+              {decision.context_manifest?.required_tool_capabilities?.length ? <div className="inspector-row"><span>Provider capabilities</span><strong>{decision.context_manifest.required_tool_capabilities.join(' · ')}</strong></div> : null}
+              {decision.context_manifest?.resolved_tool_names?.length ? <div className="inspector-row"><span>Resolved tools</span><strong>{decision.context_manifest.resolved_tool_names.join(' · ')}</strong></div> : null}
               {decision.model_selection ? <>
                 {(() => {
                   const selection = decision.model_selection;
