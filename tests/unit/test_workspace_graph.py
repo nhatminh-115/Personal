@@ -47,6 +47,48 @@ async def test_context_compiler_rejects_excess_provenance_edges_before_loading_s
 
 
 @pytest.mark.asyncio
+async def test_selected_context_is_persisted_as_conversation_ancestry(async_client, test_db_session):
+    source = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Branch constraint",
+        "content": "Keep branch decisions explicit.",
+    })
+    assert source.status_code == 201
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "context-ancestry-session",
+        "project_name": "aura",
+        "message": "Continue from the selected branch context.",
+        "context_object_ids": [source.json()["id"]],
+    })
+    assert response.status_code == 200
+
+    from sqlalchemy import select
+    from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel
+
+    user_turn = await test_db_session.scalar(
+        select(WorkspaceObjectModel).where(
+            WorkspaceObjectModel.source_message_id == response.json()["user_message_id"]
+        )
+    )
+    assert user_turn is not None
+    [context_edge] = list((await test_db_session.execute(
+        select(WorkspaceEdgeModel).where(
+            WorkspaceEdgeModel.project_name == "aura",
+            WorkspaceEdgeModel.source_object_id == source.json()["id"],
+            WorkspaceEdgeModel.target_object_id == user_turn.id,
+            WorkspaceEdgeModel.relation_type == "context_used",
+            WorkspaceEdgeModel.edge_family == "context",
+        )
+    )).scalars())
+
+    compiled = await WorkspaceContextCompiler(test_db_session).compile("aura", [user_turn.id])
+    assert {item.object_id for item in compiled.objects} == {source.json()["id"], user_turn.id}
+    assert "Keep branch decisions explicit." in compiled.prompt_text
+    assert "Continue from the selected branch context." in compiled.prompt_text
+
+
+@pytest.mark.asyncio
 async def test_context_flow_is_a_dag_while_semantic_relations_can_cycle(async_client):
     async def note(title: str) -> str:
         response = await async_client.post(
