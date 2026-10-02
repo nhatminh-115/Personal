@@ -359,6 +359,53 @@ describe('Routing Studio v2', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/assignments/Stateful%20Architecture?profile_id=created-profile', expect.objectContaining({ method: 'POST' })));
   });
 
+  it('updates a saved profile through its backend resource and refreshes the draft', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+
+    const normalFetch = global.fetch as ReturnType<typeof vi.fn>;
+    let updatedPayload: Record<string, unknown> | null = null;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/routing/profiles/custom-profile') && init?.method === 'PUT') {
+        updatedPayload = JSON.parse(String(init.body));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...customProfile, ...updatedPayload, version: 4 }) } as Response);
+      }
+      return normalFetch(input, init);
+    });
+
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Updated profile' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(updatedPayload).toEqual(expect.objectContaining({ id: 'custom-profile', name: 'Updated profile' })));
+    expect(await screen.findByLabelText('Profile name')).toHaveValue('Updated profile');
+  });
+
+  it('duplicates a saved profile and selects the persisted copy', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+
+    const normalFetch = global.fetch as ReturnType<typeof vi.fn>;
+    let duplicateRequested = false;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/routing/profiles/custom-profile/duplicate') && init?.method === 'POST') {
+        duplicateRequested = true;
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...customProfile, id: 'copy-profile', name: 'Custom profile (copy)', is_default: false }) } as Response);
+      }
+      return normalFetch(input, init);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    await waitFor(() => expect(duplicateRequested).toBe(true));
+    expect(await screen.findByLabelText('Profile name')).toHaveValue('Custom profile (copy)');
+  });
+
   it('asks before switching away from a dirty profile draft', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     await openProject();
