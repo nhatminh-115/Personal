@@ -35,7 +35,7 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
         providerFlow ? `Provider ${providerFlow}` : null,
         event.candidate_model ? `Candidate ${event.candidate_model}` : null,
       ].filter(Boolean);
-      return { title: 'Fallback candidate evaluated', body: details.join(' · ') || 'Fallback policy evaluated', chip: 'FALLBACK' };
+      return { title: 'Fallback policy evaluated', body: details.join(' · ') || 'Fallback policy evaluated', chip: 'FALLBACK' };
     }
     case 'fallback_blocked': {
       const proposed = event.proposed_provider
