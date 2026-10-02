@@ -41,6 +41,40 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
 
+  it('loads older execution runs from a paged workspace graph response', async () => {
+    const recentGraph: WorkspaceGraph = {
+      ...savedGraph,
+      execution_history_truncated: true,
+      execution_next_cursor: 'older-page-token',
+      execution_traces: [{
+        run_id: 'recent-run', session_id: 'session-1',
+        events: [{ id: 'recent-event', event_type: 'run_completed', created_at: '2026-10-02T00:00:00Z' }],
+      }],
+    };
+    const olderGraph: WorkspaceGraph = {
+      ...savedGraph,
+      execution_history_truncated: false,
+      execution_next_cursor: null,
+      execution_traces: [{
+        run_id: 'older-run', session_id: 'session-1',
+        events: [{ id: 'older-event', event_type: 'run_completed', created_at: '2026-10-01T00:00:00Z' }],
+      }],
+    };
+    const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async (_projectName, cursor) => cursor ? olderGraph : recentGraph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="paged-execution" workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    const loadOlder = await screen.findByRole('button', { name: 'Load older runs' });
+    fireEvent.click(loadOlder);
+    await waitFor(() => expect(fetchGraph).toHaveBeenLastCalledWith('AURA Project', 'older-page-token'));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load older runs' })).not.toBeInTheDocument());
+  });
+
   it('projects research-linked study sessions as study nodes with provenance edges', async () => {
     const studySession: WorkspaceObject = {
       id: 'study-session-1', project_name: null, object_type: 'study_session', created_by: 'user',
