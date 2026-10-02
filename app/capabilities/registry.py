@@ -147,8 +147,9 @@ class CapabilityProviderRegistry:
         self,
         capabilities: Iterable[str],
         allowed_tool_names: Optional[Iterable[str]] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> List[str]:
-        resolved, missing = self._resolve_tools(capabilities, allowed_tool_names)
+        resolved, missing = self._resolve_tools(capabilities, allowed_tool_names, privacy_requirement)
         if missing:
             raise UnresolvedCapabilitiesError(missing)
         return resolved
@@ -157,19 +158,21 @@ class CapabilityProviderRegistry:
         self,
         capabilities: Iterable[str],
         allowed_tool_names: Optional[Iterable[str]] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> List[str]:
         """Resolve only capabilities currently backed by an enabled provider.
 
         Intended for explicitly optional runtime capabilities. Required capability
         resolution must continue to use :meth:`resolve_tools` and fail closed.
         """
-        resolved, _missing = self._resolve_tools(capabilities, allowed_tool_names)
+        resolved, _missing = self._resolve_tools(capabilities, allowed_tool_names, privacy_requirement)
         return resolved
 
     def _resolve_tools(
         self,
         capabilities: Iterable[str],
         allowed_tool_names: Optional[Iterable[str]],
+        privacy_requirement: Optional[str] = None,
     ) -> tuple[List[str], List[str]]:
         requested = list(dict.fromkeys(capabilities))
         allowed = set(allowed_tool_names) if allowed_tool_names is not None else None
@@ -184,6 +187,12 @@ class CapabilityProviderRegistry:
                     CapabilityProviderHealth.DEGRADED,
                     CapabilityProviderHealth.UNKNOWN,
                 }:
+                    continue
+                privacy_value = getattr(privacy_requirement, "value", privacy_requirement)
+                if privacy_value in {"confidential", "local_only"} and (
+                    metadata.privacy_boundary != PrivacyBoundary.LOCAL
+                    or metadata.network_requirement not in {NetworkRequirement.NONE, NetworkRequirement.LOCAL}
+                ):
                     continue
                 names = bindings.get(capability, [])
                 if allowed is not None:
