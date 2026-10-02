@@ -23,9 +23,9 @@ async def test_approved_routing_confirmation_resumes_same_run(async_client, test
         # Use the deterministic mock adapter while preserving the exact proposed
         # route in the persisted routing selection; no external model is called.
         return mock_provider, ModelSelection(
-            provider_name="openai",
-            model_name="gpt-4o-mini",
-            reason="confirmed exact route",
+            provider_name="mock",
+            model_name="mock-default",
+            reason=f"confirmed route {context.explicit_model_override}",
         )
 
     monkeypatch.setattr(model_router, "select_model_for_task", select_model)
