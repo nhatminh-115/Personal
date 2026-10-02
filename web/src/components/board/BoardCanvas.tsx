@@ -324,7 +324,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionHistoryTruncated(projected.executionHistoryTruncated);
       setExecutionTraces(projected.executionTraces);
       setExecutionNextCursor(projected.executionNextCursor);
-      setExecutionHistoryTruncated(projected.executionHistoryTruncated);
       setExecutionTraces(projected.executionTraces);
       setExecutionNextCursor(projected.executionNextCursor);
       setExecutionHistoryTruncated(projected.executionHistoryTruncated);
