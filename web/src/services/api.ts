@@ -183,8 +183,9 @@ export const api = {
     }));
   },
 
-  async fetchWorkspaceGraph(projectName: string): Promise<WorkspaceGraph> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph`));
+  async fetchWorkspaceGraph(projectName: string, executionCursor?: string | null): Promise<WorkspaceGraph> {
+    const cursor = executionCursor ? `?execution_cursor=${encodeURIComponent(executionCursor)}` : '';
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph${cursor}`));
   },
 
   async fetchWorkspaceNotes(): Promise<WorkspaceNoteRecord[]> {
