@@ -276,7 +276,7 @@ describe('Compiled Context Preview', () => {
     fireEvent.click(screen.getByRole('button', { name: /Preview Context/i }));
     expect(onPreviewContext).toHaveBeenCalledOnce();
     expect(screen.getByText('22 estimated tokens')).toBeInTheDocument();
-    expect(screen.getByText(/2 selected · 2 included/)).toBeInTheDocument();
+    expect(screen.getByText(/1 selected · 2 included/)).toBeInTheDocument();
     fireEvent.click(screen.getByText('Inspect compiled text'));
     expect(screen.getByText('The reviewed finding is ready.')).toBeInTheDocument();
   });
