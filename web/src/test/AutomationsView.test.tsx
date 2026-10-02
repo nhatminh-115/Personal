@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AutomationsView } from '../components/global/AutomationsView';
+import { api } from '../services/api';
 import type { AutomationRecord, ProjectRecord } from '../data/workspaceData';
 
 const projects: ProjectRecord[] = [{ id: 'p1', name: 'AURA', subtitle: 'Workspace', status: 'active', accent: 'cyan', updated: 'today', meta: '', thesis: '', next: '' }];
@@ -18,7 +19,7 @@ const demoAutomation: AutomationRecord = {
 describe('AutomationsView', () => {
   it('creates a persistent project-scoped instruction on the selected interval', async () => {
     const onCreate = vi.fn().mockResolvedValue(liveAutomation);
-    render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} />);
+    render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project digest' } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'A short summary' } });
@@ -33,10 +34,45 @@ describe('AutomationsView', () => {
     }));
   });
 
+  it('reviews sequential automation approvals and refreshes the run after the final decision', async () => {
+    const firstApproval = {
+      id: 'approval-1', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-1',
+      tool_name: 'write_workspace_file', tool_input: { path: 'private_file.py', content: 'safe content' },
+      risk_level: 'high', status: 'pending', created_at: '2026-10-02T00:00:00Z',
+    };
+    const secondApproval = {
+      ...firstApproval, id: 'approval-2', tool_call_id: 'call-2', tool_name: 'sandbox_shell_execute',
+      tool_input: { command: 'python private_file.py' },
+    };
+    vi.spyOn(api, 'fetchRunDetails').mockResolvedValue({
+      id: 'run-1', session_id: 'session-1', status: 'waiting_for_approval', user_message: 'private instruction',
+      created_at: '', updated_at: '', events: [{ id: 'event-approval', event_type: 'approval_requested', created_at: '',
+        payload: { approval_id: 'approval-1', tool_name: 'write_workspace_file' } }],
+    });
+    vi.spyOn(api, 'fetchApproval').mockImplementation(async (id) => (id === 'approval-1' ? firstApproval : secondApproval));
+    vi.spyOn(api, 'submitApproval')
+      .mockResolvedValueOnce({ approval_id: 'approval-2', status: 'approved', run_id: 'run-1', execution_status: 'waiting_for_approval' })
+      .mockResolvedValueOnce({ approval_id: 'approval-2', status: 'rejected', run_id: 'run-1', execution_status: 'cancelled' });
+    const onApprovalResolved = vi.fn();
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={onApprovalResolved} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review approval' }));
+    expect(await screen.findByRole('dialog', { name: 'Daily digest' })).toBeInTheDocument();
+    expect(screen.getByText('write_workspace_file')).toBeInTheDocument();
+    expect(screen.getByText(/private_file\.py/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Approve and continue' }));
+    expect(await screen.findByText('sandbox_shell_execute')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
+    await waitFor(() => expect(onApprovalResolved).toHaveBeenCalledWith('auto-1'));
+    expect(api.submitApproval).toHaveBeenNthCalledWith(1, 'approval-1', 'approved', undefined);
+    expect(api.submitApproval).toHaveBeenNthCalledWith(2, 'approval-2', 'rejected', undefined);
+  });
+
   it('keeps example automations local and only allows live routines to run', () => {
     const onRunNow = vi.fn();
     const onToggle = vi.fn();
-    render(<AutomationsView projects={projects} automations={[liveAutomation, demoAutomation]} onCreate={vi.fn()} onToggle={onToggle} onRunNow={onRunNow} />);
+    render(<AutomationsView projects={projects} automations={[liveAutomation, demoAutomation]} onCreate={vi.fn()} onToggle={onToggle} onRunNow={onRunNow} onApprovalResolved={vi.fn()} />);
     const runButtons = screen.getAllByRole('button', { name: /run now/i });
     expect(runButtons[0]).toBeEnabled();
     expect(runButtons[1]).toBeDisabled();
