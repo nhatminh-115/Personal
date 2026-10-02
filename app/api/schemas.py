@@ -460,6 +460,7 @@ class WorkspaceGraphResponse(BaseModel):
     edges: List[WorkspaceEdgeResponse]
     layout: WorkspaceLayoutResponse
     execution_traces: List[WorkspaceExecutionTraceResponse] = Field(default_factory=list)
+    execution_history_truncated: bool = False
 
 
 class CapabilityProvidersResponse(BaseModel):
