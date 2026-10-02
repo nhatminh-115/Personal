@@ -151,7 +151,7 @@ describe('Routing Studio v2', () => {
     fireEvent.change(scopeSelect, { target: { value: 'default' } });
 
     expect(assignmentSelect).toHaveValue('custom-profile');
-    expect(screen.getByRole('button', { name: 'Save assignment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   });
 
   it('preserves the loaded session assignment when switching from another profile', async () => {
@@ -168,7 +168,7 @@ describe('Routing Studio v2', () => {
     fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
 
     expect(assignmentSelect).toHaveValue('system-balanced');
-    expect(screen.getByRole('button', { name: 'Save assignment' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save changes' })).toBeDisabled();
   });
 
   it('keeps session assignment unavailable before a live session exists', async () => {
