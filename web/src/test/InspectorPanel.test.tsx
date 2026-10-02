@@ -261,6 +261,7 @@ describe('InspectorPanel Component', () => {
         health_checked_at: null,
         enabled: true,
         capabilities: ['workspace.read', 'code_graph.query'],
+        capability_tools: { 'code_graph.query': ['symbol_search'] },
         privacy_boundary: 'local',
         network_requirement: 'unknown',
         data_touched: null,
@@ -277,6 +278,8 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('aura.workspace')).toBeInTheDocument();
     expect(screen.getByText('Local')).toBeInTheDocument();
     expect(screen.getByText('workspace.read · code_graph.query')).toBeInTheDocument();
+    expect(screen.getByText('Capability → AURA tools')).toBeInTheDocument();
+    expect(screen.getByText('symbol_search')).toBeInTheDocument();
     expect(screen.getAllByText('Unknown').length).toBeGreaterThan(1);
     expect(screen.queryByText(/endpoint|credential|secret/i)).not.toBeInTheDocument();
   });
