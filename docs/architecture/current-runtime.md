@@ -81,7 +81,9 @@ optional and user-installed; see the [provider guide](../capabilities/code-graph
 Coding shell and Python execution use the sandbox runtime. Its default Docker
 profile uses a non-root user, read-only root filesystem, disabled network,
 resource limits, and an approval-gated high-risk tool policy. Workspace file
-tools remain confined to `AURA_WORKSPACE_ROOT`.
+tools remain confined to `AURA_WORKSPACE_ROOT`. New workspace roots use
+owner-only POSIX permissions; Docker execution matches the workspace owner
+where possible and does not broaden permissions on an existing directory.
 
 ## Workspace graph and context
 

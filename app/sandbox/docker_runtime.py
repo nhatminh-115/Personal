@@ -50,17 +50,11 @@ class DockerSandboxRuntime(SandboxRuntime):
     def _execute_sync(self, command_args: list[str], cfg: SandboxConfig) -> ExecutionResult:
         """Execute container synchronously in dedicated thread worker."""
         client = self._get_client()
-        os.makedirs(cfg.workspace_dir, exist_ok=True)
+        os.makedirs(cfg.workspace_dir, mode=0o700, exist_ok=True)
 
         # Determine non-root container user matching workspace owner where supported
         container_user = cfg.user
         if os.name != "nt":
-            try:
-                # Ensure standard safe permissions (0o755: rwxr-xr-x), NEVER world-writable (0o777)
-                os.chmod(cfg.workspace_dir, 0o755)
-            except OSError:
-                pass
-
             try:
                 st = os.stat(cfg.workspace_dir)
                 host_uid = st.st_uid
@@ -183,7 +177,7 @@ class DockerSandboxRuntime(SandboxRuntime):
         if not self.is_available():
             raise AURAError("Docker daemon is not available on this host.")
 
-        os.makedirs(cfg.workspace_dir, exist_ok=True)
+        os.makedirs(cfg.workspace_dir, mode=0o700, exist_ok=True)
         script_filename = f".sandbox_exec_{uuid.uuid4().hex[:8]}.py"
         host_script_path = os.path.join(cfg.workspace_dir, script_filename)
         container_script_path = f"{cfg.container_workspace_mount}/{script_filename}"

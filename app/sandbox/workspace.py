@@ -15,7 +15,7 @@ def resolve_workspace_path(subpath: str | Path, custom_root: Optional[Path] = No
         WorkspaceEscapeError: If the resolved path attempts to escape outside the workspace root.
     """
     root = (custom_root or settings.AURA_WORKSPACE_ROOT).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     # Convert to string and clean whitespace
     subpath_str = str(subpath).strip()

@@ -1,5 +1,9 @@
 """Unit tests for Docker Sandbox specifications and runtime abstractions."""
 
+import os
+import stat
+from unittest.mock import MagicMock
+
 import pytest
 from app.sandbox.docker_runtime import DockerSandboxRuntime
 from app.sandbox.mock_runtime import MockSandboxRuntime
@@ -92,3 +96,47 @@ def test_docker_runtime_is_available_graceful():
     # Should not throw unhandled exception regardless of whether daemon is running
     is_avail = runtime.is_available()
     assert isinstance(is_avail, bool)
+
+
+def test_docker_runtime_preserves_private_workspace_permissions(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("POSIX workspace mode bits are not available on Windows")
+
+    workspace = tmp_path / "private-workspace"
+    workspace.mkdir(mode=0o700)
+    workspace.chmod(0o700)
+    before_mode = stat.S_IMODE(workspace.stat().st_mode)
+
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = b""
+    client = MagicMock()
+    client.containers.create.return_value = container
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    result = runtime._execute_sync(["true"], SandboxConfig(workspace_dir=str(workspace)))
+
+    assert result.exit_code == 0
+    assert stat.S_IMODE(workspace.stat().st_mode) == before_mode == 0o700
+
+
+def test_docker_runtime_creates_workspace_with_private_permissions(tmp_path, monkeypatch):
+    if os.name == "nt":
+        pytest.skip("POSIX workspace mode bits are not available on Windows")
+
+    workspace = tmp_path / "new-workspace"
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = b""
+    client = MagicMock()
+    client.containers.create.return_value = container
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    result = runtime._execute_sync(["true"], SandboxConfig(workspace_dir=str(workspace)))
+
+    assert result.exit_code == 0
+    assert stat.S_IMODE(workspace.stat().st_mode) == 0o700
