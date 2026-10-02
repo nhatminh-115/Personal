@@ -122,7 +122,7 @@ class SQLMemoryService(MemoryService):
                 WorkspaceEdgeModel.relation_type == "continues",
             )
         )
-        continuation_pairs = set(existing_continuations.all())
+        continuation_pairs = {(source_id, target_id) for source_id, target_id in existing_continuations.all()}
         previous_assistant: Optional[WorkspaceObjectModel] = None
         for message in messages:
             item = objects_by_message[message.id]
