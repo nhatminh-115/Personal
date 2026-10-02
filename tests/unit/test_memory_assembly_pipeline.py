@@ -9,7 +9,7 @@ from app.memory.base import MemoryType
 from app.memory.context import AssembledContext, ContextAssembler, MAX_PROJECT_MEMORY_CHARS, MAX_PROJECT_MEMORY_ITEMS
 from app.memory.context_compiler import WorkspaceContextCompiler
 from app.memory.embeddings.mock_provider import MockEmbeddingProvider
-from app.memory.embeddings.router import EmbeddingRouter
+from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError, EmbeddingRouter
 from app.memory.pipeline import MemoryCandidate, MemoryCandidatePipeline
 from app.memory.stores.factory import create_semantic_store
 from app.memory.service import SQLMemoryService
@@ -26,6 +26,112 @@ from app.research.models import (
 @pytest.fixture
 def mock_router():
     return EmbeddingRouter(providers={"mock": MockEmbeddingProvider(dimension=1536)}, default_provider="mock")
+
+
+class CountingCloudEmbeddingProvider(MockEmbeddingProvider):
+    def __init__(self):
+        super().__init__(dimension=1536, model_name="counting-cloud-v1")
+        self.query_calls = 0
+        self.batch_calls = 0
+
+    @property
+    def privacy_status(self):
+        return "cloud"
+
+    async def embed_query(self, text):
+        self.query_calls += 1
+        return await super().embed_query(text)
+
+    async def embed(self, request):
+        self.batch_calls += 1
+        return await super().embed(request)
+
+
+@pytest.mark.asyncio
+async def test_cloud_embedding_respects_private_and_unclassified_memory_boundaries(test_db_session):
+    provider = CountingCloudEmbeddingProvider()
+    router = EmbeddingRouter(providers={"cloud": provider}, default_provider="cloud")
+    service = SQLMemoryService(test_db_session, router=router)
+
+    with pytest.raises(EmbeddingPrivacyBoundaryError):
+        await router.embed_query("private query", privacy_requirement="local_only")
+    with pytest.raises(EmbeddingPrivacyBoundaryError):
+        await router.embed(["private memory"], privacy_requirement="confidential")
+    assert provider.query_calls == 0
+    assert provider.batch_calls == 0
+    await router.embed_query("internal query", privacy_requirement="internal")
+    assert provider.query_calls == 1
+
+    private_memory = await service.store_project_memory(
+        "Private Project",
+        "private_fact",
+        "A local-only project fact.",
+        metadata={"privacy_policy": "local_only"},
+    )
+    unknown_memory = await service.store_semantic_memory("An unclassified fact.")
+    assert provider.query_calls == 1
+    assert private_memory.embedding is None
+    assert private_memory.embedding_model is None
+    assert unknown_memory.embedding is None
+
+    assembled = await ContextAssembler(service).assemble_context(
+        session_id="private-embedding-session",
+        user_message="Ask about sensitive work.",
+        privacy_requirement="confidential",
+    )
+    assert assembled.privacy_requirement == "confidential"
+    assert provider.query_calls == 1
+    assert assembled.semantic_items == []
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_applies_routing_and_selected_object_privacy_before_embedding(test_db_session):
+    from app.orchestrator.nodes import load_context_node
+
+    provider = CountingCloudEmbeddingProvider()
+    service = SQLMemoryService(
+        test_db_session,
+        router=EmbeddingRouter(providers={"cloud": provider}, default_provider="cloud"),
+    )
+    profile_state = {
+        "run_id": "private-profile-embedding-run",
+        "session_id": "private-profile-embedding-session",
+        "user_message": "Analyze a confidential request.",
+        "messages": [],
+        "metadata": {"routing_context_dict": {"privacy_requirement": "confidential"}},
+    }
+    await load_context_node(
+        profile_state,
+        {"configurable": {"db": test_db_session, "memory_service": service}},
+    )
+    assert provider.query_calls == 0
+
+    private_note = WorkspaceObjectModel(
+        project_name="private-project",
+        object_type="manual_note",
+        created_by="user",
+        title="Private context",
+        content="Do not send this outside the local runtime.",
+        metadata_json={"privacy_policy": "local_only"},
+    )
+    test_db_session.add(private_note)
+    await test_db_session.commit()
+
+    state = {
+        "run_id": "private-embedding-run",
+        "session_id": "private-embedding-session",
+        "project_name": "private-project",
+        "user_message": "Analyze my confidential notes.",
+        "messages": [],
+        "context_object_ids": [private_note.id],
+        "metadata": {"routing_context_dict": {"privacy_requirement": "public"}},
+    }
+    await load_context_node(
+        state,
+        {"configurable": {"db": test_db_session, "memory_service": service}},
+    )
+
+    assert provider.query_calls == 0
 
 
 @pytest.mark.asyncio

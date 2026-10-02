@@ -7,7 +7,7 @@ from app.memory.embeddings.base import (
 )
 from app.memory.embeddings.mock_provider import MockEmbeddingProvider
 from app.memory.embeddings.openai_provider import OpenAIEmbeddingProvider
-from app.memory.embeddings.router import EmbeddingRouter, embedding_router
+from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError, EmbeddingRouter, embedding_router
 
 __all__ = [
     "EmbeddingProvider",
@@ -16,5 +16,6 @@ __all__ = [
     "MockEmbeddingProvider",
     "OpenAIEmbeddingProvider",
     "EmbeddingRouter",
+    "EmbeddingPrivacyBoundaryError",
     "embedding_router",
 ]

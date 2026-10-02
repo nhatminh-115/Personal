@@ -8,6 +8,7 @@ from app.core.errors import ContextSelectionError
 from app.db.models import MemoryModel
 from app.memory.base import MemoryService, MemoryType
 from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER, stricter_privacy_requirement
+from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError
 
 
 MAX_PROFILE_MEMORY_ITEMS = 48
@@ -148,9 +149,15 @@ class ContextAssembler:
         semantic_threshold: float = 0.5,
         recent_episodes_limit: int = 3,
         working_history_limit: int = 20,
+        privacy_requirement: Optional[str] = None,
+        disable_semantic_search: bool = False,
     ) -> AssembledContext:
         """Assemble structured context for the given user message."""
         context = AssembledContext(session_id=session_id, project_name=project_name)
+        if privacy_requirement is not None:
+            if privacy_requirement not in PRIVACY_REQUIREMENT_ORDER:
+                raise ContextSelectionError("The active routing privacy classification is unsupported.")
+            context.privacy_requirement = privacy_requirement
 
         # 1. Working Memory: Recent conversation turns
         db_msgs = await self.mem_service.get_session_messages(session_id, limit=working_history_limit)
@@ -208,13 +215,19 @@ class ContextAssembler:
             episode_chars += len(episode.content)
 
         # 5. Semantic Memory: Nearest-neighbor vector similarity
-        if user_message.strip():
+        if user_message.strip() and not disable_semantic_search:
             # If the service provides store-level scoring, access store directly or use search
             store = getattr(self.mem_service, "store", None)
             embedding_router = getattr(self.mem_service, "embedding_router", None)
 
             if store and embedding_router:
-                query_vec = await embedding_router.embed_query(user_message)
+                try:
+                    query_vec = await embedding_router.embed_query(
+                        user_message,
+                        privacy_requirement=context.privacy_requirement,
+                    )
+                except EmbeddingPrivacyBoundaryError:
+                    query_vec = None
                 search_types = [MemoryType.SEMANTIC.value]
                 matches = await store.search(
                     query_vector=query_vec,
@@ -225,8 +238,7 @@ class ContextAssembler:
                     is_active_only=True,
                     embedding_model=embedding_router.current_model_name,
                     embedding_dim=embedding_router.current_dimension,
-                )
-                matches = list(matches)
+                ) if query_vec is not None else []
             else:
                 raw_memories = await self.mem_service.search_semantic_memory(
                     query=user_message,
@@ -234,6 +246,7 @@ class ContextAssembler:
                     min_similarity=semantic_threshold,
                     project_name=project_name,
                     is_active_only=True,
+                    privacy_requirement=context.privacy_requirement,
                 )
                 matches = [(memory, 1.0) for memory in raw_memories]
 

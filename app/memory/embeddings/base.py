@@ -41,6 +41,11 @@ class EmbeddingProvider(ABC):
         """Dimensionality of the produced vector embeddings."""
         pass
 
+    @property
+    def privacy_status(self) -> str:
+        """Data boundary for this provider: local, airgap, cloud, or unknown."""
+        return "unknown"
+
     @abstractmethod
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         """Generate embeddings for a batch of texts."""
