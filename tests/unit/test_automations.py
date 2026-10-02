@@ -146,9 +146,12 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
     automation_id = created.json()["id"]
 
     first = await async_client.post(f"/v1/automations/{automation_id}/run")
+    first_event = await test_db_session.get(EventRecordModel, first.json()["event_id"])
+    assert first_event is not None
+    first_event.status = "failed"
+    await test_db_session.commit()
     second = await async_client.post(f"/v1/automations/{automation_id}/run")
     await async_client.post(f"/v1/automations/{other.json()['id']}/run")
-    first_event = await test_db_session.get(EventRecordModel, first.json()["event_id"])
     second_event = await test_db_session.get(EventRecordModel, second.json()["event_id"])
     first_event.retry_count = 1
     second_event.retry_count = 2
@@ -173,7 +176,7 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
     assert history[0]["run_id"] == second_run_id
     assert history[0]["status"] == "failed"
     assert history[0]["retry_count"] == 2
-    assert history[1]["status"] == "queued"
+    assert history[1]["status"] == "failed"
     assert history[1]["retry_count"] == 1
     assert all("instruction" not in item and "response" not in item for item in history)
 
