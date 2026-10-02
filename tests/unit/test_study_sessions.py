@@ -386,3 +386,29 @@ async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
     card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
     assert card is not None
     assert card.metadata_json["privacy_policy"] == "local_only"
+
+
+@pytest.mark.asyncio
+async def test_study_session_rejects_unknown_note_privacy_classification(async_client: AsyncClient):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Classified note",
+        "body": "Source content.",
+        "project_names": ["aura"],
+    })
+    assert note_response.status_code == 201
+    note_id = note_response.json()["id"]
+
+    updated = await async_client.put(f"/v1/workspace/projects/aura/objects/{note_id}", json={
+        "title": "Classified note",
+        "content": "Source content.",
+        "metadata_json": {"privacy_policy": "unspecified"},
+    })
+    assert updated.status_code == 200
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": note_id,
+        "track_title": "Classified note",
+        "material_id": note_id,
+    })
+    assert started.status_code == 422
+    assert started.json()["detail"] == "Study source has an unsupported privacy classification."
