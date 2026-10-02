@@ -266,7 +266,7 @@ class WorkspaceContextCompiler:
             provenance_frontier = next_frontier - provenance_visited
 
         # Context Bridges deliberately stop context expansion at their boundary, but
-        # privacy still flows through every linked source's context ancestry.
+        # privacy still flows through every linked source's context and provenance ancestry.
         # This traversal reads metadata only; it never adds those objects to the
         # compiled prompt.
         bridge_source_ids = {
@@ -293,7 +293,7 @@ class WorkspaceContextCompiler:
                 select(WorkspaceEdgeModel)
                 .where(
                     WorkspaceEdgeModel.project_name == project_name,
-                    WorkspaceEdgeModel.edge_family == "context",
+                    WorkspaceEdgeModel.edge_family.in_({"context", "provenance"}),
                     WorkspaceEdgeModel.target_object_id.in_(targets),
                 )
                 .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
