@@ -52,6 +52,7 @@ async def test_study_session_persists_and_returns_library_material_link(async_cl
             "collection": "Study",
             "detail": "Vocabulary notes",
             "tags": ["language"],
+            "project_names": ["aura"],
         },
     )
     assert library.status_code == 201
@@ -65,6 +66,17 @@ async def test_study_session_persists_and_returns_library_material_link(async_cl
     assert started.json()["material_id"] == material_id
     assert started.json()["track_id"] == material_id
     assert started.json()["track_title"] == "Language notes.pdf"
+
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    study_object = next(item for item in graph["objects"] if item["id"] == started.json()["id"])
+    assert study_object["object_type"] == "study_session"
+    [material_edge] = [
+        edge for edge in graph["edges"]
+        if edge["source_object_id"] == material_id
+        and edge["target_object_id"] == study_object["id"]
+    ]
+    assert material_edge["relation_type"] == "studied_from"
+    assert material_edge["edge_family"] == "provenance"
 
     listed = await async_client.get("/v1/study/sessions")
     assert listed.status_code == 200
