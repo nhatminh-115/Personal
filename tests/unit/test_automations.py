@@ -50,6 +50,44 @@ async def test_automation_crud_and_manual_run_are_persisted(async_client, test_d
 
 
 @pytest.mark.asyncio
+async def test_run_now_blocks_overlapping_queued_or_waiting_runs(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Single-flight routine",
+        "instruction": "Update the project status.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+
+    first = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert first.status_code == 202
+    duplicate = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert duplicate.status_code == 409
+
+    event = await test_db_session.get(EventRecordModel, first.json()["event_id"])
+    assert event is not None
+    event.status = "processed"
+    session_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+    test_db_session.add(SessionModel(id=session_id, title="Automation run", metadata_json={}))
+    run = RunModel(
+        id=run_id,
+        session_id=session_id,
+        status="waiting_for_approval",
+        user_message="Update the project status.",
+    )
+    test_db_session.add(run)
+    await test_db_session.commit()
+
+    waiting_for_approval = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert waiting_for_approval.status_code == 409
+
+    run.status = "completed"
+    await test_db_session.commit()
+    completed_run_allows_next = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert completed_run_allows_next.status_code == 202
+
+
+@pytest.mark.asyncio
 async def test_pausing_automation_moves_next_run_and_blocks_manual_run(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Routine",
