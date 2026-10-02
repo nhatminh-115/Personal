@@ -48,7 +48,23 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [historyError, setHistoryError] = useState('');
   const historyRequest = useRef(0);
 
-  const toggleRunHistory = async (automation: AutomationRecord) => {
+  const loadRunHistory = async (automationId: string) => {
+    const requestId = ++historyRequest.current;
+    setHistoryError('');
+    setHistoryLoadingId(automationId);
+    try {
+      const records = await api.fetchAutomationRuns(automationId, 10);
+      if (historyRequest.current !== requestId) return;
+      setHistoryByAutomation((current) => ({ ...current, [automationId]: records }));
+    } catch (cause) {
+      if (historyRequest.current !== requestId) return;
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not load run history.');
+    } finally {
+      if (historyRequest.current === requestId) setHistoryLoadingId(null);
+    }
+  };
+
+  const toggleRunHistory = (automation: AutomationRecord) => {
     if (automation.source !== 'live') return;
     if (historyAutomationId === automation.id) {
       historyRequest.current += 1;
@@ -57,21 +73,8 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
       setHistoryError('');
       return;
     }
-    const requestId = ++historyRequest.current;
     setHistoryAutomationId(automation.id);
-    setHistoryError('');
-    if (historyByAutomation[automation.id]) return;
-    setHistoryLoadingId(automation.id);
-    try {
-      const records = await api.fetchAutomationRuns(automation.id, 10);
-      if (historyRequest.current !== requestId) return;
-      setHistoryByAutomation((current) => ({ ...current, [automation.id]: records }));
-    } catch (cause) {
-      if (historyRequest.current !== requestId) return;
-      setHistoryError(cause instanceof Error ? cause.message : 'Could not load run history.');
-    } finally {
-      if (historyRequest.current === requestId) setHistoryLoadingId(null);
-    }
+    void loadRunHistory(automation.id);
   };
 
   const openApprovalReview = async (automation: AutomationRecord) => {
@@ -192,12 +195,13 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                       className="secondary-button automation-history__toggle"
                       aria-expanded={historyAutomationId === automation.id}
                       aria-controls={`automation-history-${automation.id}`}
-                      onClick={() => void toggleRunHistory(automation)}
+                      onClick={() => toggleRunHistory(automation)}
                     >
                       {historyAutomationId === automation.id ? 'Hide run history' : 'Run history'}
                     </button>
                     {historyAutomationId === automation.id ? (
                       <div id={`automation-history-${automation.id}`} className="automation-history__panel" aria-live="polite">
+                        <button type="button" className="secondary-button" onClick={() => void loadRunHistory(automation.id)} disabled={historyLoadingId === automation.id}>{historyLoadingId === automation.id ? 'Refreshing…' : 'Refresh history'}</button>
                         {historyLoadingId === automation.id ? <p>Loading run history…</p> : null}
                         {historyError ? <p className="automation-form-error" role="alert">{historyError}</p> : null}
                         {historyByAutomation[automation.id]?.length === 0 ? <p>No runs yet.</p> : null}
