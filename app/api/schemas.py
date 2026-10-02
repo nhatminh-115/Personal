@@ -29,12 +29,43 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     run_id: str
     session_id: str
-    status: Literal["completed", "waiting_for_approval", "failed", "cancelled"]
+    status: Literal["completed", "waiting_for_approval", "waiting_for_routing_confirmation", "failed", "cancelled"]
     response: Optional[str] = None
     approval_id: Optional[str] = None
+    routing_confirmation_id: Optional[str] = None
+    proposed_provider: Optional[str] = None
+    proposed_model: Optional[str] = None
     user_message_id: Optional[str] = None
     assistant_message_id: Optional[str] = None
     tool_results: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+# --- Routing Confirmation Schemas ---
+class RoutingConfirmationResponse(BaseModel):
+    id: str
+    root_run_id: str
+    execution_run_id: str
+    session_id: str
+    proposed_provider: str
+    proposed_model: str
+    status: Literal["pending", "approved", "rejected"]
+    decision_notes: Optional[str] = None
+    created_at: datetime
+    decided_at: Optional[datetime] = None
+
+
+class RoutingConfirmationDecisionRequest(BaseModel):
+    decision: Literal["approved", "rejected"]
+    decision_notes: Optional[str] = None
+
+
+class RoutingConfirmationDecisionResponse(BaseModel):
+    confirmation_id: str
+    status: Literal["approved", "rejected"]
+    run_id: str
+    execution_status: str
+    final_response: Optional[str] = None
+    next_routing_confirmation_id: Optional[str] = None
 
 
 # --- Approval Schemas ---
