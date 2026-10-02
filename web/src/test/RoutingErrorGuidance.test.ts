@@ -4,6 +4,7 @@ import { ApiError } from '../services/api';
 
 describe('routing error guidance', () => {
   it.each([
+    ['PrivacyBoundaryViolation', 'select a route that meets its privacy boundary'],
     ['ModelCapabilityMismatch', 'compatible model'],
     ['ReasoningControlUnsupported', 'Use Profile reasoning'],
     ['ModelUnavailable', 'AURA did not substitute another model'],
