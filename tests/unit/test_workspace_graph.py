@@ -847,19 +847,34 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
         id="trace-answer-object", project_name="aura", session_id=session.id, object_type="conversation_turn",
         created_by="assistant", title="Answer", content="private assistant response", metadata_json={"role": "assistant", "run_id": run.id},
     )
+    occurred = datetime.now(timezone.utc)
+    context = WorkspaceObjectModel(
+        id="trace-context-note", project_name="aura", object_type="manual_note",
+        created_by="user", title="Selected constraint", content="Private context body",
+    )
     events = [
-        RunEventModel(id="trace-model-event", run_id=run.id, event_type="model_selected", payload={
+        RunEventModel(id="trace-context-event", run_id=run.id, event_type="context_compiled", created_at=occurred,
+            payload={
+                "objects": [{
+                    "object_id": context.id, "object_type": "manual_note", "selected_by_user": True,
+                    "source_object_ids": [],
+                }],
+                "estimated_tokens": 17,
+                "character_count": 65,
+                "prompt_text": "private compiled prompt secret",
+            }),
+        RunEventModel(id="trace-model-event", run_id=run.id, event_type="model_selected", created_at=occurred + timedelta(seconds=1), payload={
             "agent_role": "root", "provider": "local", "model": "test-model", "prompt": "private prompt secret",
         }),
-        RunEventModel(id="trace-tool-request", run_id=run.id, event_type="tool_requested", payload={
+        RunEventModel(id="trace-tool-request", run_id=run.id, event_type="tool_requested", created_at=occurred + timedelta(seconds=2), payload={
             "tool": "workspace.read", "tool_call_id": "call-1", "arguments": {"path": "secret/path.txt"},
         }),
-        RunEventModel(id="trace-tool-result", run_id=run.id, event_type="tool_executed", payload={
+        RunEventModel(id="trace-tool-result", run_id=run.id, event_type="tool_executed", created_at=occurred + timedelta(seconds=3), payload={
             "tool": "workspace.read", "result": {"success": True, "output": "private tool output secret"},
         }),
-        RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", payload={"text": "never expose"}),
+        RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", created_at=occurred + timedelta(seconds=4), payload={"text": "never expose"}),
     ]
-    test_db_session.add_all([session, run, user, assistant, *events])
+    test_db_session.add_all([session, run, user, assistant, context, *events])
     await test_db_session.commit()
 
     response = await async_client.get("/v1/workspace/projects/aura/graph")
@@ -869,12 +884,20 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
     assert trace["run_id"] == run.id
     assert trace["user_object_id"] == user.id
     assert trace["response_object_id"] == assistant.id
-    assert [event["event_type"] for event in trace["events"]] == ["model_selected", "tool_requested", "tool_executed"]
+    assert [event["event_type"] for event in trace["events"]] == ["context_compiled", "model_selected", "tool_requested", "tool_executed"]
+    context_event = trace["events"][0]
+    assert context_event["context_objects"] == [{
+        "object_id": context.id,
+        "object_type": "manual_note",
+        "selected_by_user": True,
+        "source_object_ids": [],
+    }]
+    assert context_event["context_estimated_tokens"] == 17
     tool_result = next(event for event in trace["events"] if event["event_type"] == "tool_executed")
     assert tool_result["tool_name"] == "workspace.read"
     assert tool_result["success"] is True
     serialized = response.text
-    for private_value in ("private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
+    for private_value in ("private compiled prompt secret", "private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
         assert private_value not in serialized
 
 
