@@ -41,16 +41,19 @@ async def test_provider_inventory_exposes_metadata_without_runtime_secrets(async
     assert "sensitive-token" not in serialized
 
 
-def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
+async def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     registry = ToolRegistry()
     manager = MCPClientManager(registry=registry)
     config = MCPServerConfig(
         id="docs",
         name="Document service",
-        transport=MCPTransportType.STREAMABLE_HTTP,
-        url="https://internal.example/mcp",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        allowed_tools=["read_metric"],
+        timeout_seconds=10.0,
         headers={"Authorization": "sensitive-token"},
-        capabilities_by_tool={"find_documents": ["research.library.search"]},
+        capabilities_by_tool={"read_metric": ["research.library.search"]},
     )
     manager.register_server(config)
 
@@ -60,12 +63,19 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.privacy_boundary == PrivacyBoundary.UNKNOWN
     assert provider.network_requirement == NetworkRequirement.UNKNOWN
     assert provider.capabilities == ["research.library.search"]
-    bindings = registry.capability_providers.get_capability_tools("mcp.docs")
-    assert bindings == {"research.library.search": ["find_documents"]}
-    bindings["research.library.search"].append("mutated")
-    assert registry.capability_providers.get_capability_tools("mcp.docs") == {"research.library.search": ["find_documents"]}
+    assert registry.capability_providers.get_capability_tools("mcp.docs") == {}
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
+
+    await manager.discover_tools("docs")
+    provider = registry.capability_providers.get("mcp.docs")
+    assert provider is not None and provider.health == CapabilityProviderHealth.HEALTHY
+    bindings = registry.capability_providers.get_capability_tools("mcp.docs")
+    assert bindings == {"research.library.search": ["mcp_docs_read_metric"]}
+    bindings["research.library.search"].append("mutated")
+    assert registry.capability_providers.get_capability_tools("mcp.docs") == {"research.library.search": ["mcp_docs_read_metric"]}
+    assert registry.resolve_available_capabilities(["research.library.search"]) == ["mcp_docs_read_metric"]
     assert "sensitive-token" not in provider.model_dump_json()
+    await manager.disconnect_all()
 
 
 def test_mcp_capability_mappings_must_be_non_empty_and_inside_tool_allowlist():
