@@ -106,9 +106,13 @@ describe('Board Prototype Interactions', () => {
     expect(conclusions).toHaveValue('The migration can be reversible.');
     fireEvent.change(conclusions, { target: { value: 'Keep rollbacks available.' } });
     expect(onBridgeSectionMock).toHaveBeenCalledWith('bridge-node-1', 'conclusions', 'Keep rollbacks available.');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Constraints' }));
+    expect(onBridgeOptionMock).toHaveBeenCalledWith('bridge-node-1', 'constraints', true);
     const constraints = screen.getByRole('textbox', { name: 'Context Bridge Constraints' });
     fireEvent.change(constraints, { target: { value: 'Keep legacy clients working.' } });
     expect(onBridgeSectionMock).toHaveBeenCalledWith('bridge-node-1', 'constraints', 'Keep legacy clients working.');
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Decisions' }));
+    expect(onBridgeOptionMock).toHaveBeenCalledWith('bridge-node-1', 'decisions', true);
     expect(screen.getByRole('textbox', { name: 'Context Bridge Decisions' })).toBeInTheDocument();
     fireEvent.change(handoffNote, { target: { value: 'Keep the claim narrow.' } });
     expect(onChangeBodyMock).toHaveBeenCalledWith('bridge-node-1', 'Keep the claim narrow.');
