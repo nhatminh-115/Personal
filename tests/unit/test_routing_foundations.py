@@ -711,6 +711,47 @@ async def test_routing_api_endpoints_complete(async_client: AsyncClient, test_db
 
 
 @pytest.mark.asyncio
+async def test_default_profile_transitions_keep_exactly_one_or_fall_back_to_system_balanced(
+    async_client: AsyncClient,
+    test_db_session: AsyncSession,
+):
+    first = await async_client.post("/v1/routing/profiles", json={
+        "name": "First default",
+        "is_default": True,
+    })
+    assert first.status_code == 201
+    first_id = first.json()["id"]
+
+    second = await async_client.post("/v1/routing/profiles", json={
+        "name": "Second default",
+        "is_default": True,
+    })
+    assert second.status_code == 201
+    second_id = second.json()["id"]
+
+    profiles = (await test_db_session.execute(
+        select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True))
+    )).scalars().all()
+    assert [profile.id for profile in profiles] == [second_id]
+    effective = await async_client.get("/v1/routing/effective")
+    assert effective.status_code == 200
+    assert effective.json()["profile"]["id"] == second_id
+    assert effective.json()["winning_scope"] == "default"
+
+    reset = await async_client.put("/v1/routing/default", json={"profile_id": "system-balanced"})
+    assert reset.status_code == 200
+    assert reset.json()["routing_profile_id"] is None
+    profiles = (await test_db_session.execute(
+        select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True))
+    )).scalars().all()
+    assert profiles == []
+    effective = await async_client.get("/v1/routing/effective")
+    assert effective.status_code == 200
+    assert effective.json()["profile"]["id"] == "system-balanced"
+    assert effective.json()["winning_scope"] == "system"
+
+
+@pytest.mark.asyncio
 async def test_preview_zero_model_invocation(async_client: AsyncClient):
     spy = SpyModelProvider(name="spy-prev", privacy="local")
     from app.models.router import model_router
