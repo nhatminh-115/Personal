@@ -1,6 +1,7 @@
 """Unit tests for ResearchDocumentFetcher and local PDF section extraction."""
 
-import io
+import ipaddress
+from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pypdf
 from app.research.document import (
@@ -137,11 +138,73 @@ def test_missing_section_handling():
 def test_pdf_security_blocks_file_protocol():
     """Ensure file:// and local filesystem paths are blocked."""
     fetcher = ResearchDocumentFetcher()
-    with pytest.raises(ValueError, match="Only HTTP/HTTPS external retrieval is permitted"):
+    with pytest.raises(ValueError, match="public HTTP/HTTPS"):
         fetcher._validate_url("file:///etc/passwd")
 
-    with pytest.raises(ValueError, match="Only HTTP/HTTPS external retrieval is permitted"):
+    with pytest.raises(ValueError, match="public HTTP/HTTPS"):
         fetcher._validate_url("C:\\Windows\\System32\\calc.exe")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/private.pdf",
+        "http://169.254.169.254/latest/meta-data/",
+        "http://[::1]/private.pdf",
+        "https://user:password@papers.example/paper.pdf",
+    ],
+)
+def test_pdf_security_rejects_private_ip_literals_and_url_credentials(url):
+    with pytest.raises(ValueError, match="public HTTP/HTTPS"):
+        ResearchDocumentFetcher()._validate_url(url)
+
+
+@pytest.mark.asyncio
+async def test_pdf_security_rejects_hostname_resolving_to_private_address(monkeypatch):
+    fetcher = ResearchDocumentFetcher(cache=MagicMock(get_document=MagicMock(return_value=None)))
+    monkeypatch.setattr(
+        fetcher,
+        "_resolve_host_addresses",
+        AsyncMock(return_value={ipaddress.ip_address("10.1.2.3")}),
+    )
+
+    with pytest.raises(ValueError, match="non-public network address"):
+        await fetcher._validate_public_destination("https://papers.example/paper.pdf")
+
+    monkeypatch.setattr(
+        fetcher,
+        "_resolve_host_addresses",
+        AsyncMock(return_value={ipaddress.ip_address("8.8.8.8"), ipaddress.ip_address("10.1.2.3")}),
+    )
+    with pytest.raises(ValueError, match="non-public network address"):
+        await fetcher._validate_public_destination("https://papers.example/paper.pdf")
+
+
+@pytest.mark.asyncio
+async def test_pdf_security_rechecks_redirect_before_requesting_private_destination(monkeypatch):
+    fetcher = ResearchDocumentFetcher(cache=MagicMock(get_document=MagicMock(return_value=None)))
+    monkeypatch.setattr(
+        fetcher,
+        "_resolve_host_addresses",
+        AsyncMock(return_value={ipaddress.ip_address("8.8.8.8")}),
+    )
+    response = MagicMock()
+    response.status_code = 302
+    response.is_redirect = True
+    response.headers = {"location": "http://127.0.0.1/private.pdf"}
+    response.__aenter__ = AsyncMock(return_value=response)
+    response.__aexit__ = AsyncMock(return_value=None)
+    client = MagicMock()
+    client.stream = MagicMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.research.document.httpx.AsyncClient", return_value=client):
+        parsed = await fetcher.fetch_and_parse("https://papers.example/paper.pdf")
+
+    assert parsed.status == FullTextStatus.FETCH_FAILED
+    assert "public HTTP/HTTPS" in (parsed.error_message or "")
+    client.stream.assert_called_once_with("GET", "https://papers.example/paper.pdf")
 
 
 def test_pdf_parsing_handles_corrupt_bytes():
