@@ -4,12 +4,13 @@ from typing import Any, Dict, List, Optional
 from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphInterrupt
 from langgraph.types import interrupt
+from sqlalchemy import select
 
 from app.approvals.policy import PermissionDecision, permission_policy
 from app.approvals.service import ApprovalService
 from app.core.errors import ContextSelectionError, WorkspaceEscapeError
 from app.core.logging import logger
-from app.db.models import RunStatus
+from app.db.models import RoutingConfirmationModel, RunStatus
 from app.memory.base import MemoryService
 from app.memory.context import ContextAssembler
 from app.memory.context_compiler import WorkspaceContextCompiler, split_context_capabilities, stricter_privacy_requirement
@@ -340,7 +341,101 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
                 event_type="fallback_blocked",
                 payload=payload,
             )
-        raise
+
+        from app.core.errors import RoutingConfirmationRequired
+        if not isinstance(exc, RoutingConfirmationRequired):
+            raise
+        details = exc.details or {}
+        proposed_provider = details.get("proposed_provider")
+        proposed_model = details.get("proposed_model")
+        if not isinstance(proposed_provider, str) or not isinstance(proposed_model, str):
+            raise
+        db = services.get("db")
+        if db is None:
+            raise
+        root_run_id = delegation.get("parent_run_id") or state["run_id"]
+        confirmation_result = await db.execute(
+            select(RoutingConfirmationModel)
+            .where(
+                RoutingConfirmationModel.root_run_id == root_run_id,
+                RoutingConfirmationModel.execution_run_id == state["run_id"],
+                RoutingConfirmationModel.proposed_provider == proposed_provider,
+                RoutingConfirmationModel.proposed_model == proposed_model,
+            )
+            .order_by(RoutingConfirmationModel.created_at.desc())
+            .limit(1)
+        )
+        confirmation = confirmation_result.scalar_one_or_none()
+        created = confirmation is None
+        if confirmation is None:
+            confirmation = RoutingConfirmationModel(
+                root_run_id=root_run_id,
+                execution_run_id=state["run_id"],
+                session_id=state["session_id"],
+                proposed_provider=proposed_provider,
+                proposed_model=proposed_model,
+                status="pending",
+            )
+            db.add(confirmation)
+            await db.flush()
+            await db.commit()
+        if created and trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="routing_confirmation_requested",
+                payload={
+                    "confirmation_id": confirmation.id,
+                    "root_run_id": root_run_id,
+                    "proposed_provider": proposed_provider,
+                    "proposed_model": proposed_model,
+                },
+            )
+        decision = interrupt({
+            "kind": "routing_confirmation",
+            "confirmation_id": confirmation.id,
+            "root_run_id": root_run_id,
+            "execution_run_id": state["run_id"],
+            "proposed_provider": proposed_provider,
+            "proposed_model": proposed_model,
+            "reason": exc.message,
+        })
+        if (
+            not isinstance(decision, dict)
+            or decision.get("confirmation_id") != confirmation.id
+            or decision.get("decision") not in {"approved", "rejected"}
+        ):
+            raise RoutingConfirmationRequired(
+                "Routing confirmation could not be matched to the active proposal.",
+                {"confirmation_id": confirmation.id},
+            )
+        if decision["decision"] == "rejected":
+            if trace_service:
+                await trace_service.record_event(
+                    run_id=state["run_id"],
+                    session_id=state["session_id"],
+                    event_type="routing_confirmation_rejected",
+                    payload={"confirmation_id": confirmation.id},
+                )
+            return {
+                "execution_status": RunStatus.CANCELLED.value,
+                "final_response": "Cloud routing was not approved. Change the routing policy or try again.",
+            }
+
+        routing_ctx.explicit_model_override = f"{proposed_provider}:{proposed_model}"
+        routing_ctx.winning_scope = "message"
+        if trace_service:
+            await trace_service.record_event(
+                run_id=state["run_id"],
+                session_id=state["session_id"],
+                event_type="routing_confirmation_approved",
+                payload={
+                    "confirmation_id": confirmation.id,
+                    "proposed_provider": proposed_provider,
+                    "proposed_model": proposed_model,
+                },
+            )
+        provider, selection = router.select_model_for_task(routing_ctx)
 
     model_req = ModelRequest(
         messages=chat_messages,
