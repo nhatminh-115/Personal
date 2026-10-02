@@ -53,3 +53,13 @@ def test_audit_summary_records_tool_names_without_raw_outputs():
     }
     assert "sensitive source text" not in repr(result)
     assert "private stderr" not in repr(result)
+
+
+def test_pending_approvals_are_taken_from_persisted_approval_events():
+    class Event:
+        event_type = "approval_requested"
+        payload = {"approval_id": "approval-child"}
+
+    from scripts.dogfood_coding_impact_live import _pending_approval_ids
+
+    assert _pending_approval_ids([Event()]) == ["approval-child"]

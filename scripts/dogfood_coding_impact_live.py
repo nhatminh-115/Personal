@@ -48,6 +48,16 @@ def _model_decisions(events: list[Any]) -> list[dict[str, Any]]:
     ]
 
 
+def _pending_approval_ids(events: list[Any]) -> list[str]:
+    return [
+        str(payload["approval_id"])
+        for event in events
+        if getattr(event, "event_type", None) == "approval_requested"
+        for payload in [_event_payload(event)]
+        if payload.get("approval_id")
+    ]
+
+
 def _context_manifest(events: list[Any]) -> dict[str, Any] | None:
     event = next((item for item in events if getattr(item, "event_type", None) == "context_compiled"), None)
     if event is None:
@@ -146,6 +156,7 @@ async def audit_coding_run(parent_run_id: str, response_status: str, elapsed_sec
                 "status": child.status,
                 "routing_decisions": _model_decisions(child_events),
                 "context_manifest": _context_manifest(child_events),
+                "pending_approval_ids": _pending_approval_ids(child_events),
                 **_safe_run_events(child_events),
             })
 
@@ -171,17 +182,14 @@ async def audit_coding_run(parent_run_id: str, response_status: str, elapsed_sec
             "context_manifest": _context_manifest(parent_events),
             "children": children,
             "checkpoint_status": checkpoints,
-            "pending_approval_ids": [
-                str(payload["approval_id"])
-                for event in parent_events
-                if getattr(event, "event_type", None) == "approval_requested"
-                for payload in [_event_payload(event)]
-                if payload.get("approval_id")
-            ],
+            "pending_approval_ids": _pending_approval_ids(parent_events),
         }
         all_decisions = report["routing_decisions"] + [
             decision for child in children for decision in child["routing_decisions"]
         ]
+        report["pending_approval_ids"] = list(dict.fromkeys(
+            report["pending_approval_ids"] + [approval_id for child in children for approval_id in child["pending_approval_ids"]]
+        ))
         report["coding_specialist_delegated"] = any(item["specialist"] == "coding" for item in children)
         report["non_mock_model_used"] = any(decision.get("provider") not in (None, "mock") for decision in all_decisions)
         return report
