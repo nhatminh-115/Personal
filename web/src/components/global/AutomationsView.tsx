@@ -1,5 +1,5 @@
 import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { ApprovalDetail } from '../../types';
 import { api } from '../../services/api';
 import type { AutomationRecord, ProjectRecord } from '../../data/workspaceData';
@@ -42,6 +42,37 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [approvalNotes, setApprovalNotes] = useState('');
   const [approvalEditing, setApprovalEditing] = useState(false);
   const [approvalEditedJson, setApprovalEditedJson] = useState('');
+  const [historyAutomationId, setHistoryAutomationId] = useState<string | null>(null);
+  const [historyByAutomation, setHistoryByAutomation] = useState<Record<string, Awaited<ReturnType<typeof api.fetchAutomationRuns>>>>({});
+  const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState('');
+  const historyRequest = useRef(0);
+
+  const toggleRunHistory = async (automation: AutomationRecord) => {
+    if (automation.source !== 'live') return;
+    if (historyAutomationId === automation.id) {
+      historyRequest.current += 1;
+      setHistoryAutomationId(null);
+      setHistoryLoadingId(null);
+      setHistoryError('');
+      return;
+    }
+    const requestId = ++historyRequest.current;
+    setHistoryAutomationId(automation.id);
+    setHistoryError('');
+    if (historyByAutomation[automation.id]) return;
+    setHistoryLoadingId(automation.id);
+    try {
+      const records = await api.fetchAutomationRuns(automation.id, 10);
+      if (historyRequest.current !== requestId) return;
+      setHistoryByAutomation((current) => ({ ...current, [automation.id]: records }));
+    } catch (cause) {
+      if (historyRequest.current !== requestId) return;
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not load run history.');
+    } finally {
+      if (historyRequest.current === requestId) setHistoryLoadingId(null);
+    }
+  };
 
   const openApprovalReview = async (automation: AutomationRecord) => {
     const runId = automation.latestExecution?.runId;
@@ -154,6 +185,37 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                 {live ? <details className="automation-instruction"><summary>Instruction</summary><p>{automation.instruction}</p></details> : null}
                 <div className="automation-trigger"><Clock3 size={12} /><strong>{automation.trigger}</strong></div>
                 {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}{automation.latestExecution.status === 'waiting_for_approval' ? <button type="button" onClick={() => void openApprovalReview(automation)} disabled={approvalLoading}>{approvalLoading ? 'Loading approval…' : 'Review approval'}</button> : null}</div> : null}
+                {live ? (
+                  <div className="automation-history">
+                    <button
+                      type="button"
+                      className="secondary-button automation-history__toggle"
+                      aria-expanded={historyAutomationId === automation.id}
+                      aria-controls={`automation-history-${automation.id}`}
+                      onClick={() => void toggleRunHistory(automation)}
+                    >
+                      {historyAutomationId === automation.id ? 'Hide run history' : 'Run history'}
+                    </button>
+                    {historyAutomationId === automation.id ? (
+                      <div id={`automation-history-${automation.id}`} className="automation-history__panel" aria-live="polite">
+                        {historyLoadingId === automation.id ? <p>Loading run history…</p> : null}
+                        {historyError ? <p className="automation-form-error" role="alert">{historyError}</p> : null}
+                        {historyByAutomation[automation.id]?.length === 0 ? <p>No runs yet.</p> : null}
+                        {historyByAutomation[automation.id]?.length ? (
+                          <ol>
+                            {historyByAutomation[automation.id].map((run) => (
+                              <li key={run.event_id} className={`automation-execution-status is-${run.status}`}>
+                                <time dateTime={run.queued_at}>{run.queued_at}</time>
+                                <strong>{run.status.replace(/_/g, ' ')}</strong>
+                                {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {live ? <div className="automation-steps">{automation.actions.map((action) => <span key={action}><Check size={10} /> {action}</span>)}</div> : null}
                 <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
               </div>

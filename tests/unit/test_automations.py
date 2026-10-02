@@ -94,6 +94,58 @@ async def test_automation_status_tracks_persisted_root_run_state(async_client, t
 
 
 @pytest.mark.asyncio
+async def test_automation_run_history_is_newest_first_limited_and_safe(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "History routine",
+        "instruction": "Do not expose this private automation instruction.",
+        "interval_seconds": 3600,
+    })
+    other = await async_client.post("/v1/automations", json={
+        "name": "Other routine",
+        "instruction": "Another private instruction.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+
+    first = await async_client.post(f"/v1/automations/{automation_id}/run")
+    second = await async_client.post(f"/v1/automations/{automation_id}/run")
+    await async_client.post(f"/v1/automations/{other.json()['id']}/run")
+    first_event = await test_db_session.get(EventRecordModel, first.json()["event_id"])
+    second_event = await test_db_session.get(EventRecordModel, second.json()["event_id"])
+    first_event.retry_count = 1
+    second_event.retry_count = 2
+    first_event.occurred_at = utc_now() - timedelta(minutes=1)
+    second_event.occurred_at = utc_now()
+
+    session_id = str(uuid.uuid4())
+    second_run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{second_event.id}"))
+    test_db_session.add(SessionModel(id=session_id, title="Automation history", metadata_json={}))
+    test_db_session.add(RunModel(
+        id=second_run_id,
+        session_id=session_id,
+        status="failed",
+        user_message="Do not expose this private automation instruction.",
+    ))
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/automations/{automation_id}/runs")
+    assert response.status_code == 200
+    history = response.json()
+    assert [item["event_id"] for item in history] == [second_event.id, first_event.id]
+    assert history[0]["run_id"] == second_run_id
+    assert history[0]["status"] == "failed"
+    assert history[0]["retry_count"] == 2
+    assert history[1]["status"] == "queued"
+    assert history[1]["retry_count"] == 1
+    assert all("instruction" not in item and "response" not in item for item in history)
+
+    limited = await async_client.get(f"/v1/automations/{automation_id}/runs?limit=1")
+    assert [item["event_id"] for item in limited.json()] == [second_event.id]
+    missing = await async_client.get("/v1/automations/not-an-automation/runs")
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_automation_rejects_missing_project_or_blank_instruction(async_client):
     missing_project = await async_client.post("/v1/automations", json={
         "name": "Routine", "instruction": "Do something", "scope": "project", "interval_seconds": 60,

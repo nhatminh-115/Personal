@@ -31,6 +31,7 @@ import {
   WorkspaceSearchResult,
   WorkspaceContextPreview,
   AutomationRecordResponse,
+  AutomationExecutionRecord,
   AutomationRunResponse,
 } from '../types';
 
@@ -298,6 +299,11 @@ export const api = {
 
   async fetchAutomations(): Promise<AutomationRecordResponse[]> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations`));
+  },
+
+  async fetchAutomationRuns(id: string, limit = 10): Promise<AutomationExecutionRecord[]> {
+    const params = new URLSearchParams({ limit: String(limit) });
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/runs?${params.toString()}`));
   },
 
   async createAutomation(input: {
