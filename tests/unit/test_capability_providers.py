@@ -27,12 +27,18 @@ async def test_provider_inventory_exposes_metadata_without_runtime_secrets(async
     assert workspace["privacy_boundary"] == "local"
     assert workspace["network_requirement"] == "none"
     assert workspace["capabilities"] == ["workspace.files.read", "workspace.files.write"]
+    assert workspace["capability_tools"] == {
+        "workspace.files.read": ["list_workspace_files", "read_workspace_file"],
+        "workspace.files.write": ["write_workspace_file"],
+    }
     research = providers["aura.research"]
     assert research["privacy_boundary"] == "unknown"
     assert research["network_requirement"] == "unknown"
     serialized = response.text
     assert "authorization" not in serialized.lower()
     assert "api_key" not in serialized.lower()
+    assert "internal.example" not in serialized
+    assert "sensitive-token" not in serialized
 
 
 def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
@@ -54,6 +60,10 @@ def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mappings():
     assert provider.privacy_boundary == PrivacyBoundary.UNKNOWN
     assert provider.network_requirement == NetworkRequirement.UNKNOWN
     assert provider.capabilities == ["research.library.search"]
+    bindings = registry.get_capability_tools("mcp.docs")
+    assert bindings == {"research.library.search": ["find_documents"]}
+    bindings["research.library.search"].append("mutated")
+    assert registry.get_capability_tools("mcp.docs") == {"research.library.search": ["find_documents"]}
     assert registry.resolve_available_capabilities(["research.library.search"]) == []
     assert "sensitive-token" not in provider.model_dump_json()
 
