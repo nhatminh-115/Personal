@@ -1,10 +1,12 @@
 """Unit tests for the Durable Transactional Outbox pattern, worker leasing, and dead-letter queues."""
 
+from datetime import timedelta
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import EventRecordModel, EventStatus
+from app.db.models import EventRecordModel, EventStatus, utc_now
 from app.events.bus import EventBus
 from app.events.types import AURAEvent, EventType
 from app.events.worker import OutboxWorker
@@ -133,3 +135,48 @@ async def test_outbox_retry_and_dead_letter_queue(test_db_session: AsyncSession)
     assert db_rec.status == EventStatus.DEAD_LETTER.value
     assert db_rec.retry_count == 3
     assert "Downstream API timeout" in db_rec.error_message
+
+
+@pytest.mark.asyncio
+async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_db_session: AsyncSession):
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="recovery-worker", lease_duration_seconds=60)
+    received = []
+
+    async def handler(event: AURAEvent):
+        received.append(event.id)
+
+    bus.subscribe("crash-recovery.event", handler)
+    event = EventRecordModel(
+        event_type="crash-recovery.event",
+        source="unit_test",
+        payload_json={"durable": True},
+        status=EventStatus.PROCESSING.value,
+        occurred_at=utc_now() - timedelta(minutes=3),
+        next_attempt_at=utc_now() - timedelta(minutes=3),
+        locked_at=utc_now() - timedelta(minutes=2),
+        locked_by="crashed-worker",
+    )
+    actively_claimed = EventRecordModel(
+        event_type="crash-recovery.event",
+        source="unit_test",
+        payload_json={"durable": True},
+        status=EventStatus.PROCESSING.value,
+        occurred_at=utc_now(),
+        next_attempt_at=utc_now(),
+        locked_at=utc_now(),
+        locked_by="active-worker",
+    )
+    test_db_session.add_all([event, actively_claimed])
+    await test_db_session.commit()
+
+    processed = await worker.process_outbox_batch(test_db_session)
+
+    await test_db_session.refresh(event)
+    assert processed == 1
+    assert received == [event.id]
+    assert event.status == EventStatus.PROCESSED.value
+    assert event.locked_at is None
+    assert event.locked_by is None
+    assert actively_claimed.status == EventStatus.PROCESSING.value
+    assert actively_claimed.locked_by == "active-worker"

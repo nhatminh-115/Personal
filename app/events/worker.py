@@ -41,9 +41,12 @@ class OutboxWorker:
         # Expired lock threshold for stale worker crash recovery
         stale_lock_cutoff = now - self.lease_duration
 
-        # Query pending events that are due and not locked by an active worker
+        # Query due events that are not locked by an active worker. Stale PROCESSING
+        # rows are eligible so a worker crash cannot strand an event forever.
         claim_condition = and_(
-            EventRecordModel.status.in_([EventStatus.PENDING.value, EventStatus.FAILED.value]),
+            EventRecordModel.status.in_(
+                [EventStatus.PENDING.value, EventStatus.FAILED.value, EventStatus.PROCESSING.value]
+            ),
             or_(
                 EventRecordModel.next_attempt_at.is_(None),
                 EventRecordModel.next_attempt_at <= now,
