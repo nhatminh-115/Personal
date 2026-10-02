@@ -2,8 +2,8 @@
 
 import asyncio
 import os
+import tempfile
 import time
-import uuid
 from typing import Optional
 
 from app.core.errors import AURAError
@@ -202,18 +202,29 @@ class DockerSandboxRuntime(SandboxRuntime):
             raise AURAError("Docker daemon is not available on this host.")
 
         os.makedirs(cfg.workspace_dir, mode=0o700, exist_ok=True)
-        script_filename = f".sandbox_exec_{uuid.uuid4().hex[:8]}.py"
-        host_script_path = os.path.join(cfg.workspace_dir, script_filename)
+        script_fd, host_script_path = tempfile.mkstemp(
+            prefix=".sandbox_exec_",
+            suffix=".py",
+            dir=cfg.workspace_dir,
+        )
+        script_filename = os.path.basename(host_script_path)
         container_script_path = f"{cfg.container_workspace_mount}/{script_filename}"
 
-        # Write Python script into mounted workspace
-        with open(host_script_path, "w", encoding="utf-8") as f:
-            f.write(code)
-
         try:
+            # mkstemp uses exclusive creation and restrictive permissions, so an
+            # existing workspace symlink cannot redirect script contents to host files.
+            with os.fdopen(script_fd, "w", encoding="utf-8") as f:
+                script_fd = -1
+                f.write(code)
+
             command_args = ["python", container_script_path]
             return await asyncio.to_thread(self._execute_sync, command_args, cfg)
         finally:
+            if script_fd >= 0:
+                try:
+                    os.close(script_fd)
+                except OSError:
+                    pass
             if os.path.exists(host_script_path):
                 try:
                     os.remove(host_script_path)
