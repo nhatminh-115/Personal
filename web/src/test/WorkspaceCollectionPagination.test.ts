@@ -52,4 +52,20 @@ describe('workspace collection pagination', () => {
     expect(automations.map((automation) => automation.id)).toEqual(['automation-1', 'automation-2']);
     expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').searchParams.get('cursor')).toBe('next-automations');
   });
+
+  it('returns one automation run-history page and its next cursor', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([
+      { event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 },
+    ], 'next-runs'));
+    vi.stubGlobal('fetch', fetch);
+
+    const page = await api.fetchAutomationRuns('automation/one', 10, 'prior-cursor');
+
+    expect(page.runs.map((run) => run.event_id)).toEqual(['event-1']);
+    expect(page.nextCursor).toBe('next-runs');
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/automations/automation%2Fone/runs');
+    expect(url.searchParams.get('page_size')).toBe('10');
+    expect(url.searchParams.get('cursor')).toBe('prior-cursor');
+  });
 });

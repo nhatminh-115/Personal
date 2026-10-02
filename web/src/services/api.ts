@@ -354,9 +354,17 @@ export const api = {
     return fetchAllCursorPages<AutomationRecordResponse>('/v1/automations');
   },
 
-  async fetchAutomationRuns(id: string, limit = 10): Promise<AutomationExecutionRecord[]> {
-    const params = new URLSearchParams({ limit: String(limit) });
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/runs?${params.toString()}`));
+  async fetchAutomationRuns(id: string, pageSize = 10, cursor?: string | null): Promise<{
+    runs: AutomationExecutionRecord[];
+    nextCursor: string | null;
+  }> {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/runs?${params.toString()}`);
+    return {
+      runs: await handleResponse<AutomationExecutionRecord[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
   },
 
   async createAutomation(input: {

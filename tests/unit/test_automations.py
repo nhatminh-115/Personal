@@ -292,6 +292,47 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
 
 
 @pytest.mark.asyncio
+async def test_automation_run_history_uses_stable_cursor_pages(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Paged history",
+        "instruction": "Summarize the project.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    timestamp = utc_now()
+    events = [
+        EventRecordModel(
+            id=f"event-{index}",
+            event_type=EventType.TIMER_FIRED.value,
+            source="unit_test",
+            payload_json={},
+            status=EventStatus.PROCESSED.value,
+            occurred_at=timestamp,
+            correlation_id=automation_id,
+        )
+        for index in ("a", "b", "c")
+    ]
+    test_db_session.add_all(events)
+    await test_db_session.commit()
+
+    first = await async_client.get(f"/v1/automations/{automation_id}/runs?page_size=2")
+    assert first.status_code == 200
+    assert [item["event_id"] for item in first.json()] == ["event-c", "event-b"]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get(
+        f"/v1/automations/{automation_id}/runs?page_size=2&cursor={cursor}"
+    )
+    assert second.status_code == 200
+    assert [item["event_id"] for item in second.json()] == ["event-a"]
+    assert second.headers.get("X-Next-Cursor") is None
+
+    invalid = await async_client.get(f"/v1/automations/{automation_id}/runs?cursor=invalid")
+    assert invalid.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_automation_rejects_missing_project_or_blank_instruction(async_client):
     missing_project = await async_client.post("/v1/automations", json={
         "name": "Routine", "instruction": "Do something", "scope": "project", "interval_seconds": 60,

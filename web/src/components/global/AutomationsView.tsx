@@ -1,6 +1,6 @@
 import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
 import { useRef, useState } from 'react';
-import type { ApprovalDetail, RunDetail, RunRoutingDecision, RunEvent } from '../../types';
+import type { ApprovalDetail, AutomationExecutionRecord, RunDetail, RunRoutingDecision, RunEvent } from '../../types';
 import { api } from '../../services/api';
 import type { AutomationRecord, ProjectRecord } from '../../data/workspaceData';
 
@@ -60,7 +60,8 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
   const [approvalEditing, setApprovalEditing] = useState(false);
   const [approvalEditedJson, setApprovalEditedJson] = useState('');
   const [historyAutomationId, setHistoryAutomationId] = useState<string | null>(null);
-  const [historyByAutomation, setHistoryByAutomation] = useState<Record<string, Awaited<ReturnType<typeof api.fetchAutomationRuns>>>>({});
+  const [historyByAutomation, setHistoryByAutomation] = useState<Record<string, AutomationExecutionRecord[]>>({});
+  const [historyCursorByAutomation, setHistoryCursorByAutomation] = useState<Record<string, string | null>>({});
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [runReview, setRunReview] = useState<{ automation: AutomationRecord; detail: RunDetail; routing: RunRoutingDecision[] } | null>(null);
@@ -73,12 +74,35 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
     setHistoryError('');
     setHistoryLoadingId(automationId);
     try {
-      const records = await api.fetchAutomationRuns(automationId, 10);
+      const page = await api.fetchAutomationRuns(automationId, 10);
       if (historyRequest.current !== requestId) return;
-      setHistoryByAutomation((current) => ({ ...current, [automationId]: records }));
+      setHistoryByAutomation((current) => ({ ...current, [automationId]: page.runs }));
+      setHistoryCursorByAutomation((current) => ({ ...current, [automationId]: page.nextCursor }));
     } catch (cause) {
       if (historyRequest.current !== requestId) return;
       setHistoryError(cause instanceof Error ? cause.message : 'Could not load run history.');
+    } finally {
+      if (historyRequest.current === requestId) setHistoryLoadingId(null);
+    }
+  };
+
+  const loadOlderRunHistory = async (automationId: string) => {
+    const cursor = historyCursorByAutomation[automationId];
+    if (!cursor || historyLoadingId === automationId) return;
+    const requestId = ++historyRequest.current;
+    setHistoryError('');
+    setHistoryLoadingId(automationId);
+    try {
+      const page = await api.fetchAutomationRuns(automationId, 10, cursor);
+      if (historyRequest.current !== requestId) return;
+      setHistoryByAutomation((current) => ({
+        ...current,
+        [automationId]: [...(current[automationId] ?? []), ...page.runs],
+      }));
+      setHistoryCursorByAutomation((current) => ({ ...current, [automationId]: page.nextCursor }));
+    } catch (cause) {
+      if (historyRequest.current !== requestId) return;
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not load older runs.');
     } finally {
       if (historyRequest.current === requestId) setHistoryLoadingId(null);
     }
@@ -253,6 +277,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                             ))}
                           </ol>
                         ) : null}
+                        {historyCursorByAutomation[automation.id] ? <button type="button" className="secondary-button" onClick={() => void loadOlderRunHistory(automation.id)} disabled={historyLoadingId === automation.id}>{historyLoadingId === automation.id ? 'Loading older runs…' : 'Load older runs'}</button> : null}
                       </div>
                     ) : null}
                   </div>

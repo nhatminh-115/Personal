@@ -282,24 +282,40 @@ async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_
 @router.get("/{automation_id}/runs", response_model=list[AutomationExecutionResponse])
 async def list_automation_runs(
     automation_id: str,
-    limit: int = Query(default=10, ge=1, le=50),
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int | None = Query(default=None, ge=1, le=50),
+    limit: int | None = Query(default=None, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
 ) -> list[AutomationExecutionResponse]:
-    """Return recent safe status summaries without exposing instructions or run output."""
+    """Return a bounded page of safe run summaries without exposing run content."""
     job = await db.get(ScheduledJobModel, automation_id)
     if job is None or (job.metadata_json or {}).get("kind") != "automation":
         raise HTTPException(status_code=404, detail="Automation not found.")
 
-    result = await db.execute(
-        select(EventRecordModel)
-        .where(
-            EventRecordModel.correlation_id == automation_id,
-            EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
-        )
-        .order_by(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc())
-        .limit(limit)
+    page_limit = page_size if page_size is not None else limit if limit is not None else 10
+    query = select(EventRecordModel).where(
+        EventRecordModel.correlation_id == automation_id,
+        EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
     )
-    events = list(result.scalars())
+    if cursor is not None:
+        cursor_timestamp, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(
+            or_(
+                EventRecordModel.occurred_at < cursor_timestamp,
+                and_(EventRecordModel.occurred_at == cursor_timestamp, EventRecordModel.id < cursor_id),
+            )
+        )
+    result = await db.execute(
+        query.order_by(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc()).limit(page_limit + 1)
+    )
+    events = set_next_cursor_header(
+        response,
+        list(result.scalars()),
+        page_limit,
+        timestamp_for=lambda event: event.occurred_at,
+        id_for=lambda event: event.id,
+    )
     run_ids = [
         str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
         for event in events
