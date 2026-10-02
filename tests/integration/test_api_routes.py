@@ -17,6 +17,42 @@ async def test_health_check(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_readiness_reports_database_and_durable_checkpointer(async_client: AsyncClient):
+    resp = await async_client.get("/ready")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "status": "ready",
+        "checks": {"database": "healthy", "checkpointer": "healthy"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_readiness_fails_when_checkpointer_is_not_initialized(async_client: AsyncClient, monkeypatch):
+    monkeypatch.setattr("app.api.server.is_checkpointer_initialized", lambda: False)
+    resp = await async_client.get("/ready")
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "status": "not_ready",
+        "checks": {"database": "healthy", "checkpointer": "unavailable"},
+    }
+
+
+@pytest.mark.asyncio
+async def test_readiness_fails_when_database_is_unavailable(async_client: AsyncClient, test_db_session, monkeypatch):
+    async def unavailable_database(*_args, **_kwargs):
+        raise RuntimeError("database connection details must not be exposed")
+
+    monkeypatch.setattr(test_db_session, "execute", unavailable_database)
+    resp = await async_client.get("/ready")
+    assert resp.status_code == 503
+    assert resp.json() == {
+        "status": "not_ready",
+        "checks": {"database": "unavailable", "checkpointer": "healthy"},
+    }
+    assert "connection details" not in resp.text
+
+
+@pytest.mark.asyncio
 async def test_direct_chat_turn(async_client: AsyncClient):
     session_id = "test-direct-sess"
     resp = await async_client.post(

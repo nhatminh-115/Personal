@@ -96,6 +96,11 @@ def get_active_checkpointer_path() -> Optional[str]:
     return _checkpointer_path
 
 
+def is_checkpointer_initialized() -> bool:
+    """Report whether a checkpointer is configured for durable graph execution."""
+    return _global_checkpointer is not None
+
+
 def set_global_checkpointer(checkpointer: BaseCheckpointSaver) -> None:
     """Explicitly set a checkpointer (useful for in-memory testing)."""
     global _global_checkpointer, _compiled_graph, _checkpointer_path
