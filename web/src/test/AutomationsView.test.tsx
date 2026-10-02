@@ -65,11 +65,12 @@ describe('AutomationsView', () => {
     expect(await screen.findByText('sandbox_shell_execute')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     await waitFor(() => expect(onApprovalResolved).toHaveBeenCalledWith('auto-1'));
-    expect(api.submitApproval).toHaveBeenNthCalledWith(1, 'approval-1', 'approved', undefined);
+    expect(api.submitApproval).toHaveBeenNthCalledWith(1, 'approval-1', 'approved', undefined, undefined);
     expect(api.submitApproval).toHaveBeenNthCalledWith(2, 'approval-2', 'rejected', undefined);
   });
 
   it('validates edited automation input and submits only an explicit JSON object decision', async () => {
+    vi.clearAllMocks();
     const approval = {
       id: 'approval-edit', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-edit',
       tool_name: 'write_workspace_file', tool_input: { path: 'report.md', content: 'draft' },
@@ -105,6 +106,7 @@ describe('AutomationsView', () => {
   });
 
   it('rejects non-object automation approval edits without resolving the approval', async () => {
+    vi.clearAllMocks();
     const approval = {
       id: 'approval-array', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-array',
       tool_name: 'write_workspace_file', tool_input: { path: 'report.md' },
