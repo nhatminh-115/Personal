@@ -909,6 +909,8 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     test_db_session.add(RunEventModel(run_id=child_id, event_type="model_selected", payload={"provider": "local", "model": "research-model", "agent_role": "research"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="reasoning_effort_selected", payload={"selected_effort": "high"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="context_compiled", payload={"estimated_tokens": 128, "objects": [{"object_id": "research-bridge", "object_type": "context_bridge", "selected_by_user": True}]}))
+    test_db_session.add(RunEventModel(run_id=child_id, event_type="fallback_considered", payload={"fallback_policy": "same_provider_only", "primary_provider": "local", "selected_provider": "local", "candidate_model": "local-fallback", "debug_payload": "private fallback detail"}))
+    test_db_session.add(RunEventModel(run_id=child_id, event_type="internal_reasoning", payload={"text": "private hidden reasoning"}))
     await test_db_session.commit()
 
     response = await async_client.get(f"/v1/runs/{parent_id}/routing")
@@ -921,6 +923,15 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert child["reasoning_selection"]["selected_effort"] == "high"
     assert child["context_manifest"]["estimated_tokens"] == 128
     assert child["context_manifest"]["objects"][0]["object_id"] == "research-bridge"
+    assert child["fallback_events"] == [{
+        "event_type": "fallback_considered",
+        "payload": {
+            "fallback_policy": "same_provider_only",
+            "primary_provider": "local",
+            "selected_provider": "local",
+            "candidate_model": "local-fallback",
+        },
+    }]
     parent = next(item for item in decisions if item["run_id"] == parent_id)
     assert parent["context_manifest"]["objects"][0]["object_id"] == "root-note"
     assert "prompt" not in parent["model_selection"]
@@ -929,6 +940,8 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert "private model prompt" not in response.text
     assert "private compiled context" not in response.text
     assert "private note content" not in response.text
+    assert "private fallback detail" not in response.text
+    assert "private hidden reasoning" not in response.text
     pending = next(item for item in decisions if item["run_id"] == pending_child_id)
     assert pending["model_selection"] is None
     assert pending["reasoning_selection"] is None

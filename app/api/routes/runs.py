@@ -167,7 +167,17 @@ async def get_run_routing(
     runs = sorted(runs_result.scalars().all(), key=lambda run: (run.id != run_id, run.created_at, run.id))
     events_result = await db.execute(
         select(RunEventModel)
-        .where(RunEventModel.run_id.in_([run.id for run in runs]))
+        .where(
+            RunEventModel.run_id.in_([run.id for run in runs]),
+            RunEventModel.event_type.in_({
+                "model_selected",
+                "reasoning_effort_selected",
+                "context_compiled",
+                "context_loaded",
+                "fallback_considered",
+                "fallback_blocked",
+            }),
+        )
         .order_by(RunEventModel.created_at, RunEventModel.id)
     )
     events_by_run: dict[str, list[RunEventModel]] = {run.id: [] for run in runs}
