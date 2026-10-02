@@ -66,6 +66,7 @@ class RoutingConfirmationDecisionResponse(BaseModel):
     execution_status: str
     final_response: Optional[str] = None
     next_routing_confirmation_id: Optional[str] = None
+    approval_id: Optional[str] = None
 
 
 # --- Approval Schemas ---
