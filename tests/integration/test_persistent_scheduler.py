@@ -134,7 +134,11 @@ async def test_scheduler_defers_automation_while_prior_run_waits_for_approval(te
 
     assert emitted == []
     assert refreshed_job is not None
-    assert refreshed_job.next_run_at > utc_now()
+    next_run = refreshed_job.next_run_at
+    if next_run.tzinfo is None:
+        from datetime import timezone
+        next_run = next_run.replace(tzinfo=timezone.utc)
+    assert next_run > utc_now()
     assert refreshed_job.locked_at is None
     assert len(events) == 1
 
