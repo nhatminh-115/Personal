@@ -415,7 +415,7 @@ export default function App() {
   function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
     setThreadLiveStates((prev) => ({
       ...prev,
-      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null }, ...(prev[threadId] ?? {}), ...patch },
+      [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null }, ...(prev[threadId] ?? {}), ...patch },
     }));
   }
 
