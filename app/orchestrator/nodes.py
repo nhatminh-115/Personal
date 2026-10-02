@@ -915,6 +915,8 @@ def _state_privacy_policy(state: AgentState) -> Any:
     metadata = state.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
     routing_context = metadata.get("routing_context_dict")
+    if not isinstance(routing_context, dict):
+        routing_context = state.get("routing_context_dict")
     privacy_policy = (
         routing_context.get("privacy_requirement")
         if isinstance(routing_context, dict)
