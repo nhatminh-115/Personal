@@ -233,7 +233,16 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert "What is the validated finding?" in compiled_card.prompt_text
     assert "interactive restartability" in compiled_card.prompt_text
     assert compiled_card.privacy_requirement == "local_only"
-    assert compiled_card.privacy_sources == compiled.privacy_sources
+    card_privacy_sources = {
+        (source["object_id"], source["privacy_policy"])
+        for source in compiled_card.privacy_sources
+    }
+    session_privacy_sources = {
+        (source["object_id"], source["privacy_policy"])
+        for source in compiled.privacy_sources
+    }
+    assert session_privacy_sources < card_privacy_sources
+    assert (card["id"], "local_only") in card_privacy_sources
     assert "Supported by cited evidence." not in compiled_card.prompt_text
     assert evidence.content not in compiled_card.prompt_text
 
