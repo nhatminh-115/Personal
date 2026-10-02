@@ -383,6 +383,15 @@ export interface StudySessionRecord {
   completed_at?: string | null;
 }
 
+export interface StudyCardRecord {
+  id: string;
+  session_id: string;
+  question: string;
+  answer: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface WorkspaceLibraryReferenceRecord {
   id: string;
   name: string;

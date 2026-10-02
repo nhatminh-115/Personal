@@ -358,7 +358,7 @@ async def _project_objects_by_ids(db: AsyncSession, project_name: str, ids: list
         .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
         .where(
             WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
             WorkspaceObjectProjectLinkModel.project_name == project_name,
             WorkspaceObjectModel.id.in_(set(ids) - set(objects)),
         )
@@ -526,7 +526,7 @@ async def get_workspace_graph(project_name: str, db: AsyncSession = Depends(get_
     personal_notes = await db.execute(
         select(WorkspaceObjectModel).where(
             WorkspaceObjectModel.project_name.is_(None),
-            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session"}),
+            WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
             WorkspaceObjectModel.id.in_(linked_ids.scalars().all()),
         ).order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
     )

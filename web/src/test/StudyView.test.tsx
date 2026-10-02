@@ -25,7 +25,11 @@ describe('StudyView', () => {
         onBrowseLibrary={vi.fn()}
         onStartSession={vi.fn()}
         sessions={[session]}
+        cards={[]}
         onCompleteSession={vi.fn()}
+        onCreateCard={vi.fn().mockResolvedValue(undefined)}
+        onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+        onDeleteCard={vi.fn().mockResolvedValue(undefined)}
         onSaveReflection={onSaveReflection}
       />,
     );

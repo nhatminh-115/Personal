@@ -207,6 +207,20 @@ class StudyReflectionWrite(BaseModel):
     reflection: str = Field(default="", max_length=12_000)
 
 
+class StudyCardWrite(BaseModel):
+    question: str = Field(min_length=1, max_length=2_000)
+    answer: str = Field(min_length=1, max_length=8_000)
+
+
+class StudyCardResponse(BaseModel):
+    id: str
+    session_id: str
+    question: str
+    answer: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class StudySessionResponse(BaseModel):
     id: str
     track_id: str

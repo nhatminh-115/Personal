@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpenText, Play, Save } from 'lucide-react';
 import type { LibraryItem } from '../../data/workspaceData';
-import type { StudySessionRecord } from '../../types';
+import type { StudyCardRecord, StudySessionRecord } from '../../types';
 import './StudyView.css';
 
 interface StudyViewProps {
@@ -10,7 +10,11 @@ interface StudyViewProps {
   onBrowseLibrary: () => void;
   onStartSession: (item: LibraryItem) => void;
   sessions: StudySessionRecord[];
+  cards?: StudyCardRecord[];
   onCompleteSession: (sessionId: string) => void;
+  onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
+  onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
+  onDeleteCard: (cardId: string, sessionId: string) => Promise<void>;
   onSaveReflection: (sessionId: string, reflection: string) => Promise<void>;
   focusSessionId?: string | null;
 }
@@ -61,7 +65,120 @@ function StudyReflectionEditor({ session, onSave }: { session: StudySessionRecor
   );
 }
 
-export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, onCompleteSession, onSaveReflection, focusSessionId }: StudyViewProps) {
+function StudyCardRow({ card, onUpdate, onDelete }: {
+  card: StudyCardRecord;
+  onUpdate: (question: string, answer: string) => Promise<void>;
+  onDelete: () => Promise<void>;
+}) {
+  const [revealed, setRevealed] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [question, setQuestion] = useState(card.question);
+  const [answer, setAnswer] = useState(card.answer);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setQuestion(card.question);
+    setAnswer(card.answer);
+  }, [card.id, card.question, card.answer]);
+
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onUpdate(question, answer);
+      setEditing(false);
+    } catch {
+      setError('Could not save this card. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await onDelete();
+    } catch {
+      setError('Could not delete this card. Try again.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="study-card">
+      {editing ? (
+        <div className="study-card__edit">
+          <label>Question<input value={question} maxLength={2000} onChange={(event) => setQuestion(event.target.value)} /></label>
+          <label>Answer<textarea value={answer} maxLength={8000} rows={3} onChange={(event) => setAnswer(event.target.value)} /></label>
+          <div className="study-card__actions">
+            <button type="button" disabled={busy || !question.trim() || !answer.trim()} onClick={() => void save()}>{busy ? 'Saving…' : 'Save card'}</button>
+            <button type="button" disabled={busy} onClick={() => { setQuestion(card.question); setAnswer(card.answer); setEditing(false); }}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <strong>{card.question}</strong>
+          {revealed ? <p>{card.answer}</p> : <button type="button" className="study-card__reveal" onClick={() => setRevealed(true)}>Reveal answer</button>}
+          <div className="study-card__actions">
+            <button type="button" disabled={busy} onClick={() => setEditing(true)}>Edit</button>
+            <button type="button" disabled={busy} onClick={() => void remove()}>{busy ? 'Deleting…' : 'Delete'}</button>
+          </div>
+        </>
+      )}
+      {error ? <p role="alert" className="study-reflection__error">{error}</p> : null}
+    </article>
+  );
+}
+
+function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
+  cards: StudyCardRecord[];
+  onCreate: (question: string, answer: string) => Promise<void>;
+  onUpdate: (cardId: string, question: string, answer: string) => Promise<void>;
+  onDelete: (cardId: string) => Promise<void>;
+}) {
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const create = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      await onCreate(question, answer);
+      setQuestion('');
+      setAnswer('');
+    } catch {
+      setError('Could not save this card. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="study-cards">
+      <strong className="study-cards__heading">Learning cards · {cards.length}</strong>
+      {cards.map((card) => (
+        <StudyCardRow
+          key={card.id}
+          card={card}
+          onUpdate={(nextQuestion, nextAnswer) => onUpdate(card.id, nextQuestion, nextAnswer)}
+          onDelete={() => onDelete(card.id)}
+        />
+      ))}
+      <div className="study-card__edit">
+        <label>Question<input value={question} maxLength={2000} onChange={(event) => setQuestion(event.target.value)} placeholder="What should you remember?" /></label>
+        <label>Answer<textarea value={answer} maxLength={8000} rows={3} onChange={(event) => setAnswer(event.target.value)} placeholder="Write the answer in your own words…" /></label>
+        <button type="button" disabled={saving || !question.trim() || !answer.trim()} onClick={() => void create()}>{saving ? 'Saving…' : 'Add learning card'}</button>
+      </div>
+      {error ? <p role="alert" className="study-reflection__error">{error}</p> : null}
+    </div>
+  );
+}
+
+export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const materialIds = new Set(materials.map((item) => item.id));
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
@@ -117,6 +234,12 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
                         <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
                         {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
                         <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+                        <StudyCardCollection
+                          cards={cards.filter((card) => card.session_id === session.id)}
+                          onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                          onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                          onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+                        />
                       </article>
                     ))}
                   </div>
@@ -161,6 +284,12 @@ export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSe
               <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
               <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+              <StudyCardCollection
+                cards={cards.filter((card) => card.session_id === session.id)}
+                onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+              />
             </article>
           ))}
         </section>

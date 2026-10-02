@@ -183,6 +183,32 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert provenance[0]["relation_type"] == "studied_in"
     assert provenance[0]["edge_family"] == "provenance"
 
+    card_response = await async_client.post(
+        f"/v1/study/sessions/{started.json()['id']}/cards",
+        json={"question": "What is the validated finding?", "answer": "The source supports interactive restartability."},
+    )
+    assert card_response.status_code == 201, card_response.text
+    card = card_response.json()
+    assert card["session_id"] == started.json()["id"]
+    assert card["question"] == "What is the validated finding?"
+    assert card["answer"] == "The source supports interactive restartability."
+
+    graph_response = await async_client.get("/v1/workspace/projects/research-project/graph")
+    graph = graph_response.json()
+    card_object = next(item for item in graph["objects"] if item["id"] == card["id"])
+    assert card_object["object_type"] == "study_card"
+    assert card_object["metadata_json"]["privacy_policy"] == "local_only"
+    [card_edge] = [
+        edge for edge in graph["edges"]
+        if edge["source_object_id"] == started.json()["id"]
+        and edge["target_object_id"] == card["id"]
+    ]
+    assert card_edge["relation_type"] == "contains_card"
+    assert card_edge["edge_family"] == "provenance"
+
+    listed_cards = await async_client.get("/v1/study/cards")
+    assert [item["id"] for item in listed_cards.json()] == [card["id"]]
+
     from app.memory.context_compiler import WorkspaceContextCompiler
     compiled = await WorkspaceContextCompiler(test_db_session).compile(
         "research-project", [started.json()["id"]]
@@ -199,6 +225,26 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert compiled.objects[0].source_object_ids == [verified.id]
     assert evidence.id not in compiled.prompt_text
     assert evidence.content not in compiled.prompt_text
+
+    compiled_card = await WorkspaceContextCompiler(test_db_session).compile(
+        "research-project", [card["id"]]
+    )
+    assert [item.object_id for item in compiled_card.objects] == [card["id"]]
+    assert "What is the validated finding?" in compiled_card.prompt_text
+    assert "interactive restartability" in compiled_card.prompt_text
+    assert compiled_card.privacy_requirement == "local_only"
+    card_privacy_sources = {
+        (source["object_id"], source["privacy_policy"])
+        for source in compiled_card.privacy_sources
+    }
+    session_privacy_sources = {
+        (source["object_id"], source["privacy_policy"])
+        for source in compiled.privacy_sources
+    }
+    assert session_privacy_sources < card_privacy_sources
+    assert (card["id"], "local_only") in card_privacy_sources
+    assert "Supported by cited evidence." not in compiled_card.prompt_text
+    assert evidence.content not in compiled_card.prompt_text
 
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
@@ -252,3 +298,45 @@ async def test_concurrent_study_start_lock_uses_a_postgres_transaction_advisory_
     statement, parameters = db.execute.await_args.args
     assert "pg_advisory_xact_lock" in str(statement)
     assert parameters == {"namespace": "aura", "resource": "study:active-session"}
+
+
+
+@pytest.mark.asyncio
+async def test_study_cards_are_user_owned_editable_and_deletable(async_client: AsyncClient):
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": "german", "track_title": "German A1",
+    })
+    session_id = started.json()["id"]
+
+    created = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards",
+        json={"question": "  What is a noun?  ", "answer": "  A word for a person, place, or thing.  "},
+    )
+    assert created.status_code == 201, created.text
+    card = created.json()
+    # Preserve exact user-authored text.
+    assert card["question"] == "  What is a noun?  "
+    assert card["answer"] == "  A word for a person, place, or thing.  "
+
+    updated = await async_client.put(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        json={"question": "Define a noun.", "answer": "A person, place, or thing."},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["question"] == "Define a noun."
+
+    wrong_session = await async_client.put(
+        f"/v1/study/sessions/not-a-session/cards/{card['id']}",
+        json={"question": "Stolen", "answer": "No."},
+    )
+    assert wrong_session.status_code == 404
+
+    blank = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards",
+        json={"question": "  ", "answer": "Answer"},
+    )
+    assert blank.status_code == 422
+
+    deleted = await async_client.delete(f"/v1/study/sessions/{session_id}/cards/{card['id']}")
+    assert deleted.status_code == 204
+    assert (await async_client.get("/v1/study/cards")).json() == []
