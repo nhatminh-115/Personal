@@ -17,6 +17,15 @@ const demoAutomation: AutomationRecord = {
 };
 
 describe('AutomationsView', () => {
+  it('disables Run now while the latest run is awaiting approval', () => {
+    const onRunNow = vi.fn();
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={onRunNow} onApprovalResolved={vi.fn()} />);
+    const button = screen.getByRole('button', { name: 'Run now' });
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(onRunNow).not.toHaveBeenCalled();
+  });
+
   it('creates a persistent project-scoped instruction on the selected interval', async () => {
     const onCreate = vi.fn().mockResolvedValue(liveAutomation);
     render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
