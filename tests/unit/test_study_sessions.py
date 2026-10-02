@@ -368,7 +368,8 @@ async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
     assert session["material_project_name"] is None
 
     graph = (await async_client.get("/v1/workspace/projects/research-project/graph")).json()
-    assert any(item["id"] == session["id"] for item in graph["objects"])
+    study_object = next(item for item in graph["objects"] if item["id"] == session["id"])
+    assert study_object["content"] == ""
     [source_edge] = [
         edge for edge in graph["edges"]
         if edge["source_object_id"] == note["id"] and edge["target_object_id"] == session["id"]
