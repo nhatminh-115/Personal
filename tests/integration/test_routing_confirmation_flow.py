@@ -445,7 +445,9 @@ async def test_root_then_child_routing_confirmations_resume_sequentially(
     assert approved_child.json()["execution_status"] == "completed"
     assert len(mock_provider.call_history) == 3
     assert sum(
-        context and context.explicit_model_override == "openai:gpt-4o-mini"
+        context is not None
+        and context.run_id == root_data["run_id"]
+        and context.explicit_model_override == "openai:gpt-4o-mini"
         for context in contexts
     ) >= 2
 
