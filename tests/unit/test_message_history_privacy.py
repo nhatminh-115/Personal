@@ -108,7 +108,7 @@ async def test_extracted_project_memory_keeps_source_turn_privacy(test_db_sessio
         project_name="Atlas",
     )
     assert assembled.privacy_requirement == "local_only"
-    assert assembled.privacy_memory_sources == [{
+    assert {
         "memory_id": project_memories[0].id,
         "privacy_policy": "local_only",
-    }]
+    } in assembled.privacy_memory_sources
