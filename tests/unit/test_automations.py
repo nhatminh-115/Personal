@@ -2,6 +2,7 @@ from datetime import timedelta
 import uuid
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import EventRecordModel, JobType, ProjectRoutingAssignmentModel, RunEventModel, RoutingProfileModel, RunModel, ScheduledJobModel, SessionModel, utc_now
@@ -200,7 +201,7 @@ async def test_automation_event_uses_effective_project_profile_but_stays_local_o
     assert session_record.project_name == "Atlas"
 
     routing_events = (await test_db_session.execute(
-        __import__("sqlalchemy").select(RunEventModel).where(
+        select(RunEventModel).where(
             RunEventModel.run_id == run_id,
             RunEventModel.event_type == "routing_profile_resolved",
         )
