@@ -71,10 +71,15 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
                 safe_objects.append(safe_item)
         safe = pick(payload, (
             "estimated_tokens", "character_count", "privacy_requirement", "required_capabilities",
-            "capability_requirements",
+            "capability_requirements", "required_tool_capabilities", "resolved_tool_names",
         ))
         if isinstance(safe.get("required_capabilities"), list):
             safe["required_capabilities"] = [value for value in safe["required_capabilities"] if isinstance(value, str)]
+        for key in ("required_tool_capabilities", "resolved_tool_names"):
+            if isinstance(safe.get(key), list):
+                safe[key] = [value for value in safe[key] if isinstance(value, str)]
+            else:
+                safe.pop(key, None)
         requirements = safe.get("capability_requirements")
         if isinstance(requirements, dict):
             safe["capability_requirements"] = pick(requirements, (

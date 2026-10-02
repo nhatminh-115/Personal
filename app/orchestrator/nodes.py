@@ -187,6 +187,8 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
                     "privacy_requirement": compiled_context.privacy_requirement,
                     "privacy_sources": compiled_context.privacy_sources,
                     "required_capabilities": compiled_context.required_capabilities,
+                    "required_tool_capabilities": updated_metadata.get("required_tool_capabilities", []),
+                    "resolved_tool_names": updated_metadata.get("required_tool_names", []),
                     "capability_requirements": {
                         "requires_tools": compiled_context.requires_tools,
                         "requires_vision": compiled_context.requires_vision,

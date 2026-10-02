@@ -161,7 +161,7 @@ describe('InspectorPanel Component', () => {
       effectiveRouting={{ profile: { id: 'p', name: 'Private', version: 4, is_active: true, is_default: true, global_privacy_policy: 'local_only', global_fallback_policy: 'none', cost_preference: 'normal', latency_preference: 'normal', routes: {} }, winning_scope: 'project' }}
       routingData={[
         { run_id: 'root-run', snapshot: { role: 'root', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'root-model', context_window: 8192, estimated_input_tokens: 2048, reserved_output_tokens: 1024, requires_vision: true, required_capabilities: ['code_graph'] }, reasoning_selection: { selected_effort: 'medium' }, memory_privacy_sources: [{ memory_id: 'memory-profile-1', privacy_policy: 'local_only' }], fallback_events: [] },
-        { run_id: 'child-run', parent_run_id: 'root-run', snapshot: { role: 'research', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'research-model' }, reasoning_selection: { selected_effort: 'high' }, fallback_events: [{ event_type: 'fallback_blocked', payload: { reason: 'local_only boundary' } }] },
+        { run_id: 'child-run', parent_run_id: 'root-run', snapshot: { role: 'research', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'research-model' }, context_manifest: { required_tool_capabilities: ['code_graph.read'], resolved_tool_names: ['read_workspace_file'] }, reasoning_selection: { selected_effort: 'high' }, fallback_events: [{ event_type: 'fallback_blocked', payload: { reason: 'local_only boundary' } }] },
       ]}
       onClose={vi.fn()}
     />);
@@ -169,6 +169,8 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('root routing')).toBeInTheDocument();
     expect(screen.getByText('research routing')).toBeInTheDocument();
     expect(screen.getByText('ollama:research-model')).toBeInTheDocument();
+    expect(screen.getByText('code_graph.read')).toBeInTheDocument();
+    expect(screen.getByText('read_workspace_file')).toBeInTheDocument();
     expect(screen.getByText('code_graph · vision')).toBeInTheDocument();
     expect(screen.getByText('memory-profile-1 · local_only')).toBeInTheDocument();
     expect(screen.getByText('2,048 input + 1,024 reserved / 8,192 tokens')).toBeInTheDocument();
