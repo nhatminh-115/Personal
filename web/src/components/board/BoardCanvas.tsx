@@ -786,7 +786,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (!workspaceProjectName || !executionNextCursor || loadingOlderExecution) return;
     setLoadingOlderExecution(true);
     try {
-      const page = await api.fetchWorkspaceGraph(workspaceProjectName, executionNextCursor);
+      const page = await api.fetchWorkspaceExecutionHistory(workspaceProjectName, executionNextCursor);
       const byRun = new Map([...executionTraces, ...(page.execution_traces ?? [])].map((trace) => [trace.run_id, trace]));
       const combinedTraces = [...byRun.values()].sort((left, right) => {
         const leftTime = left.events[0]?.created_at ?? '';
