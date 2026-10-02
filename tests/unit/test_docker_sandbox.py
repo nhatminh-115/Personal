@@ -4,6 +4,7 @@ import pytest
 from app.sandbox.docker_runtime import DockerSandboxRuntime
 from app.sandbox.mock_runtime import MockSandboxRuntime
 from app.sandbox.spec import ExecutionResult, SandboxConfig
+from app.sandbox.tools import _get_default_runtime
 
 
 def test_sandbox_config_hardened_defaults():
@@ -53,6 +54,36 @@ async def test_mock_sandbox_runtime_execution_and_custom_responses():
     res_timeout = await runtime.run_command("sleep_timeout 100")
     assert res_timeout.timed_out is True
     assert res_timeout.exit_code == -1
+
+
+@pytest.mark.asyncio
+async def test_mock_sandbox_never_executes_pytest_on_the_host(tmp_path, monkeypatch):
+    import subprocess
+    from app.core.settings import settings
+
+    (tmp_path / "test_untrusted.py").write_text("raise RuntimeError('must not execute')", encoding="utf-8")
+    monkeypatch.setattr(settings, "AURA_WORKSPACE_ROOT", str(tmp_path))
+    runtime = MockSandboxRuntime()
+
+    def reject_host_execution(*args, **kwargs):
+        raise AssertionError("mock sandbox attempted host process execution")
+
+    monkeypatch.setattr(subprocess, "run", reject_host_execution)
+    result = await runtime.run_command("pytest -q")
+
+    assert result.exit_code == 0
+    assert result.metadata.get("mock") is True
+    assert "MockSandbox stdout" in result.stdout
+    assert "real_pytest" not in result.metadata
+
+
+def test_default_sandbox_runtime_fails_closed_when_docker_is_unavailable(monkeypatch):
+    monkeypatch.setattr(DockerSandboxRuntime, "is_available", lambda self: False)
+
+    runtime = _get_default_runtime()
+
+    assert isinstance(runtime, MockSandboxRuntime)
+    assert runtime.is_available() is False
 
 
 def test_docker_runtime_is_available_graceful():

@@ -10,14 +10,14 @@ from app.tools.base import RiskLevel, Tool, ToolResult
 
 
 def _get_default_runtime() -> SandboxRuntime:
-    """Provide DockerSandboxRuntime if daemon is responsive, else MockSandboxRuntime."""
+    """Provide Docker when available; otherwise fail closed instead of simulating execution."""
     try:
         docker_rt = DockerSandboxRuntime()
         if docker_rt.is_available():
             return docker_rt
     except Exception:
         pass
-    return MockSandboxRuntime(available=True)
+    return MockSandboxRuntime(available=False)
 
 
 class SandboxShellExecuteTool(Tool):
