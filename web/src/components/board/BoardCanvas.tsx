@@ -155,15 +155,6 @@ function isUserWorkspaceObject(node: AuraFlowNode) {
     && ['manual_note', 'context_bridge', 'context_set', 'conversation_branch'].includes(node.data.workspaceObjectType ?? '');
 }
 
-function edgeIdentity(edge: AuraFlowEdge) {
-  return JSON.stringify([
-    edge.source,
-    edge.target,
-    edge.data?.relationType ?? (edge.data?.edgeKind === 'context' ? 'bridges_to' : edge.data?.edgeKind ?? 'related_to'),
-    edge.data?.edgeFamily ?? (edge.data?.edgeKind === 'context' ? 'context' : 'semantic'),
-  ]);
-}
-
 function workspaceObjectWrite(node: AuraFlowNode) {
   const bridge = node.data.workspaceObjectType === 'context_bridge';
   const metadata = {
