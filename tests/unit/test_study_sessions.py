@@ -342,6 +342,7 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     assert (await async_client.get("/v1/study/cards")).json() == []
 
 
+@pytest.mark.asyncio
 async def test_study_session_can_use_a_saved_note_and_inherits_its_privacy(
     async_client: AsyncClient,
     test_db_session,
