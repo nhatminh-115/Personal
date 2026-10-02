@@ -10,6 +10,7 @@ import {
   ResearchInspectorData,
   RunDetail,
   SessionDetail,
+  SessionExecutionState,
   SessionSummary,
   EffectiveRouting,
   RoutingDecision,
@@ -204,6 +205,10 @@ export const api = {
     const query = params.size ? `?${params.toString()}` : '';
     const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}${query}`);
     return handleResponse<SessionDetail>(res);
+  },
+
+  async fetchSessionExecutionState(sessionId: string): Promise<SessionExecutionState> {
+    return handleResponse<SessionExecutionState>(await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}/state`));
   },
 
   async previewWorkspaceContext(projectName: string, selectedObjectIds: string[]): Promise<WorkspaceContextPreview> {

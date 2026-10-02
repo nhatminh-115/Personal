@@ -7,11 +7,61 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.pagination import decode_timestamp_id_cursor, encode_timestamp_id_cursor
-from app.api.schemas import MessageResponse, SessionDetailResponse, SessionSummaryResponse
-from app.db.models import MessageModel, RunEventModel, SessionModel, WorkspaceObjectModel
+from app.api.schemas import (
+    ApprovalResponse,
+    MessageResponse,
+    SessionDetailResponse,
+    SessionExecutionStateResponse,
+    SessionSummaryResponse,
+)
+from app.db.models import ApprovalModel, MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
 from app.db.session import get_db
 
 router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
+
+
+@router.get("/{session_id}/state", response_model=SessionExecutionStateResponse)
+async def get_session_execution_state(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> SessionExecutionStateResponse:
+    """Return the latest root run and any still-pending approval for a session."""
+    session = await db.get(SessionModel, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
+
+    result = await db.execute(
+        select(RunModel)
+        .where(RunModel.session_id == session_id, RunModel.parent_run_id.is_(None))
+        .order_by(RunModel.updated_at.desc(), RunModel.created_at.desc(), RunModel.id.desc())
+        .limit(1)
+    )
+    run = result.scalar_one_or_none()
+    if run is None:
+        return SessionExecutionStateResponse(session_id=session_id)
+
+    approval_response = None
+    if run.status == "waiting_for_approval":
+        run_ids_result = await db.execute(
+            select(RunModel.id).where((RunModel.id == run.id) | (RunModel.parent_run_id == run.id))
+        )
+        run_ids = list(run_ids_result.scalars())
+        approval_result = await db.execute(
+            select(ApprovalModel)
+            .where(ApprovalModel.status == "pending", ApprovalModel.run_id.in_(run_ids))
+            .order_by(ApprovalModel.created_at.desc(), ApprovalModel.id.desc())
+            .limit(1)
+        )
+        approval = approval_result.scalar_one_or_none()
+        if approval is not None:
+            approval_response = ApprovalResponse.model_validate(approval, from_attributes=True)
+
+    return SessionExecutionStateResponse(
+        session_id=session_id,
+        run_id=run.id,
+        run_status=run.status,
+        approval=approval_response,
+    )
 
 
 @router.get("", response_model=List[SessionSummaryResponse])

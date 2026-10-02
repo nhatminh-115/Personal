@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from app.db.models import MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel
+from app.db.models import ApprovalModel, MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel
 
 
 @pytest.mark.asyncio
@@ -164,6 +164,92 @@ async def test_session_history_uses_cursor_pages_without_overlap(async_client: A
     assert {message["id"] for message in first_page["messages"]}.isdisjoint(
         message["id"] for message in second_page["messages"]
     )
+
+
+@pytest.mark.asyncio
+async def test_session_execution_state_restores_latest_root_and_pending_child_approval(async_client: AsyncClient, test_db_session):
+    session_id = "session-execution-state"
+    old_run_id = "old-session-run"
+    root_run_id = "latest-session-run"
+    child_run_id = "latest-session-child"
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add(SessionModel(id=session_id, title="Execution recovery"))
+    test_db_session.add_all([
+        RunModel(
+            id=old_run_id, session_id=session_id, user_message="older turn", status="completed",
+            created_at=base_time, updated_at=base_time,
+        ),
+        RunModel(
+            id=root_run_id, session_id=session_id, user_message="latest turn", status="waiting_for_approval",
+            created_at=base_time + timedelta(seconds=1), updated_at=base_time + timedelta(seconds=2),
+        ),
+        RunModel(
+            id=child_run_id, session_id=session_id, parent_run_id=root_run_id,
+            user_message="specialist turn", status="waiting_for_approval",
+            created_at=base_time + timedelta(seconds=2), updated_at=base_time + timedelta(seconds=2),
+        ),
+        ApprovalModel(
+            id="stale-approval", run_id=old_run_id, session_id=session_id,
+            tool_name="old_tool", tool_input={"command": "old"}, status="pending",
+            created_at=base_time + timedelta(seconds=3),
+        ),
+        ApprovalModel(
+            id="child-pending-approval", run_id=child_run_id, session_id=session_id,
+            tool_name="shell", tool_input={"command": "inspect"}, status="pending",
+            created_at=base_time + timedelta(seconds=4),
+        ),
+    ])
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/sessions/{session_id}/state")
+
+    assert response.status_code == 200
+    state = response.json()
+    assert state["session_id"] == session_id
+    assert state["run_id"] == root_run_id
+    assert state["run_status"] == "waiting_for_approval"
+    assert state["approval"] == {
+        "id": "child-pending-approval",
+        "run_id": child_run_id,
+        "session_id": session_id,
+        "tool_call_id": None,
+        "tool_name": "shell",
+        "tool_input": {"command": "inspect"},
+        "risk_level": "HIGH",
+        "status": "pending",
+        "decision_notes": None,
+        "created_at": state["approval"]["created_at"],
+        "decided_at": None,
+    }
+    assert state["approval"]["created_at"].startswith("2026-01-01T00:00:04")
+
+
+@pytest.mark.asyncio
+async def test_session_execution_state_omits_approval_after_run_is_resolved(async_client: AsyncClient, test_db_session):
+    session_id = "session-execution-resolved"
+    run_id = "resolved-session-run"
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(
+        id=run_id, session_id=session_id, user_message="resolved turn", status="completed",
+        created_at=base_time, updated_at=base_time,
+    ))
+    test_db_session.add(ApprovalModel(
+        id="resolved-approval", run_id=run_id, session_id=session_id,
+        tool_name="shell", tool_input={"command": "done"}, status="approved",
+        created_at=base_time, decided_at=base_time,
+    ))
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/sessions/{session_id}/state")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": session_id,
+        "run_id": run_id,
+        "run_status": "completed",
+        "approval": None,
+    }
 
 
 @pytest.mark.asyncio

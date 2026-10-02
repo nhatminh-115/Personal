@@ -156,6 +156,13 @@ class SessionDetailResponse(BaseModel):
     messages_next_cursor: Optional[str] = None
 
 
+class SessionExecutionStateResponse(BaseModel):
+    session_id: str
+    run_id: Optional[str] = None
+    run_status: Optional[str] = None
+    approval: Optional[ApprovalResponse] = None
+
+
 # --- Run & Trace Schemas ---
 class RunEventResponse(BaseModel):
     id: str
