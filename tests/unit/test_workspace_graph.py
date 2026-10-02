@@ -82,13 +82,14 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
 
     first = await async_client.get(
         f"/v1/workspace/projects/{project_name}/graph",
-        params={"object_page_size": 2},
+        params={"object_page_size": 2, "edge_page_size": 1},
     )
     assert first.status_code == 200
     first_page = first.json()
     assert [item["id"] for item in first_page["objects"]] == object_ids[:2]
     assert first_page["objects_next_cursor"]
     assert len(first_page["edges"]) == 1
+    assert first_page["edges_next_cursor"]
     assert first_page["layout"]["revision"] == 0
 
     second = await async_client.get(
@@ -96,6 +97,8 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
         params={
             "object_page_size": 2,
             "object_cursor": first_page["objects_next_cursor"],
+            "edge_page_size": 1,
+            "edge_cursor": first_page["edges_next_cursor"],
             "include_project_state": "false",
         },
     )
@@ -103,16 +106,18 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
     second_page = second.json()
     assert [item["id"] for item in second_page["objects"]] == object_ids[2:]
     assert second_page["objects_next_cursor"] is None
+    assert second_page["edges_next_cursor"] is None
     assert len(second_page["edges"]) == 1
     assert second_page["execution_traces"] == []
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("cursor_name", ["object_cursor", "edge_cursor"])
 @pytest.mark.parametrize("cursor", ["not-a-cursor", ""])
-async def test_workspace_graph_rejects_invalid_object_cursor(async_client, cursor):
+async def test_workspace_graph_rejects_invalid_cursor(async_client, cursor_name, cursor):
     response = await async_client.get(
         "/v1/workspace/projects/cursor-validation/graph",
-        params={"object_cursor": cursor},
+        params={cursor_name: cursor},
     )
 
     assert response.status_code == 422

@@ -209,11 +209,18 @@ export const api = {
     const objects = [...firstPage.objects];
     const edges = [...firstPage.edges];
     let objectCursor = firstPage.objects_next_cursor ?? null;
+    let edgeCursor = firstPage.edges_next_cursor ?? null;
+    let objectsExhausted = !objectCursor;
+    let edgesExhausted = !edgeCursor;
 
-    while (objectCursor) {
+    while (!objectsExhausted || !edgesExhausted) {
       const params = new URLSearchParams();
       params.set('object_page_size', String(pageSize));
-      params.set('object_cursor', objectCursor);
+      params.set('edge_page_size', String(pageSize));
+      if (objectCursor) params.set('object_cursor', objectCursor);
+      if (objectsExhausted) params.set('objects_exhausted', 'true');
+      if (edgeCursor) params.set('edge_cursor', edgeCursor);
+      if (edgesExhausted) params.set('edges_exhausted', 'true');
       params.set('include_project_state', 'false');
       if (executionCursor) params.set('execution_cursor', executionCursor);
       const queryString = params.toString();
@@ -223,6 +230,9 @@ export const api = {
       objects.push(...page.objects);
       edges.push(...page.edges);
       objectCursor = page.objects_next_cursor ?? null;
+      edgeCursor = page.edges_next_cursor ?? null;
+      objectsExhausted = !objectCursor;
+      edgesExhausted = !edgeCursor;
     }
 
     return { ...firstPage, objects, edges, objects_next_cursor: null };

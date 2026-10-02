@@ -173,6 +173,7 @@ async def search_workspace(
 MAX_EXECUTION_GRAPH_RUNS = 100
 MAX_EXECUTION_GRAPH_EVENTS = 3_000
 MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE = 500
+MAX_WORKSPACE_GRAPH_EDGES_PER_PAGE = 500
 
 EXECUTION_GRAPH_EVENT_TYPES = {
     "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked", "context_compiled",
@@ -660,6 +661,10 @@ async def get_workspace_graph(
     execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
     object_cursor: str | None = Query(default=None, max_length=512),
     object_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE),
+    objects_exhausted: bool = Query(default=False),
+    edge_cursor: str | None = Query(default=None, max_length=512),
+    edge_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_EDGES_PER_PAGE),
+    edges_exhausted: bool = Query(default=False),
     include_project_state: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceGraphResponse:
@@ -674,33 +679,51 @@ async def get_workspace_graph(
             WorkspaceObjectModel.id.in_(linked_ids),
         ),
     )
+    if objects_exhausted and object_cursor is not None:
+        raise HTTPException(status_code=422, detail="Exhausted workspace graph objects cannot include a cursor.")
+    if edges_exhausted and edge_cursor is not None:
+        raise HTTPException(status_code=422, detail="Exhausted workspace graph edges cannot include a cursor.")
+
     object_query = select(WorkspaceObjectModel).where(visible_filter)
-    if object_cursor is not None:
-        cursor_created_at, cursor_object_id = _decode_workspace_graph_cursor(object_cursor)
-        object_query = object_query.where(or_(
-            WorkspaceObjectModel.created_at > cursor_created_at,
-            (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
-        ))
-    object_result = await db.execute(
-        object_query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(object_page_size + 1)
-    )
-    object_rows = list(object_result.scalars())
+    if objects_exhausted:
+        object_rows = []
+    else:
+        if object_cursor is not None:
+            cursor_created_at, cursor_object_id = _decode_workspace_graph_cursor(object_cursor)
+            object_query = object_query.where(or_(
+                WorkspaceObjectModel.created_at > cursor_created_at,
+                (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
+            ))
+        object_result = await db.execute(
+            object_query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(object_page_size + 1)
+        )
+        object_rows = list(object_result.scalars())
     objects_truncated = len(object_rows) > object_page_size
     objects = object_rows[:object_page_size]
     objects_next_cursor = _encode_workspace_graph_cursor(objects[-1]) if objects_truncated and objects else None
-    object_ids = {item.id for item in objects}
-    edge_result = await db.execute(
-        select(WorkspaceEdgeModel)
-        .where(
-            WorkspaceEdgeModel.project_name == project_name,
-            WorkspaceEdgeModel.target_object_id.in_(object_ids) if object_ids else False,
-            WorkspaceEdgeModel.source_object_id.in_(
-                select(WorkspaceObjectModel.id).where(visible_filter)
-            ),
-        )
-        .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+
+    edge_query = select(WorkspaceEdgeModel).where(
+        WorkspaceEdgeModel.project_name == project_name,
+        WorkspaceEdgeModel.source_object_id.in_(select(WorkspaceObjectModel.id).where(visible_filter)),
+        WorkspaceEdgeModel.target_object_id.in_(select(WorkspaceObjectModel.id).where(visible_filter)),
     )
-    edges = list(edge_result.scalars())
+    if edges_exhausted:
+        edges = []
+        edges_next_cursor = None
+    else:
+        if edge_cursor is not None:
+            cursor_created_at, cursor_edge_id = _decode_workspace_graph_cursor(edge_cursor)
+            edge_query = edge_query.where(or_(
+                WorkspaceEdgeModel.created_at > cursor_created_at,
+                (WorkspaceEdgeModel.created_at == cursor_created_at) & (WorkspaceEdgeModel.id > cursor_edge_id),
+            ))
+        edge_result = await db.execute(
+            edge_query.order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id).limit(edge_page_size + 1)
+        )
+        edge_rows = list(edge_result.scalars())
+        edges_truncated = len(edge_rows) > edge_page_size
+        edges = edge_rows[:edge_page_size]
+        edges_next_cursor = _encode_workspace_graph_cursor(edges[-1]) if edges_truncated and edges else None
     if include_project_state:
         layout = await db.get(WorkspaceLayoutModel, project_name)
         execution_history = await _project_execution_history(db, project_name, execution_cursor, execution_page_size)
@@ -718,6 +741,7 @@ async def get_workspace_graph(
             updated_at=layout.updated_at if layout else None,
         ),
         objects_next_cursor=objects_next_cursor,
+        edges_next_cursor=edges_next_cursor,
         execution_traces=execution_history.execution_traces,
         execution_history_truncated=execution_history.execution_history_truncated,
         execution_next_cursor=execution_history.execution_next_cursor,

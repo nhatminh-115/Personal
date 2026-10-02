@@ -22,6 +22,7 @@ describe('workspace graph API pagination', () => {
         execution_history_truncated: true,
         execution_next_cursor: 'execution-next',
         objects_next_cursor: 'object-next',
+        edges_next_cursor: 'edge-next',
       }))
       .mockResolvedValueOnce(jsonResponse({
         project_name: 'Project Name',
@@ -32,6 +33,7 @@ describe('workspace graph API pagination', () => {
         execution_history_truncated: false,
         execution_next_cursor: null,
         objects_next_cursor: null,
+        edges_next_cursor: null,
       }));
     vi.stubGlobal('fetch', fetch);
 
@@ -49,6 +51,9 @@ describe('workspace graph API pagination', () => {
     expect(firstUrl.pathname).toBe('/v1/workspace/projects/Project%20Name/graph');
     expect(firstUrl.searchParams.get('execution_cursor')).toBe('execution-start');
     expect(secondUrl.searchParams.get('object_cursor')).toBe('object-next');
+    expect(secondUrl.searchParams.get('edge_cursor')).toBe('edge-next');
+    expect(secondUrl.searchParams.get('objects_exhausted')).toBeNull();
+    expect(secondUrl.searchParams.get('edges_exhausted')).toBeNull();
     expect(secondUrl.searchParams.get('include_project_state')).toBe('false');
     expect(secondUrl.searchParams.get('execution_cursor')).toBe('execution-start');
   });
