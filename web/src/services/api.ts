@@ -198,8 +198,34 @@ export const api = {
   },
 
   async fetchWorkspaceGraph(projectName: string, executionCursor?: string | null): Promise<WorkspaceGraph> {
-    const cursor = executionCursor ? `?execution_cursor=${encodeURIComponent(executionCursor)}` : '';
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph${cursor}`));
+    const pageSize = 250;
+    const firstParams = new URLSearchParams();
+    if (executionCursor) firstParams.set('execution_cursor', executionCursor);
+    const firstQueryString = firstParams.toString();
+    const firstQuery = firstQueryString ? `?${firstQueryString}` : '';
+    const firstPage = await handleResponse<WorkspaceGraph>(await fetch(
+      `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph${firstQuery}`,
+    ));
+    const objects = [...firstPage.objects];
+    const edges = [...firstPage.edges];
+    let objectCursor = firstPage.objects_next_cursor ?? null;
+
+    while (objectCursor) {
+      const params = new URLSearchParams();
+      params.set('object_page_size', String(pageSize));
+      params.set('object_cursor', objectCursor);
+      params.set('include_project_state', 'false');
+      if (executionCursor) params.set('execution_cursor', executionCursor);
+      const queryString = params.toString();
+      const page = await handleResponse<WorkspaceGraph>(await fetch(
+        `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${queryString}`,
+      ));
+      objects.push(...page.objects);
+      edges.push(...page.edges);
+      objectCursor = page.objects_next_cursor ?? null;
+    }
+
+    return { ...firstPage, objects, edges, objects_next_cursor: null };
   },
 
   async fetchWorkspaceNotes(): Promise<WorkspaceNoteRecord[]> {
