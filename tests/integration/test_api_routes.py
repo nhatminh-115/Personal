@@ -1,5 +1,7 @@
 """Integration tests for API routes: direct chat, approvals rejection, health, and error paths."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 from app.db.models import RunEventModel, RunModel, SessionModel
@@ -178,3 +180,55 @@ async def test_run_inspector_exposes_operational_trace_without_private_payloads(
         assert private_value not in response.text
     for private_value in ("private original prompt", "private compiled prompt", "private note content"):
         assert private_value not in str(run["events"])
+
+
+@pytest.mark.asyncio
+async def test_run_inspector_paginates_trace_events_with_stable_keyset_cursor(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    session_id, run_id = "inspector-page-session", "inspector-page-run"
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(id=run_id, session_id=session_id, status="completed", user_message="hello"))
+    test_db_session.add_all([
+        RunEventModel(
+            id=f"trace-event-{index:03d}",
+            run_id=run_id,
+            event_type="run_completed",
+            payload={"status": str(index)},
+            created_at=base_time + timedelta(seconds=index),
+        )
+        for index in range(5)
+    ])
+    await test_db_session.commit()
+
+    first = await async_client.get(f"/v1/runs/{run_id}?page_size=2")
+    assert first.status_code == 200, first.text
+    assert [event["payload"]["status"] for event in first.json()["events"]] == ["0", "1"]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get(f"/v1/runs/{run_id}?page_size=2&cursor={cursor}")
+    assert second.status_code == 200
+    assert [event["payload"]["status"] for event in second.json()["events"]] == ["2", "3"]
+    cursor = second.headers.get("X-Next-Cursor")
+    assert cursor
+
+    third = await async_client.get(f"/v1/runs/{run_id}?page_size=2&cursor={cursor}")
+    assert third.status_code == 200
+    assert [event["payload"]["status"] for event in third.json()["events"]] == ["4"]
+    assert "X-Next-Cursor" not in third.headers
+
+
+@pytest.mark.asyncio
+async def test_run_inspector_rejects_invalid_event_cursor(async_client: AsyncClient, test_db_session):
+    session_id, run_id = "inspector-invalid-cursor-session", "inspector-invalid-cursor-run"
+    test_db_session.add_all([
+        SessionModel(id=session_id),
+        RunModel(id=run_id, session_id=session_id, status="completed", user_message="hello"),
+    ])
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/runs/{run_id}?cursor=invalid")
+    assert response.status_code == 422

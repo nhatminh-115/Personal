@@ -544,8 +544,20 @@ export const api = {
   },
 
   async fetchRunDetails(runId: string): Promise<RunDetail> {
-    const res = await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}`);
-    return handleResponse<RunDetail>(res);
+    const path = `${BASE_URL}/v1/runs/${encodeURIComponent(runId)}`;
+    let cursor: string | null = null;
+    let run: RunDetail | null = null;
+    const events: RunDetail['events'] = [];
+    do {
+      const params = new URLSearchParams({ page_size: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const res = await fetch(`${path}?${params.toString()}`);
+      const page = await handleResponse<RunDetail>(res);
+      run ??= page;
+      events.push(...page.events);
+      cursor = res.headers?.get('X-Next-Cursor') ?? null;
+    } while (cursor);
+    return { ...run!, events };
   },
 
   async fetchRunResearch(runId: string): Promise<ResearchInspectorData> {
