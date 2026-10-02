@@ -183,6 +183,13 @@ export const api = {
     }));
   },
 
+  async fetchWorkspaceExecutionHistory(projectName: string, executionCursor?: string | null): Promise<WorkspaceExecutionHistory> {
+    const params = new URLSearchParams();
+    if (executionCursor) params.set('execution_cursor', executionCursor);
+    const query = params.size ? `?${params.toString()}` : '';
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/execution${query}`));
+  },
+
   async fetchWorkspaceGraph(projectName: string, executionCursor?: string | null): Promise<WorkspaceGraph> {
     const cursor = executionCursor ? `?execution_cursor=${encodeURIComponent(executionCursor)}` : '';
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph${cursor}`));
