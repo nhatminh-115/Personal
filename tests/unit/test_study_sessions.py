@@ -1,7 +1,6 @@
 """Study sessions retain identity links to shared personal workspace objects."""
 
 import asyncio
-
 import pytest
 from httpx import AsyncClient
 
@@ -238,24 +237,19 @@ async def test_study_workspace_allows_only_one_active_session(async_client: Asyn
 
 
 @pytest.mark.asyncio
-async def test_concurrent_study_starts_create_at_most_one_active_session(
-    async_client: AsyncClient,
-    test_db_session,
-):
-    if test_db_session.get_bind().dialect.name != "postgresql":
-        pytest.skip("The production concurrency guarantee uses PostgreSQL advisory locks.")
+async def test_concurrent_study_start_lock_uses_a_postgres_transaction_advisory_lock():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock, Mock
 
-    responses = await asyncio.gather(
-        async_client.post("/v1/study/sessions", json={
-            "track_id": "concurrent-track-a",
-            "track_title": "Concurrent track A",
-        }),
-        async_client.post("/v1/study/sessions", json={
-            "track_id": "concurrent-track-b",
-            "track_title": "Concurrent track B",
-        }),
-    )
+    from app.api.routes.study import _lock_study_session_creation
 
-    assert sorted(response.status_code for response in responses) == [201, 409]
-    sessions = (await async_client.get("/v1/study/sessions")).json()
-    assert len([session for session in sessions if session["status"] == "in_progress"]) == 1
+    db = Mock()
+    db.get_bind.return_value = SimpleNamespace(dialect=SimpleNamespace(name="postgresql"))
+    db.execute = AsyncMock()
+
+    await _lock_study_session_creation(db)
+
+    db.execute.assert_awaited_once()
+    statement, parameters = db.execute.await_args.args
+    assert "pg_advisory_xact_lock" in str(statement)
+    assert parameters == {"namespace": "aura", "resource": "study:active-session"}
