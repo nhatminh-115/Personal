@@ -151,6 +151,27 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Hide run history' }));
     expect(screen.queryByText('2026-10-02T09:00:00Z')).not.toBeInTheDocument();
   });
+  it('refreshes cached history when reopened and on explicit request', async () => {
+    vi.clearAllMocks();
+    vi.spyOn(api, 'fetchAutomationRuns')
+      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'running', retry_count: 0 }])
+      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 }])
+      .mockResolvedValueOnce([{ event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'failed', retry_count: 1 }]);
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    expect(await screen.findByText('running')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh history' }));
+    expect(await screen.findByText('completed')).toBeInTheDocument();
+    expect(screen.queryByText('running')).not.toBeInTheDocument();
+    expect(api.fetchAutomationRuns).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide run history' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    expect(await screen.findByText('failed')).toBeInTheDocument();
+    expect(screen.getByText('1 retries')).toBeInTheDocument();
+    expect(api.fetchAutomationRuns).toHaveBeenCalledTimes(3);
+  });
   it('keeps example automations local and only allows live routines to run', () => {
     const onRunNow = vi.fn();
     const onToggle = vi.fn();
