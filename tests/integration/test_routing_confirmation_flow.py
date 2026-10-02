@@ -167,7 +167,7 @@ async def test_specialist_routing_confirmation_bubbles_to_root_and_resumes_child
 
     assert started.status_code == 200
     data = started.json()
-    assert data["status"] == "waiting_for_routing_confirmation"
+    assert data["status"] == "waiting_for_routing_confirmation", data
     assert mock_provider.call_history and len(mock_provider.call_history) == 1
 
     confirmation = await test_db_session.get(
