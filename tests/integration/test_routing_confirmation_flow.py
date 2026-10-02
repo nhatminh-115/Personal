@@ -131,14 +131,22 @@ async def test_specialist_routing_confirmation_bubbles_to_root_and_resumes_child
     mock_provider.queue_response(ModelResponse(content="Child specialist completed after confirmation."))
 
     selected_contexts = []
+    root_run_id = None
 
-    # Keep the root on the standard mock route; only the specialist requests a
-    # cloud confirmation, then resume through the same deterministic adapter.
+    # Keep the root on the standard mock route; only the distinct child run
+    # requests cloud confirmation, then resume through the mock adapter.
     original_select = model_router.select_model_for_task
 
     def select_model(context):
+        nonlocal root_run_id
         selected_contexts.append(context)
-        if context and context.task_type == "coding" and not context.explicit_model_override:
+        if context and root_run_id is None:
+            root_run_id = context.run_id
+        if (
+            context
+            and context.run_id != root_run_id
+            and not context.explicit_model_override
+        ):
             raise RoutingConfirmationRequired(
                 "Cloud fallback requires confirmation.",
                 {"proposed_provider": "openai", "proposed_model": "gpt-4o-mini"},
