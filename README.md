@@ -102,6 +102,9 @@ included Docker Compose file starts PostgreSQL and the API service, applies
 Alembic migrations to `head`, and then starts the API. This automatic migration
 step is scoped to the single-service Compose setup; deployments using the image
 directly should run `python -m alembic upgrade head` as a separate release step.
+Compose persists PostgreSQL data and LangGraph checkpoints in separate named
+volumes (`postgres_data` and `checkpoint_data`); both are required to restore a
+durable run after container recreation.
 
 ---
 
