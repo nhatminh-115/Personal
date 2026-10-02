@@ -1155,5 +1155,8 @@ async def test_compiled_tool_capabilities_fail_closed_without_provider_and_do_no
     assert available_provider.status_code == 200
     run = (await async_client.get(f"/v1/runs/{available_provider.json()['run_id']}")).json()
     selected = next(event for event in run["events"] if event["event_type"] == "model_selected")
+    compiled = next(event for event in run["events"] if event["event_type"] == "context_compiled")
+    assert compiled["payload"]["required_tool_capabilities"] == ["code_graph.read"]
+    assert compiled["payload"]["resolved_tool_names"] == ["read_workspace_file"]
     assert "code_graph.read" not in selected["payload"]["required_capabilities"]
     assert selected["payload"]["requires_tools"] is True
