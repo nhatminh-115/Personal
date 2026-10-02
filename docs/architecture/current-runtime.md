@@ -109,6 +109,12 @@ and tool definitions before selecting a model. Neither the compiler manifest
 nor the Execution Graph exposes hidden chain-of-thought or raw context text in
 telemetry.
 
+Embedding requests carry the effective privacy requirement too. Only providers
+declaring a local or air-gapped boundary may embed confidential or local-only
+content. If the configured provider cannot meet that boundary, AURA skips
+semantic lookup or retains the memory without a vector; it does not silently
+send the text to a cloud embedding service or substitute another provider.
+
 The Execution Graph is a read-only projection of persisted run events. It may
 show routing, delegation, tool, and result metadata while excluding prompts,
 tool arguments, raw outputs, and hidden reasoning.

@@ -45,6 +45,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
     def dimension(self) -> int:
         return self._dimension
 
+    @property
+    def privacy_status(self) -> str:
+        return "cloud"
+
     async def embed(self, request: EmbeddingRequest) -> EmbeddingResult:
         if not self._api_key:
             raise EmbeddingProviderError("Cannot generate embeddings: OPENAI_API_KEY is not configured.")

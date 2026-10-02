@@ -18,6 +18,11 @@ class EmbeddingModelMismatchError(AURAError):
     pass
 
 
+class EmbeddingPrivacyBoundaryError(AURAError):
+    """Raised when an embedding request would cross its required privacy boundary."""
+    pass
+
+
 class EmbeddingRouter:
     """
     Manages vector embedding providers, enforces model identity tracking,
@@ -83,9 +88,11 @@ class EmbeddingRouter:
         self,
         texts: List[str],
         provider_name: Optional[str] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> EmbeddingResult:
         """Batch embed a list of texts using the selected provider."""
         provider = self.get_provider(provider_name)
+        self.validate_privacy_requirement(privacy_requirement, provider_name)
         result = await provider.embed(EmbeddingRequest(texts=texts))
 
         # Validate that the returned dimension strictly matches expectations
@@ -99,15 +106,30 @@ class EmbeddingRouter:
         self,
         text: str,
         provider_name: Optional[str] = None,
+        privacy_requirement: Optional[str] = None,
     ) -> List[float]:
         """Embed a single query string for semantic vector search."""
         provider = self.get_provider(provider_name)
+        self.validate_privacy_requirement(privacy_requirement, provider_name)
         vec = await provider.embed_query(text)
         if len(vec) != provider.dimension:
             raise EmbeddingModelMismatchError(
                 f"Query embedding dimension mismatch: expected {provider.dimension}, got {len(vec)}"
             )
         return vec
+
+    def validate_privacy_requirement(
+        self,
+        privacy_requirement: Optional[str],
+        provider_name: Optional[str] = None,
+    ) -> None:
+        # Missing or malformed classifications fail closed, matching memory/context handling.
+        requirement = privacy_requirement if privacy_requirement in {"public", "internal", "confidential", "local_only"} else "local_only"
+        provider = self.get_provider(provider_name)
+        if requirement in {"confidential", "local_only"} and provider.privacy_status not in {"local", "airgap"}:
+            raise EmbeddingPrivacyBoundaryError(
+                "The configured embedding provider does not satisfy the required local privacy boundary."
+            )
 
     def validate_vector_compatibility(self, vector: List[float], model_name: Optional[str] = None) -> None:
         """Validate that a candidate vector matches the active embedding model and dimension."""

@@ -55,6 +55,14 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     episode_memory_ids: list[str] = []
     memory_privacy_requirement: str | None = None
     memory_privacy_sources: list[dict[str, str]] = []
+    initial_metadata = dict(state.get("metadata") or {})
+    initial_routing_context = initial_metadata.get("routing_context_dict")
+    initial_privacy_requirement = (
+        initial_routing_context.get("privacy_requirement")
+        if isinstance(initial_routing_context, dict)
+        else initial_metadata.get("privacy_requirement")
+    )
+    selected_object_ids = list(dict.fromkeys(state.get("context_object_ids", [])))
 
     if mem_service:
         project_name = state.get("project_name")
@@ -66,6 +74,10 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             session_id=state["session_id"],
             user_message=state.get("user_message", ""),
             project_name=project_name,
+            privacy_requirement=initial_privacy_requirement,
+            # Compile explicit object privacy later in this node. Avoid sending even
+            # the query text to an embedding provider before that privacy is known.
+            disable_semantic_search=bool(selected_object_ids),
         )
         profile_memory_ids = assembled.profile_memory_ids
         project_memory_ids = assembled.project_memory_ids
@@ -98,7 +110,6 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
             updated_metadata["privacy_requirement"] = stricter_privacy_requirement(
                 updated_metadata.get("privacy_requirement"), memory_privacy_requirement
             )
-    selected_object_ids = list(dict.fromkeys(state.get("context_object_ids", [])))
     if selected_object_ids:
         project_name = state.get("project_name") or (state.get("metadata") or {}).get("project_name")
         if not project_name or db is None:

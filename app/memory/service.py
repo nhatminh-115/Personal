@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import logger
 from app.db.models import MemoryModel, MessageModel, SessionModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.memory.base import MemoryService, MemoryType
-from app.memory.embeddings.router import EmbeddingRouter, embedding_router
+from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError, EmbeddingRouter, embedding_router
 from app.memory.stores.factory import get_semantic_store
 
 
@@ -309,20 +309,30 @@ class SQLMemoryService(MemoryService):
         metadata: Optional[Dict[str, Any]] = None,
         project_name: Optional[str] = None,
     ) -> MemoryModel:
+        metadata = metadata or {}
+        privacy_requirement = metadata.get("privacy_policy")
         vec = embedding
+        if vec is not None:
+            try:
+                self.embedding_router.validate_privacy_requirement(privacy_requirement)
+            except EmbeddingPrivacyBoundaryError:
+                vec = None
         if vec is None:
-            vec = await self.embedding_router.embed_query(content)
+            try:
+                vec = await self.embedding_router.embed_query(content, privacy_requirement=privacy_requirement)
+            except EmbeddingPrivacyBoundaryError:
+                vec = None
 
         memory = MemoryModel(
             session_id=None,
             memory_type=MemoryType.SEMANTIC.value,
             content=content,
             embedding=vec,
-            embedding_model=self.embedding_router.current_model_name,
-            embedding_dim=len(vec),
+            embedding_model=self.embedding_router.current_model_name if vec is not None else None,
+            embedding_dim=len(vec) if vec is not None else None,
             project_name=project_name,
             is_active=True,
-            metadata_json=metadata or {},
+            metadata_json=metadata,
         )
         return await self.store.store(memory)
 
@@ -334,10 +344,14 @@ class SQLMemoryService(MemoryService):
         min_similarity: float = 0.0,
         project_name: Optional[str] = None,
         is_active_only: bool = True,
+        privacy_requirement: Optional[str] = None,
     ) -> List[MemoryModel]:
         query_vec = embedding
         if query_vec is None:
-            query_vec = await self.embedding_router.embed_query(query)
+            try:
+                query_vec = await self.embedding_router.embed_query(query, privacy_requirement=privacy_requirement)
+            except EmbeddingPrivacyBoundaryError:
+                return []
 
         matches = await self.store.search(
             query_vector=query_vec,
@@ -428,9 +442,18 @@ class SQLMemoryService(MemoryService):
         full_metadata = metadata or {}
         full_metadata["project_name"] = project_name
 
+        privacy_requirement = full_metadata.get("privacy_policy")
         vec = embedding
+        if vec is not None:
+            try:
+                self.embedding_router.validate_privacy_requirement(privacy_requirement)
+            except EmbeddingPrivacyBoundaryError:
+                vec = None
         if vec is None:
-            vec = await self.embedding_router.embed_query(content)
+            try:
+                vec = await self.embedding_router.embed_query(content, privacy_requirement=privacy_requirement)
+            except EmbeddingPrivacyBoundaryError:
+                vec = None
 
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
@@ -446,8 +469,8 @@ class SQLMemoryService(MemoryService):
             key=f"{project_name}:{key}",
             content=content,
             embedding=vec,
-            embedding_model=self.embedding_router.current_model_name,
-            embedding_dim=len(vec),
+            embedding_model=self.embedding_router.current_model_name if vec is not None else None,
+            embedding_dim=len(vec) if vec is not None else None,
             project_name=project_name,
             is_active=True,
             metadata_json=full_metadata,

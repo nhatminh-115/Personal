@@ -38,6 +38,10 @@ class MockEmbeddingProvider(EmbeddingProvider):
     def dimension(self) -> int:
         return self._dimension
 
+    @property
+    def privacy_status(self) -> str:
+        return "local"
+
     def _generate_vector(self, text: str) -> List[float]:
         """Produce a deterministic unit-length vector for the input string."""
         if not text:
