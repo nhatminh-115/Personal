@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StudyView } from '../components/global/StudyView';
-import type { LibraryItem } from '../data/workspaceData';
+import type { LibraryItem, WorkspaceNote } from '../data/workspaceData';
 
 const studyMaterial: LibraryItem = {
   id: 'library-study-1', name: 'Language notes.pdf', kind: 'PDF', collection: 'Study',
@@ -228,6 +228,40 @@ describe('Study sessions use shared Library materials', () => {
     expect(row).toHaveTextContent('Archived notes');
     expect(row).toHaveClass('is-focused');
     await waitFor(() => expect(row?.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'center' }));
+  });
+
+  it('starts a durable Study session from a saved Note and preserves its privacy cue', async () => {
+    const note: WorkspaceNote = {
+      id: 'saved-note-1',
+      title: 'Local study note',
+      body: 'Keep this material on the device.',
+      updated: 'today',
+      tags: ['study'],
+      projectIds: ['aura'],
+      privacyPolicy: 'local_only',
+      source: 'live',
+    };
+    const onStartNoteSession = vi.fn();
+    render(<StudyView
+      libraryItems={[]}
+      notes={[note]}
+      sessions={[]}
+      cards={[]}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onStartNoteSession={onStartNoteSession}
+      onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    expect(screen.getByText(/Privacy · local only/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Study this Note' }));
+    expect(onStartNoteSession).toHaveBeenCalledWith(note);
+    expect(screen.queryByText('No Study sources yet')).not.toBeInTheDocument();
   });
 
 });
