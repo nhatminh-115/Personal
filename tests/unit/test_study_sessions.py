@@ -1,6 +1,5 @@
 """Study sessions retain identity links to shared personal workspace objects."""
 
-import asyncio
 import pytest
 from httpx import AsyncClient
 
