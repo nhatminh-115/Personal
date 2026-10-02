@@ -93,8 +93,21 @@ to remain acyclic. Board layout is stored separately from object relationships.
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context
 objects, applies object and character limits, and records a provenance
-manifest with the run. It does not expose hidden chain-of-thought or copy full
-source content into telemetry.
+manifest with the run. Context Bridges compile their user-authored handoff note
+and only the structured sections the user enabled. Source links retain
+provenance and strengthen privacy routing without copying full source content
+into the handoff. Context Sets and branches expand their explicitly linked
+sources.
+
+Compiled object metadata can add model requirements (`vision`,
+`structured_output`, and `long_context`) and abstract tool capabilities to the
+turn's `RoutingContext`. Tool capabilities must resolve through an enabled
+provider registration or compilation fails closed. The context preview uses
+the same compiler and reports the normalized routing flags without invoking a
+model or writing workspace data. Live chat also measures the assembled prompt
+and tool definitions before selecting a model. Neither the compiler manifest
+nor the Execution Graph exposes hidden chain-of-thought or raw context text in
+telemetry.
 
 The Execution Graph is a read-only projection of persisted run events. It may
 show routing, delegation, tool, and result metadata while excluding prompts,
