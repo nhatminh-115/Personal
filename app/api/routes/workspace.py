@@ -161,35 +161,68 @@ async def search_workspace(
     return response
 
 EXECUTION_GRAPH_EVENT_TYPES = {
-    "model_selected", "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
+    "model_selected", "reasoning_effort_selected", "fallback_considered", "fallback_blocked",
+    "delegation_started", "delegation_completed", "tool_requested", "tool_executed",
     "approval_requested", "approval_granted", "approval_rejected", "response_generated",
     "run_completed", "run_failed", "run_cancelled",
 }
 
 
 def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventResponse:
-    """Project only operational identifiers/status; never expose prompts, arguments, or results."""
-    payload = event.payload or {}
+    """Project operational trace and routing provenance without exposing private payloads."""
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    event_type = event.event_type
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-    tool_name = payload.get("tool") or payload.get("tool_name")
+    raw_tool_name = payload.get("tool") or payload.get("tool_name")
+    tool_name = raw_tool_name if isinstance(raw_tool_name, str) else None
     step = payload.get("step")
+
+    def safe_text(key: str) -> str | None:
+        value = payload.get(key)
+        return value[:120] if isinstance(value, str) else None
+
+    bounds = payload.get("configured_bounds")
+    reasoning_bounds = None
+    if event_type == "reasoning_effort_selected" and isinstance(bounds, dict):
+        reasoning_bounds = {
+            key: bounds[key][:32] if isinstance(bounds.get(key), str) else None
+            for key in ("min", "max")
+        }
+    profile_version = payload.get("profile_version")
     return WorkspaceExecutionEventResponse(
         id=event.id,
-        event_type=event.event_type,
+        event_type=event_type,
         created_at=event.created_at,
-        agent_role=payload.get("agent_role") if isinstance(payload.get("agent_role"), str) else None,
-        specialist=payload.get("specialist") if isinstance(payload.get("specialist"), str) else None,
-        provider=payload.get("provider") if isinstance(payload.get("provider"), str) else None,
-        model=payload.get("model") if isinstance(payload.get("model"), str) else None,
-        tool_name=tool_name if isinstance(tool_name, str) else None,
-        tool_call_id=payload.get("tool_call_id") if isinstance(payload.get("tool_call_id"), str) else None,
-        child_run_id=payload.get("child_run_id") if isinstance(payload.get("child_run_id"), str) else None,
-        status=(payload.get("status") if isinstance(payload.get("status"), str) else None)
+        agent_role=safe_text("agent_role"),
+        specialist=safe_text("specialist"),
+        provider=safe_text("provider"),
+        model=safe_text("model"),
+        tool_name=tool_name,
+        tool_call_id=safe_text("tool_call_id"),
+        child_run_id=safe_text("child_run_id"),
+        status=(safe_text("status"))
         or ("completed" if result.get("success") is True else "failed" if result.get("success") is False else None),
         success=result.get("success") if isinstance(result.get("success"), bool) else None,
-        error_category=result.get("error_category") if isinstance(result.get("error_category"), str) else None,
-        risk_level=payload.get("risk_level") if isinstance(payload.get("risk_level"), str) else None,
+        error_category=safe_text("error_category"),
+        risk_level=safe_text("risk_level"),
         step=step if isinstance(step, int) and not isinstance(step, bool) else None,
+        task_type=safe_text("task_type") if event_type == "model_selected" else None,
+        profile_id=safe_text("profile_id") if event_type == "model_selected" else None,
+        profile_version=profile_version if event_type == "model_selected" and isinstance(profile_version, int) and not isinstance(profile_version, bool) else None,
+        winning_scope=safe_text("winning_scope") if event_type == "model_selected" else None,
+        privacy=safe_text("privacy") if event_type == "model_selected" else None,
+        fallback_policy=safe_text("fallback_policy") if event_type in {"model_selected", "fallback_considered"} else safe_text("policy") if event_type == "fallback_blocked" else None,
+        selection_reason=safe_text("selection_reason") if event_type == "model_selected" else None,
+        reasoning_policy=safe_text("policy_mode") if event_type == "reasoning_effort_selected" else None,
+        reasoning_bounds=reasoning_bounds,
+        selected_effort=safe_text("selected_effort") if event_type == "reasoning_effort_selected" else None,
+        primary_provider=safe_text("primary_provider") if event_type == "fallback_considered" else None,
+        selected_provider=safe_text("selected_provider") if event_type == "fallback_considered" else None,
+        candidate_model=safe_text("candidate_model") if event_type == "fallback_considered" else None,
+        privacy_boundary=safe_text("privacy_boundary") if event_type == "fallback_blocked" else None,
+        error_type=safe_text("error_type") if event_type == "fallback_blocked" else None,
+        proposed_provider=safe_text("proposed_provider") if event_type == "fallback_blocked" else None,
+        proposed_model=safe_text("proposed_model") if event_type == "fallback_blocked" else None,
     )
 
 
