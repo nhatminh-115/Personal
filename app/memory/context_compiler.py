@@ -8,7 +8,7 @@ from app.core.errors import ContextSelectionError
 from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel
 
 
-EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch"}
+EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch", "conversation_turn"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
 PRIVACY_REQUIREMENT_ORDER = {"public": 0, "internal": 1, "confidential": 2, "local_only": 3}
