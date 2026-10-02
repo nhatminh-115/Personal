@@ -47,6 +47,33 @@ class DockerSandboxRuntime(SandboxRuntime):
             logger.debug(f"Docker daemon ping failed: {e}")
             return False
 
+    @staticmethod
+    def _read_bounded_log(stream, max_bytes: int) -> tuple[bytes, bool]:
+        """Read a Docker log stream without buffering more than the configured limit."""
+        chunks = bytearray()
+        truncated = False
+        iterator = iter((bytes(stream),)) if isinstance(stream, (bytes, bytearray)) else iter(stream)
+        try:
+            for chunk in iterator:
+                if not chunk:
+                    continue
+                remaining = max_bytes - len(chunks)
+                if remaining <= 0:
+                    truncated = True
+                    break
+                chunks.extend(chunk[:remaining])
+                if len(chunk) > remaining:
+                    truncated = True
+                    break
+        finally:
+            close = getattr(stream, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:
+                    pass
+        return bytes(chunks), truncated
+
     def _execute_sync(self, command_args: list[str], cfg: SandboxConfig) -> ExecutionResult:
         """Execute container synchronously in dedicated thread worker."""
         client = self._get_client()
@@ -126,18 +153,14 @@ class DockerSandboxRuntime(SandboxRuntime):
 
             # Collect stdout and stderr with strict length bounds
             try:
-                raw_stdout = container.logs(stdout=True, stderr=False)
-                raw_stderr = container.logs(stdout=False, stderr=True)
+                stdout_stream = container.logs(stdout=True, stderr=False, stream=True)
+                stderr_stream = container.logs(stdout=False, stderr=True, stream=True)
+                raw_stdout, stdout_truncated = self._read_bounded_log(stdout_stream, cfg.max_output_bytes)
+                raw_stderr, stderr_truncated = self._read_bounded_log(stderr_stream, cfg.max_output_bytes)
+                truncated = stdout_truncated or stderr_truncated
             except Exception:
                 raw_stdout, raw_stderr = b"", b""
-
-            truncated = False
-            if len(raw_stdout) > cfg.max_output_bytes:
-                raw_stdout = raw_stdout[:cfg.max_output_bytes]
-                truncated = True
-            if len(raw_stderr) > cfg.max_output_bytes:
-                raw_stderr = raw_stderr[:cfg.max_output_bytes]
-                truncated = True
+                truncated = False
 
             stdout = raw_stdout.decode("utf-8", errors="replace")
             stderr = raw_stderr.decode("utf-8", errors="replace")
