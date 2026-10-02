@@ -101,7 +101,6 @@ async def load_context_node(state: AgentState, config: Optional[RunnableConfig] 
     if selected_object_ids:
         project_name = state.get("project_name") or (state.get("metadata") or {}).get("project_name")
         if not project_name or db is None:
-            from app.core.errors import ContextSelectionError
             raise ContextSelectionError("Selected workspace context requires a project-scoped database session.")
         compiled_context = await WorkspaceContextCompiler(db).compile(project_name, selected_object_ids)
         if (
