@@ -211,7 +211,7 @@ class WorkspaceContextCompiler:
                 provenance_sources.setdefault(edge.target_object_id, []).append(edge.source_object_id)
                 provenance_source_ids.add(edge.source_object_id)
                 next_frontier.add(edge.source_object_id)
-            if len(included) + len(provenance_source_ids) > MAX_COMPILED_OBJECTS:
+            if len(included | provenance_source_ids) > MAX_COMPILED_OBJECTS:
                 raise ContextSelectionError(
                     "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
                     {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
