@@ -217,18 +217,22 @@ describe('AutomationsView', () => {
     expect(api.fetchRunDetails).toHaveBeenCalledWith('run-history-1');
     expect(api.fetchRunRouting).toHaveBeenCalledWith('run-history-1');
   });
-  it('keeps example automations local and only allows live routines to run', () => {
+  it('keeps example automations local and only allows idle live routines to run', () => {
+    const idleAutomation: AutomationRecord = {
+      ...liveAutomation,
+      latestExecution: { ...liveAutomation.latestExecution!, status: 'completed' },
+    };
     const onRunNow = vi.fn();
     const onToggle = vi.fn();
-    render(<AutomationsView projects={projects} automations={[liveAutomation, demoAutomation]} onCreate={vi.fn()} onToggle={onToggle} onRunNow={onRunNow} onApprovalResolved={vi.fn()} />);
+    render(<AutomationsView projects={projects} automations={[idleAutomation, demoAutomation]} onCreate={vi.fn()} onToggle={onToggle} onRunNow={onRunNow} onApprovalResolved={vi.fn()} />);
     const runButtons = screen.getAllByRole('button', { name: /run now/i });
     expect(runButtons[0]).toBeEnabled();
     expect(runButtons[1]).toBeDisabled();
     fireEvent.click(runButtons[0]);
-    expect(onRunNow).toHaveBeenCalledWith(liveAutomation);
+    expect(onRunNow).toHaveBeenCalledWith(idleAutomation);
     fireEvent.click(screen.getByRole('button', { name: /pause daily digest/i }));
-    expect(onToggle).toHaveBeenCalledWith(liveAutomation, false);
+    expect(onToggle).toHaveBeenCalledWith(idleAutomation, false);
     expect(screen.getByText('Persistent scheduler')).toBeInTheDocument();
-    expect(screen.getByText('waiting for approval')).toBeInTheDocument();
+    expect(screen.getByText('completed')).toBeInTheDocument();
   });
 });
