@@ -6,9 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import FallbackPolicy, PrivacyPolicy, RunModel, RunStatus, SessionModel
+from app.db.models import RunModel, RunStatus, SessionModel
 from app.db.session import async_session_factory
-from app.models.base import RoutingContext
+from app.models.base import FallbackPolicy, PrivacyPolicy, RoutingContext
 from app.models.routing_resolver import apply_routing_profile_to_context, resolve_routing_profile
 from app.events.types import AURAEvent
 from app.memory.service import SQLMemoryService
