@@ -61,6 +61,7 @@ async def start_study_session(
     material_id = body.material_id.strip() if body.material_id else None
     material_project_name = body.material_project_name.strip() if body.material_project_name else None
     is_verified_research_claim = False
+    is_library_material = False
     material_project_names: list[str] = []
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
