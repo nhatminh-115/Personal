@@ -385,6 +385,14 @@ class WorkspaceLayoutResponse(BaseModel):
     updated_at: Optional[datetime] = None
 
 
+class WorkspaceContextManifestItemResponse(BaseModel):
+    object_id: str
+    object_type: str
+    selected_by_user: bool = False
+    source_object_ids: List[str] = Field(default_factory=list)
+    selected_sections: Optional[Dict[str, Optional[bool]]] = None
+
+
 class WorkspaceExecutionEventResponse(BaseModel):
     id: str
     event_type: str
@@ -418,6 +426,9 @@ class WorkspaceExecutionEventResponse(BaseModel):
     error_type: Optional[str] = None
     proposed_provider: Optional[str] = None
     proposed_model: Optional[str] = None
+    context_objects: List[WorkspaceContextManifestItemResponse] = Field(default_factory=list)
+    context_estimated_tokens: Optional[int] = None
+    context_privacy_requirement: Optional[str] = None
 
 
 class WorkspaceExecutionTraceResponse(BaseModel):
