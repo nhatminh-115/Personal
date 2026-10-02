@@ -119,7 +119,12 @@ async def start_study_session(
             material_project_names = list(linked_projects.scalars())
         if is_personal_note:
             privacy = material_metadata.get("privacy_policy")
-            if isinstance(privacy, str):
+            if privacy is not None:
+                if privacy not in {"public", "internal", "confidential", "local_only"}:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="Study source has an unsupported privacy classification.",
+                    )
                 material_privacy_policy = privacy
 
         is_verified_research_claim = (
