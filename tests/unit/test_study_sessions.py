@@ -106,7 +106,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         created_by="research",
         title="A verified finding",
         content="Supported by cited evidence.",
-        metadata_json={"verification_status": "verified"},
+        metadata_json={"verification_status": "verified", "privacy_policy": "local_only"},
     )
     pending = WorkspaceObjectModel(
         id="10000000-0000-4000-8000-000000000002",
@@ -151,6 +151,10 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     )
     assert [item.object_id for item in compiled.objects] == [started.json()["id"]]
     assert "A verified finding" in compiled.prompt_text
+    assert "Supported by cited evidence." not in compiled.prompt_text
+    assert compiled.privacy_requirement == "local_only"
+    assert compiled.privacy_sources == [{"object_id": verified.id, "privacy_policy": "local_only"}]
+    assert compiled.objects[0].source_object_ids == [verified.id]
 
     refused = await async_client.post("/v1/study/sessions", json={
         "track_id": pending.id,
