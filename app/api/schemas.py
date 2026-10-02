@@ -401,6 +401,23 @@ class WorkspaceExecutionEventResponse(BaseModel):
     error_category: Optional[str] = None
     risk_level: Optional[str] = None
     step: Optional[int] = None
+    task_type: Optional[str] = None
+    profile_id: Optional[str] = None
+    profile_version: Optional[int] = None
+    winning_scope: Optional[str] = None
+    privacy: Optional[str] = None
+    fallback_policy: Optional[str] = None
+    selection_reason: Optional[str] = None
+    reasoning_policy: Optional[str] = None
+    reasoning_bounds: Optional[Dict[str, Optional[str]]] = None
+    selected_effort: Optional[str] = None
+    primary_provider: Optional[str] = None
+    selected_provider: Optional[str] = None
+    candidate_model: Optional[str] = None
+    privacy_boundary: Optional[str] = None
+    error_type: Optional[str] = None
+    proposed_provider: Optional[str] = None
+    proposed_model: Optional[str] = None
 
 
 class WorkspaceExecutionTraceResponse(BaseModel):
