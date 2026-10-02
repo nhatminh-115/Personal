@@ -58,6 +58,24 @@ jobs:
       - name: Validate Docker Compose configuration
         run: docker compose config --quiet
 
+      - name: Start AURA Compose stack and verify readiness
+        run: |
+          set -euo pipefail
+          export AURA_POSTGRES_PORT=15432
+          export AURA_API_PORT=18000
+          cleanup() {
+            docker compose down --volumes --remove-orphans
+          }
+          trap cleanup EXIT
+          docker compose up -d --no-build
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
+            http://127.0.0.1:${AURA_API_PORT}/ready > readiness.json
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
+          docker compose restart aura-app
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
+            http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-restart.json
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness-after-restart.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
+
       - name: Wait for PostgreSQL asyncpg connection
         run: |
           python -c "
