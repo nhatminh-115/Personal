@@ -237,6 +237,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
                         <button type="button" className="secondary-button" onClick={() => void loadRunHistory(automation.id)} disabled={historyLoadingId === automation.id}>{historyLoadingId === automation.id ? 'Refreshing…' : 'Refresh history'}</button>
                         {historyLoadingId === automation.id ? <p>Loading run history…</p> : null}
                         {historyError ? <p className="automation-form-error" role="alert">{historyError}</p> : null}
+                        {runError ? <p className="automation-form-error" role="alert">{runError}</p> : null}
                         {historyByAutomation[automation.id]?.length === 0 ? <p>No runs yet.</p> : null}
                         {historyByAutomation[automation.id]?.length ? (
                           <ol>
