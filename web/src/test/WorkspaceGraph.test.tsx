@@ -5,7 +5,7 @@ import { BoardCanvas } from '../components/board/BoardCanvas';
 import { ProjectChatWorkspace } from '../components/chat/ProjectChatWorkspace';
 import { api } from '../services/api';
 import { projects } from '../data/workspaceData';
-import type { AuraFlowNode, WorkspaceGraph, WorkspaceObject } from '../types';
+import type { AuraFlowNode, WorkspaceExecutionHistory, WorkspaceGraph, WorkspaceObject } from '../types';
 
 const savedGraph: WorkspaceGraph = {
   project_name: 'AURA Project',
@@ -41,9 +41,8 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
 
-  it('loads older execution runs from a paged workspace graph response', async () => {
-    const recentGraph: WorkspaceGraph = {
-      ...savedGraph,
+  it('loads older execution runs from a paged execution history response', async () => {
+    const recentGraph: WorkspaceExecutionHistory = {
       execution_history_truncated: true,
       execution_next_cursor: 'older-page-token',
       execution_traces: [{
@@ -51,8 +50,7 @@ describe('Persistent workspace graph Board projection', () => {
         events: [{ id: 'recent-event', event_type: 'run_completed', created_at: '2026-10-02T00:00:00Z' }],
       }],
     };
-    const olderGraph: WorkspaceGraph = {
-      ...savedGraph,
+    const olderGraph: WorkspaceExecutionHistory = {
       execution_history_truncated: false,
       execution_next_cursor: null,
       execution_traces: [{
