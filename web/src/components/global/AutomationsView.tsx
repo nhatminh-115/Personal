@@ -123,6 +123,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
         <div><BellRing size={15} /><span><strong>Persistent scheduler</strong><small>Runs are queued through AURA</small></span></div>
       </div>
 
+      {approvalError && !approvalReview ? <p className="automation-form-error" role="alert">{approvalError}</p> : null}
       <div className="automation-list">
         {automations.map((automation) => {
           const project = automation.projectId ? projects.find((item) => item.id === automation.projectId) : null;
@@ -148,7 +149,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
       {approvalReview ? (
         <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !approvalLoading) setApprovalReview(null); }}>
           <div className="automation-create-modal automation-approval-modal" role="dialog" aria-modal="true" aria-labelledby="automation-approval-title">
-            <div className="modal-head"><div><span className="eyebrow">TOOL APPROVAL</span><strong id="automation-approval-title">{approvalReview.automation.name}</strong></div><button className="icon-button" type="button" onClick={() => setApprovalReview(null)} disabled={approvalLoading} aria-label="Close"><X size={15} /></button></div>
+            <div className="modal-head"><div><span className="eyebrow">TOOL APPROVAL</span><strong id="automation-approval-title">{approvalReview.automation.name}</strong></div><button className="icon-button" type="button" onClick={() => { setApprovalReview(null); setApprovalError(''); }} disabled={approvalLoading} aria-label="Close"><X size={15} /></button></div>
             <p>This automation run is paused until you decide whether AURA may continue.</p>
             <div className="automation-approval-detail"><span>Tool</span><strong>{approvalReview.approval.tool_name}</strong></div>
             <div className="automation-approval-detail"><span>Risk</span><strong>{approvalReview.approval.risk_level}</strong></div>
