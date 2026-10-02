@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import List, Optional
 import uuid
 
-from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, or_, select, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.logging import logger
 from app.db.models import EventRecordModel, EventStatus, utc_now
@@ -33,6 +33,35 @@ class OutboxWorker:
         self.worker_id = worker_id or f"worker-{uuid.uuid4().hex[:8]}"
         self.lease_duration = timedelta(seconds=lease_duration_seconds)
 
+    async def _renew_batch_leases(self, bind, record_ids: list[str], stopped: asyncio.Event) -> None:
+        """Keep claimed events leased while slow handlers are still running."""
+        if bind is None or not record_ids:
+            return
+        session_factory = async_sessionmaker(bind, expire_on_commit=False)
+        interval = max(0.05, min(20.0, self.lease_duration.total_seconds() / 3))
+        while not stopped.is_set():
+            try:
+                await asyncio.wait_for(stopped.wait(), timeout=interval)
+                return
+            except TimeoutError:
+                pass
+            try:
+                async with session_factory() as lease_db:
+                    await lease_db.execute(
+                        update(EventRecordModel)
+                        .where(
+                            EventRecordModel.id.in_(record_ids),
+                            EventRecordModel.status == EventStatus.PROCESSING.value,
+                            EventRecordModel.locked_by == self.worker_id,
+                        )
+                        .values(locked_at=utc_now())
+                    )
+                    await lease_db.commit()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("Failed to renew outbox worker lease", extra={"worker_id": self.worker_id})
+
     async def process_outbox_batch(self, db: AsyncSession, batch_size: int = 10) -> int:
         """Claim and process a single batch of pending outbox events."""
         now = utc_now()
@@ -41,9 +70,12 @@ class OutboxWorker:
         # Expired lock threshold for stale worker crash recovery
         stale_lock_cutoff = now - self.lease_duration
 
-        # Query pending events that are due and not locked by an active worker
+        # Query due events that are not locked by an active worker. Stale PROCESSING
+        # rows are eligible so a worker crash cannot strand an event forever.
         claim_condition = and_(
-            EventRecordModel.status.in_([EventStatus.PENDING.value, EventStatus.FAILED.value]),
+            EventRecordModel.status.in_(
+                [EventStatus.PENDING.value, EventStatus.FAILED.value, EventStatus.PROCESSING.value]
+            ),
             or_(
                 EventRecordModel.next_attempt_at.is_(None),
                 EventRecordModel.next_attempt_at <= now,
@@ -79,69 +111,79 @@ class OutboxWorker:
         await db.commit()
 
         processed_count = 0
+        heartbeat_stopped = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self._renew_batch_leases(db.bind, [record.id for record in records], heartbeat_stopped),
+            name=f"outbox-lease-heartbeat-{self.worker_id}",
+        )
 
-        for rec in records:
-            event = AURAEvent(
-                id=rec.id,
-                event_type=rec.event_type,
-                source=rec.source,
-                payload=rec.payload_json,
-                occurred_at=rec.occurred_at,
-                correlation_id=rec.correlation_id,
-                idempotency_key=rec.idempotency_key,
-                status=EventStatus(rec.status),
-                retry_count=rec.retry_count,
-                max_attempts=rec.max_attempts,
-            )
+        try:
+            for rec in records:
+                event = AURAEvent(
+                    id=rec.id,
+                    event_type=rec.event_type,
+                    source=rec.source,
+                    payload=rec.payload_json,
+                    occurred_at=rec.occurred_at,
+                    correlation_id=rec.correlation_id,
+                    idempotency_key=rec.idempotency_key,
+                    status=EventStatus(rec.status),
+                    retry_count=rec.retry_count,
+                    max_attempts=rec.max_attempts,
+                )
 
-            # Find matching handlers
-            matched_handlers = list(self.bus._handlers.get(event.event_type, [])) + list(self.bus._handlers.get("*", []))
-            handler_error: Optional[Exception] = None
+                # Find matching handlers
+                matched_handlers = list(self.bus._handlers.get(event.event_type, [])) + list(self.bus._handlers.get("*", []))
+                handler_error: Optional[Exception] = None
 
-            for handler in matched_handlers:
-                try:
-                    if asyncio.iscoroutinefunction(handler):
-                        await handler(event)
-                    else:
-                        res = handler(event)
-                        if asyncio.iscoroutine(res):
-                            await res
-                except Exception as e:
-                    logger.error(
-                        f"OutboxWorker handler error on event '{event.id}' ({event.event_type}): {e}",
-                        exc_info=True,
-                        extra={"event_id": event.id, "worker_id": self.worker_id},
-                    )
-                    handler_error = e
-                    break
+                for handler in matched_handlers:
+                    try:
+                        if asyncio.iscoroutinefunction(handler):
+                            await handler(event)
+                        else:
+                            res = handler(event)
+                            if asyncio.iscoroutine(res):
+                                await res
+                    except Exception as e:
+                        logger.error(
+                            f"OutboxWorker handler error on event '{event.id}' ({event.event_type}): {e}",
+                            exc_info=True,
+                            extra={"event_id": event.id, "worker_id": self.worker_id},
+                        )
+                        handler_error = e
+                        break
 
-            # Reload record in active session
-            active_rec = await db.get(EventRecordModel, rec.id)
-            if not active_rec:
-                continue
+                # Reload record in active session
+                active_rec = await db.get(EventRecordModel, rec.id)
+                if not active_rec:
+                    continue
 
-            active_rec.locked_at = None
-            active_rec.locked_by = None
+                active_rec.locked_at = None
+                active_rec.locked_by = None
 
-            if handler_error is None:
-                active_rec.status = EventStatus.PROCESSED.value
-                active_rec.processed_at = utc_now()
-                active_rec.error_message = None
-                processed_count += 1
-            else:
-                active_rec.retry_count += 1
-                active_rec.error_message = str(handler_error)
-                if active_rec.retry_count >= active_rec.max_attempts:
-                    active_rec.status = EventStatus.DEAD_LETTER.value
-                    logger.error(
-                        f"Event '{active_rec.id}' moved to DEAD_LETTER after {active_rec.retry_count} attempts.",
-                        extra={"event_id": active_rec.id},
-                    )
+                if handler_error is None:
+                    active_rec.status = EventStatus.PROCESSED.value
+                    active_rec.processed_at = utc_now()
+                    active_rec.error_message = None
+                    processed_count += 1
                 else:
-                    active_rec.status = EventStatus.FAILED.value
-                    backoff_seconds = min(300, 2 ** active_rec.retry_count)
-                    active_rec.next_attempt_at = utc_now() + timedelta(seconds=backoff_seconds)
+                    active_rec.retry_count += 1
+                    active_rec.error_message = str(handler_error)
+                    if active_rec.retry_count >= active_rec.max_attempts:
+                        active_rec.status = EventStatus.DEAD_LETTER.value
+                        logger.error(
+                            f"Event '{active_rec.id}' moved to DEAD_LETTER after {active_rec.retry_count} attempts.",
+                            extra={"event_id": active_rec.id},
+                        )
+                    else:
+                        active_rec.status = EventStatus.FAILED.value
+                        backoff_seconds = min(300, 2 ** active_rec.retry_count)
+                        active_rec.next_attempt_at = utc_now() + timedelta(seconds=backoff_seconds)
 
-            await db.commit()
+                await db.commit()
+        finally:
+            heartbeat_stopped.set()
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
 
         return processed_count
