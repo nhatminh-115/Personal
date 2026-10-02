@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Optional
+import uuid
 import aiosqlite
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -96,9 +97,18 @@ def get_active_checkpointer_path() -> Optional[str]:
     return _checkpointer_path
 
 
-def is_checkpointer_initialized() -> bool:
-    """Report whether a checkpointer is configured for durable graph execution."""
-    return _global_checkpointer is not None
+async def is_checkpointer_available() -> bool:
+    """Probe checkpoint storage with a read-only lookup on a unique thread ID."""
+    checkpointer = _global_checkpointer
+    if checkpointer is None:
+        return False
+    try:
+        await checkpointer.aget_tuple({
+            "configurable": {"thread_id": f"aura-readiness-{uuid.uuid4()}"}
+        })
+    except Exception:
+        return False
+    return True
 
 
 def set_global_checkpointer(checkpointer: BaseCheckpointSaver) -> None:

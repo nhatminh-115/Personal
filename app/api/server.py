@@ -15,7 +15,7 @@ from app.core.settings import settings
 from app.db.session import get_db, init_db
 
 
-from app.orchestrator.graph import close_checkpointer, init_checkpointer, is_checkpointer_initialized
+from app.orchestrator.graph import close_checkpointer, init_checkpointer, is_checkpointer_available
 
 
 @asynccontextmanager
@@ -149,7 +149,7 @@ def create_app() -> FastAPI:
         except Exception:
             database_status = "unavailable"
 
-        checkpointer_status = "healthy" if is_checkpointer_initialized() else "unavailable"
+        checkpointer_status = "healthy" if await is_checkpointer_available() else "unavailable"
         checks = {"database": database_status, "checkpointer": checkpointer_status}
         ready = all(value == "healthy" for value in checks.values())
         response.status_code = 200 if ready else 503
