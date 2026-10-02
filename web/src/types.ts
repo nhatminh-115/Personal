@@ -414,6 +414,8 @@ export interface CompiledContextManifest {
   privacy_requirement?: string | null;
   privacy_sources?: Array<{ object_id: string; privacy_policy: RoutingPrivacy }>;
   required_capabilities?: string[];
+  required_tool_capabilities?: string[];
+  resolved_tool_names?: string[];
   capability_requirements?: Record<string, boolean>;
 }
 
