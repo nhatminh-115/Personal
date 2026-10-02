@@ -120,6 +120,10 @@ class CapabilityProviderRegistry:
         metadata = self._metadata.get(provider_id)
         return metadata.model_copy(deep=True) if metadata else None
 
+    def get_capability_tools(self, provider_id: str) -> Dict[str, List[str]]:
+        """Return a defensive copy of the provider's abstract-capability bindings."""
+        return {capability: list(names) for capability, names in self._capability_tools.get(provider_id, {}).items()}
+
     def list_providers(self) -> List[CapabilityProviderMetadata]:
         return [
             metadata.model_copy(deep=True)
