@@ -253,12 +253,12 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const currentObjects = new Map(current.nodes.filter(isUserWorkspaceObject).map((node) => [node.id, node]));
       const targetObjects = new Map(target.nodes.filter(isUserWorkspaceObject).map((node) => [node.id, node]));
       const deletedObjectIds = new Set([...currentObjects.keys()].filter((id) => !targetObjects.has(id)));
-      const currentKeys = new Set(current.edges.map(edgeIdentity));
-      const targetKeys = new Set(target.edges.map(edgeIdentity));
+      const currentKeys = new Set(current.edges.map((edge) => edge.id));
+      const targetKeys = new Set(target.edges.map((edge) => edge.id));
 
       const removedUserEdges = current.edges.filter((edge) =>
         edge.data?.workspaceCreatedBy === 'user'
-        && !targetKeys.has(edgeIdentity(edge))
+        && !targetKeys.has(edge.id)
         && !deletedObjectIds.has(edge.source)
         && !deletedObjectIds.has(edge.target),
       );
@@ -287,7 +287,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
       const newObjectIds = new Set([...targetObjects.keys()].filter((id) => !currentObjects.has(id)));
       const restoredEdges = target.edges.filter((edge) => {
-        if (edge.data?.workspaceCreatedBy !== 'user' || currentKeys.has(edgeIdentity(edge))) return false;
+        if (edge.data?.workspaceCreatedBy !== 'user' || currentKeys.has(edge.id)) return false;
         const targetNode = targetObjects.get(edge.target);
         const autoCreatedContextRelation = newObjectIds.has(edge.target)
           && edge.data.edgeFamily === 'context'
