@@ -256,10 +256,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const currentKeys = new Set(current.edges.map(edgeIdentity));
       const targetKeys = new Set(target.edges.map(edgeIdentity));
 
-      for (const edge of current.edges) {
-        if (edge.data?.workspaceCreatedBy !== 'user' || targetKeys.has(edgeIdentity(edge))) continue;
-        if (deletedObjectIds.has(edge.source) || deletedObjectIds.has(edge.target)) continue;
-        await api.deleteWorkspaceEdge(workspaceProjectName, edge.id);
+      const removedUserEdges = current.edges.filter((edge) =>
+        edge.data?.workspaceCreatedBy === 'user'
+        && !targetKeys.has(edgeIdentity(edge))
+        && !deletedObjectIds.has(edge.source)
+        && !deletedObjectIds.has(edge.target),
+      );
+      if (removedUserEdges.length > 0) {
+        await api.deleteWorkspaceEdges(workspaceProjectName, removedUserEdges.map((edge) => edge.id));
       }
       for (const id of deletedObjectIds) await api.deleteWorkspaceObject(workspaceProjectName, id);
 
@@ -282,20 +286,23 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       }
 
       const newObjectIds = new Set([...targetObjects.keys()].filter((id) => !currentObjects.has(id)));
-      for (const edge of target.edges) {
-        if (edge.data?.workspaceCreatedBy !== 'user' || currentKeys.has(edgeIdentity(edge))) continue;
+      const restoredEdges = target.edges.filter((edge) => {
+        if (edge.data?.workspaceCreatedBy !== 'user' || currentKeys.has(edgeIdentity(edge))) return false;
         const targetNode = targetObjects.get(edge.target);
         const autoCreatedContextRelation = newObjectIds.has(edge.target)
           && edge.data.edgeFamily === 'context'
           && ['context_bridge', 'context_set', 'conversation_branch'].includes(targetNode?.data.workspaceObjectType ?? '');
-        if (autoCreatedContextRelation) continue;
-        await api.createWorkspaceEdge(workspaceProjectName, {
+        return !autoCreatedContextRelation;
+      });
+      if (restoredEdges.length > 0) {
+        await api.restoreWorkspaceEdges(workspaceProjectName, restoredEdges.map((edge) => ({
+          id: edge.id,
           source_object_id: edge.source,
           target_object_id: edge.target,
-          relation_type: edge.data.relationType ?? (edge.data.edgeKind === 'context' ? 'bridges_to' : 'related_to'),
-          edge_family: edge.data.edgeFamily ?? (edge.data.edgeKind === 'context' ? 'context' : 'semantic'),
-          metadata_json: edge.data.workspaceMetadata ?? {},
-        });
+          relation_type: edge.data?.relationType ?? (edge.data?.edgeKind === 'context' ? 'bridges_to' : 'related_to'),
+          edge_family: edge.data?.edgeFamily ?? (edge.data?.edgeKind === 'context' ? 'context' : 'semantic'),
+          metadata_json: edge.data?.workspaceMetadata ?? {},
+        })));
       }
 
       if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
