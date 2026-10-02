@@ -61,6 +61,7 @@ async def start_study_session(
     material_id = body.material_id.strip() if body.material_id else None
     material_project_name = body.material_project_name.strip() if body.material_project_name else None
     is_verified_research_claim = False
+    material_project_names: list[str] = []
     if material_id:
         material = await db.get(WorkspaceObjectModel, material_id)
         material_metadata = material.metadata_json if material and isinstance(material.metadata_json, dict) else {}
@@ -71,6 +72,14 @@ async def start_study_session(
             and material.created_by == "user"
             and material_metadata.get("collection") in {"Study", "Research"}
         )
+        if is_library_material:
+            linked_projects = await db.execute(
+                select(WorkspaceObjectProjectLinkModel.project_name)
+                .where(WorkspaceObjectProjectLinkModel.object_id == material.id)
+                .order_by(WorkspaceObjectProjectLinkModel.project_name)
+            )
+            material_project_names = list(linked_projects.scalars())
+
         is_verified_research_claim = (
             material is not None
             and material.project_name is not None
@@ -116,6 +125,22 @@ async def start_study_session(
             edge_family="provenance",
             created_by="user",
         ))
+    elif is_library_material and material_id:
+        # A Study session follows the Library reference into the same project graphs
+        # without copying the referenced file contents into the session.
+        for project_name in material_project_names:
+            db.add(WorkspaceObjectProjectLinkModel(
+                object_id=item.id,
+                project_name=project_name,
+            ))
+            db.add(WorkspaceEdgeModel(
+                project_name=project_name,
+                source_object_id=material_id,
+                target_object_id=item.id,
+                relation_type="studied_from",
+                edge_family="provenance",
+                created_by="user",
+            ))
     await db.commit()
     await db.refresh(item)
     return _study_session_response(item)
