@@ -10,7 +10,7 @@ interface StudyViewProps {
   onBrowseLibrary: () => void;
   onStartSession: (item: LibraryItem) => void;
   sessions: StudySessionRecord[];
-  cards: StudyCardRecord[];
+  cards?: StudyCardRecord[];
   onCompleteSession: (sessionId: string) => void;
   onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
   onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
@@ -178,7 +178,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, cards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, onOpenItem, onBrowseLibrary, onStartSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const materialIds = new Set(materials.map((item) => item.id));
   const unlinkedSessions = sessions.filter((session) => !materialIds.has(session.material_id ?? session.track_id));
