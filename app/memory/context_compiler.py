@@ -265,7 +265,77 @@ class WorkspaceContextCompiler:
                 )
             provenance_frontier = next_frontier - provenance_visited
 
-        # Privacy classifications on selected objects and explicit provenance
+        # Context Bridges deliberately stop context expansion at their boundary, but
+        # privacy still flows through every linked source's context ancestry.
+        # This traversal reads metadata only; it never adds those objects to the
+        # compiled prompt.
+        bridge_source_ids = {
+            source_id
+            for target_id, source_ids in linked_sources.items()
+            if objects.get(target_id) is not None and objects[target_id].object_type == "context_bridge"
+            for source_id in source_ids
+        }
+        privacy_ancestry_source_ids = set(bridge_source_ids)
+        privacy_frontier = set(bridge_source_ids)
+        privacy_visited: set[str] = set()
+        traversed_privacy_edges = 0
+        while privacy_frontier:
+            targets = privacy_frontier - privacy_visited
+            if not targets:
+                break
+            privacy_visited.update(targets)
+            privacy_edge_result = await self.db.execute(
+                select(WorkspaceEdgeModel)
+                .where(
+                    WorkspaceEdgeModel.project_name == project_name,
+                    WorkspaceEdgeModel.edge_family == "context",
+                    WorkspaceEdgeModel.target_object_id.in_(targets),
+                )
+                .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+                .limit(MAX_COMPILED_OBJECTS + 1)
+            )
+            privacy_edges = list(privacy_edge_result.scalars())
+            traversed_privacy_edges += len(privacy_edges)
+            if traversed_privacy_edges > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
+            source_ids = {edge.source_object_id for edge in privacy_edges}
+            if len(included | provenance_source_ids | privacy_ancestry_source_ids | source_ids) > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
+            missing_source_ids = source_ids - set(objects)
+            if missing_source_ids:
+                project_source_result = await self.db.execute(
+                    select(WorkspaceObjectModel).where(
+                        WorkspaceObjectModel.id.in_(missing_source_ids),
+                        WorkspaceObjectModel.project_name == project_name,
+                    )
+                )
+                objects.update({item.id: item for item in project_source_result.scalars()})
+                linked_source_result = await self.db.execute(
+                    select(WorkspaceObjectModel)
+                    .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+                    .where(
+                        WorkspaceObjectModel.project_name.is_(None),
+                        WorkspaceObjectModel.object_type.in_({"manual_note", "file_reference", "study_session", "study_card"}),
+                        WorkspaceObjectProjectLinkModel.project_name == project_name,
+                        WorkspaceObjectModel.id.in_(missing_source_ids - set(objects)),
+                    )
+                )
+                objects.update({item.id: item for item in linked_source_result.scalars()})
+            next_frontier = {source_id for source_id in source_ids if source_id in objects}
+            privacy_ancestry_source_ids.update(next_frontier)
+            if len(included | provenance_source_ids | privacy_ancestry_source_ids) > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
+            privacy_frontier = next_frontier - privacy_visited
+# Privacy classifications on selected objects and explicit provenance
         # sources strengthen the route boundary for this turn.
         privacy_requirement: str | None = None
         privacy_sources: list[dict[str, str]] = []
@@ -279,6 +349,7 @@ class WorkspaceContextCompiler:
         privacy_object_ids = set(included)
         privacy_object_ids.update(source_id for source_ids in linked_sources.values() for source_id in source_ids)
         privacy_object_ids.update(provenance_source_ids)
+        privacy_object_ids.update(privacy_ancestry_source_ids)
         for object_id in sorted(privacy_object_ids):
             workspace_object = objects[object_id]
             metadata = workspace_object.metadata_json or {}
