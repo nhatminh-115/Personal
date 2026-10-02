@@ -910,6 +910,26 @@ def determine_post_observe_route(state: AgentState) -> str:
     return "reason"
 
 
+def _state_privacy_policy(state: AgentState) -> Any:
+    """Resolve the effective turn privacy policy for durable message metadata."""
+    metadata = state.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    routing_context = metadata.get("routing_context_dict")
+    if not isinstance(routing_context, dict):
+        routing_context = state.get("routing_context_dict")
+    privacy_policy = (
+        routing_context.get("privacy_requirement")
+        if isinstance(routing_context, dict)
+        else None
+    )
+    if privacy_policy is None:
+        privacy_policy = metadata.get("privacy_requirement")
+    if hasattr(privacy_policy, "value"):
+        privacy_policy = privacy_policy.value
+    # Older callers without resolved routing metadata inherit the router's public default.
+    return "public" if privacy_policy is None else privacy_policy
+
+
 async def update_memory_node(state: AgentState, config: Optional[RunnableConfig] = None) -> Dict[str, Any]:
     """Persist conversation messages and episodic interactions into long-term storage."""
     services = _get_services(config)
@@ -917,6 +937,7 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
     trace_service: Optional[TraceService] = services["trace_service"]
 
     final_resp = state.get("final_response") or "Run completed."
+    privacy_policy = _state_privacy_policy(state)
     persisted_user_message_id: Optional[str] = None
     persisted_assistant_message_id: Optional[str] = None
 
@@ -929,6 +950,7 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             metadata={
                 "run_id": state["run_id"],
                 "context_object_ids": list(dict.fromkeys(state.get("context_object_ids", []))),
+                "privacy_policy": privacy_policy,
             },
         )
         persisted_user_message_id = user_message.id
@@ -936,7 +958,10 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
         # Save assistant final response if run completed or cancelled
         if state.get("execution_status") in {RunStatus.COMPLETED.value, RunStatus.CANCELLED.value}:
             assistant_message = await mem_service.save_message(
-                state["session_id"], role="assistant", content=final_resp, metadata={"run_id": state["run_id"]}
+                state["session_id"],
+                role="assistant",
+                content=final_resp,
+                metadata={"run_id": state["run_id"], "privacy_policy": privacy_policy},
             )
             persisted_assistant_message_id = assistant_message.id
 
@@ -944,18 +969,8 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             # privacy boundary attached so retrieval cannot route private content to a
             # less restrictive model later.
             if state.get("tool_results"):
-                routing_context = (state.get("metadata") or {}).get("routing_context_dict")
-                privacy_policy = (
-                    routing_context.get("privacy_requirement")
-                    if isinstance(routing_context, dict)
-                    else (state.get("metadata") or {}).get("privacy_requirement")
-                )
-                if hasattr(privacy_policy, "value"):
-                    privacy_policy = privacy_policy.value
-                if privacy_policy is None:
-                    # Legacy callers without a resolved routing context use the router's
-                    # public default. Explicit but unknown classifications fail closed.
-                    privacy_policy = "public"
+                # Explicitly unknown classifications fail closed and cannot be
+                # retained as episodic context.
                 if isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
                     tool_summary = ", ".join(tr["name"] for tr in state["tool_results"])
                     await mem_service.record_episodic_memory(
@@ -975,12 +990,13 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
                 assistant_response=final_resp,
                 active_project=project_name,
             )
-            if candidates:
+            if candidates and isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
                 await pipeline.process_and_commit(
                     candidates=candidates,
                     session_id=state["session_id"],
                     run_id=state["run_id"],
                     memory_service=mem_service,
+                    privacy_policy=privacy_policy,
                 )
 
         if trace_service:

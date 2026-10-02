@@ -38,10 +38,10 @@ async def test_runtime_episode_preserves_local_only_privacy_when_reassembled(tes
     )
     assert assembled.episodes == [episodes[0].content]
     assert assembled.privacy_requirement == "local_only"
-    assert assembled.privacy_memory_sources == [{
+    assert {
         "memory_id": episodes[0].id,
         "privacy_policy": "local_only",
-    }]
+    } in assembled.privacy_memory_sources
 
 
 @pytest.mark.asyncio

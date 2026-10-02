@@ -139,6 +139,7 @@ class SQLMemoryService(MemoryService):
             role=role,
             content=content,
             token_count=token_count,
+            metadata_json=metadata or {},
         )
         self.db.add(msg)
         await self.db.flush()
