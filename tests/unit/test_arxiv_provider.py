@@ -108,6 +108,22 @@ async def test_arxiv_search_invalid_xml():
 
 
 @pytest.mark.asyncio
+async def test_arxiv_api_client_does_not_follow_redirects():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0))
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 302
+    client = MagicMock()
+    client.get = AsyncMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.research.providers.arxiv.httpx.AsyncClient", return_value=client) as client_factory:
+        assert await provider._execute_arxiv_request({"search_query": "all:test"}) is None
+
+    assert client_factory.call_args.kwargs["follow_redirects"] is False
+
+
+@pytest.mark.asyncio
 async def test_arxiv_fetch_section_with_pdf_extraction():
     cache = ResearchCache()
     limiter = ArxivRateLimiter(min_interval_seconds=0.0)

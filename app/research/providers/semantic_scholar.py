@@ -206,7 +206,7 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
             "fields": self.DEFAULT_FIELDS,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True, verify=True) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
             resp_data = await self._request_with_retry(client, "paper/search", params=params)
 
         if not resp_data or "data" not in resp_data:
@@ -236,7 +236,7 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
             target_id = target_id[3:]
 
         params = {"fields": self.DEFAULT_FIELDS}
-        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True, verify=True) as client:
+        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
             resp_data = await self._request_with_retry(client, f"paper/{target_id}", params=params)
 
         if not resp_data:

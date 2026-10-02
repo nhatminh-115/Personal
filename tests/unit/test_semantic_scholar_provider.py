@@ -162,6 +162,7 @@ async def test_semantic_scholar_requests_verify_tls_for_search_and_fetch(mock_ca
 
     assert len(clients) == 2
     assert all(kwargs.get("verify") is True for kwargs, _ in clients)
+    assert all(kwargs.get("follow_redirects") is False for kwargs, _ in clients)
 
 
 def test_semantic_scholar_headers_with_and_without_api_key():

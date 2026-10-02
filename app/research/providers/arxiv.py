@@ -175,7 +175,7 @@ class ArxivResearchProvider(ResearchSourceProvider):
 
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
                     resp = await client.get(self.API_URL, params=params, headers=headers)
                     if resp.status_code == 200:
                         return resp.text
