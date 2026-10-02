@@ -10,6 +10,73 @@ const studyMaterial: LibraryItem = {
 };
 
 describe('Study sessions use shared Library materials', () => {
+  it('creates, reveals, edits, and deletes reusable learning cards', async () => {
+    const sessionId = 'study-session-cards';
+    const card = {
+      id: 'study-card-1', session_id: sessionId, question: 'What is a noun?',
+      answer: 'A person, place, or thing.', created_at: '2026-10-02T00:00:00Z',
+      updated_at: '2026-10-02T00:00:00Z',
+    };
+    const onCreateCard = vi.fn().mockResolvedValue(undefined);
+    const onUpdateCard = vi.fn().mockResolvedValue(undefined);
+    const onDeleteCard = vi.fn().mockResolvedValue(undefined);
+    const props = {
+      libraryItems: [],
+      sessions: [{
+        id: sessionId, track_id: 'german', track_title: 'German A1',
+        status: 'completed' as const, reflection: '', started_at: '2026-10-02T00:00:00Z',
+      }],
+      cards: [card],
+      onOpenItem: vi.fn(),
+      onBrowseLibrary: vi.fn(),
+      onStartSession: vi.fn(),
+      onCompleteSession: vi.fn(),
+      onSaveReflection: vi.fn().mockResolvedValue(undefined),
+      onCreateCard,
+      onUpdateCard,
+      onDeleteCard,
+    };
+    render(<StudyView {...props} />);
+
+    expect(screen.queryByText('A person, place, or thing.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reveal answer' }));
+    expect(screen.getByText('A person, place, or thing.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    fireEvent.change(screen.getByDisplayValue('What is a noun?'), { target: { value: 'Define a noun.' } });
+    fireEvent.change(screen.getByDisplayValue('A person, place, or thing.'), { target: { value: 'A naming word.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
+    await waitFor(() => expect(onUpdateCard).toHaveBeenCalledWith(card.id, sessionId, 'Define a noun.', 'A naming word.'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(onDeleteCard).toHaveBeenCalledWith(card.id, sessionId));
+  });
+
+  it('submits a user-authored learning card from the session', async () => {
+    const sessionId = 'study-session-new-card';
+    const onCreateCard = vi.fn().mockResolvedValue(undefined);
+    render(<StudyView
+      libraryItems={[]}
+      sessions={[{
+        id: sessionId, track_id: 'german', track_title: 'German A1',
+        status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+      }]}
+      cards={[]}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+      onCreateCard={onCreateCard}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.change(screen.getByPlaceholderText('What should you remember?'), { target: { value: 'What is a noun?' } });
+    fireEvent.change(screen.getByPlaceholderText('Write the answer in your own words…'), { target: { value: 'A naming word.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add learning card' }));
+    await waitFor(() => expect(onCreateCard).toHaveBeenCalledWith(sessionId, 'What is a noun?', 'A naming word.'));
+  });
   it('starts and completes a durable session linked to a personal Library reference', () => {
     const onStartSession = vi.fn();
     const onCompleteSession = vi.fn();
