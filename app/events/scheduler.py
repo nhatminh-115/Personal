@@ -6,6 +6,7 @@ import uuid
 
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.core.logging import logger
 from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
@@ -194,10 +195,6 @@ class PersistentScheduler:
             job = await db.get(ScheduledJobModel, candidate.id)
             if not job:
                 continue
-            # The claim uses synchronize_session=False; refresh before releasing
-            # the lease or the ORM may treat locked_at=None as unchanged.
-            await db.refresh(job)
-
             if job.job_type != JobType.ONE_SHOT.value and await self._automation_has_active_execution(db, job):
                 try:
                     interval = float(job.schedule_expression)
@@ -206,6 +203,10 @@ class PersistentScheduler:
                     job.next_run_at = now + timedelta(seconds=60.0)
                 job.locked_at = None
                 job.locked_by = None
+                # The bulk claim bypassed the identity map, so force both lease
+                # fields into the UPDATE even if this ORM instance still says None.
+                flag_modified(job, "locked_at")
+                flag_modified(job, "locked_by")
                 await db.commit()
                 await db.refresh(job)
                 continue
@@ -227,6 +228,8 @@ class PersistentScheduler:
             job.last_run_at = now
             job.locked_at = None
             job.locked_by = None
+            flag_modified(job, "locked_at")
+            flag_modified(job, "locked_by")
 
             if job.job_type == JobType.ONE_SHOT.value:
                 job.is_active = False
