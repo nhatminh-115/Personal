@@ -4,6 +4,8 @@ import type { LibraryItem, WorkspaceNote } from '../../data/workspaceData';
 import type { StudyCardRecord, StudySessionRecord } from '../../types';
 import './StudyView.css';
 
+const EMPTY_STUDY_NOTES: WorkspaceNote[] = [];
+
 interface StudyViewProps {
   libraryItems: LibraryItem[];
   notes?: WorkspaceNote[];
@@ -180,7 +182,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = [], onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
