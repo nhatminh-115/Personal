@@ -362,6 +362,8 @@ export const initialNodes: AuraFlowNode[] = [
         observations: true,
         failed: true,
         artifacts: true,
+        constraints: false,
+        decisions: false,
       },
       bridgeNote: 'TTT result suggests update dynamics are not the novelty; focus implementation on state representation.',
     },
