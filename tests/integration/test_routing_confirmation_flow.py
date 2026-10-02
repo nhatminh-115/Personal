@@ -4,6 +4,7 @@ import pytest
 
 from app.core.errors import RoutingConfirmationRequired
 from app.db.models import RunModel, RoutingConfirmationModel
+from app.models.base import ModelResponse, ToolCallRequest
 from app.models.routing_policy import ModelSelection
 from app.models.router import model_router
 
@@ -109,3 +110,79 @@ async def test_rejected_routing_confirmation_never_calls_model(async_client, tes
     run = await test_db_session.get(RunModel, data["run_id"])
     assert run.status == "cancelled"
     assert run.final_response
+
+
+@pytest.mark.asyncio
+async def test_specialist_routing_confirmation_bubbles_to_root_and_resumes_child(
+    async_client, test_db_session, monkeypatch
+):
+    mock_provider = model_router.get_provider("mock")
+    mock_provider.queue_response(ModelResponse(
+        content="Delegating to the coding specialist.",
+        tool_calls=[ToolCallRequest(
+            id="delegate-routing-confirmation",
+            name="delegate_task",
+            arguments={
+                "specialist_name": "coding",
+                "task_description": "Review the code and return a short summary.",
+            },
+        )],
+    ))
+    mock_provider.queue_response(ModelResponse(content="Child specialist completed after confirmation."))
+
+    selected_contexts = []
+
+    # Keep the root on the standard mock route; only the specialist requests a
+    # cloud confirmation, then resume through the same deterministic adapter.
+    original_select = model_router.select_model_for_task
+
+    def select_model(context):
+        selected_contexts.append(context)
+        if context and context.task_type == "coding" and not context.explicit_model_override:
+            raise RoutingConfirmationRequired(
+                "Cloud fallback requires confirmation.",
+                {"proposed_provider": "openai", "proposed_model": "gpt-4o-mini"},
+            )
+        if context and context.explicit_model_override:
+            return mock_provider, ModelSelection(
+                provider_name="mock",
+                model_name="mock-default",
+                reason=f"confirmed route {context.explicit_model_override}",
+            )
+        return original_select(context)
+
+    monkeypatch.setattr(model_router, "select_model_for_task", select_model)
+    started = await async_client.post(
+        "/v1/chat",
+        json={"session_id": "routing-confirm-child", "message": "Delegate a code review."},
+    )
+
+    assert started.status_code == 200
+    data = started.json()
+    assert data["status"] == "waiting_for_routing_confirmation"
+    assert mock_provider.call_history and len(mock_provider.call_history) == 1
+
+    confirmation = await test_db_session.get(
+        RoutingConfirmationModel, data["routing_confirmation_id"]
+    )
+    assert confirmation.root_run_id == data["run_id"]
+    assert confirmation.execution_run_id != confirmation.root_run_id
+    child_run = await test_db_session.get(RunModel, confirmation.execution_run_id)
+    assert child_run.status == "waiting_for_routing_confirmation"
+
+    resumed = await async_client.post(
+        f"/v1/routing-confirmations/{confirmation.id}/decision",
+        json={"decision": "approved"},
+    )
+    assert resumed.status_code == 200
+    assert resumed.json()["execution_status"] == "completed"
+    assert mock_provider.call_history and len(mock_provider.call_history) >= 3
+    assert any(
+        context and context.explicit_model_override == "openai:gpt-4o-mini"
+        for context in selected_contexts
+    )
+
+    parent_run = await test_db_session.get(RunModel, data["run_id"])
+    child_run = await test_db_session.get(RunModel, confirmation.execution_run_id)
+    assert parent_run.status == "completed"
+    assert child_run.status == "completed"
