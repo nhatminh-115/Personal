@@ -414,3 +414,40 @@ async def test_study_session_rejects_unknown_note_privacy_classification(async_c
     })
     assert started.status_code == 422
     assert started.json()["detail"] == "Study source has an unsupported privacy classification."
+
+
+@pytest.mark.asyncio
+async def test_study_card_uses_current_privacy_from_unlinked_note(async_client: AsyncClient, test_db_session):
+    note_response = await async_client.post("/v1/workspace/notes", json={
+        "title": "Personal study source",
+        "body": "Private source text.",
+        "privacy_policy": "internal",
+    })
+    assert note_response.status_code == 201
+    note_id = note_response.json()["id"]
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": note_id,
+        "track_title": "Personal study source",
+        "material_id": note_id,
+    })
+    assert started.status_code == 201
+
+    updated = await async_client.put(f"/v1/workspace/notes/{note_id}", json={
+        "title": "Personal study source",
+        "body": "Private source text.",
+        "project_names": [],
+        "privacy_policy": "local_only",
+    })
+    assert updated.status_code == 200
+
+    card_response = await async_client.post(
+        f"/v1/study/sessions/{started.json()['id']}/cards",
+        json={"question": "Where is this note stored?", "answer": "Locally."},
+    )
+    assert card_response.status_code == 201
+    from app.db.models import WorkspaceObjectModel
+
+    card = await test_db_session.get(WorkspaceObjectModel, card_response.json()["id"])
+    assert card is not None
+    assert card.metadata_json["privacy_policy"] == "local_only"
