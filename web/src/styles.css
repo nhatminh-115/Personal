@@ -545,6 +545,38 @@ input:focus-visible {
   font-weight: 580;
 }
 
+.inspector-capability-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 8px;
+  font-size: 9px;
+}
+
+.inspector-capability-bindings > strong {
+  color: #7e909e;
+  font-weight: 600;
+}
+
+.inspector-capability-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 8px;
+  border-radius: 6px;
+  background: rgba(119, 151, 173, 0.04);
+}
+
+.inspector-capability-binding span {
+  color: #7fbdc9;
+}
+
+.inspector-capability-binding strong {
+  color: #abbac5;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
 .inspector-empty {
   padding: 10px 2px;
   color: #718291;
