@@ -107,7 +107,7 @@ included Docker Compose file starts PostgreSQL and the API service.
 Start the FastAPI application with Uvicorn:
 ```powershell
 $env:PYTHONPATH="."
-uvicorn app.api.server:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.api.server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Start the web app in a second terminal:
@@ -119,6 +119,12 @@ npm run dev
 
 Open `http://localhost:5173`. Vite proxies `/v1` requests to the API at
 `http://127.0.0.1:8000`.
+
+The API and PostgreSQL ports in Docker Compose are also bound to loopback.
+`CORS_ALLOWED_ORIGINS` accepts a comma-separated list for the browser UI; its
+default allows the local Vite origins only. AURA's API has no user
+authentication, so keep it on loopback unless it is placed behind an
+authenticated access layer.
 
 Interactive OpenAPI documentation is available at:
 - Swagger UI: `http://localhost:8000/docs`
