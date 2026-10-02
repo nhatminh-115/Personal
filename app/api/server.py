@@ -1,19 +1,21 @@
 """FastAPI server application initialization."""
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import approvals, automations, capabilities, chat, memory, models, runs, sessions, routing, routing_confirmations, study, workspace
 from app.api.middleware import RequestBodyLimitMiddleware
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
-from app.db.session import init_db
+from app.db.session import get_db, init_db
 
 
-from app.orchestrator.graph import close_checkpointer, init_checkpointer
+from app.orchestrator.graph import close_checkpointer, init_checkpointer, is_checkpointer_initialized
 
 
 @asynccontextmanager
@@ -131,12 +133,27 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["Health"])
     async def health_check():
-        """Service health check endpoint."""
+        """Liveness probe; dependency readiness is reported separately."""
         return {
             "status": "healthy",
             "app": settings.APP_NAME,
             "version": settings.APP_VERSION,
         }
+
+    @app.get("/ready", tags=["Health"])
+    async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)):
+        """Report whether dependencies required for durable runs are ready."""
+        try:
+            await db.execute(text("SELECT 1"))
+            database_status = "healthy"
+        except Exception:
+            database_status = "unavailable"
+
+        checkpointer_status = "healthy" if is_checkpointer_initialized() else "unavailable"
+        checks = {"database": database_status, "checkpointer": checkpointer_status}
+        ready = all(value == "healthy" for value in checks.values())
+        response.status_code = 200 if ready else 503
+        return {"status": "ready" if ready else "not_ready", "checks": checks}
 
     return app
 
