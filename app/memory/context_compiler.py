@@ -107,6 +107,7 @@ class WorkspaceContextCompiler:
                     WorkspaceEdgeModel.target_object_id.in_(expandable),
                 )
                 .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+                .limit(MAX_COMPILED_OBJECTS + 1)
             )
             edges = list(edge_result.scalars())
             traversed_edges += len(edges)
@@ -180,9 +181,20 @@ class WorkspaceContextCompiler:
                     WorkspaceEdgeModel.target_object_id.in_(targets),
                 )
                 .order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+                .limit(MAX_COMPILED_OBJECTS + 1)
             )
             provenance_edges = list(provenance_edge_result.scalars())
+            if len(provenance_edges) > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
             source_ids = {edge.source_object_id for edge in provenance_edges}
+            if len(included | provenance_source_ids | source_ids) > MAX_COMPILED_OBJECTS:
+                raise ContextSelectionError(
+                    "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                    {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+                )
             missing_provenance_ids = source_ids - set(objects)
             if missing_provenance_ids:
                 project_source_result = await self.db.execute(
