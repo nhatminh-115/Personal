@@ -279,6 +279,11 @@ class WorkspaceContextCompiler:
         privacy_frontier = set(bridge_source_ids)
         privacy_visited: set[str] = set()
         traversed_privacy_edges = 0
+        if len(included | provenance_source_ids | privacy_ancestry_source_ids) > MAX_COMPILED_OBJECTS:
+            raise ContextSelectionError(
+                "Selected workspace context expands to too many linked objects. Narrow the selection and try again.",
+                {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
+            )
         while privacy_frontier:
             targets = privacy_frontier - privacy_visited
             if not targets:
@@ -335,7 +340,7 @@ class WorkspaceContextCompiler:
                     {"project_name": project_name, "object_limit": MAX_COMPILED_OBJECTS},
                 )
             privacy_frontier = next_frontier - privacy_visited
-# Privacy classifications on selected objects and explicit provenance
+        # Privacy classifications on selected objects and explicit provenance
         # sources strengthen the route boundary for this turn.
         privacy_requirement: str | None = None
         privacy_sources: list[dict[str, str]] = []
