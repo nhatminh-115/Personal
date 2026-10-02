@@ -1,6 +1,7 @@
 """Durable ask-before-cloud confirmation lifecycle tests."""
 
 import pytest
+from sqlalchemy import select
 
 from app.core.errors import RoutingConfirmationRequired
 from app.db.models import RunModel, RoutingConfirmationModel
@@ -273,3 +274,84 @@ async def test_rejected_specialist_routing_confirmation_cancels_child_without_cl
     child_run = await test_db_session.get(RunModel, confirmation.execution_run_id)
     assert parent_run.status == "completed"
     assert child_run.status == "cancelled"
+
+
+@pytest.mark.parametrize(
+    ("specialist_name", "overrides", "expected_model", "expected_reasoning_policy", "expected_reasoning_effort", "expected_lock"),
+    [
+        ("research", {"reasoning_override": "high"}, None, "fixed", "high", False),
+        ("coding", {"model_override": "mock:mock-default"}, "mock:mock-default", "adaptive", "medium", True),
+        (
+            "coding",
+            {"model_override": "mock:mock-default", "reasoning_override": "high"},
+            "mock:mock-default",
+            "fixed",
+            "high",
+            True,
+        ),
+    ],
+)
+@pytest.mark.asyncio
+async def test_temporary_routing_overrides_propagate_to_specialist_snapshot(
+    async_client,
+    test_db_session,
+    monkeypatch,
+    specialist_name,
+    overrides,
+    expected_model,
+    expected_reasoning_policy,
+    expected_reasoning_effort,
+    expected_lock,
+):
+    """Temporary root controls reach a child without replacing its route policy."""
+    mock_provider = model_router.get_provider("mock")
+    mock_provider.queue_response(ModelResponse(
+        content="Delegate the task.",
+        tool_calls=[ToolCallRequest(
+            id=f"delegate-routing-propagation-{specialist_name}",
+            name="delegate_task",
+            arguments={
+                "specialist_name": specialist_name,
+                "task_description": "Return a concise deterministic summary.",
+            },
+        )],
+    ))
+    mock_provider.queue_response(ModelResponse(content="Specialist summary."))
+    mock_provider.queue_response(ModelResponse(content="Root summary."))
+
+    selected_contexts = []
+
+    def select_deterministic_mock(context):
+        selected_contexts.append(context)
+        return mock_provider, ModelSelection(
+            provider_name="mock",
+            model_name="mock-default",
+            reason="deterministic routing propagation test",
+            context=context,
+        )
+
+    monkeypatch.setattr(model_router, "select_model_for_task", select_deterministic_mock)
+    response = await async_client.post(
+        "/v1/chat",
+        json={
+            "session_id": f"routing-propagation-{specialist_name}-{expected_reasoning_effort}-{expected_lock}",
+            "message": "Run the delegated task.",
+            **overrides,
+        },
+    )
+    assert response.status_code == 200, response.text
+    parent = response.json()
+    assert parent["status"] == "completed"
+
+    result = await test_db_session.execute(
+        select(RunModel).where(RunModel.parent_run_id == parent["run_id"])
+    )
+    child = result.scalar_one()
+    snapshot = child.routing_snapshot_json
+
+    assert child.status == "completed"
+    assert snapshot["is_lock_all"] is expected_lock
+    assert snapshot["explicit_model_override"] == expected_model
+    assert snapshot["reasoning_policy"] == expected_reasoning_policy
+    assert snapshot["reasoning_effort"] == expected_reasoning_effort
+    assert any(context.run_id == child.id for context in selected_contexts)
