@@ -10,6 +10,7 @@ from app.sandbox.workspace import resolve_workspace_path
 from app.tools.base import RiskLevel, Tool, ToolResult
 
 MAX_WORKSPACE_FILE_READ_BYTES = 256 * 1024
+MAX_WORKSPACE_FILE_WRITE_BYTES = 1024 * 1024
 MAX_WORKSPACE_DIRECTORY_ENTRIES = 500
 
 
@@ -207,6 +208,7 @@ class WriteWorkspaceFileTool(Tool):
                 },
                 "content": {
                     "type": "string",
+                    "maxLength": MAX_WORKSPACE_FILE_WRITE_BYTES,
                     "description": "Text contents to write to the file.",
                 },
             },
@@ -220,6 +222,19 @@ class WriteWorkspaceFileTool(Tool):
         if not path:
             return ToolResult(success=False, output="", error="Parameter 'path' is required.")
 
+        if not isinstance(content, str):
+            return ToolResult(success=False, output="", error="Parameter 'content' must be text.")
+        try:
+            content_bytes = content.encode("utf-8")
+        except UnicodeEncodeError:
+            return ToolResult(success=False, output="", error="Parameter 'content' must contain valid UTF-8 text.")
+        if len(content_bytes) > MAX_WORKSPACE_FILE_WRITE_BYTES:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"File content exceeds the {MAX_WORKSPACE_FILE_WRITE_BYTES}-byte write limit.",
+            )
+
         try:
             target_file = resolve_workspace_path(path)
             # Create parent directories safely
@@ -229,7 +244,7 @@ class WriteWorkspaceFileTool(Tool):
             return ToolResult(
                 success=True,
                 output=f"Successfully wrote {len(content)} characters to '{path}'.",
-                metadata={"path": str(path), "bytes_written": len(content)},
+                metadata={"path": str(path), "bytes_written": len(content_bytes)},
             )
         except WorkspaceEscapeError as e:
             return ToolResult(success=False, output="", error=str(e))
