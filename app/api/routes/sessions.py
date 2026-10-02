@@ -1,16 +1,15 @@
 """Sessions inspection endpoint: GET /v1/sessions."""
 
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.dependencies import get_memory_service
+from app.api.pagination import decode_timestamp_id_cursor, encode_timestamp_id_cursor
 from app.api.schemas import MessageResponse, SessionDetailResponse, SessionSummaryResponse
-from app.db.models import RunEventModel, SessionModel, WorkspaceObjectModel
+from app.db.models import MessageModel, RunEventModel, SessionModel, WorkspaceObjectModel
 from app.db.session import get_db
-from app.memory.base import MemoryService
 
 router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
 
@@ -37,14 +36,33 @@ async def list_sessions(
 @router.get("/{session_id}", response_model=SessionDetailResponse)
 async def get_session_details(
     session_id: str,
-    mem_service: MemoryService = Depends(get_memory_service),
+    cursor: Optional[str] = Query(default=None, max_length=512),
+    limit: int = Query(default=100, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> SessionDetailResponse:
     """Inspect conversation history and state of a session."""
     session = await db.get(SessionModel, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found.")
-    messages = await mem_service.get_session_messages(session_id, limit=100)
+    message_query = select(MessageModel).where(MessageModel.session_id == session_id)
+    if cursor:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        message_query = message_query.where(
+            or_(
+                MessageModel.created_at < cursor_created_at,
+                and_(MessageModel.created_at == cursor_created_at, MessageModel.id < cursor_id),
+            )
+        )
+    message_query = message_query.order_by(MessageModel.created_at.desc(), MessageModel.id.desc()).limit(limit + 1)
+    message_result = await db.execute(message_query)
+    descending_messages = list(message_result.scalars().all())
+    has_older_messages = len(descending_messages) > limit
+    page_descending = descending_messages[:limit]
+    messages = list(reversed(page_descending))
+    messages_next_cursor = (
+        encode_timestamp_id_cursor(page_descending[-1].created_at, page_descending[-1].id)
+        if has_older_messages and page_descending else None
+    )
     message_ids = [message.id for message in messages]
     run_id_by_message: dict[str, str] = {}
     if message_ids:
@@ -122,6 +140,7 @@ async def get_session_details(
         title=session.title,
         created_at=session.created_at,
         updated_at=session.updated_at,
+        messages_next_cursor=messages_next_cursor,
         messages=[
             MessageResponse(
                 id=m.id,

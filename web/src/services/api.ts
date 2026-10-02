@@ -194,8 +194,11 @@ export const api = {
     return handleResponse<SessionSummary[]>(res);
   },
 
-  async fetchSession(sessionId: string): Promise<SessionDetail> {
-    const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}`);
+  async fetchSession(sessionId: string, cursor?: string | null): Promise<SessionDetail> {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    const query = params.size ? `?${params.toString()}` : '';
+    const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}${query}`);
     return handleResponse<SessionDetail>(res);
   },
 

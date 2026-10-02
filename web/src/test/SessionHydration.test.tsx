@@ -94,6 +94,45 @@ describe('Session Hydration', () => {
     expect(sessionDetailCalls.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('loads older live messages with the next session cursor', async () => {
+    const newerMessage = { ...BACKEND_MESSAGE, id: 'newer-message', content: 'Newest page message' };
+    const olderMessage = { ...BACKEND_MESSAGE, id: 'older-message', content: 'Older page message' };
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (/\/v1\/sessions$/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions/live-paged-session')) {
+        const olderPage = url.includes('cursor=older-cursor');
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          id: 'live-paged-session', title: 'Paged thread', created_at: '2024-01-01', updated_at: '2024-01-01',
+          messages: [olderPage ? olderMessage : newerMessage],
+          messages_next_cursor: olderPage ? null : 'older-cursor',
+        }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const liveThread = {
+      id: 'stateful-live-paged', projectId: 'stateful', title: 'Paged thread', summary: 'History pagination',
+      updated: 'now', messages: [], sessionId: 'live-paged-session', source: 'live', pinned: false,
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsBtn); });
+    await act(async () => { fireEvent.click(screen.getByText('Paged thread')); });
+
+    expect(await screen.findByText('Newest page message')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Load older messages' })); });
+    expect(await screen.findByText('Older page message')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Load older messages' })).not.toBeInTheDocument();
+    expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([url]) => String(url).includes('cursor=older-cursor'))).toBe(true);
+  });
+
   it('hydration failure does not destroy local thread messages', async () => {
     // Override fetch to fail the session detail call
     global.fetch = vi.fn().mockImplementation((url: string) => {

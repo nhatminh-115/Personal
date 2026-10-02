@@ -153,6 +153,7 @@ class SessionDetailResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: List[MessageResponse]
+    messages_next_cursor: Optional[str] = None
 
 
 # --- Run & Trace Schemas ---

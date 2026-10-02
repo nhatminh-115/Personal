@@ -190,6 +190,7 @@ export interface SessionDetail {
   created_at: string;
   updated_at: string;
   messages: SessionMessage[];
+  messages_next_cursor?: string | null;
 }
 
 export interface SessionMessage extends ChatMessage {

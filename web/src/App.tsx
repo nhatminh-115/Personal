@@ -836,7 +836,7 @@ export default function App() {
     const thread = chatThreads.find((t) => t.id === threadId);
     if (thread?.source === 'live' && thread.sessionId) {
       void api.fetchSession(thread.sessionId).then((detail) => {
-        if (!detail?.messages?.length) return;
+        if (!detail?.messages) return;
         const hydratedMessages = detail.messages.map((message) => {
           const manifest = message.context_manifest;
           return {
@@ -908,12 +908,47 @@ export default function App() {
 
           // Only update thread if something actually changed
           const idChanged = hydratedMessages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
-          if (!appended && !idChanged) return t;
-          return { ...t, messages: merged };
+          if (!appended && !idChanged && t.messagesNextCursor === (detail.messages_next_cursor ?? null)) return t;
+          return { ...t, messages: merged, messagesNextCursor: detail.messages_next_cursor ?? null };
         }));
       }).catch(() => { /* hydration failure is silently ignored */ });
     }
   }, [activeProjectId, chatThreads]);
+
+  const loadOlderMessages = useCallback(async (threadId: string) => {
+    const thread = chatThreads.find((candidate) => candidate.id === threadId);
+    if (!thread?.sessionId || !thread.messagesNextCursor || thread.loadingOlderMessages) return;
+    const cursor = thread.messagesNextCursor;
+    setChatThreads((current) => current.map((item) => item.id === threadId ? { ...item, loadingOlderMessages: true } : item));
+    try {
+      const detail = await api.fetchSession(thread.sessionId, cursor);
+      const olderMessages: ChatMessage[] = detail.messages.map((message) => {
+        const manifest = message.context_manifest;
+        return {
+          ...message,
+          branch: message.branch ?? 'Root',
+          provenance: contextProvenanceFromManifest(manifest),
+          contextTokens: compiledContextTokenCountFromManifest(manifest),
+          contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
+          ...routingSummaryFromProvenance(message.routing_provenance),
+        };
+      });
+      setChatThreads((current) => current.map((item) => {
+        if (item.id !== threadId) return item;
+        const existingIds = new Set(item.messages.map((message) => message.id).filter((id): id is string => Boolean(id)));
+        const uniqueOlderMessages = olderMessages.filter((message) => !message.id || !existingIds.has(message.id));
+        return {
+          ...item,
+          messages: [...uniqueOlderMessages, ...item.messages],
+          messagesNextCursor: detail.messages_next_cursor ?? null,
+          loadingOlderMessages: false,
+        };
+      }));
+    } catch (error) {
+      setChatThreads((current) => current.map((item) => item.id === threadId ? { ...item, loadingOlderMessages: false } : item));
+      pushToast('Could not load older messages', executionErrorText(error));
+    }
+  }, [chatThreads, pushToast]);
 
   const newThread = useCallback(() => {
     if (!activeProjectId) return;
@@ -1928,6 +1963,7 @@ export default function App() {
             onSelectThread={selectThread}
             onNewThread={newThread}
             onUpdateMessages={updateThreadMessages}
+            onLoadOlderMessages={loadOlderMessages}
             onMessageFocus={handleChatMessageFocus}
             onBranchFromMessage={handleBranchFromChat}
             onContextObjectFocus={handleChatContextObjectFocus}
@@ -1975,6 +2011,7 @@ export default function App() {
                 onSelectThread={selectThread}
                 onNewThread={newThread}
                 onUpdateMessages={updateThreadMessages}
+                onLoadOlderMessages={loadOlderMessages}
                 onMessageFocus={handleChatMessageFocus}
                 onBranchFromMessage={handleBranchFromChat}
                 onContextObjectFocus={handleChatContextObjectFocus}

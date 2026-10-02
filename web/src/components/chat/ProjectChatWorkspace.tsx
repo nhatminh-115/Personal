@@ -23,6 +23,7 @@ export interface ProjectChatWorkspaceProps {
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
   onContextObjectIdsChange?: (threadId: string, objectIds: string[]) => void;
+  onLoadOlderMessages?: (threadId: string) => Promise<void>;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
@@ -49,6 +50,7 @@ export function ProjectChatWorkspace({
   onSendMessage,
   onStartLiveChat,
   onContextObjectIdsChange,
+  onLoadOlderMessages,
   currentApproval,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
@@ -173,6 +175,9 @@ export function ProjectChatWorkspace({
             projectName={project.name}
             threadTitle={activeThread.title}
             messages={activeThread.messages}
+            messagesNextCursor={activeThread.messagesNextCursor}
+            loadingOlderMessages={activeThread.loadingOlderMessages}
+            onLoadOlderMessages={onLoadOlderMessages ? () => onLoadOlderMessages(activeThread.id) : undefined}
             onMessagesChange={(updater) => onUpdateMessages(activeThread.id, updater)}
             contextItems={contextItems}
             contextIsLive={isLiveThread}

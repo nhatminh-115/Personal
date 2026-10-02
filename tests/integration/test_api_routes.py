@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
-from app.db.models import RunEventModel, RunModel, SessionModel
+from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel
 
 
 @pytest.mark.asyncio
@@ -129,6 +129,41 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
     assert routing["model"] == "mock-default"
     assert routing["role"] == "root"
     assert isinstance(routing["reasoning_effort"], str)
+
+
+@pytest.mark.asyncio
+async def test_session_history_uses_cursor_pages_without_overlap(async_client: AsyncClient, test_db_session):
+    session_id = "session-history-pagination"
+    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    test_db_session.add(SessionModel(id=session_id, title="History pagination"))
+    test_db_session.add_all([
+        MessageModel(
+            id=f"history-{index:03d}",
+            session_id=session_id,
+            role="user" if index % 2 == 0 else "assistant",
+            content=f"Message {index}",
+            created_at=base_time + timedelta(seconds=index),
+        )
+        for index in range(105)
+    ])
+    await test_db_session.commit()
+
+    first_response = await async_client.get(f"/v1/sessions/{session_id}")
+    assert first_response.status_code == 200
+    first_page = first_response.json()
+    assert [message["content"] for message in first_page["messages"]] == [f"Message {i}" for i in range(5, 105)]
+    assert first_page["messages_next_cursor"]
+
+    second_response = await async_client.get(
+        f"/v1/sessions/{session_id}", params={"cursor": first_page["messages_next_cursor"]},
+    )
+    assert second_response.status_code == 200
+    second_page = second_response.json()
+    assert [message["content"] for message in second_page["messages"]] == [f"Message {i}" for i in range(5)]
+    assert second_page["messages_next_cursor"] is None
+    assert {message["id"] for message in first_page["messages"]}.isdisjoint(
+        message["id"] for message in second_page["messages"]
+    )
 
 
 @pytest.mark.asyncio
