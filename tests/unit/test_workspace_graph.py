@@ -1937,6 +1937,32 @@ async def test_workspace_execution_history_cursor_pages_runs_without_overlap(asy
 
 
 @pytest.mark.asyncio
+async def test_workspace_execution_history_scales_beyond_sqlite_session_bind_limit(async_client, test_db_session):
+    from app.db.models import RunEventModel
+
+    project_name = "many-session-project"
+    sessions = [
+        SessionModel(id=f"many-session-{index:04d}", title="Session", metadata_json={}, project_name=project_name)
+        for index in range(1_100)
+    ]
+    run = RunModel(
+        id="many-session-run",
+        session_id=sessions[-1].id,
+        status="completed",
+        user_message="Query the latest run",
+    )
+    test_db_session.add_all([*sessions, run])
+    await test_db_session.flush()
+    test_db_session.add(RunEventModel(run_id=run.id, event_type="run_completed", payload={}))
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/workspace/projects/{project_name}/execution")
+
+    assert response.status_code == 200
+    assert [trace["run_id"] for trace in response.json()["execution_traces"]] == [run.id]
+
+
+@pytest.mark.asyncio
 async def test_workspace_execution_history_rejects_invalid_cursor(async_client):
     response = await async_client.get(
         "/v1/workspace/projects/aura/graph",

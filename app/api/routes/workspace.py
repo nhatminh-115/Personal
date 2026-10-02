@@ -580,8 +580,7 @@ async def _project_execution_history(
     execution_cursor: str | None,
     execution_page_size: int,
 ) -> WorkspaceExecutionHistoryResponse:
-    session_result = await db.execute(select(SessionModel.id).where(SessionModel.project_name == project_name))
-    session_ids = list(session_result.scalars())
+    project_session_ids = select(SessionModel.id).where(SessionModel.project_name == project_name)
     cursor_created_at: datetime | None = None
     cursor_run_id: str | None = None
     if execution_cursor:
@@ -597,17 +596,16 @@ async def _project_execution_history(
             raise HTTPException(status_code=422, detail="Invalid execution history cursor.")
 
     runs: list[RunModel] = []
-    if session_ids:
-        run_query = select(RunModel).where(RunModel.session_id.in_(session_ids))
-        if cursor_created_at is not None and cursor_run_id is not None:
-            run_query = run_query.where(or_(
-                RunModel.created_at < cursor_created_at,
-                (RunModel.created_at == cursor_created_at) & (RunModel.id < cursor_run_id),
-            ))
-        run_result = await db.execute(
-            run_query.order_by(RunModel.created_at.desc(), RunModel.id.desc()).limit(execution_page_size + 1)
-        )
-        runs = list(run_result.scalars())
+    run_query = select(RunModel).where(RunModel.session_id.in_(project_session_ids))
+    if cursor_created_at is not None and cursor_run_id is not None:
+        run_query = run_query.where(or_(
+            RunModel.created_at < cursor_created_at,
+            (RunModel.created_at == cursor_created_at) & (RunModel.id < cursor_run_id),
+        ))
+    run_result = await db.execute(
+        run_query.order_by(RunModel.created_at.desc(), RunModel.id.desc()).limit(execution_page_size + 1)
+    )
+    runs = list(run_result.scalars())
     runs_truncated = len(runs) > execution_page_size
     runs = runs[:execution_page_size]
     execution_next_cursor = None
