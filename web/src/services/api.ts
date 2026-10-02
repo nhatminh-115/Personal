@@ -274,7 +274,7 @@ export const api = {
   },
 
   async fetchStudySessions(): Promise<StudySessionRecord[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`));
+    return fetchAllCursorPages<StudySessionRecord>('/v1/study/sessions');
   },
 
   async startStudySession(trackId: string, trackTitle: string, materialId?: string, materialProjectName?: string): Promise<StudySessionRecord> {
@@ -298,7 +298,7 @@ export const api = {
   },
 
   async fetchStudyCards(): Promise<StudyCardRecord[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/cards`));
+    return fetchAllCursorPages<StudyCardRecord>('/v1/study/cards');
   },
 
   async createStudyCard(sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {

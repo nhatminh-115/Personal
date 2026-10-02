@@ -31,6 +31,60 @@ async def test_study_session_lifecycle_persists_in_the_shared_workspace_graph(as
 
 
 @pytest.mark.asyncio
+async def test_study_session_collection_uses_bounded_keyset_pages(async_client: AsyncClient):
+    for index in range(3):
+        started = await async_client.post("/v1/study/sessions", json={
+            "track_id": f"track-{index}",
+            "track_title": f"Track {index}",
+        })
+        assert started.status_code == 201
+        completed = await async_client.post(f"/v1/study/sessions/{started.json()['id']}/complete")
+        assert completed.status_code == 200
+
+    full = (await async_client.get("/v1/study/sessions")).json()
+    first = await async_client.get("/v1/study/sessions", params={"page_size": 2})
+    assert [item["id"] for item in first.json()] == [item["id"] for item in full[:2]]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/study/sessions", params={"page_size": 2, "cursor": cursor})
+    assert [item["id"] for item in second.json()] == [item["id"] for item in full[2:]]
+    assert second.headers.get("X-Next-Cursor") is None
+
+
+@pytest.mark.asyncio
+async def test_study_card_collection_uses_bounded_keyset_pages(async_client: AsyncClient):
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": "cards-track",
+        "track_title": "Cards track",
+    })
+    assert started.status_code == 201
+    for index in range(3):
+        card = await async_client.post(
+            f"/v1/study/sessions/{started.json()['id']}/cards",
+            json={"question": f"Question {index}", "answer": f"Answer {index}"},
+        )
+        assert card.status_code == 201
+
+    full = (await async_client.get("/v1/study/cards")).json()
+    first = await async_client.get("/v1/study/cards", params={"page_size": 2})
+    assert [item["id"] for item in first.json()] == [item["id"] for item in full[:2]]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/study/cards", params={"page_size": 2, "cursor": cursor})
+    assert [item["id"] for item in second.json()] == [item["id"] for item in full[2:]]
+    assert second.headers.get("X-Next-Cursor") is None
+
+
+@pytest.mark.asyncio
+async def test_study_collection_rejects_invalid_cursor(async_client: AsyncClient):
+    response = await async_client.get("/v1/study/cards", params={"cursor": "not-a-cursor"})
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Invalid pagination cursor."
+
+
+@pytest.mark.asyncio
 async def test_study_session_rejects_blank_track_and_unknown_completion(async_client: AsyncClient):
     blank = await async_client.post("/v1/study/sessions", json={
         "track_id": " ",
