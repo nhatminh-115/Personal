@@ -42,12 +42,21 @@ describe('Session Hydration', () => {
           json: () => Promise.resolve([{
             id: 'restored-session-1', title: 'Recovered conversation', project_name: 'Stateful Architecture',
             created_at: '2024-01-01', updated_at: '2024-01-02',
+          }, {
+            id: 'live-sess-1', title: 'Live', project_name: 'Stateful Architecture',
+            created_at: '2024-01-01', updated_at: '2024-01-01',
           }]),
         });
       }
-      // Session list returns one live session
-      if (url.includes('/v1/sessions?')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve([{ id: 'live-sess-1', title: 'Live', created_at: '2024-01-01', updated_at: '2024-01-01' }]) });
+      if (url.endsWith('/v1/sessions/live-sess-1/state')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          session_id: 'live-sess-1', run_id: 'hydrated-run-1', run_status: 'waiting_for_approval',
+          approval: {
+            id: 'approval-after-reload', run_id: 'hydrated-run-1', session_id: 'live-sess-1',
+            tool_call_id: 'call-after-reload', tool_name: 'shell', tool_input: { command: 'inspect' },
+            risk_level: 'HIGH', status: 'pending', created_at: '2024-01-01T00:00:00Z',
+          },
+        }) });
       }
       // Session detail returns a backend message
       if (url.includes('/v1/sessions/')) {
@@ -94,6 +103,7 @@ describe('Session Hydration', () => {
     expect(screen.getByText('0.1k context')).toBeInTheDocument();
     expect(screen.getByText('ollama:local-chat')).toBeInTheDocument();
     expect(screen.getByText('Reasoning · Medium')).toBeInTheDocument();
+    expect(await screen.findByTestId('approval-banner')).toBeInTheDocument();
 
     // /v1/sessions/live-sess-1 was called
     // Fix 1: use type-safe call[0] extraction instead of tuple destructure

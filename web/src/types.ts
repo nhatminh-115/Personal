@@ -194,6 +194,13 @@ export interface SessionDetail {
   messages_next_cursor?: string | null;
 }
 
+export interface SessionExecutionState {
+  session_id: string;
+  run_id?: string | null;
+  run_status?: string | null;
+  approval?: ApprovalDetail | null;
+}
+
 export interface SessionMessage extends ChatMessage {
   run_id?: string;
   context_manifest?: CompiledContextManifest;

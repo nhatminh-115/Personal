@@ -579,6 +579,34 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const thread = activeThread;
+    if (thread?.source !== 'live' || !thread.sessionId) return;
+    let cancelled = false;
+    void api.fetchSessionExecutionState(thread.sessionId).then((state) => {
+      const runId = state.run_id;
+      if (cancelled || !runId) return;
+      setThreadLiveStates((current) => {
+        const existing = current[thread.id];
+        if (existing?.runStatus === 'running' || existing?.runStatus === 'resuming_routing') return current;
+        return {
+          ...current,
+          [thread.id]: {
+            runId,
+            runStatus: state.run_status ?? null,
+            approval: state.approval ?? null,
+            runDetail: existing?.runDetail ?? null,
+            researchData: existing?.researchData ?? null,
+            routingData: existing?.routingData ?? null,
+            routingConfirmation: existing?.routingConfirmation ?? null,
+          },
+        };
+      });
+      void refreshInspectorData(thread.id, runId);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [activeThread?.id, activeThread?.sessionId, activeThread?.source, refreshInspectorData]);
+
   // Ensure app-level live states are marked as accessed
   void catalog;
   void activeThreadLive;

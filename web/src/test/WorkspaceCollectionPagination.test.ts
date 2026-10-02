@@ -26,6 +26,15 @@ describe('workspace collection pagination', () => {
     expect(url.searchParams.get('page_size')).toBe('25');
   });
 
+  it('loads persisted execution and approval state for a session', async () => {
+    const state = { session_id: 'session/one', run_id: 'run-1', run_status: 'waiting_for_approval', approval: null };
+    const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => state });
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.fetchSessionExecutionState('session/one')).resolves.toEqual(state);
+    expect(fetch).toHaveBeenCalledWith('/v1/sessions/session%2Fone/state');
+  });
+
   it('collects every notes page using the response cursor header', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse([{ id: 'note-1' }, { id: 'note-2' }], 'next-notes'))
