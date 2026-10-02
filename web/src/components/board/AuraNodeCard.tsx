@@ -22,7 +22,7 @@ import {
   SquareTerminal,
   UserRound,
 } from 'lucide-react';
-import type { AuraFlowNode, AuraNodeData, NodeDensity } from '../../types';
+import type { AuraFlowNode, AuraNodeData, NodeDensity, RoutingPrivacy } from '../../types';
 
 
 function updateGlow(event: ReactPointerEvent<HTMLDivElement>) {
@@ -146,6 +146,31 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
       ) : (
         <p className="aura-node__body">{displayText}</p>
       )}
+
+      {(data.workspaceObjectType === 'manual_note' || data.workspaceObjectType === 'context_bridge') && data.density === 'full' ? (
+        <label className="workspace-privacy-control nodrag nopan">
+          <span>Privacy</span>
+          <select
+            aria-label="Privacy classification"
+            value={
+              typeof researchMetadata.privacy_policy === 'string'
+                ? researchMetadata.privacy_policy
+                : ''
+            }
+            onChange={(event) => data.onSetPrivacyPolicy?.(id, event.target.value ? event.target.value as RoutingPrivacy : null)}
+          >
+            <option value="">Inherit global</option>
+            <option value="public">Public</option>
+            <option value="internal">Internal</option>
+            <option value="confidential">Confidential</option>
+            <option value="local_only">Local only</option>
+            {typeof researchMetadata.privacy_policy === 'string'
+              && !['public', 'internal', 'confidential', 'local_only'].includes(researchMetadata.privacy_policy)
+              ? <option value={researchMetadata.privacy_policy} disabled>Unsupported: {researchMetadata.privacy_policy}</option>
+              : null}
+          </select>
+        </label>
+      ) : null}
 
       {researchDetails.length ? (
         <small className="research-node-meta">{researchDetails.join(' · ')}</small>
