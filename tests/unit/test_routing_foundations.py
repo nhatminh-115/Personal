@@ -735,7 +735,7 @@ async def test_default_profile_transitions_keep_exactly_one_or_fall_back_to_syst
     assert [profile.id for profile in profiles] == [second_id]
     effective = await async_client.get("/v1/routing/effective")
     assert effective.status_code == 200
-    assert effective.json()["profile"].id if False else effective.json()["profile"]["id"] == second_id
+    assert effective.json()["profile"]["id"] == second_id
     assert effective.json()["winning_scope"] == "default"
 
     reset = await async_client.put("/v1/routing/default", json={"profile_id": "system-balanced"})
