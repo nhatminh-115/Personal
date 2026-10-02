@@ -83,6 +83,38 @@ async def test_scheduler_recurring_advancement(test_db_session):
 
 
 @pytest.mark.asyncio
+async def test_scheduler_processes_due_jobs_in_bounded_ordered_batches(test_db_session, monkeypatch):
+    import app.events.scheduler as scheduler_module
+
+    monkeypatch.setattr(scheduler_module, "MAX_DUE_JOBS_PER_TICK", 2)
+    scheduler = PersistentScheduler(bus=EventBus())
+    due_time = utc_now() - timedelta(seconds=5)
+    jobs = [
+        ScheduledJobModel(
+            name=f"batch-job-{index}",
+            job_type=JobType.ONE_SHOT.value,
+            schedule_expression="5",
+            payload_json={"job_index": index},
+            is_active=True,
+            next_run_at=due_time + timedelta(seconds=index),
+            metadata_json={},
+        )
+        for index in range(5)
+    ]
+    test_db_session.add_all(jobs)
+    await test_db_session.commit()
+
+    first = await scheduler.tick(test_db_session, dispatch_immediate=False)
+    assert [event.payload["job_index"] for event in first] == [0, 1]
+    assert sum(job.is_active for job in jobs) == 3
+
+    second = await scheduler.tick(test_db_session, dispatch_immediate=False)
+    third = await scheduler.tick(test_db_session, dispatch_immediate=False)
+    assert [event.payload["job_index"] for event in second + third] == [2, 3, 4]
+    assert not any(job.is_active for job in jobs)
+
+
+@pytest.mark.asyncio
 async def test_scheduler_defers_automation_while_prior_run_waits_for_approval(test_db_session):
     """A recurring Automation must not queue again while its prior run is paused for approval."""
     import uuid

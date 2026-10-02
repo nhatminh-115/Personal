@@ -13,6 +13,8 @@ from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunS
 from app.events.bus import EventBus, event_bus
 from app.events.types import AURAEvent, EventType
 
+MAX_DUE_JOBS_PER_TICK = 100
+
 
 class PersistentScheduler:
     """
@@ -161,7 +163,7 @@ class PersistentScheduler:
                     ScheduledJobModel.locked_at < stale_lock_cutoff,
                 ),
             )
-        )
+        ).order_by(ScheduledJobModel.next_run_at, ScheduledJobModel.id).limit(MAX_DUE_JOBS_PER_TICK)
         result = await db.execute(query)
         candidates = list(result.scalars().all())
 
