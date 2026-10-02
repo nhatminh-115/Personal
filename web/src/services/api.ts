@@ -19,6 +19,7 @@ import {
   ReasoningEffort,
   WorkspaceEdge,
   WorkspaceGraph,
+  WorkspaceExecutionHistory,
   WorkspaceLayout,
   WorkspaceNoteRecord,
   WorkspaceObject,
