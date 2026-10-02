@@ -66,7 +66,7 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reject' }));
     await waitFor(() => expect(onApprovalResolved).toHaveBeenCalledWith('auto-1'));
     expect(api.submitApproval).toHaveBeenNthCalledWith(1, 'approval-1', 'approved', undefined, undefined);
-    expect(api.submitApproval).toHaveBeenNthCalledWith(2, 'approval-2', 'rejected', undefined);
+    expect(api.submitApproval).toHaveBeenNthCalledWith(2, 'approval-2', 'rejected', undefined, undefined);
   });
 
   it('validates edited automation input and submits only an explicit JSON object decision', async () => {
