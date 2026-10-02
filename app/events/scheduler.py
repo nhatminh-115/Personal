@@ -2,11 +2,13 @@
 
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+import uuid
+
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
-from app.db.models import JobType, ScheduledJobModel, utc_now
+from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.events.bus import EventBus, event_bus
 from app.events.types import AURAEvent, EventType
 
@@ -98,6 +100,42 @@ class PersistentScheduler:
         result = await db.execute(query)
         return list(result.scalars().all())
 
+    async def _automation_has_active_execution(self, db: AsyncSession, job: ScheduledJobModel) -> bool:
+        """Avoid overlapping unattended automation runs while a prior trigger is still active."""
+        metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
+        if metadata.get("kind") != "automation":
+            return False
+
+        result = await db.execute(
+            select(EventRecordModel)
+            .where(
+                EventRecordModel.correlation_id == job.id,
+                EventRecordModel.event_type.in_({EventType.TIMER_FIRED.value, EventType.CRON_TICK.value}),
+            )
+            .order_by(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc())
+            .limit(1)
+        )
+        event = result.scalar_one_or_none()
+        if event is None or event.status in {EventStatus.DEAD_LETTER.value, EventStatus.PROCESSED.value}:
+            if event is None or event.status == EventStatus.DEAD_LETTER.value:
+                return False
+        elif event.status in {
+            EventStatus.PENDING.value,
+            EventStatus.PROCESSING.value,
+            EventStatus.FAILED.value,
+        }:
+            return True
+
+        if event is None or event.status != EventStatus.PROCESSED.value:
+            return False
+        run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+        run = await db.get(RunModel, run_id)
+        return bool(run and run.status in {
+            RunStatus.RUNNING.value,
+            RunStatus.WAITING_FOR_APPROVAL.value,
+            RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
+        })
+
     async def tick(
         self,
         db: AsyncSession,
@@ -155,6 +193,18 @@ class PersistentScheduler:
 
             job = await db.get(ScheduledJobModel, candidate.id)
             if not job:
+                continue
+
+            if job.job_type != JobType.ONE_SHOT.value and await self._automation_has_active_execution(db, job):
+                try:
+                    interval = float(job.schedule_expression)
+                    job.next_run_at = now + timedelta(seconds=interval)
+                except (TypeError, ValueError):
+                    job.next_run_at = now + timedelta(seconds=60.0)
+                job.locked_at = None
+                job.locked_by = None
+                await db.commit()
+                await db.refresh(job)
                 continue
 
             evt_type = EventType.TIMER_FIRED.value if job.job_type == JobType.ONE_SHOT.value else EventType.CRON_TICK.value
