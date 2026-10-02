@@ -1,5 +1,7 @@
 """Study sessions retain identity links to shared personal workspace objects."""
 
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 
@@ -207,3 +209,53 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
         "material_project_name": "research-project",
     })
     assert refused.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_study_workspace_allows_only_one_active_session(async_client: AsyncClient):
+    first = await async_client.post("/v1/study/sessions", json={
+        "track_id": "first-track",
+        "track_title": "First track",
+    })
+    assert first.status_code == 201
+
+    blocked = await async_client.post("/v1/study/sessions", json={
+        "track_id": "second-track",
+        "track_title": "Second track",
+    })
+    assert blocked.status_code == 409
+    assert "already active" in blocked.json()["detail"]
+
+    completed = await async_client.post(f"/v1/study/sessions/{first.json()['id']}/complete")
+    assert completed.status_code == 200
+
+    second = await async_client.post("/v1/study/sessions", json={
+        "track_id": "second-track",
+        "track_title": "Second track",
+    })
+    assert second.status_code == 201
+    assert second.json()["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_concurrent_study_starts_create_at_most_one_active_session(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    if test_db_session.get_bind().dialect.name != "postgresql":
+        pytest.skip("The production concurrency guarantee uses PostgreSQL advisory locks.")
+
+    responses = await asyncio.gather(
+        async_client.post("/v1/study/sessions", json={
+            "track_id": "concurrent-track-a",
+            "track_title": "Concurrent track A",
+        }),
+        async_client.post("/v1/study/sessions", json={
+            "track_id": "concurrent-track-b",
+            "track_title": "Concurrent track B",
+        }),
+    )
+
+    assert sorted(response.status_code for response in responses) == [201, 409]
+    sessions = (await async_client.get("/v1/study/sessions")).json()
+    assert len([session for session in sessions if session["status"] == "in_progress"]) == 1
