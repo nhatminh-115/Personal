@@ -207,4 +207,4 @@ async def test_automation_event_uses_effective_project_profile_but_stays_local_o
         )
     )).scalars().all()
     assert len(routing_events) == 1
-    assert routing_events[0].payload_json["privacy_policy"] == "local_only"
+    assert routing_events[0].payload["privacy_policy"] == "local_only"
