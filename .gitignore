@@ -241,3 +241,7 @@ web/dist/
 aura-ui-prototype-v9.1-scrollbar-fix/
 
 
+
+# Generated live dogfood state and sanitized run summaries
+.aura_dogfood/
+artifacts/dogfood/*.json
