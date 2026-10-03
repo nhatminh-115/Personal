@@ -263,7 +263,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     await act(async () => {
       fireEvent.click(libraryNav);
     });
-    expect(screen.getByText(/Your files can stay where they already live/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Your files can stay where they already live/i)).toBeInTheDocument();
 
     // Click Back button in topbar
     const backBtn = screen.getByTitle('Back');
@@ -281,7 +281,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
 
     // Restores Library snapshot
-    expect(screen.getByText(/Your files can stay where they already live/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Your files can stay where they already live/i)).toBeInTheDocument();
   });
 
   it('preserves routing control in topbar and confirms old sidebar model picker is absent', async () => {

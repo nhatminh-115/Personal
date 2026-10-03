@@ -55,7 +55,7 @@ describe('Research Radar', () => {
     expect(screen.getByText('1 sources')).toBeInTheDocument();
     expect(screen.getByText('1 evidence')).toBeInTheDocument();
     expect(screen.getByText('1 claims')).toBeInTheDocument();
-    expect(screen.getByText('verification verified')).toBeInTheDocument();
+    expect(screen.getByText('verified')).toBeInTheDocument();
     expect(screen.getByText(/contains evidence · Evidence · A durable workspace study/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open source' })).toHaveAttribute('href', 'https://example.org/paper');
     expect(api.fetchWorkspaceGraphPage).toHaveBeenCalledWith('Research project');
