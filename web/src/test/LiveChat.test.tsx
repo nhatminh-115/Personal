@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
+import { api } from '../services/api';
 
 describe('Live Chat and Backend Integration in v9.1 Shell', () => {
   beforeEach(() => {
@@ -12,9 +13,18 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     let chatPayload: any = null;
     const consoleError = vi.spyOn(console, 'error');
     const consoleWarn = vi.spyOn(console, 'warn');
+    vi.spyOn(api, 'fetchWorkspaceObjectPage').mockResolvedValue({
+      objects: [
+        { id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint', content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user' },
+        { id: 'research-source-1', object_type: 'research_source', title: 'Durable execution paper', content: 'A paper abstract.', metadata_json: {}, created_by: 'research' },
+        { id: 'research-evidence-1', object_type: 'research_evidence', title: 'Checkpoint evidence', content: 'Execution resumes from a checkpoint.', metadata_json: {}, created_by: 'research' },
+        { id: 'research-claim-1', object_type: 'research_claim', title: 'Restartability claim', content: 'Verified claim text.', metadata_json: { verification_status: 'verified' }, created_by: 'research' },
+      ] as any,
+      nextCursor: null,
+    });
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url.includes('/v1/workspace/projects/') && url.endsWith('/graph')) {
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
           id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
           content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user', session_id: null, source_message_id: null,
@@ -129,15 +139,17 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
-    const contextItem = (await screen.findByText('Shared project constraint')).closest<HTMLButtonElement>('.ai-context-item')!;
+    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalled());
+    await screen.findByText('Shared project constraint');
     expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
     expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
     const claimItem = (await screen.findByText('Restartability claim')).closest<HTMLButtonElement>('.ai-context-item')!;
     const reactErrors = vi.spyOn(console, 'error').mockImplementation(() => {});
     fireEvent.click(claimItem);
     expect(claimItem).toHaveAttribute('aria-pressed', 'true');
+    const contextItem = screen.getByText('Shared project constraint').closest<HTMLButtonElement>('.ai-context-item')!;
     fireEvent.click(contextItem);
-    expect(contextItem).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('Shared project constraint').closest('.ai-context-item')).toHaveAttribute('aria-pressed', 'true');
     expect(reactErrors.mock.calls.some((args) => String(args[0]).includes('Cannot update a component'))).toBe(false);
     reactErrors.mockRestore();
 

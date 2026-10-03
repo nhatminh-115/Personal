@@ -331,7 +331,8 @@ describe('Persistent workspace graph Board projection', () => {
         content: 'Saved branch point.',
       }],
     };
-    const fetchBranchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    const fetchBranchObjects = vi.spyOn(api, 'fetchWorkspaceObjectPage').mockResolvedValue({ objects: graph.objects, nextCursor: null });
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-branch', project_name: projects[0].name });
 
     const onContinueBranch = vi.fn();
@@ -358,9 +359,9 @@ describe('Persistent workspace graph Board projection', () => {
         onContextObjectIdsChange={(_, ids) => onContinueBranch('selected:' + ids.join(','))}
       />,
     );
-    await waitFor(() => expect(fetchBranchGraph).toHaveBeenCalledWith(projects[0].name));
     fireEvent.click(screen.getByText('Context').closest('button')!);
     await screen.findByText('Project objects');
+    await waitFor(() => expect(fetchBranchObjects).toHaveBeenCalledWith(projects[0].name, null));
     await waitFor(() => expect(container.querySelectorAll('.ai-context-item')).toHaveLength(1));
     const contextItem = container.querySelector<HTMLButtonElement>('.ai-context-item')!;
     await waitFor(() => expect(contextItem).toHaveAttribute('aria-pressed', 'true'));

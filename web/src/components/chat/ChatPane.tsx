@@ -37,6 +37,12 @@ export interface ChatPaneProps {
   onMessagesChange: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void;
   contextItems?: AIContextItem[];
   contextIsLive?: boolean;
+  contextHasMore?: boolean;
+  loadingOlderContext?: boolean;
+  contextLoadError?: string | null;
+  contextLoading?: boolean;
+  onLoadOlderContext?: () => Promise<void>;
+  onRetryContext?: () => void;
   focusedMessageId?: string | null;
   onMessageFocus?: (message: ChatMessage) => void;
   onBranchFromMessage?: (message: ChatMessage) => void;
@@ -118,6 +124,12 @@ export function ChatPane({
   onMessagesChange,
   contextItems: suppliedContext,
   contextIsLive = false,
+  contextHasMore = false,
+  loadingOlderContext = false,
+  contextLoadError = null,
+  contextLoading = false,
+  onLoadOlderContext,
+  onRetryContext,
   focusedMessageId,
   onMessageFocus,
   onBranchFromMessage,
@@ -390,6 +402,12 @@ export function ChatPane({
             <AIContextPanel
               items={contextItems}
               contextIsLive={contextIsLive}
+              hasMore={contextHasMore}
+              loading={contextLoading}
+              loadingOlder={loadingOlderContext}
+              loadError={contextLoadError}
+              onLoadOlder={onLoadOlderContext}
+              onRetry={onRetryContext}
               onToggleItem={(id) => {
                 const next = contextItems.map((item) => item.id === id ? { ...item, included: !item.included } : item);
                 setContextItems(next);

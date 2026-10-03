@@ -57,4 +57,28 @@ describe('workspace graph API pagination', () => {
     expect(secondUrl.searchParams.get('include_project_state')).toBe('false');
     expect(secondUrl.searchParams.get('execution_cursor')).toBe('execution-start');
   });
+
+  it('fetches one newest-first workspace object page without edges or project state', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({
+      project_name: 'Project Name',
+      objects: [{ id: 'newest-object' }],
+      edges: [],
+      layout: { project_name: 'Project Name', layout: {}, revision: 0 },
+      objects_next_cursor: 'older-cursor',
+      edges_next_cursor: null,
+      execution_traces: [],
+      execution_history_truncated: false,
+      execution_next_cursor: null,
+    }));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.fetchWorkspaceObjectPage('Project Name')).resolves.toEqual({
+      objects: [{ id: 'newest-object' }], nextCursor: 'older-cursor',
+    });
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.searchParams.get('object_page_size')).toBe('50');
+    expect(url.searchParams.get('newest_first')).toBe('true');
+    expect(url.searchParams.get('edges_exhausted')).toBe('true');
+    expect(url.searchParams.get('include_project_state')).toBe('false');
+  });
 });
