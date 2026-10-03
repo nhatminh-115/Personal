@@ -8,6 +8,12 @@ vi.mock('../lib/localFiles', () => ({
   putLocalFile: vi.fn().mockResolvedValue(undefined),
 }));
 
+function jsonResponse(body: unknown, nextCursor?: string): Response {
+  const headers = new Headers();
+  if (nextCursor) headers.set('X-Next-Cursor', nextCursor);
+  return { ok: true, headers, json: () => Promise.resolve(body) } as Response;
+}
+
 describe('Workspace Library references', () => {
   beforeEach(() => {
     window.localStorage.clear();
@@ -23,7 +29,7 @@ describe('Workspace Library references', () => {
           ...body, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
         }) } as Response);
       }
-      if (url.endsWith('/v1/workspace/library')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.endsWith('/v1/workspace/library') || url.startsWith('/v1/workspace/library?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     });
   });
@@ -32,7 +38,7 @@ describe('Workspace Library references', () => {
     await act(async () => { render(<App />); });
     fireEvent.click(screen.getByRole('button', { name: /^Library$/i }));
     await screen.findByRole('heading', { name: 'Your files can stay where they already live.' });
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library'));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50'));
     expect(screen.getByText('TOEIC Progress')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalledWith('/v1/workspace/library', expect.objectContaining({ method: 'POST' }));
 
@@ -63,7 +69,15 @@ describe('Workspace Library references', () => {
         object_id: reference.id, object_type: 'file_reference', title: reference.name, excerpt: reference.detail,
         project_name: null, created_by: 'user', updated_at: reference.updated_at,
       }]) } as Response);
-      if (url.endsWith('/v1/workspace/library')) return Promise.resolve({ ok: true, json: () => Promise.resolve([reference]) } as Response);
+      if (url.startsWith('/v1/workspace/library?')) {
+        const cursor = new URL(url, 'http://aura.test').searchParams.get('cursor');
+        return Promise.resolve(cursor === 'next-library'
+          ? jsonResponse([reference])
+          : jsonResponse([{
+            id: 'library-first-page', name: 'An earlier reference', kind: 'MD', collection: 'Reference',
+            detail: 'First page', tags: [], project_names: [], created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+          }], 'next-library'));
+      }
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
       if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
@@ -77,6 +91,7 @@ describe('Workspace Library references', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open in Library' }));
 
     expect(await screen.findByRole('heading', { name: 'Your files can stay where they already live.' })).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&cursor=next-library'));
     await waitFor(() => expect(document.querySelector('[data-library-item-id="library-search-match"]')).toHaveClass('is-search-focused'));
   });
 });
