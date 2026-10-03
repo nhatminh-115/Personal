@@ -4,6 +4,10 @@ AURA stores application data in PostgreSQL and LangGraph checkpoints in a
 separate SQLite database. A recoverable run needs both stores from the same
 point in time. The backup command stops `aura-app` while it captures both,
 then restarts it if it was running before the backup.
+Before reporting success, the command reopens the completed archive and checks
+its manifest and payload hashes. If capture, verification, or API shutdown
+fails, it removes any partial output and attempts to restore the API's original
+running state.
 
 From the repository root, create a new archive:
 
