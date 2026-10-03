@@ -1,6 +1,7 @@
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
+import { api } from '../services/api';
 
 describe('Live Chat and Backend Integration in v9.1 Shell', () => {
   beforeEach(() => {
@@ -12,6 +13,15 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     let chatPayload: any = null;
     const consoleError = vi.spyOn(console, 'error');
     const consoleWarn = vi.spyOn(console, 'warn');
+    vi.spyOn(api, 'fetchWorkspaceObjectPage').mockResolvedValue({
+      objects: [
+        { id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint', content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user' },
+        { id: 'research-source-1', object_type: 'research_source', title: 'Durable execution paper', content: 'A paper abstract.', metadata_json: {}, created_by: 'research' },
+        { id: 'research-evidence-1', object_type: 'research_evidence', title: 'Checkpoint evidence', content: 'Execution resumes from a checkpoint.', metadata_json: {}, created_by: 'research' },
+        { id: 'research-claim-1', object_type: 'research_claim', title: 'Restartability claim', content: 'Verified claim text.', metadata_json: { verification_status: 'verified' }, created_by: 'research' },
+      ] as any,
+      nextCursor: null,
+    });
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
       if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
@@ -129,7 +139,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/graph?object_page_size=50')));
+    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalled());
     await screen.findByText('Shared project constraint');
     expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
     expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
