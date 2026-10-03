@@ -14,6 +14,10 @@ interface StudyViewProps {
   onStartSession: (item: LibraryItem) => void;
   onStartNoteSession?: (note: WorkspaceNote) => void;
   sessions: StudySessionRecord[];
+  hasMoreSessions?: boolean;
+  loadingMoreSessions?: boolean;
+  sessionsLoadError?: string | null;
+  onLoadMoreSessions?: () => Promise<void>;
   cards?: StudyCardRecord[];
   hasMoreCards?: boolean;
   loadingMoreCards?: boolean;
@@ -186,7 +190,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -221,7 +225,7 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem,
                 <div className="study-track-card__top">
                   <span className="study-track-icon"><BookOpenText size={18} /></span>
                   <div><strong>{item.name}</strong><small>{item.collection} · {item.kind}</small></div>
-                  <span>{completedCount} complete</span>
+                  <span>{completedCount} completed shown</span>
                 </div>
                 <p className="study-material-detail">{item.detail || 'No Library description added.'}</p>
                 <div className="study-files">
@@ -293,7 +297,7 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem,
                   <div className="study-track-card__top">
                     <span className="study-track-icon"><BookOpenText size={18} /></span>
                     <div><strong>{note.title || 'Untitled Note'}</strong><small>Saved Note · {note.projectIds.length} project links</small></div>
-                    <span>{completedCount} complete</span>
+                    <span>{completedCount} completed shown</span>
                   </div>
                   <p className="study-material-detail">{note.body || 'No note text added.'}</p>
                   {note.privacyPolicy ? <p className="study-material-note">Privacy · {note.privacyPolicy.replace(/_/g, ' ')}</p> : null}
@@ -360,8 +364,14 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem,
         </section>
       ) : null}
 
-      {hasMoreCards || cardsLoadError ? (
+      {hasMoreSessions || sessionsLoadError || hasMoreCards || cardsLoadError ? (
         <div className="study-cards-pagination">
+          {sessionsLoadError ? <p role="alert" className="study-reflection__error">Could not load older sessions: {sessionsLoadError}</p> : null}
+          {hasMoreSessions ? (
+            <button type="button" disabled={loadingMoreSessions} onClick={() => void onLoadMoreSessions?.()}>
+              {loadingMoreSessions ? 'Loading older sessions…' : sessionsLoadError ? 'Retry loading sessions' : 'Load older sessions'}
+            </button>
+          ) : null}
           {cardsLoadError ? <p role="alert" className="study-reflection__error">Could not load more learning cards: {cardsLoadError}</p> : null}
           {hasMoreCards ? (
             <button type="button" disabled={loadingMoreCards} onClick={() => void onLoadMoreCards?.()}>

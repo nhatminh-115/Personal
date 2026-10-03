@@ -289,6 +289,14 @@ export const api = {
     return fetchAllCursorPages<StudySessionRecord>('/v1/study/sessions');
   },
 
+  async fetchStudySessionsPage(cursor?: string | null): Promise<{ items: StudySessionRecord[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: '100' });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/study/sessions?${params.toString()}`);
+    const items = await handleResponse<StudySessionRecord[]>(response);
+    return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
+  },
+
   async startStudySession(trackId: string, trackTitle: string, materialId?: string, materialProjectName?: string): Promise<StudySessionRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
