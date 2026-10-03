@@ -17,29 +17,21 @@ SHA-256 checksums. Verify an archive before restoring it:
 
 ```powershell
 python scripts/backup_compose.py --verify .\backups\aura-2026-10-03.tar.gz
-New-Item -ItemType Directory -Force .\restore | Out-Null
-tar -xzf .\backups\aura-2026-10-03.tar.gz -C .\restore
 ```
 
 Restore with the same Compose configuration and database name used to create
-the backup. These commands replace the current database and checkpoint state;
-make a separate backup first if the current state needs to be retained.
+the backup. The restore command verifies the archive again before it stops
+services, then replaces PostgreSQL and the checkpoint database as one recovery
+operation. The required flag makes that replacement explicit; make a separate
+backup first if the current state needs to be retained.
 
 ```powershell
-docker compose stop --timeout 30 aura-app
-docker compose cp .\restore\postgres.dump postgres:/tmp/aura-postgres.dump
-docker compose exec -T --user 0 postgres chmod 644 /tmp/aura-postgres.dump
-docker compose exec -T postgres pg_restore --clean --if-exists --no-owner -U aura -d aura /tmp/aura-postgres.dump
-docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'rm -f /app/checkpoints/aura_checkpoints.db-wal /app/checkpoints/aura_checkpoints.db-shm'
-docker compose cp .\restore\checkpoint\aura_checkpoints.db aura-app:/app/checkpoints/aura_checkpoints.db
-if (Test-Path .\restore\checkpoint\aura_checkpoints.db-wal) {
-  docker compose cp .\restore\checkpoint\aura_checkpoints.db-wal aura-app:/app/checkpoints/aura_checkpoints.db-wal
-}
-docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*'
-docker compose start aura-app
+python scripts/restore_compose.py .\backups\aura-2026-10-03.tar.gz --replace-current-data
 ```
 
-Keep the API stopped until both stores have been restored. If a restore command
-fails, leave it stopped and resolve the error before starting it. Backups
-contain personal workspace data and should be stored with access controls and
-encryption appropriate for that data.
+If restore fails after the API stops, the command leaves it stopped so it cannot
+write against partially restored state. Resolve the error and rerun the
+verified restore before starting AURA. The command preserves the API's original
+running/stopped state after a successful restore. Backups contain personal
+workspace data and should be stored with access controls and encryption
+appropriate for that data.
