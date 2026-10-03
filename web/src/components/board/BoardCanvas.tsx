@@ -251,6 +251,40 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     return () => observer.disconnect();
   }, [fitInitialViewWhenReady]);
 
+  const refreshRecentWorkspacePage = useCallback(async () => {
+    if (!workspaceProjectName) return;
+    const graph = await api.fetchWorkspaceGraphPage(workspaceProjectName);
+    if (graph.layout.revision !== layoutRevision.current) {
+      layoutConflict.current = true;
+      toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
+    }
+    const projected = mapWorkspaceGraph(graph);
+    const savedPositions = graph.layout.layout?.positions ?? {};
+    const maxLoadedY = Math.max(0, ...nodesRef.current.map((node) => node.position.y + 190));
+    setNodes((current) => {
+      const byId = new Map(current.map((node) => [node.id, { ...node, selected: false }]));
+      projected.nodes.forEach((node, index) => {
+        if (byId.has(node.id)) return;
+        byId.set(node.id, savedPositions[node.id] ? { ...node, selected: false } : {
+          ...node,
+          selected: false,
+          position: { x: 120 + (index % 3) * 390, y: maxLoadedY + 100 + Math.floor(index / 3) * 210 },
+        });
+      });
+      const next = [...byId.values()];
+      nodesRef.current = next;
+      return next;
+    });
+    setEdges((current) => {
+      const byId = new Map(current.map((edge) => [edge.id, edge]));
+      for (const edge of projected.edges) if (!byId.has(edge.id)) byId.set(edge.id, edge);
+      const next = [...byId.values()];
+      edgesRef.current = next;
+      return next;
+    });
+    requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
+  }, [compact, setEdges, setNodes, toast, workspaceProjectName]);
+
   const persistHistoryChange = useCallback((current: BoardSnapshot, target: BoardSnapshot) => {
     if (!workspaceProjectName || !workspaceReady.current) return;
     historySync.current = historySync.current.then(async () => {
@@ -323,24 +357,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, targetLayout, layoutRevision.current);
       layoutRevision.current = savedLayout.revision;
       layoutSnapshot.current = JSON.stringify(targetLayout);
-
-      const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
-      const projected = mapWorkspaceGraph(graph);
-      setGraphObjectCursor(graph.objects_next_cursor ?? null);
-      setGraphEdgeCursor(graph.edges_next_cursor ?? null);
-      setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-      setExecutionTraces(projected.executionTraces);
-      setExecutionNextCursor(projected.executionNextCursor);
-      setExecutionTraces(projected.executionTraces);
-      setExecutionNextCursor(projected.executionNextCursor);
-      setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-      layoutRevision.current = graph.layout.revision;
-      nodesRef.current = projected.nodes;
-      edgesRef.current = projected.edges;
-      setNodes(projected.nodes);
-      setEdges(projected.edges);
-      setExecutionNodes(projected.executionNodes);
-      setExecutionEdges(projected.executionEdges);
     }).catch(async () => {
       toast('Undo/redo could not be saved', 'The Board will reload the latest project graph before further edits.');
       try {
@@ -694,21 +710,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           metadata_json: { branch_source_title: source.data.title },
           source_object_ids: [source.id],
         }).then(async () => {
-          const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
-          const projected = mapWorkspaceGraph(graph);
-          setGraphObjectCursor(graph.objects_next_cursor ?? null);
-          setGraphEdgeCursor(graph.edges_next_cursor ?? null);
-          setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-          setExecutionTraces(projected.executionTraces);
-          setExecutionNextCursor(projected.executionNextCursor);
           recordHistory();
-          layoutRevision.current = graph.layout.revision;
-          nodesRef.current = projected.nodes;
-          edgesRef.current = projected.edges;
-          setNodes(projected.nodes);
-          setEdges(projected.edges);
-          setExecutionNodes(projected.executionNodes);
-          setExecutionEdges(projected.executionEdges);
+          await refreshRecentWorkspacePage();
           toast('Branch point saved', 'The source turn is linked. Add a prompt before treating it as a live chat.');
         }).catch(() => toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.'));
         return;
@@ -941,7 +944,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       toast('Manual note created', 'It lives on the Knowledge layer and is explicitly marked Manual.');
       return id;
     },
-    [recordHistory, setNodes, toast, workspaceProjectName],
+    [recordHistory, toast, workspaceProjectName],
   );
 
   const getSelectionAnchor = useCallback(() => {
@@ -963,21 +966,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' } },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
-        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
-        const projected = mapWorkspaceGraph(graph);
-        setGraphObjectCursor(graph.objects_next_cursor ?? null);
-        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
-        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-        setExecutionTraces(projected.executionTraces);
-        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
-        layoutRevision.current = graph.layout.revision;
-        nodesRef.current = projected.nodes;
-        edgesRef.current = projected.edges;
-        setNodes(projected.nodes);
-        setEdges(projected.edges);
-        setExecutionNodes(projected.executionNodes);
-        setExecutionEdges(projected.executionEdges);
+        await refreshRecentWorkspacePage();
         toast('Context Bridge saved', 'Selected source objects are linked. The bridge does not copy their full content.');
       } catch (error) {
         toast('Context Bridge was not saved', error instanceof ApiError && error.status === 409
@@ -1005,7 +995,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       data: { edgeKind: 'context' as const },
     }))]);
     toast('Context Bridge created', 'Selected objects are connected as sources for a future context handoff.');
-  }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+  }, [getSelectionAnchor, recordHistory, refreshRecentWorkspacePage, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const saveContextSet = useCallback(async () => {
     if (selectedNodes.length < 2) return;
@@ -1021,21 +1011,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
-        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
-        const projected = mapWorkspaceGraph(graph);
-        setGraphObjectCursor(graph.objects_next_cursor ?? null);
-        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
-        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-        setExecutionTraces(projected.executionTraces);
-        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
-        layoutRevision.current = graph.layout.revision;
-        nodesRef.current = projected.nodes;
-        edgesRef.current = projected.edges;
-        setNodes(projected.nodes);
-        setEdges(projected.edges);
-        setExecutionNodes(projected.executionNodes);
-        setExecutionEdges(projected.executionEdges);
+        await refreshRecentWorkspacePage();
         toast('Context Set saved', 'Source objects are linked without changing their content or generating a summary.');
       } catch (error) {
         toast('Context Set was not saved', error instanceof ApiError && error.status === 409
@@ -1075,7 +1052,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setNodes((current) => [...current.map((node) => ({ ...node, selected: false })), mergeNode]);
     setEdges((current) => [...current, ...mergeEdges]);
     toast('Context Set saved', `${selectedNodes.length} selected objects are linked without changing their content.`);
-  }, [getSelectionAnchor, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+  }, [getSelectionAnchor, recordHistory, refreshRecentWorkspacePage, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const mergeIntoBranch = useCallback(async (targetId: string) => {
     const target = nodes.find((node) => node.id === targetId);
@@ -1089,21 +1066,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (workspaceProjectName) {
       try {
         await api.createWorkspaceObject(workspaceProjectName, mergeInput);
-        const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
-        const projected = mapWorkspaceGraph(graph);
-        setGraphObjectCursor(graph.objects_next_cursor ?? null);
-        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
-        setExecutionHistoryTruncated(projected.executionHistoryTruncated);
-        setExecutionTraces(projected.executionTraces);
-        setExecutionNextCursor(projected.executionNextCursor);
         recordHistory();
-        layoutRevision.current = graph.layout.revision;
-        nodesRef.current = projected.nodes;
-        edgesRef.current = projected.edges;
-        setNodes(projected.nodes);
-        setEdges(projected.edges);
-        setExecutionNodes(projected.executionNodes);
-        setExecutionEdges(projected.executionEdges);
+        await refreshRecentWorkspacePage();
         toast('Merged continuation created', `A new branch now links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
       } catch (error) {
         toast('Merge was not saved', error instanceof ApiError && error.status === 409
@@ -1130,7 +1094,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       data: { edgeKind: 'context' as const },
     }))]);
     toast('Merged continuation created', `A new node links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
-  }, [getSelectionAnchor, nodes, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
+  }, [getSelectionAnchor, nodes, recordHistory, refreshRecentWorkspacePage, selectedNodes, setEdges, setNodes, toast, workspaceProjectName]);
 
   const askSelected = useCallback(
     (prompt: string) => {

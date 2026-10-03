@@ -794,12 +794,22 @@ async def get_workspace_graph(
     else:
         if edge_cursor is not None:
             cursor_created_at, cursor_edge_id = decode_timestamp_id_cursor(edge_cursor)
-            edge_query = edge_query.where(or_(
-                WorkspaceEdgeModel.created_at > cursor_created_at,
-                (WorkspaceEdgeModel.created_at == cursor_created_at) & (WorkspaceEdgeModel.id > cursor_edge_id),
-            ))
+            if newest_first:
+                edge_query = edge_query.where(or_(
+                    WorkspaceEdgeModel.created_at < cursor_created_at,
+                    (WorkspaceEdgeModel.created_at == cursor_created_at) & (WorkspaceEdgeModel.id < cursor_edge_id),
+                ))
+            else:
+                edge_query = edge_query.where(or_(
+                    WorkspaceEdgeModel.created_at > cursor_created_at,
+                    (WorkspaceEdgeModel.created_at == cursor_created_at) & (WorkspaceEdgeModel.id > cursor_edge_id),
+                ))
+        edge_order = (
+            (WorkspaceEdgeModel.created_at.desc(), WorkspaceEdgeModel.id.desc())
+            if newest_first else (WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id)
+        )
         edge_result = await db.execute(
-            edge_query.order_by(WorkspaceEdgeModel.created_at, WorkspaceEdgeModel.id).limit(edge_page_size + 1)
+            edge_query.order_by(*edge_order).limit(edge_page_size + 1)
         )
         edge_rows = list(edge_result.scalars())
         edges_truncated = len(edge_rows) > edge_page_size

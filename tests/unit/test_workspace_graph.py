@@ -80,6 +80,8 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
         )
         assert edge.status_code == 201
 
+    complete = (await async_client.get(f"/v1/workspace/projects/{project_name}/graph")).json()
+
     first = await async_client.get(
         f"/v1/workspace/projects/{project_name}/graph",
         params={"object_page_size": 2, "edge_page_size": 1},
@@ -109,6 +111,26 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
     assert second_page["edges_next_cursor"] is None
     assert len(second_page["edges"]) == 1
     assert second_page["execution_traces"] == []
+
+    newest_edge_page = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={"object_page_size": 1, "objects_exhausted": "true", "edge_page_size": 1, "newest_first": "true", "include_project_state": "false"},
+    )
+    newest_edges = newest_edge_page.json()
+    assert [item["id"] for item in newest_edges["edges"]] == [item["id"] for item in reversed(complete["edges"])[:1]]
+    assert newest_edges["edges_next_cursor"]
+    older_edge_page = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={
+            "object_page_size": 1,
+            "objects_exhausted": "true",
+            "edge_page_size": 1,
+            "edge_cursor": newest_edges["edges_next_cursor"],
+            "newest_first": "true",
+            "include_project_state": "false",
+        },
+    )
+    assert [item["id"] for item in older_edge_page.json()["edges"]] == [item["id"] for item in reversed(complete["edges"])[1:]]
 
 
 @pytest.mark.asyncio
