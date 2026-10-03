@@ -561,6 +561,17 @@ export const api = {
     }));
   },
 
+  async updateAutomation(id: string, input: {
+    name: string;
+    description: string;
+    instruction: string;
+    interval_seconds: number;
+  }): Promise<AutomationRecordResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+    }));
+  },
+
   async setAutomationEnabled(id: string, enabled: boolean): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
