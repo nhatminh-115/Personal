@@ -359,9 +359,9 @@ describe('Persistent workspace graph Board projection', () => {
         onContextObjectIdsChange={(_, ids) => onContinueBranch('selected:' + ids.join(','))}
       />,
     );
-    await waitFor(() => expect(fetchBranchObjects).toHaveBeenCalledWith(projects[0].name, null));
     fireEvent.click(screen.getByText('Context').closest('button')!);
     await screen.findByText('Project objects');
+    await waitFor(() => expect(fetchBranchObjects).toHaveBeenCalledWith(projects[0].name, null));
     await waitFor(() => expect(container.querySelectorAll('.ai-context-item')).toHaveLength(1));
     const contextItem = container.querySelector<HTMLButtonElement>('.ai-context-item')!;
     await waitFor(() => expect(contextItem).toHaveAttribute('aria-pressed', 'true'));
