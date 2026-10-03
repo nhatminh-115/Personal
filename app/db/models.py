@@ -98,6 +98,10 @@ class RunModel(Base):
     parent_run: Mapped[Optional["RunModel"]] = relationship("RunModel", remote_side=[id], back_populates="child_runs")
     child_runs: Mapped[List["RunModel"]] = relationship("RunModel", back_populates="parent_run")
 
+    __table_args__ = (
+        Index("ix_runs_session_created_id", "session_id", "created_at", "id"),
+    )
+
 
 class RunEventModel(Base):
     """Granular trace event emitted during a run lifecycle."""
@@ -261,6 +265,10 @@ class ScheduledJobModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+
+    __table_args__ = (
+        Index("ix_scheduled_jobs_created_id", created_at.desc(), id.asc()),
+    )
 
 
 class DelegationModel(Base):

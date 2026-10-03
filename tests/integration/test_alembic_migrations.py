@@ -3,6 +3,7 @@ import tempfile
 import pytest
 from alembic.config import Config
 from alembic import command
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 
 def test_alembic_upgrade_downgrade_cycle():
@@ -19,6 +20,12 @@ def test_alembic_upgrade_downgrade_cycle():
         # Set up alembic config
         alembic_cfg = Config("alembic.ini")
         alembic_cfg.set_main_option("sqlalchemy.url", async_url)
+        overlong_revisions = [
+            revision.revision
+            for revision in ScriptDirectory.from_config(alembic_cfg).walk_revisions()
+            if len(revision.revision) > 32
+        ]
+        assert not overlong_revisions, f"Alembic revision IDs must fit version_num VARCHAR(32): {overlong_revisions}"
 
         # Upgrade to the previous head and simulate legacy duplicate defaults.
         command.upgrade(alembic_cfg, "010_workspace_object_graph")
@@ -111,6 +118,8 @@ def test_alembic_upgrade_downgrade_cycle():
         routing_indexes = {idx["name"] for idx in inspector.get_indexes("routing_profiles")}
         assert "uq_routing_profiles_single_default" in routing_indexes
         keyset_indexes = {
+            "runs": {idx["name"] for idx in inspector.get_indexes("runs")},
+            "scheduled_jobs": {idx["name"] for idx in inspector.get_indexes("scheduled_jobs")},
             "memories": {idx["name"] for idx in inspector.get_indexes("memories")},
             "approvals": {idx["name"] for idx in inspector.get_indexes("approvals")},
             "run_events": {idx["name"] for idx in inspector.get_indexes("run_events")},
@@ -126,6 +135,8 @@ def test_alembic_upgrade_downgrade_cycle():
             "ix_sessions_project_updated_id",
         }.issubset(keyset_indexes["sessions"])
         assert "ix_messages_session_created_id" in keyset_indexes["messages"]
+        assert "ix_runs_session_created_id" in keyset_indexes["runs"]
+        assert "ix_scheduled_jobs_created_id" in keyset_indexes["scheduled_jobs"]
         assert {
             "ix_memories_created_id",
             "ix_memories_project_created_id",
