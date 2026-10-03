@@ -50,6 +50,11 @@ class SessionModel(Base):
     approvals: Mapped[List["ApprovalModel"]] = relationship("ApprovalModel", back_populates="session", cascade="all, delete-orphan")
     memories: Mapped[List["MemoryModel"]] = relationship("MemoryModel", back_populates="session", cascade="all, delete-orphan")
 
+    __table_args__ = (
+        Index("ix_sessions_updated_id", "updated_at", "id"),
+        Index("ix_sessions_project_updated_id", "project_name", "updated_at", "id"),
+    )
+
 
 class MessageModel(Base):
     """Chronological message history associated with a session."""
@@ -65,6 +70,10 @@ class MessageModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
     session: Mapped["SessionModel"] = relationship("SessionModel", back_populates="messages")
+
+    __table_args__ = (
+        Index("ix_messages_session_created_id", "session_id", "created_at", "id"),
+    )
 
 
 class RunModel(Base):
@@ -318,6 +327,10 @@ class WorkspaceProjectModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
+    __table_args__ = (
+        Index("ix_workspace_projects_created_id", "created_at", "id"),
+    )
+
 
 class WorkspaceObjectModel(Base):
     """A durable typed object; null project_name denotes personal workspace scope."""
@@ -335,6 +348,22 @@ class WorkspaceObjectModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+
+    __table_args__ = (
+        Index("ix_workspace_objects_project_created_id", "project_name", "created_at", "id"),
+        Index(
+            "ix_workspace_objects_personal_updated_id",
+            "project_name", "object_type", "created_by", updated_at.desc(), id.asc(),
+        ),
+        Index(
+            "ix_workspace_objects_personal_created_id",
+            "project_name", "object_type", "created_by", created_at.desc(), id.asc(),
+        ),
+        Index(
+            "ix_workspace_objects_personal_card_created_id",
+            "project_name", "object_type", "created_by", created_at, id,
+        ),
+    )
 
 
 class WorkspaceObjectProjectLinkModel(Base):
@@ -368,6 +397,7 @@ class WorkspaceEdgeModel(Base):
 
     __table_args__ = (
         Index("ix_workspace_edges_project_family", "project_name", "edge_family"),
+        Index("ix_workspace_edges_project_created_id", "project_name", "created_at", "id"),
     )
 
 
