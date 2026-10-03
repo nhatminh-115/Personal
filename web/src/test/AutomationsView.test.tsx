@@ -97,6 +97,20 @@ describe('AutomationsView', () => {
     expect(onDuplicate).toHaveBeenCalledWith(liveAutomation);
   });
 
+  it('cancels a queued run and keeps its history visible', async () => {
+    const queuedRun = { event_id: 'queued-event', run_id: 'queued-run', queued_at: '2026-10-02T00:00:00Z', status: 'queued', retry_count: 0 };
+    const historySpy = vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [queuedRun], nextCursor: null });
+    const onCancelRun = vi.fn().mockResolvedValue({ ...queuedRun, status: 'cancelled' });
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCancelRun={onCancelRun} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel queued run' }));
+
+    await waitFor(() => expect(onCancelRun).toHaveBeenCalledWith(liveAutomation.id, queuedRun.event_id));
+    expect(await screen.findByText('Cancelled before execution')).toBeInTheDocument();
+    historySpy.mockRestore();
+  });
+
   it('reviews sequential automation approvals and refreshes the run after the final decision', async () => {
     const firstApproval = {
       id: 'approval-1', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-1',

@@ -2081,6 +2081,15 @@ export default function App() {
     }
   }, [automationFromRecord, projectCatalog, pushToast]);
 
+  const cancelAutomationRun = useCallback(async (automationId: string, eventId: string) => {
+    const cancelled = await api.cancelAutomationRun(automationId, eventId);
+    setAutomations((current) => current.map((item) => item.id === automationId && item.latestExecution?.eventId === eventId
+      ? { ...item, latestExecution: { ...item.latestExecution, status: 'cancelled' }, status: 'ready' }
+      : item));
+    pushToast('Queued run cancelled', 'AURA had not started this run. Its history is preserved.');
+    return cancelled;
+  }, [pushToast]);
+
   const refreshAutomationAfterApproval = useCallback(async (automationId: string) => {
     try {
       const records = await api.fetchAutomationStatuses([automationId]);
@@ -2380,7 +2389,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onCancelRun={cancelAutomationRun} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (

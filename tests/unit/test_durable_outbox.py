@@ -59,6 +59,34 @@ async def test_outbox_commit_before_dispatch(test_db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_outbox_worker_never_dispatches_cancelled_event(test_db_session: AsyncSession):
+    """A cancelled queued automation event is terminal and must never be claimed."""
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus)
+    received_events = []
+
+    async def sample_handler(evt: AURAEvent):
+        received_events.append(evt)
+
+    bus.subscribe("outbox.test", sample_handler)
+    event = AURAEvent(
+        event_type="outbox.test",
+        source="unit_test",
+        payload={"message": "cancelled before execution"},
+    )
+    await bus.publish(event, db=test_db_session)
+    db_rec = await test_db_session.get(EventRecordModel, event.id)
+    assert db_rec is not None
+    db_rec.status = EventStatus.CANCELLED.value
+    await test_db_session.commit()
+
+    assert await worker.process_outbox_batch(db=test_db_session) == 0
+    assert received_events == []
+    await test_db_session.refresh(db_rec)
+    assert db_rec.status == EventStatus.CANCELLED.value
+
+
+@pytest.mark.asyncio
 async def test_outbox_idempotency_deduplication(test_db_session: AsyncSession):
     """Verify that publishing an event with an existing idempotency_key prevents duplicate entries."""
     bus = EventBus()

@@ -92,6 +92,7 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
             EventStatus.PENDING.value: "queued",
             EventStatus.PROCESSING.value: "running",
             EventStatus.PROCESSED.value: "completed",
+            EventStatus.CANCELLED.value: "cancelled",
             EventStatus.FAILED.value: "failed",
             EventStatus.DEAD_LETTER.value: "dead_letter",
         }.get(event.status, event.status)
@@ -498,6 +499,7 @@ async def list_automation_runs(
         EventStatus.PENDING.value: "queued",
         EventStatus.PROCESSING.value: "running",
         EventStatus.PROCESSED.value: "completed",
+        EventStatus.CANCELLED.value: "cancelled",
         EventStatus.FAILED.value: "failed",
         EventStatus.DEAD_LETTER.value: "dead_letter",
     }
@@ -515,4 +517,64 @@ async def list_automation_runs(
         )
         for event, run_id in zip(events, run_ids)
     ]
+
+
+@router.post("/{automation_id}/runs/{event_id}/cancel", response_model=AutomationExecutionResponse)
+async def cancel_queued_automation_run(
+    automation_id: str,
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> AutomationExecutionResponse:
+    """Cancel an outbox event only while it is still pending and unclaimed."""
+    job = await db.get(ScheduledJobModel, automation_id)
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    event_filter = and_(
+        EventRecordModel.id == event_id,
+        EventRecordModel.correlation_id == automation_id,
+        EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+    )
+    result = await db.execute(select(EventRecordModel).where(event_filter))
+    event = result.scalar_one_or_none()
+    if event is None:
+        raise HTTPException(status_code=404, detail="Automation run not found.")
+    if event.status != EventStatus.CANCELLED.value:
+        cancelled = await db.execute(
+            update(EventRecordModel)
+            .where(
+                event_filter,
+                EventRecordModel.status == EventStatus.PENDING.value,
+                EventRecordModel.locked_at.is_(None),
+                EventRecordModel.locked_by.is_(None),
+            )
+            .values(
+                status=EventStatus.CANCELLED.value,
+                processed_at=utc_now(),
+                next_attempt_at=None,
+                locked_at=None,
+                locked_by=None,
+                error_message="Cancelled by user before execution started.",
+            )
+            .execution_options(synchronize_session=False)
+        )
+        await db.commit()
+        if not cancelled.rowcount:
+            current_result = await db.execute(
+                select(EventRecordModel).where(event_filter).execution_options(populate_existing=True)
+            )
+            event = current_result.scalar_one_or_none()
+            if event is None:
+                raise HTTPException(status_code=404, detail="Automation run not found.")
+            if event.status != EventStatus.CANCELLED.value:
+                raise HTTPException(status_code=409, detail="Only queued automation runs can be cancelled.")
+        else:
+            await db.refresh(event)
+
+    return AutomationExecutionResponse(
+        event_id=event.id,
+        run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}")),
+        queued_at=event.occurred_at,
+        status="cancelled",
+        retry_count=event.retry_count,
+    )
 

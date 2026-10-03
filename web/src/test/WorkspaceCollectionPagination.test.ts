@@ -175,6 +175,16 @@ describe('workspace collection pagination', () => {
     expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
   });
 
+  it('cancels only the requested queued automation run', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ event_id: 'event/one', status: 'cancelled' }));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.cancelAutomationRun('automation/one', 'event/one');
+
+    expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/runs/event%2Fone/cancel');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+  });
+
   it('batches automation status refreshes without fetching the full collection', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'automation/one' }]));
     vi.stubGlobal('fetch', fetch);

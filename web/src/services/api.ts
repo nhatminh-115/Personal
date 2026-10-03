@@ -592,6 +592,10 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/run`, { method: 'POST' }));
   },
 
+  async cancelAutomationRun(automationId: string, eventId: string): Promise<AutomationExecutionRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/cancel`, { method: 'POST' }));
+  },
+
   async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
