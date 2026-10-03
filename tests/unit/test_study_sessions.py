@@ -1,5 +1,7 @@
 """Study sessions retain identity links to shared personal workspace objects."""
 
+from datetime import datetime, timedelta
+
 import pytest
 from httpx import AsyncClient
 
@@ -260,6 +262,17 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
     assert card_edge["relation_type"] == "contains_card"
     assert card_edge["edge_family"] == "provenance"
 
+    review = await async_client.post(
+        f"/v1/study/sessions/{started.json()['id']}/cards/{card['id']}/review",
+        json={"rating": "easy"},
+    )
+    assert review.status_code == 200, review.text
+    assert review.json()["review_count"] == 1
+    graph_response = await async_client.get("/v1/workspace/projects/research-project/graph")
+    reviewed_card_object = next(item for item in graph_response.json()["objects"] if item["id"] == card["id"])
+    assert reviewed_card_object["metadata_json"]["privacy_policy"] == "local_only"
+    assert reviewed_card_object["metadata_json"]["review_interval_days"] == 7
+
     listed_cards = await async_client.get("/v1/study/cards")
     assert [item["id"] for item in listed_cards.json()] == [card["id"]]
 
@@ -377,6 +390,32 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     # Preserve exact user-authored text.
     assert card["question"] == "  What is a noun?  "
     assert card["answer"] == "  A word for a person, place, or thing.  "
+    assert card["review_count"] == 0
+    assert card["reviewed_at"] is None
+    assert card["next_review_at"] is None
+
+    reviewed = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}/review",
+        json={"rating": "remembered"},
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    reviewed_card = reviewed.json()
+    assert reviewed_card["review_count"] == 1
+    reviewed_at = datetime.fromisoformat(reviewed_card["reviewed_at"])
+    next_review_at = datetime.fromisoformat(reviewed_card["next_review_at"])
+    assert next_review_at - reviewed_at == timedelta(days=3)
+
+    invalid_review = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}/review",
+        json={"rating": "someday"},
+    )
+    assert invalid_review.status_code == 422
+
+    unchanged = await async_client.put(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        json={"question": card["question"], "answer": card["answer"]},
+    )
+    assert unchanged.json()["review_count"] == 1
 
     updated = await async_client.put(
         f"/v1/study/sessions/{session_id}/cards/{card['id']}",
@@ -384,12 +423,21 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     )
     assert updated.status_code == 200
     assert updated.json()["question"] == "Define a noun."
+    assert updated.json()["review_count"] == 0
+    assert updated.json()["reviewed_at"] is None
+    assert updated.json()["next_review_at"] is None
 
     wrong_session = await async_client.put(
         f"/v1/study/sessions/not-a-session/cards/{card['id']}",
         json={"question": "Stolen", "answer": "No."},
     )
     assert wrong_session.status_code == 404
+
+    wrong_review_session = await async_client.post(
+        f"/v1/study/sessions/not-a-session/cards/{card['id']}/review",
+        json={"rating": "again"},
+    )
+    assert wrong_review_session.status_code == 404
 
     blank = await async_client.post(
         f"/v1/study/sessions/{session_id}/cards",

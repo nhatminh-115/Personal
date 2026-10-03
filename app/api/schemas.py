@@ -269,6 +269,10 @@ class StudyCardWrite(BaseModel):
     answer: str = Field(min_length=1, max_length=8_000)
 
 
+class StudyCardReviewWrite(BaseModel):
+    rating: Literal["again", "remembered", "easy"]
+
+
 class StudyCardResponse(BaseModel):
     id: str
     session_id: str
@@ -276,6 +280,9 @@ class StudyCardResponse(BaseModel):
     answer: str
     created_at: datetime
     updated_at: datetime
+    review_count: int = 0
+    reviewed_at: Optional[datetime] = None
+    next_review_at: Optional[datetime] = None
 
 
 class StudySessionResponse(BaseModel):

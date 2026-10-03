@@ -437,7 +437,12 @@ export interface StudyCardRecord {
   answer: string;
   created_at: string;
   updated_at: string;
+  review_count: number;
+  reviewed_at?: string | null;
+  next_review_at?: string | null;
 }
+
+export type StudyCardRating = 'again' | 'remembered' | 'easy';
 
 export interface WorkspaceLibraryReferenceRecord {
   id: string;
