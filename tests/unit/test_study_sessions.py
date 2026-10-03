@@ -310,12 +310,18 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
 
 
 @pytest.mark.asyncio
-async def test_study_workspace_allows_only_one_active_session(async_client: AsyncClient):
+async def test_study_workspace_allows_only_one_active_session(async_client: AsyncClient, test_db_session):
+    from app.db.models import WorkspaceObjectModel
+
     first = await async_client.post("/v1/study/sessions", json={
         "track_id": "first-track",
         "track_title": "First track",
     })
     assert first.status_code == 201
+    # Sessions created before status metadata was introduced still count as active.
+    legacy_session = await test_db_session.get(WorkspaceObjectModel, first.json()["id"])
+    legacy_session.metadata_json = {"track_id": "first-track"}
+    await test_db_session.commit()
 
     blocked = await async_client.post("/v1/study/sessions", json={
         "track_id": "second-track",
