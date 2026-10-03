@@ -13,6 +13,7 @@ import {
   List,
   MoreHorizontal,
   Plus,
+  Radar,
   Search,
   Trash2,
   Unplug,
@@ -22,6 +23,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 import type { DirectoryConnection } from '../../lib/folderConnections';
+import { ResearchRadarPanel } from './ResearchRadarPanel';
 
 type LibraryViewMode = 'list' | 'grid';
 
@@ -83,6 +85,7 @@ export function LibraryView({
   const [collection, setCollection] = useState<(typeof collections)[number]>('All');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<LibraryViewMode>('list');
+  const [researchRadarOpen, setResearchRadarOpen] = useState(false);
   const [linkingId, setLinkingId] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -175,8 +178,11 @@ export function LibraryView({
         <div className="library-toolbar library-toolbar--comfortable">
           <label className="library-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files, tags, notes…" /></label>
           <div className="library-collections">{collections.map((item) => <button key={item} type="button" className={collection === item ? 'is-active' : ''} onClick={() => setCollection(item)}>{item}</button>)}</div>
+          {collection === 'Research' ? <button className={`library-radar-toggle${researchRadarOpen ? ' is-active' : ''}`} type="button" aria-pressed={researchRadarOpen} onClick={() => setResearchRadarOpen((open) => !open)}><Radar size={15} /> Research Radar</button> : null}
           <div className="library-view-switch"><button type="button" className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')} title="List view"><List size={16} /></button><button type="button" className={view === 'grid' ? 'is-active' : ''} onClick={() => setView('grid')} title="Grid view"><Grid2X2 size={16} /></button></div>
         </div>
+
+        {collection === 'Research' && researchRadarOpen ? <ResearchRadarPanel projects={projects} /> : null}
 
         <div className={`library-items library-items--${view} library-items--v8`}>
           {items.map((item) => {
@@ -227,7 +233,7 @@ export function LibraryView({
           })}
         </div>
 
-        {!items.length ? <div className="library-empty"><File size={26} /><strong>No files here yet.</strong><span>Change the filter, connect a folder, or import a local file.</span></div> : null}
+        {!items.length ? <div className="library-empty"><File size={26} /><strong>{collection === 'Research' ? 'No Library references here yet.' : 'No files here yet.'}</strong><span>Change the filter, connect a folder, or import a local file.</span></div> : null}
         {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library references: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
         {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library references…</div> : null}
         {!libraryLoadError && hasMoreLibrary ? <>

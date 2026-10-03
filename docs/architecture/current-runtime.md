@@ -110,6 +110,11 @@ on demand; aggregate counts come from lightweight summary endpoints instead of
 the pages currently held in the browser. Automation run history is also
 cursor-paged, with older runs loaded on demand.
 
+The Library's Research collection includes a read-only Research Radar for saved
+project graphs. It presents persisted research sources, evidence, claims, and
+their provenance links using bounded graph pages; it does not infer new
+relationships or modify research artifacts.
+
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context
 objects, applies object and character limits, and records a provenance
