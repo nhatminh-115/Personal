@@ -81,4 +81,38 @@ describe('workspace graph API pagination', () => {
     expect(url.searchParams.get('edges_exhausted')).toBe('true');
     expect(url.searchParams.get('include_project_state')).toBe('false');
   });
+
+  it('loads one Board graph page and fetches layout state separately for later pages', async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        project_name: 'Project Name', objects: [{ id: 'newest' }], edges: [{ id: 'edge-1' }],
+        layout: { project_name: 'Project Name', layout: { positions: { newest: { x: 1, y: 2 } } }, revision: 3 },
+        objects_next_cursor: 'older-object', edges_next_cursor: 'older-edge', execution_traces: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        project_name: 'Project Name', objects: [{ id: 'older' }], edges: [{ id: 'edge-2' }],
+        layout: { project_name: 'Project Name', layout: {}, revision: 0 }, objects_next_cursor: null,
+        edges_next_cursor: null, execution_traces: [],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        project_name: 'Project Name', layout: { positions: { older: { x: 8, y: 9 } } }, revision: 3,
+      }));
+    vi.stubGlobal('fetch', fetch);
+
+    const first = await api.fetchWorkspaceGraphPage('Project Name');
+    const firstUrl = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(firstUrl.searchParams.get('newest_first')).toBe('true');
+    expect(firstUrl.searchParams.get('object_page_size')).toBe('50');
+    const older = await api.fetchWorkspaceGraphPage('Project Name', { object: first.objects_next_cursor, edge: first.edges_next_cursor });
+
+    expect(first.objects.map((item) => item.id)).toEqual(['newest']);
+    expect(older.objects.map((item) => item.id)).toEqual(['older']);
+    expect(older.layout.revision).toBe(3);
+    expect(older.layout.layout.positions).toEqual({ older: { x: 8, y: 9 } });
+    const pageUrl = new URL(fetch.mock.calls[1][0] as string, 'http://aura.test');
+    expect(pageUrl.searchParams.get('object_cursor')).toBe('older-object');
+    expect(pageUrl.searchParams.get('edge_cursor')).toBe('older-edge');
+    expect(pageUrl.searchParams.get('include_project_state')).toBe('false');
+    expect(fetch.mock.calls[2][0]).toContain('/v1/workspace/projects/Project%20Name/layout');
+  });
 });

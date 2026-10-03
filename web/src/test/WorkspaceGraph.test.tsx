@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ReactFlowProvider } from '@xyflow/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BoardCanvas } from '../components/board/BoardCanvas';
 import { ProjectChatWorkspace } from '../components/chat/ProjectChatWorkspace';
 import { api } from '../services/api';
@@ -20,6 +20,10 @@ const savedGraph: WorkspaceGraph = {
 };
 
 describe('Persistent workspace graph Board projection', () => {
+  beforeEach(() => {
+    vi.spyOn(api, 'fetchWorkspaceGraphPage').mockImplementation(async (projectName) => api.fetchWorkspaceGraph(projectName));
+  });
+
   it('exposes older saved chats and retries a failed page', () => {
     const loadOlder = vi.fn().mockResolvedValue(undefined);
     const retry = vi.fn().mockResolvedValue(undefined);
@@ -60,6 +64,32 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(attachSession).toHaveBeenCalledWith('AURA Project', 'session-1'));
     await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith('AURA Project'));
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
+  });
+
+  it('loads older Board graph objects only when requested', async () => {
+    const initial: WorkspaceGraph = { ...savedGraph, objects_next_cursor: 'older-object-cursor' };
+    const older: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{ ...savedGraph.objects[0], id: 'older-turn', title: 'Older saved answer', content: 'Loaded on demand.' }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(initial);
+    const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce(older);
+    vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="paged-graph" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    expect(await screen.findByText('Persistent answer')).toBeInTheDocument();
+    expect(screen.queryByText('Older saved answer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load older objects' }));
+    expect(await screen.findByText('Older saved answer')).toBeInTheDocument();
+    expect(fetchPage).toHaveBeenLastCalledWith('AURA Project', { object: 'older-object-cursor', edge: null });
   });
 
   it('loads older execution runs from a paged execution history response', async () => {

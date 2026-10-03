@@ -267,6 +267,28 @@ export const api = {
     return { ...firstPage, objects, edges, objects_next_cursor: null };
   },
 
+  async fetchWorkspaceGraphPage(projectName: string, cursors?: {
+    object?: string | null;
+    edge?: string | null;
+  }): Promise<WorkspaceGraph> {
+    const params = new URLSearchParams({
+      object_page_size: '50',
+      edge_page_size: '250',
+      newest_first: 'true',
+      include_project_state: cursors ? 'false' : 'true',
+    });
+    if (cursors?.object) params.set('object_cursor', cursors.object);
+    else if (cursors) params.set('objects_exhausted', 'true');
+    if (cursors?.edge) params.set('edge_cursor', cursors.edge);
+    else if (cursors) params.set('edges_exhausted', 'true');
+    const graph = await handleResponse<WorkspaceGraph>(await fetch(
+      `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
+    ));
+    if (!cursors) return graph;
+    const layout = await api.fetchWorkspaceLayout(projectName);
+    return { ...graph, layout };
+  },
+
   async fetchWorkspaceObjectPage(projectName: string, cursor?: string | null, pageSize = 50): Promise<{
     objects: WorkspaceGraph['objects'];
     nextCursor: string | null;
@@ -638,6 +660,10 @@ export const api = {
       items: await handleResponse<RoutingConfirmationDetail[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
     };
+  },
+
+  async fetchWorkspaceLayout(projectName: string): Promise<WorkspaceLayout> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`));
   },
 
   async fetchRoutingConfirmation(id: string): Promise<RoutingConfirmationDetail> {
