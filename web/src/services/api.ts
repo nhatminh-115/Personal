@@ -271,6 +271,16 @@ export const api = {
     return fetchAllCursorPages<WorkspaceNoteRecord>('/v1/workspace/notes');
   },
 
+  async fetchWorkspaceNotesPage(cursor?: string | null, pageSize = 50): Promise<{ items: WorkspaceNoteRecord[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/workspace/notes?${params.toString()}`);
+    return {
+      items: await handleResponse<WorkspaceNoteRecord[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
+  },
+
   async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

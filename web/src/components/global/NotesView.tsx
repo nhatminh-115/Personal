@@ -9,9 +9,13 @@ interface NotesViewProps {
   focusNoteId?: string | null;
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
+  hasMoreNotes?: boolean;
+  loadingMoreNotes?: boolean;
+  notesLoadError?: string | null;
+  onLoadMoreNotes?: () => void;
 }
 
-export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenProject }: NotesViewProps) {
+export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenProject, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
@@ -63,6 +67,12 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
             </button>
           ))}
         </div>
+        {notesLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load notes: {notesLoadError}</span><button type="button" disabled={loadingMoreNotes} onClick={onLoadMoreNotes}>Retry</button></div> : null}
+        {loadingMoreNotes && !hasMoreNotes && !notesLoadError ? <div className="notes-list-pagination" role="status">Loading saved notes…</div> : null}
+        {!notesLoadError && hasMoreNotes ? <>
+          {query.trim() ? <small className="notes-search-scope">Search covers loaded notes. Load more to include older notes.</small> : null}
+          <button className="notes-load-more" type="button" disabled={loadingMoreNotes} onClick={onLoadMoreNotes}>{loadingMoreNotes ? 'Loading notes…' : 'Load more notes'}</button>
+        </> : null}
       </aside>
 
       <div className="note-editor-panel">
