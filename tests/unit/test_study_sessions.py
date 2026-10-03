@@ -1,6 +1,6 @@
 """Study sessions retain identity links to shared personal workspace objects."""
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from httpx import AsyncClient
@@ -80,10 +80,58 @@ async def test_study_card_collection_uses_bounded_keyset_pages(async_client: Asy
 
 
 @pytest.mark.asyncio
+async def test_study_review_queue_returns_unreviewed_and_due_cards_with_keyset_paging(async_client: AsyncClient, test_db_session):
+    from app.db.models import WorkspaceObjectModel
+
+    started = await async_client.post("/v1/study/sessions", json={
+        "track_id": "review-queue-track", "track_title": "Review queue track",
+    })
+    session_id = started.json()["id"]
+    cards = []
+    for index in range(3):
+        created = await async_client.post(
+            f"/v1/study/sessions/{session_id}/cards",
+            json={"question": f"Review question {index}", "answer": f"Review answer {index}"},
+        )
+        cards.append(created.json())
+
+    scheduled = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards/{cards[2]['id']}/review",
+        json={"rating": "remembered"},
+    )
+    assert scheduled.status_code == 200
+    scheduled_card = await test_db_session.get(WorkspaceObjectModel, cards[2]["id"])
+    scheduled_card.metadata_json = {
+        **scheduled_card.metadata_json,
+        "next_review_at": (datetime.now(timezone.utc) - timedelta(days=1)).isoformat(),
+    }
+    await test_db_session.commit()
+
+    first = await async_client.get("/v1/study/review-queue", params={"page_size": 1})
+    assert first.status_code == 200
+    assert [item["id"] for item in first.json()] == [cards[0]["id"]]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/study/review-queue", params={"page_size": 1, "cursor": cursor})
+    assert [item["id"] for item in second.json()] == [cards[1]["id"]]
+    second_cursor = second.headers.get("X-Next-Cursor")
+    assert second_cursor
+
+    third = await async_client.get("/v1/study/review-queue", params={"page_size": 1, "cursor": second_cursor})
+    assert [item["id"] for item in third.json()] == [cards[2]["id"]]
+    assert third.headers.get("X-Next-Cursor") is None
+
+
+@pytest.mark.asyncio
 async def test_study_collection_rejects_invalid_cursor(async_client: AsyncClient):
     response = await async_client.get("/v1/study/cards", params={"cursor": "not-a-cursor"})
     assert response.status_code == 422
     assert response.json()["detail"] == "Invalid pagination cursor."
+
+    queue_response = await async_client.get("/v1/study/review-queue", params={"cursor": "not-a-cursor"})
+    assert queue_response.status_code == 422
+    assert queue_response.json()["detail"] == "Invalid pagination cursor."
 
 
 @pytest.mark.asyncio

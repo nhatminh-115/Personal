@@ -298,6 +298,39 @@ async def list_study_cards(
     return cards
 
 
+@router.get("/review-queue", response_model=list[StudyCardResponse])
+async def list_due_study_cards(
+    response: Response,
+    cursor: str | None = Query(default=None, max_length=512),
+    page_size: int = Query(default=50, ge=1, le=MAX_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[StudyCardResponse]:
+    now = datetime.now(timezone.utc).isoformat()
+    next_review_at = WorkspaceObjectModel.metadata_json["next_review_at"].as_string()
+    query = select(WorkspaceObjectModel).where(
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "study_card",
+        WorkspaceObjectModel.created_by == "user",
+        WorkspaceObjectModel.metadata_json["study_session_id"].as_string().is_not(None),
+        or_(next_review_at.is_(None), next_review_at <= now),
+    )
+    if cursor is not None:
+        cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
+        query = query.where(or_(
+            WorkspaceObjectModel.created_at > cursor_created_at,
+            and_(WorkspaceObjectModel.created_at == cursor_created_at, WorkspaceObjectModel.id > cursor_id),
+        ))
+    result = await db.execute(
+        query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(page_size + 1)
+    )
+    items = set_next_cursor_header(
+        response, list(result.scalars()), page_size,
+        timestamp_for=lambda item: item.created_at,
+        id_for=lambda item: item.id,
+    )
+    return [_study_card_response(item) for item in items]
+
+
 @router.post(
     "/sessions/{session_id}/cards",
     response_model=StudyCardResponse,

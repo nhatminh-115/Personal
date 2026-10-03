@@ -120,7 +120,8 @@ the existing Study API; qualified or unsupported claims cannot. Study history
 keeps a link back to the source claim's project Board. Learning cards persist
 their review count and next review date with the workspace object. A review
 rating schedules the next review after 1, 3, or 7 days; changing a card's
-question or answer resets that schedule.
+question or answer resets that schedule. Study's keyset-paged review queue
+shows unreviewed cards and cards whose next review date has arrived.
 
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context

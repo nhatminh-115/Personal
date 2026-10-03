@@ -31,6 +31,13 @@ interface StudyViewProps {
   loadingMoreCards?: boolean;
   cardsLoadError?: string | null;
   onLoadMoreCards?: () => Promise<void>;
+  dueCards?: StudyCardRecord[];
+  hasMoreDueCards?: boolean;
+  loadingDueCards?: boolean;
+  loadingMoreDueCards?: boolean;
+  dueCardsLoadError?: string | null;
+  onLoadMoreDueCards?: () => Promise<void>;
+  onRefreshDueCards?: () => Promise<void>;
   onCompleteSession: (sessionId: string) => void;
   onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
   onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
@@ -235,7 +242,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete }: 
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onReviewCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, dueCards = [], hasMoreDueCards = false, loadingDueCards = false, loadingMoreDueCards = false, dueCardsLoadError, onLoadMoreDueCards, onRefreshDueCards, onCompleteSession, onCreateCard, onUpdateCard, onReviewCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -257,6 +264,29 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
         </div>
         <button className="secondary-button" type="button" onClick={onBrowseLibrary}>Browse Library</button>
       </div>
+
+      <section className="study-review-queue" aria-label="Cards due for review">
+        <div className="study-review-queue__heading">
+          <div><h2>Review queue</h2><p>Unreviewed cards and cards whose next review date has arrived.</p></div>
+          <span>{dueCards.length} loaded</span>
+        </div>
+        {loadingDueCards && !dueCards.length ? <p role="status">Loading cards due for review…</p> : null}
+        {dueCardsLoadError && !dueCards.length ? <p role="alert">Could not load the review queue: {dueCardsLoadError} <button type="button" onClick={() => void onRefreshDueCards?.()}>Retry</button></p> : null}
+        {!loadingDueCards && !dueCardsLoadError && !dueCards.length ? <p>You’re all caught up. New cards will appear here until you review them.</p> : null}
+        {dueCards.map((card) => (
+          <article className="study-review-queue__card" key={card.id}>
+            <small>{sessions.find((session) => session.id === card.session_id)?.track_title ?? 'Earlier Study session'}</small>
+            <StudyCardRow
+              card={card}
+              onUpdate={(question, answer) => onUpdateCard(card.id, card.session_id, question, answer)}
+              onReview={onReviewCard ? (rating) => onReviewCard(card.id, card.session_id, rating) : undefined}
+              onDelete={() => onDeleteCard(card.id, card.session_id)}
+            />
+          </article>
+        ))}
+        {dueCardsLoadError && dueCards.length ? <p role="alert">Could not load more due cards: {dueCardsLoadError}</p> : null}
+        {hasMoreDueCards ? <button type="button" className="notes-load-more" disabled={loadingMoreDueCards} onClick={() => void onLoadMoreDueCards?.()}>{loadingMoreDueCards ? 'Loading more due cards…' : 'Load more due cards'}</button> : null}
+      </section>
 
       {materials.length ? (
         <div className="study-track-grid" aria-label="Study materials">
