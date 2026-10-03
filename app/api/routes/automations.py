@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.api.schemas import AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
 from app.api.pagination import (
     MAX_COLLECTION_PAGE_SIZE,
     decode_timestamp_id_cursor,
@@ -228,6 +228,46 @@ async def set_automation_enabled(
     await db.commit()
     await db.refresh(job)
     return _automation_response(job)
+
+
+@router.patch("/{automation_id}", response_model=AutomationResponse)
+async def update_automation(
+    automation_id: str,
+    body: AutomationEditWrite,
+    db: AsyncSession = Depends(get_db),
+) -> AutomationResponse:
+    result = await db.execute(
+        select(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    job = result.scalar_one_or_none()
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    if not body.name.strip() or not body.instruction.strip():
+        raise HTTPException(status_code=422, detail="Automation name and instruction must not be blank.")
+
+    metadata = dict(job.metadata_json or {})
+    payload = dict(job.payload_json or {})
+    try:
+        previous_interval = int(float(job.schedule_expression))
+    except (TypeError, ValueError):
+        previous_interval = 0
+    job.name = body.name.strip()
+    job.schedule_expression = str(body.interval_seconds)
+    if previous_interval != body.interval_seconds:
+        job.next_run_at = utc_now() + timedelta(seconds=body.interval_seconds)
+    metadata["description"] = body.description.strip()
+    metadata["instruction"] = body.instruction.strip()
+    payload["message"] = body.instruction.strip()
+    job.metadata_json = metadata
+    job.payload_json = payload
+    job.updated_at = utc_now()
+    await db.commit()
+    await db.refresh(job)
+    latest = await _latest_executions(db, [job])
+    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
 
 
 @router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)

@@ -159,6 +159,22 @@ describe('workspace collection pagination', () => {
     expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/summary');
   });
 
+  it('updates a saved automation without changing its scope', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 'automation/one', name: 'Updated' }));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.updateAutomation('automation/one', {
+      name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+    });
+
+    const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(new URL(url, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone');
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(String(init.body))).toEqual({
+      name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+    });
+  });
+
   it('returns one automation run-history page and its next cursor', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([
       { event_id: 'event-1', run_id: 'run-1', queued_at: '2026-10-02T09:00:00Z', status: 'completed', retry_count: 0 },

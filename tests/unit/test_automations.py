@@ -51,6 +51,60 @@ async def test_automation_crud_and_manual_run_are_persisted(async_client, test_d
 
 
 @pytest.mark.asyncio
+async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Daily digest",
+        "description": "Summarize updates",
+        "instruction": "Summarize project updates.",
+        "scope": "project",
+        "project_name": "AURA",
+        "interval_seconds": 86400,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    event = await test_db_session.get(EventRecordModel, queued.json()["event_id"])
+    original_session_id = event.payload_json["session_id"]
+
+    updated = await async_client.patch(f"/v1/automations/{automation_id}", json={
+        "name": "Daily project review",
+        "description": "Review decisions and follow-ups",
+        "instruction": "Summarize new decisions and list owners.",
+        "interval_seconds": 3600,
+    })
+
+    assert updated.status_code == 200, updated.text
+    record = updated.json()
+    assert record["name"] == "Daily project review"
+    assert record["description"] == "Review decisions and follow-ups"
+    assert record["instruction"] == "Summarize new decisions and list owners."
+    assert record["interval_seconds"] == 3600
+    assert record["scope"] == "project"
+    assert record["project_name"] == "AURA"
+    job = await test_db_session.get(ScheduledJobModel, automation_id)
+    assert job.payload_json["session_id"] == original_session_id
+    assert job.payload_json["project_name"] == "AURA"
+    assert job.payload_json["message"] == "Summarize new decisions and list owners."
+    assert job.schedule_expression == "3600"
+    assert event.payload_json["message"] == "Summarize project updates."
+
+
+@pytest.mark.asyncio
+async def test_automation_edit_rejects_blank_instruction(async_client):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Keep this routine",
+        "instruction": "Keep the old instruction.",
+        "interval_seconds": 3600,
+    })
+    response = await async_client.patch(f"/v1/automations/{created.json()['id']}", json={
+        "name": "Keep this routine",
+        "instruction": "   ",
+        "interval_seconds": 3600,
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Automation name and instruction must not be blank."
+
+
+@pytest.mark.asyncio
 async def test_automation_collection_uses_bounded_keyset_pages(async_client):
     for index in range(3):
         created = await async_client.post("/v1/automations", json={
