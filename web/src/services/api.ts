@@ -313,6 +313,14 @@ export const api = {
     return fetchAllCursorPages<StudyCardRecord>('/v1/study/cards');
   },
 
+  async fetchStudyCardsPage(cursor?: string | null): Promise<{ items: StudyCardRecord[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: '100' });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/study/cards?${params.toString()}`);
+    const items = await handleResponse<StudyCardRecord[]>(response);
+    return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
+  },
+
   async createStudyCard(sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards`, {
       method: 'POST',

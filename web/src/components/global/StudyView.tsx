@@ -15,6 +15,10 @@ interface StudyViewProps {
   onStartNoteSession?: (note: WorkspaceNote) => void;
   sessions: StudySessionRecord[];
   cards?: StudyCardRecord[];
+  hasMoreCards?: boolean;
+  loadingMoreCards?: boolean;
+  cardsLoadError?: string | null;
+  onLoadMoreCards?: () => Promise<void>;
   onCompleteSession: (sessionId: string) => void;
   onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
   onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
@@ -163,7 +167,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
 
   return (
     <div className="study-cards">
-      <strong className="study-cards__heading">Learning cards · {cards.length}</strong>
+      <strong className="study-cards__heading">Learning cards · {cards.length} loaded</strong>
       {cards.map((card) => (
         <StudyCardRow
           key={card.id}
@@ -182,7 +186,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -354,6 +358,17 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, onOpenItem,
             </article>
           ))}
         </section>
+      ) : null}
+
+      {hasMoreCards || cardsLoadError ? (
+        <div className="study-cards-pagination">
+          {cardsLoadError ? <p role="alert" className="study-reflection__error">Could not load more learning cards: {cardsLoadError}</p> : null}
+          {hasMoreCards ? (
+            <button type="button" disabled={loadingMoreCards} onClick={() => void onLoadMoreCards?.()}>
+              {loadingMoreCards ? 'Loading more cards…' : cardsLoadError ? 'Retry loading cards' : 'Load more cards'}
+            </button>
+          ) : null}
+        </div>
       ) : null}
     </section>
   );

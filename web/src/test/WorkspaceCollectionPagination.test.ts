@@ -63,6 +63,19 @@ describe('workspace collection pagination', () => {
     expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').searchParams.get('cursor')).toBe('next-cards');
   });
 
+  it('returns one Study cards page and its cursor for on-demand loading', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'card-101' }], 'next-cards'));
+    vi.stubGlobal('fetch', fetch);
+
+    const page = await api.fetchStudyCardsPage('prior-cards');
+
+    expect(page).toEqual({ items: [{ id: 'card-101' }], nextCursor: 'next-cards' });
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/study/cards');
+    expect(url.searchParams.get('page_size')).toBe('100');
+    expect(url.searchParams.get('cursor')).toBe('prior-cards');
+  });
+
   it('uses the same paged loader for automations', async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(jsonResponse([{ id: 'automation-1' }], 'next-automations'))
