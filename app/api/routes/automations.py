@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.api.schemas import AutomationDuplicateWrite, AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
 from app.api.pagination import (
     MAX_COLLECTION_PAGE_SIZE,
     decode_timestamp_id_cursor,
@@ -302,6 +302,65 @@ async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSessi
     await db.refresh(job)
     latest = await _latest_executions(db, [job])
     return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
+
+
+@router.post("/{automation_id}/duplicate", response_model=AutomationResponse, status_code=status.HTTP_201_CREATED)
+async def duplicate_automation(
+    automation_id: str,
+    body: AutomationDuplicateWrite | None = None,
+    db: AsyncSession = Depends(get_db),
+) -> AutomationResponse:
+    source = await db.get(ScheduledJobModel, automation_id)
+    if source is None or (source.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+
+    metadata = dict(source.metadata_json or {})
+    instruction = metadata.get("instruction")
+    if not isinstance(instruction, str) or not instruction.strip():
+        raise HTTPException(status_code=409, detail="Automation instruction is unavailable.")
+    try:
+        interval_seconds = max(60, int(float(source.schedule_expression)))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=409, detail="Automation interval is invalid.")
+    name = (body.name if body is not None and body.name is not None else f"{source.name} copy").strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Automation name must not be blank.")
+
+    source_project_name = metadata.get("project_name")
+    project_name = source_project_name.strip() if isinstance(source_project_name, str) and source_project_name.strip() else None
+    scope_value = metadata.get("scope")
+    scope = scope_value if isinstance(scope_value, str) and scope_value in {"global", "project"} else "global"
+    if scope == "project" and not project_name:
+        raise HTTPException(status_code=409, detail="Automation project scope is unavailable.")
+    now = utc_now()
+    duplicate = ScheduledJobModel(
+        name=name,
+        job_type=JobType.RECURRING.value,
+        schedule_expression=str(interval_seconds),
+        payload_json={},
+        is_active=False,
+        next_run_at=now + timedelta(seconds=interval_seconds),
+        metadata_json={},
+    )
+    db.add(duplicate)
+    await db.flush()
+    duplicate_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-automation-session:{duplicate.id}"))
+    duplicate.payload_json = {
+        "message": instruction.strip(),
+        "session_id": duplicate_session_id,
+        "project_name": project_name if scope == "project" else None,
+        "automation_id": duplicate.id,
+    }
+    duplicate.metadata_json = {
+        "kind": "automation",
+        "description": metadata.get("description", "") if isinstance(metadata.get("description", ""), str) else "",
+        "instruction": instruction.strip(),
+        "scope": scope,
+        "project_name": project_name if scope == "project" else None,
+    }
+    await db.commit()
+    await db.refresh(duplicate)
+    return _automation_response(duplicate)
 
 
 @router.post("/{automation_id}/archive", response_model=AutomationResponse)

@@ -578,6 +578,10 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
   },
 
+  async duplicateAutomation(id: string): Promise<AutomationRecordResponse> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
+  },
+
   async setAutomationEnabled(id: string, enabled: boolean): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),

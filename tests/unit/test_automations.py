@@ -154,6 +154,46 @@ async def test_restoring_an_unarchived_automation_does_not_pause_it(async_client
 
 
 @pytest.mark.asyncio
+async def test_duplicate_automation_gets_a_paused_independent_session_and_empty_history(async_client, test_db_session):
+    source = await async_client.post("/v1/automations", json={
+        "name": "Project digest",
+        "description": "Summarize changes",
+        "instruction": "Summarize project changes.",
+        "scope": "project",
+        "project_name": "AURA",
+        "interval_seconds": 86400,
+    })
+    source_id = source.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{source_id}/run")
+    source_job = await test_db_session.get(ScheduledJobModel, source_id)
+    source_session_id = source_job.payload_json["session_id"]
+
+    response = await async_client.post(f"/v1/automations/{source_id}/duplicate")
+
+    assert response.status_code == 201, response.text
+    duplicate = response.json()
+    assert duplicate["id"] != source_id
+    assert duplicate["name"] == "Project digest copy"
+    assert duplicate["description"] == "Summarize changes"
+    assert duplicate["instruction"] == "Summarize project changes."
+    assert duplicate["scope"] == "project"
+    assert duplicate["project_name"] == "AURA"
+    assert duplicate["interval_seconds"] == 86400
+    assert duplicate["enabled"] is False
+    assert duplicate["archived"] is False
+    assert duplicate["latest_execution"] is None
+
+    duplicate_job = await test_db_session.get(ScheduledJobModel, duplicate["id"])
+    assert duplicate_job.payload_json["session_id"] != source_session_id
+    assert duplicate_job.payload_json["automation_id"] == duplicate["id"]
+    assert duplicate_job.payload_json["project_name"] == "AURA"
+    assert duplicate_job.is_active is False
+    assert (await async_client.get(f"/v1/automations/{duplicate['id']}/runs")).json() == []
+    assert (await async_client.get(f"/v1/automations/{source_id}/runs")).json()[0]["event_id"] == queued.json()["event_id"]
+    assert (await async_client.post(f"/v1/automations/{duplicate['id']}/run")).status_code == 409
+
+
+@pytest.mark.asyncio
 async def test_automation_collection_uses_bounded_keyset_pages(async_client):
     for index in range(3):
         created = await async_client.post("/v1/automations", json={

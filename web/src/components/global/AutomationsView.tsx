@@ -1,4 +1,4 @@
-import { BellRing, Check, Clock3, Pause, Pencil, Play, Plus, Workflow, X } from 'lucide-react';
+import { BellRing, Check, Clock3, Copy, Pause, Pencil, Play, Plus, Workflow, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ApprovalDetail, AutomationExecutionRecord, RunDetail, RunRoutingDecision, RunEvent } from '../../types';
 import { api } from '../../services/api';
@@ -24,6 +24,7 @@ interface AutomationsViewProps {
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
   onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds'>) => Promise<AutomationRecord>;
+  onDuplicate?: (automation: AutomationRecord) => void;
   onSetArchived?: (automation: AutomationRecord, archived: boolean) => void;
   includeArchived?: boolean;
   onToggleArchived?: () => void;
@@ -52,7 +53,7 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
   const [name, setName] = useState('');
@@ -325,6 +326,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
               </div>
               <div className="automation-card__actions">
                 {live ? <button className="secondary-button" type="button" aria-label={`Edit ${automation.name}`} onClick={() => openEditor(automation)} disabled={!onUpdate || automation.archived}><Pencil size={13} /> Edit</button> : null}
+                {live && onDuplicate ? <button className="secondary-button" type="button" onClick={() => onDuplicate(automation)} title="Create a paused copy with independent run history"><Copy size={13} /> Duplicate</button> : null}
                 {live && onSetArchived ? <button className="secondary-button" type="button" onClick={() => onSetArchived(automation, !automation.archived)} title={automation.archived ? 'Restore this paused routine; its history is preserved' : 'Stop future schedules and keep run history; already queued runs can still finish'}>{automation.archived ? 'Restore' : 'Archive'}</button> : null}
                 <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || automation.archived || runInProgress} title={automation.archived ? 'Archived routines cannot run' : runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled && !automation.archived ? <Play size={13} /> : <Pause size={13} />} Run now</button>
               </div>

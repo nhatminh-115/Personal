@@ -374,6 +374,10 @@ class AutomationEditWrite(BaseModel):
     interval_seconds: int = Field(ge=60, le=31_536_000)
 
 
+class AutomationDuplicateWrite(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=1, max_length=128)
+
+
 class AutomationExecutionResponse(BaseModel):
     event_id: str
     run_id: str
