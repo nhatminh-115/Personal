@@ -44,10 +44,11 @@ describe('Global Notes privacy controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load more notes' }));
     expect(onLoadMoreNotes).toHaveBeenCalledTimes(1);
 
-    rerender(<NotesView {...props} loadingMoreNotes notesLoadError="Temporary network failure" />);
+    rerender(<NotesView {...props} notesLoadError="Temporary network failure" />);
     expect(screen.getByText(/Could not load notes: Temporary network failure/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(onLoadMoreNotes).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+    rerender(<NotesView {...props} loadingMoreNotes />);
+    expect(screen.getByRole('button', { name: 'Loading notes…' })).toBeDisabled();
   });
 });
