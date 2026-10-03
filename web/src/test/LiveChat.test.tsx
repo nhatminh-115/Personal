@@ -14,7 +14,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     const consoleWarn = vi.spyOn(console, 'warn');
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url.includes('/v1/workspace/projects/') && url.endsWith('/graph')) {
+      if (url.includes('/v1/workspace/projects/') && url.split('?')[0].endsWith('/graph')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
           id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
           content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user', session_id: null, source_message_id: null,

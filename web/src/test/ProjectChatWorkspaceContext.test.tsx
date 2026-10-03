@@ -4,7 +4,7 @@ import { ProjectChatWorkspace } from '../components/chat/ProjectChatWorkspace';
 import { api } from '../services/api';
 
 vi.mock('../services/api', () => ({
-  api: { fetchWorkspaceGraph: vi.fn() },
+  api: { fetchWorkspaceObjectPage: vi.fn() },
 }));
 
 vi.mock('../components/chat/ChatPane', () => ({
@@ -49,9 +49,8 @@ function renderWorkspace() {
 describe('live chat context loading', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('loads the project graph when Context opens and does not reload it for selection changes', async () => {
-    vi.mocked(api.fetchWorkspaceGraph).mockResolvedValue({
-      project_name: 'AURA',
+  it('loads one object page when Context opens and does not reload it for selection changes', async () => {
+    vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
       objects: [{
         id: 'object-1',
         project_name: 'AURA',
@@ -62,18 +61,17 @@ describe('live chat context loading', () => {
         metadata_json: {},
         created_at: '2026-10-03T00:00:00Z',
         updated_at: '2026-10-03T00:00:00Z',
-      }],
-      edges: [],
-      layout: { project_name: 'AURA', layout: {}, revision: 0 },
+      } as any],
+      nextCursor: null,
     });
 
     const view = renderWorkspace();
-    expect(api.fetchWorkspaceGraph).not.toHaveBeenCalled();
+    expect(api.fetchWorkspaceObjectPage).not.toHaveBeenCalled();
 
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
-    await waitFor(() => expect(api.fetchWorkspaceGraph).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledWith('AURA', null));
 
     fireEvent.click(view.getByRole('button', { name: 'Select object' }));
-    await waitFor(() => expect(api.fetchWorkspaceGraph).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledTimes(1));
   });
 });
