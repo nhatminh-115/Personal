@@ -111,6 +111,10 @@ def test_alembic_upgrade_downgrade_cycle():
         routing_indexes = {idx["name"] for idx in inspector.get_indexes("routing_profiles")}
         assert "uq_routing_profiles_single_default" in routing_indexes
         keyset_indexes = {
+            "memories": {idx["name"] for idx in inspector.get_indexes("memories")},
+            "approvals": {idx["name"] for idx in inspector.get_indexes("approvals")},
+            "run_events": {idx["name"] for idx in inspector.get_indexes("run_events")},
+            "events": {idx["name"] for idx in inspector.get_indexes("events")},
             "sessions": {idx["name"] for idx in inspector.get_indexes("sessions")},
             "messages": {idx["name"] for idx in inspector.get_indexes("messages")},
             "workspace_projects": {idx["name"] for idx in inspector.get_indexes("workspace_projects")},
@@ -122,6 +126,14 @@ def test_alembic_upgrade_downgrade_cycle():
             "ix_sessions_project_updated_id",
         }.issubset(keyset_indexes["sessions"])
         assert "ix_messages_session_created_id" in keyset_indexes["messages"]
+        assert {
+            "ix_memories_created_id",
+            "ix_memories_project_created_id",
+            "ix_memories_session_created_id",
+        }.issubset(keyset_indexes["memories"])
+        assert "ix_approvals_status_created_id" in keyset_indexes["approvals"]
+        assert "ix_run_events_run_created_id" in keyset_indexes["run_events"]
+        assert "ix_events_correlation_occurred_id" in keyset_indexes["events"]
         assert "ix_workspace_projects_created_id" in keyset_indexes["workspace_projects"]
         assert {
             "ix_workspace_objects_project_created_id",
@@ -182,6 +194,8 @@ def test_alembic_upgrade_downgrade_cycle():
         assert expected_tables.issubset(reupgraded_tables)
         reupgraded_indexes = {idx["name"] for idx in inspector.get_indexes("workspace_objects")}
         assert "ix_workspace_objects_project_created_id" in reupgraded_indexes
+        reupgraded_memory_indexes = {idx["name"] for idx in inspector.get_indexes("memories")}
+        assert "ix_memories_project_created_id" in reupgraded_memory_indexes
         engine.dispose()
 
     finally:

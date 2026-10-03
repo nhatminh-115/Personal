@@ -112,6 +112,10 @@ class RunEventModel(Base):
 
     run: Mapped["RunModel"] = relationship("RunModel", back_populates="events")
 
+    __table_args__ = (
+        Index("ix_run_events_run_created_id", "run_id", "created_at", "id"),
+    )
+
 
 class RoutingConfirmationModel(Base):
     """Durable, policy-specific confirmation before a proposed cloud model can run."""
@@ -150,6 +154,10 @@ class ApprovalModel(Base):
     session: Mapped["SessionModel"] = relationship("SessionModel", back_populates="approvals")
     run: Mapped["RunModel"] = relationship("RunModel", back_populates="approvals")
 
+    __table_args__ = (
+        Index("ix_approvals_status_created_id", "status", "created_at", "id"),
+    )
+
 
 class MemoryModel(Base):
     """Durable memory entity (episodic, semantic, profile, project)."""
@@ -179,6 +187,12 @@ class MemoryModel(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
     session: Mapped[Optional["SessionModel"]] = relationship("SessionModel", back_populates="memories")
+
+    __table_args__ = (
+        Index("ix_memories_created_id", "created_at", "id"),
+        Index("ix_memories_project_created_id", "project_name", "created_at", "id"),
+        Index("ix_memories_session_created_id", "session_id", "created_at", "id"),
+    )
 
 
 class EventStatus(str, Enum):
@@ -225,6 +239,7 @@ class EventRecordModel(Base):
             postgresql_where=text("idempotency_key IS NOT NULL"),
             sqlite_where=text("idempotency_key IS NOT NULL"),
         ),
+        Index("ix_events_correlation_occurred_id", "correlation_id", "occurred_at", "id"),
     )
 
 
