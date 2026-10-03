@@ -137,6 +137,14 @@ class RoutingConfirmationModel(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     decided_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        Index("ix_routing_confirmations_status_created_id", "status", created_at.desc(), id.desc()),
+        Index(
+            "ix_routing_confirmations_status_session_created_id",
+            "status", "session_id", created_at.desc(), id.desc(),
+        ),
+    )
+
 
 class ApprovalModel(Base):
     """Human-in-the-loop approval record for high-risk or write actions."""

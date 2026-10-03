@@ -103,12 +103,12 @@ to remain acyclic. Board layout is stored separately from object relationships.
 Project, personal note, Library, Study, and Automation collection reads use
 bounded keyset pages; the API returns arrays with an `X-Next-Cursor` response
 header. Composite indexes match the filters and cursor ordering for workspace
-graphs and collections, session messages, memories, pending approvals, run
-traces, project execution history, automation listings, and automation
-history. Notes, Library references, and automations load older pages on demand;
-aggregate counts come from lightweight summary endpoints instead of the pages
-currently held in the browser. Automation run history is also cursor-paged,
-with older runs loaded on demand.
+graphs and collections, session messages, memories, pending approvals, routing
+confirmations, run traces, project execution history, automation listings, and
+automation history. Notes, Library references, and automations load older pages
+on demand; aggregate counts come from lightweight summary endpoints instead of
+the pages currently held in the browser. Automation run history is also
+cursor-paged, with older runs loaded on demand.
 
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context
