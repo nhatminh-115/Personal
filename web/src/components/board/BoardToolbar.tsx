@@ -15,6 +15,9 @@ interface BoardToolbarProps {
   executionHistoryTruncated?: boolean;
   onLoadOlderExecution?: () => void;
   loadingOlderExecution?: boolean;
+  graphHasMore?: boolean;
+  loadingOlderGraph?: boolean;
+  onLoadOlderGraph?: () => void;
   onLayerToggle: (layer: LayerKey) => void;
 }
 
@@ -31,6 +34,9 @@ export function BoardToolbar({
   executionHistoryTruncated = false,
   onLoadOlderExecution,
   loadingOlderExecution = false,
+  graphHasMore = false,
+  loadingOlderGraph = false,
+  onLoadOlderGraph,
   onLayerToggle,
 }: BoardToolbarProps) {
   return (
@@ -51,6 +57,7 @@ export function BoardToolbar({
         <span className="layer-toggle__title"><Layers3 size={12} /> Layers</span>
         {executionHistoryTruncated ? <span className="execution-history-note" role="status">Recent execution history shown</span> : null}
         {onLoadOlderExecution ? <button type="button" onClick={onLoadOlderExecution} disabled={loadingOlderExecution}>{loadingOlderExecution ? 'Loading…' : 'Load older runs'}</button> : null}
+        {graphHasMore && onLoadOlderGraph ? <button type="button" onClick={onLoadOlderGraph} disabled={loadingOlderGraph}>{loadingOlderGraph ? 'Loading…' : 'Load older objects'}</button> : null}
         {(['conversation', 'knowledge', 'execution'] as LayerKey[]).map((layer) => (
           <button className={layers[layer] ? 'is-active' : ''} type="button" key={layer} onClick={() => onLayerToggle(layer)}>
             <span className="layer-check">{layers[layer] ? <Check size={9} /> : null}</span>

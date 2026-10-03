@@ -1276,6 +1276,17 @@ async def delete_workspace_edge(project_name: str, edge_id: str, db: AsyncSessio
     await db.commit()
 
 
+@router.get("/projects/{project_name}/layout", response_model=WorkspaceLayoutResponse)
+async def get_workspace_layout(project_name: str, db: AsyncSession = Depends(get_db)) -> WorkspaceLayoutResponse:
+    layout = await db.get(WorkspaceLayoutModel, project_name)
+    return WorkspaceLayoutResponse(
+        project_name=project_name,
+        layout=layout.layout_json if layout else {},
+        revision=layout.revision if layout else 0,
+        updated_at=layout.updated_at if layout else None,
+    )
+
+
 @router.put("/projects/{project_name}/layout", response_model=WorkspaceLayoutResponse)
 async def put_workspace_layout(
     project_name: str,
@@ -1287,11 +1298,22 @@ async def put_workspace_layout(
     revision = layout.revision if layout else 0
     if revision != body.expected_revision:
         raise HTTPException(status_code=409, detail={"message": "Board layout changed since it was loaded.", "current_revision": revision})
+    merged_layout = dict(layout.layout_json or {}) if layout is not None else {}
+    for key, value in body.layout.items():
+        if key in {"positions", "densities"} and isinstance(value, dict):
+            previous = merged_layout.get(key)
+            merged_layout[key] = {**(previous if isinstance(previous, dict) else {}), **value}
+        else:
+            merged_layout[key] = value
+    try:
+        validated_layout = WorkspaceLayoutWrite(layout=merged_layout, expected_revision=body.expected_revision).layout
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if layout is None:
-        layout = WorkspaceLayoutModel(project_name=project_name, layout_json=body.layout, revision=1)
+        layout = WorkspaceLayoutModel(project_name=project_name, layout_json=validated_layout, revision=1)
         db.add(layout)
     else:
-        layout.layout_json = body.layout
+        layout.layout_json = validated_layout
         layout.revision += 1
         layout.updated_at = datetime.now(timezone.utc)
     await db.commit()

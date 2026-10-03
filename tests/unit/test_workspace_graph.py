@@ -501,11 +501,11 @@ async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revi
 
     saved = await async_client.put(
         "/v1/workspace/projects/aura/layout",
-        json={"layout": {"nodes": {note_id: {"x": 12, "y": 34}}, "viewport": {"zoom": 0.8}}, "expected_revision": 0},
+        json={"layout": {"positions": {note_id: {"x": 12, "y": 34}}, "densities": {note_id: "compact"}, "viewport": {"zoom": 0.8}}, "expected_revision": 0},
     )
     assert saved.status_code == 200
     assert saved.json()["revision"] == 1
-    assert saved.json()["layout"]["nodes"][note_id] == {"x": 12, "y": 34}
+    assert saved.json()["layout"]["positions"][note_id] == {"x": 12, "y": 34}
 
     stale = await async_client.put(
         "/v1/workspace/projects/aura/layout",
@@ -513,6 +513,18 @@ async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revi
     )
     assert stale.status_code == 409
     assert (await async_client.get("/v1/workspace/projects/aura/graph")).json()["layout"]["revision"] == 1
+
+    partial_layout = await async_client.put(
+        "/v1/workspace/projects/aura/layout",
+        json={"expected_revision": 1, "layout": {"positions": {"new": {"x": 80, "y": 90}}, "densities": {"new": "full"}, "viewport": {"x": 5, "y": 6, "zoom": 1}}},
+    )
+    assert partial_layout.status_code == 200
+    assert partial_layout.json()["layout"]["positions"] == {note_id: {"x": 12, "y": 34}, "new": {"x": 80, "y": 90}}
+    assert partial_layout.json()["layout"]["densities"] == {note_id: "compact", "new": "full"}
+    loaded_layout = await async_client.get("/v1/workspace/projects/aura/layout")
+    assert loaded_layout.status_code == 200
+    assert loaded_layout.json()["revision"] == 2
+    assert loaded_layout.json()["layout"] == partial_layout.json()["layout"]
 
 
 @pytest.mark.asyncio

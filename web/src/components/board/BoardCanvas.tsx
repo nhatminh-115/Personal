@@ -186,6 +186,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [executionTraces, setExecutionTraces] = useState<WorkspaceExecutionTrace[]>([]);
   const [executionNextCursor, setExecutionNextCursor] = useState<string | null>(null);
   const [loadingOlderExecution, setLoadingOlderExecution] = useState(false);
+  const [graphObjectCursor, setGraphObjectCursor] = useState<string | null>(null);
+  const [graphEdgeCursor, setGraphEdgeCursor] = useState<string | null>(null);
+  const [loadingOlderGraph, setLoadingOlderGraph] = useState(false);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     conversation: true,
@@ -201,6 +204,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [contextPreviewError, setContextPreviewError] = useState<string | null>(null);
   const instanceRef = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
   const pendingInitialFit = useRef<ReactFlowInstance<AuraFlowNode, AuraFlowEdge> | null>(null);
+  const focusNodeIdRef = useRef(focusNodeId);
   const initialFitTimer = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(100);
@@ -219,6 +223,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
+  focusNodeIdRef.current = focusNodeId;
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
@@ -321,6 +326,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
       const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
       const projected = mapWorkspaceGraph(graph);
+      setGraphObjectCursor(graph.objects_next_cursor ?? null);
+      setGraphEdgeCursor(graph.edges_next_cursor ?? null);
       setExecutionHistoryTruncated(projected.executionHistoryTruncated);
       setExecutionTraces(projected.executionTraces);
       setExecutionNextCursor(projected.executionNextCursor);
@@ -339,6 +346,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       try {
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setGraphObjectCursor(graph.objects_next_cursor ?? null);
+        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
         setExecutionHistoryTruncated(projected.executionHistoryTruncated);
         setExecutionTraces(projected.executionTraces);
         setExecutionNextCursor(projected.executionNextCursor);
@@ -380,18 +389,36 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setExecutionHistoryTruncated(false);
     setExecutionTraces([]);
     setExecutionNextCursor(null);
+    setGraphObjectCursor(null);
+    setGraphEdgeCursor(null);
     if (!workspaceProjectName) return;
     let cancelled = false;
     void Promise.all(workspaceSessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
       if (error instanceof ApiError && error.status === 404) return null;
       throw error;
-    }))).then(() => api.fetchWorkspaceGraph(workspaceProjectName)).then(async (graph) => {
+    }))).then(() => api.fetchWorkspaceGraphPage(workspaceProjectName)).then(async (graph) => {
       if (cancelled) return;
-      const { nodes: nextNodes, edges: nextEdges, executionNodes: nextExecutionNodes, executionEdges: nextExecutionEdges, executionHistoryTruncated: nextExecutionHistoryTruncated, executionTraces: nextExecutionTraces, executionNextCursor: nextExecutionNextCursor } = mapWorkspaceGraph(graph);
-      const savedViewport = graph.layout.layout?.viewport ?? null;
-      let revision = graph.layout.revision;
-      const persistedPositions = graph.layout.layout?.positions ?? {};
-      const persistedDensities = graph.layout.layout?.densities ?? {};
+      let loadedGraph = graph;
+      const requestedFocusId = focusNodeIdRef.current;
+      let objects = [...graph.objects];
+      let edges = [...graph.edges];
+      let objectCursor = graph.objects_next_cursor ?? null;
+      let edgeCursor = graph.edges_next_cursor ?? null;
+      while (requestedFocusId && objectCursor && !objects.some((object) => object.id === requestedFocusId)) {
+        const page = await api.fetchWorkspaceGraphPage(workspaceProjectName, { object: objectCursor, edge: edgeCursor });
+        if (cancelled) return;
+        objects = [...objects, ...page.objects];
+        edges = [...edges, ...page.edges];
+        objectCursor = page.objects_next_cursor ?? null;
+        edgeCursor = page.edges_next_cursor ?? null;
+        loadedGraph = { ...loadedGraph, layout: page.layout };
+      }
+      loadedGraph = { ...loadedGraph, objects, edges, objects_next_cursor: objectCursor, edges_next_cursor: edgeCursor };
+      const { nodes: nextNodes, edges: nextEdges, executionNodes: nextExecutionNodes, executionEdges: nextExecutionEdges, executionHistoryTruncated: nextExecutionHistoryTruncated, executionTraces: nextExecutionTraces, executionNextCursor: nextExecutionNextCursor } = mapWorkspaceGraph(loadedGraph);
+      const savedViewport = loadedGraph.layout.layout?.viewport ?? null;
+      let revision = loadedGraph.layout.revision;
+      const persistedPositions = loadedGraph.layout.layout?.positions ?? {};
+      const persistedDensities = loadedGraph.layout.layout?.densities ?? {};
       const missingLayout = nextNodes.some((node) => !persistedPositions[node.id] || !persistedDensities[node.id]);
       if (missingLayout) {
         try {
@@ -418,6 +445,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionHistoryTruncated(nextExecutionHistoryTruncated);
       setExecutionTraces(nextExecutionTraces);
       setExecutionNextCursor(nextExecutionNextCursor);
+      setGraphObjectCursor(loadedGraph.objects_next_cursor ?? null);
+      setGraphEdgeCursor(loadedGraph.edges_next_cursor ?? null);
       nodesRef.current = nextNodes;
       edgesRef.current = nextEdges;
       if (savedViewport) {
@@ -429,6 +458,52 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     });
     return () => { cancelled = true; };
   }, [workspaceProjectName, workspaceSessionIds, setEdges, setNodes, toast]);
+
+  const loadOlderGraphPage = useCallback(async () => {
+    if (!workspaceProjectName || loadingOlderGraph || (!graphObjectCursor && !graphEdgeCursor)) return;
+    setLoadingOlderGraph(true);
+    try {
+      const graph = await api.fetchWorkspaceGraphPage(workspaceProjectName, {
+        object: graphObjectCursor,
+        edge: graphEdgeCursor,
+      });
+      if (graph.layout.revision !== layoutRevision.current) {
+        layoutConflict.current = true;
+        toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
+      }
+      const projected = mapWorkspaceGraph(graph);
+      const maxLoadedY = Math.max(0, ...nodesRef.current.map((node) => node.position.y + 190));
+      const persistedPositions = graph.layout.layout?.positions ?? {};
+      const pageNodes = projected.nodes.map((node, index) => persistedPositions[node.id] ? node : {
+        ...node,
+        position: {
+          x: 120 + (index % 3) * 390,
+          y: maxLoadedY + 100 + Math.floor(index / 3) * 210,
+        },
+      });
+      setNodes((current) => {
+        const byId = new Map(current.map((node) => [node.id, node]));
+        for (const node of pageNodes) if (!byId.has(node.id)) byId.set(node.id, node);
+        const next = [...byId.values()];
+        nodesRef.current = next;
+        return next;
+      });
+      setEdges((current) => {
+        const byId = new Map(current.map((edge) => [edge.id, edge]));
+        for (const edge of projected.edges) if (!byId.has(edge.id)) byId.set(edge.id, edge);
+        const next = [...byId.values()];
+        edgesRef.current = next;
+        return next;
+      });
+      setGraphObjectCursor(graph.objects_next_cursor ?? null);
+      setGraphEdgeCursor(graph.edges_next_cursor ?? null);
+      requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
+    } catch {
+      toast('Older Board objects could not be loaded', 'Retry to continue browsing this project graph.');
+    } finally {
+      setLoadingOlderGraph(false);
+    }
+  }, [compact, graphEdgeCursor, graphObjectCursor, loadingOlderGraph, setEdges, setNodes, toast, workspaceProjectName]);
 
   useEffect(() => () => {
     if (initialFitTimer.current !== null) window.clearTimeout(initialFitTimer.current);
@@ -621,6 +696,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }).then(async () => {
           const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
           const projected = mapWorkspaceGraph(graph);
+          setGraphObjectCursor(graph.objects_next_cursor ?? null);
+          setGraphEdgeCursor(graph.edges_next_cursor ?? null);
           setExecutionHistoryTruncated(projected.executionHistoryTruncated);
           setExecutionTraces(projected.executionTraces);
           setExecutionNextCursor(projected.executionNextCursor);
@@ -888,6 +965,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setGraphObjectCursor(graph.objects_next_cursor ?? null);
+        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
         setExecutionHistoryTruncated(projected.executionHistoryTruncated);
         setExecutionTraces(projected.executionTraces);
         setExecutionNextCursor(projected.executionNextCursor);
@@ -944,6 +1023,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         });
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setGraphObjectCursor(graph.objects_next_cursor ?? null);
+        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
         setExecutionHistoryTruncated(projected.executionHistoryTruncated);
         setExecutionTraces(projected.executionTraces);
         setExecutionNextCursor(projected.executionNextCursor);
@@ -1010,6 +1091,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         await api.createWorkspaceObject(workspaceProjectName, mergeInput);
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
         const projected = mapWorkspaceGraph(graph);
+        setGraphObjectCursor(graph.objects_next_cursor ?? null);
+        setGraphEdgeCursor(graph.edges_next_cursor ?? null);
         setExecutionHistoryTruncated(projected.executionHistoryTruncated);
         setExecutionTraces(projected.executionTraces);
         setExecutionNextCursor(projected.executionNextCursor);
@@ -1337,6 +1420,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         executionHistoryTruncated={executionHistoryTruncated || Boolean(executionNextCursor)}
         onLoadOlderExecution={executionNextCursor ? () => void loadOlderExecution() : undefined}
         loadingOlderExecution={loadingOlderExecution}
+        graphHasMore={Boolean(graphObjectCursor || graphEdgeCursor)}
+        onLoadOlderGraph={graphObjectCursor || graphEdgeCursor ? () => void loadOlderGraphPage() : undefined}
+        loadingOlderGraph={loadingOlderGraph}
         onLayerToggle={(layer) => setLayers((current) => ({ ...current, [layer]: !current[layer] }))}
       />
 
