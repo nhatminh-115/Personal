@@ -78,6 +78,37 @@ def test_backup_verification_rejects_payload_tampering(tmp_path):
         backup_compose.verify_backup(archive_path)
 
 
+def test_list_backups_reports_verified_and_invalid_archives_without_changing_them(tmp_path, monkeypatch):
+    _fake_compose(monkeypatch, api_running=False)
+    verified_path = backup_compose.create_backup(tmp_path / "aura-2026-10-03.tar.gz")
+    invalid_path = tmp_path / "aura-broken.tar.gz"
+    invalid_path.write_bytes(b"not a backup")
+    original_bytes = invalid_path.read_bytes()
+
+    backups = backup_compose.list_backups(tmp_path)
+
+    assert [backup["path"] for backup in backups] == [str(verified_path.resolve()), str(invalid_path.resolve())]
+    assert [backup["status"] for backup in backups] == ["verified", "invalid"]
+    assert backups[0]["created_at"]
+    assert invalid_path.read_bytes() == original_bytes
+    assert verified_path.is_file()
+
+
+def test_list_backups_requires_an_existing_directory(tmp_path):
+    with pytest.raises(NotADirectoryError, match="Backup directory does not exist"):
+        backup_compose.list_backups(tmp_path / "missing")
+
+
+def test_list_command_returns_nonzero_when_an_archive_is_invalid(tmp_path, monkeypatch, capsys):
+    (tmp_path / "broken.tar.gz").write_bytes(b"not a backup")
+    monkeypatch.setattr("sys.argv", ["backup_compose.py", "--list", str(tmp_path)])
+
+    assert backup_compose.main() == 1
+    output = capsys.readouterr().out
+    assert "INVALID" in output
+    assert "0 verified; 1 invalid" in output
+
+
 def test_backup_does_not_change_stopped_api_state(tmp_path, monkeypatch):
     calls, _, _ = _fake_compose(monkeypatch, api_running=False)
     backup_compose.create_backup(tmp_path / "aura.tar.gz")
