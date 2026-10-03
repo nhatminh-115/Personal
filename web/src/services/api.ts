@@ -267,6 +267,23 @@ export const api = {
     return { ...firstPage, objects, edges, objects_next_cursor: null };
   },
 
+  async fetchWorkspaceObjectPage(projectName: string, cursor?: string | null, pageSize = 50): Promise<{
+    objects: WorkspaceGraph['objects'];
+    nextCursor: string | null;
+  }> {
+    const params = new URLSearchParams({
+      object_page_size: String(pageSize),
+      newest_first: 'true',
+      edges_exhausted: 'true',
+      include_project_state: 'false',
+    });
+    if (cursor) params.set('object_cursor', cursor);
+    const graph = await handleResponse<WorkspaceGraph>(await fetch(
+      `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
+    ));
+    return { objects: graph.objects, nextCursor: graph.objects_next_cursor ?? null };
+  },
+
   async fetchWorkspaceNotes(): Promise<WorkspaceNoteRecord[]> {
     return fetchAllCursorPages<WorkspaceNoteRecord>('/v1/workspace/notes');
   },

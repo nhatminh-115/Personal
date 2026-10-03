@@ -1,9 +1,30 @@
 import { MessageSquarePlus, Pin, Search, Sparkles } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { projectArtifacts, type ChatThreadRecord, type LibraryItem, type ProjectRecord, type WorkspaceNote } from '../../data/workspaceData';
-import type { AIContextItem, ApprovalDetail, ChatMessage } from '../../types';
+import type { AIContextItem, ApprovalDetail, ChatMessage, WorkspaceObject } from '../../types';
 import { api } from '../../services/api';
 import { ChatPane } from './ChatPane';
+
+function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>): AIContextItem[] {
+  return objects.map((object) => {
+    const kind: AIContextItem['kind'] = object.object_type === 'manual_note' ? 'note'
+      : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
+        : object.object_type === 'research_claim' ? 'claim' : 'turn';
+    const verification = object.metadata_json.verification_status;
+    const detail = object.object_type === 'research_claim' && typeof verification === 'string'
+      ? `research claim · ${verification} · saved in this project`
+      : `${object.object_type.split('_').join(' ')} · saved in this project`;
+    return {
+      id: `workspace-${object.id}`,
+      nodeId: object.id,
+      kind,
+      title: object.title || object.object_type.split('_').join(' '),
+      detail,
+      tokens: Math.max(1, Math.ceil(object.content.length / 4)),
+      included: selectedIds.has(object.id),
+    };
+  });
+}
 
 export interface ProjectChatWorkspaceProps {
   compact?: boolean;
@@ -67,47 +88,76 @@ export function ProjectChatWorkspace({
   const [query, setQuery] = useState('');
   const [liveWorkspaceContext, setLiveWorkspaceContext] = useState<AIContextItem[]>([]);
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
+  const [contextObjectsNextCursor, setContextObjectsNextCursor] = useState<string | null>(null);
+  const [contextObjectsLoading, setContextObjectsLoading] = useState(false);
+  const [contextObjectsError, setContextObjectsError] = useState<string | null>(null);
+  const [contextObjectsReloadKey, setContextObjectsReloadKey] = useState(0);
+  const contextObjectsRequest = useRef(0);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return threads.filter((thread) => !q || `${thread.title} ${thread.summary}`.toLowerCase().includes(q));
   }, [query, threads]);
   const activeThread = threads.find((thread) => thread.id === activeThreadId) ?? threads[0] ?? null;
+  const selectedContextIds = useMemo(() => new Set(activeThread?.initialContextObjectIds ?? []), [activeThread?.initialContextObjectIds]);
 
   const isLiveThread = activeThread?.source === 'live' || Boolean(activeThread?.sessionId);
 
   useEffect(() => {
     if (!isLiveThread) {
       setLiveWorkspaceContext([]);
+      setContextObjectsNextCursor(null);
       return;
     }
     if (!contextPanelOpen) return;
     let active = true;
+    const requestId = ++contextObjectsRequest.current;
     setLiveWorkspaceContext([]);
-    void api.fetchWorkspaceGraph(project.name).then((graph) => {
-      if (!active) return;
-      setLiveWorkspaceContext(graph.objects.map((object) => {
-        const kind: AIContextItem['kind'] = object.object_type === 'manual_note' ? 'note'
-          : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
-            : object.object_type === 'research_claim' ? 'claim' : 'turn';
-        const verification = object.metadata_json.verification_status;
-        const detail = object.object_type === 'research_claim' && typeof verification === 'string'
-          ? `research claim · ${verification} · saved in this project`
-          : `${object.object_type.split('_').join(' ')} · saved in this project`;
-        return {
-          id: `workspace-${object.id}`,
-          nodeId: object.id,
-          kind,
-          title: object.title || object.object_type.split('_').join(' '),
-          detail,
-          tokens: Math.max(1, Math.ceil(object.content.length / 4)),
-          included: false,
-        };
-      }));
-    }).catch(() => {
-      if (active) setLiveWorkspaceContext([]);
-    });
+    setContextObjectsNextCursor(null);
+    setContextObjectsError(null);
+    setContextObjectsLoading(true);
+    void (async () => {
+      try {
+        let cursor: string | null = null;
+        let objects: WorkspaceObject[] = [];
+        let nextCursor: string | null = null;
+        do {
+          const page = await api.fetchWorkspaceObjectPage(project.name, cursor);
+          if (!active) return;
+          objects = [...objects, ...page.objects];
+          nextCursor = page.nextCursor;
+          setLiveWorkspaceContext(mapWorkspaceContextObjects(objects, selectedContextIds));
+          cursor = nextCursor;
+        } while (cursor && [...selectedContextIds].some((id) => !objects.some((object) => object.id === id)));
+        if (active && contextObjectsRequest.current === requestId) setContextObjectsNextCursor(nextCursor);
+      } catch {
+        if (active && contextObjectsRequest.current === requestId) {
+          setContextObjectsError('Saved project objects could not be loaded. Retry to continue.');
+        }
+      } finally {
+        if (active && contextObjectsRequest.current === requestId) setContextObjectsLoading(false);
+      }
+    })();
     return () => { active = false; };
-  }, [isLiveThread, contextPanelOpen, project.name, activeThread?.id, activeThread?.messages.length]);
+  }, [activeThread?.id, activeThread?.messages.length, contextObjectsReloadKey, contextPanelOpen, isLiveThread, project.name, selectedContextIds]);
+
+  const loadOlderContextObjects = useCallback(async () => {
+    if (!contextObjectsNextCursor || contextObjectsLoading || !isLiveThread) return;
+    setContextObjectsLoading(true);
+    setContextObjectsError(null);
+    try {
+      const page = await api.fetchWorkspaceObjectPage(project.name, contextObjectsNextCursor);
+      setLiveWorkspaceContext((current) => {
+        const existing = new Set(current.map((item) => item.nodeId));
+        const older = mapWorkspaceContextObjects(page.objects, selectedContextIds).filter((item) => !existing.has(item.nodeId));
+        return [...current, ...older];
+      });
+      setContextObjectsNextCursor(page.nextCursor);
+    } catch {
+      setContextObjectsError('Older project objects could not be loaded. Retry to continue.');
+    } finally {
+      setContextObjectsLoading(false);
+    }
+  }, [contextObjectsLoading, contextObjectsNextCursor, isLiveThread, project.name, selectedContextIds]);
 
   const demoContextItems = useMemo<AIContextItem[]>(() => {
     const files = libraryItems.filter((item) => item.projectLinks?.includes(project.id)).slice(0, 4).map((item, index) => ({
@@ -141,7 +191,6 @@ export function ProjectChatWorkspace({
       ...artifacts,
     ];
   }, [activeThread?.id, activeThread?.title, libraryItems, notes, project.id]);
-  const selectedContextIds = useMemo(() => new Set(activeThread?.initialContextObjectIds ?? []), [activeThread?.initialContextObjectIds]);
   const contextItems = useMemo(() => isLiveThread
     ? liveWorkspaceContext.map((item) => ({ ...item, included: Boolean(item.nodeId && selectedContextIds.has(item.nodeId)) }))
     : demoContextItems, [demoContextItems, isLiveThread, liveWorkspaceContext, selectedContextIds]);
@@ -208,6 +257,12 @@ export function ProjectChatWorkspace({
             onMessagesChange={(updater) => onUpdateMessages(activeThread.id, updater)}
             contextItems={contextItems}
             contextIsLive={isLiveThread}
+            contextHasMore={Boolean(contextObjectsNextCursor)}
+            loadingOlderContext={contextObjectsLoading}
+            contextLoadError={contextObjectsError}
+            contextLoading={isLiveThread && contextPanelOpen && contextObjectsLoading && liveWorkspaceContext.length === 0}
+            onLoadOlderContext={loadOlderContextObjects}
+            onRetryContext={() => setContextObjectsReloadKey((key) => key + 1)}
             focusedMessageId={focusedMessageId}
             onMessageFocus={onMessageFocus}
             onBranchFromMessage={onBranchFromMessage}

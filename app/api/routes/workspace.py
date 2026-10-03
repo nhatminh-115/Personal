@@ -731,6 +731,7 @@ async def get_workspace_graph(
     execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
     object_cursor: str | None = Query(default=None, max_length=512),
     object_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE),
+    newest_first: bool = Query(default=False),
     objects_exhausted: bool = Query(default=False),
     edge_cursor: str | None = Query(default=None, max_length=512),
     edge_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_EDGES_PER_PAGE),
@@ -760,12 +761,22 @@ async def get_workspace_graph(
     else:
         if object_cursor is not None:
             cursor_created_at, cursor_object_id = decode_timestamp_id_cursor(object_cursor)
-            object_query = object_query.where(or_(
-                WorkspaceObjectModel.created_at > cursor_created_at,
-                (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
-            ))
+            if newest_first:
+                object_query = object_query.where(or_(
+                    WorkspaceObjectModel.created_at < cursor_created_at,
+                    (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id < cursor_object_id),
+                ))
+            else:
+                object_query = object_query.where(or_(
+                    WorkspaceObjectModel.created_at > cursor_created_at,
+                    (WorkspaceObjectModel.created_at == cursor_created_at) & (WorkspaceObjectModel.id > cursor_object_id),
+                ))
+        object_order = (
+            (WorkspaceObjectModel.created_at.desc(), WorkspaceObjectModel.id.desc())
+            if newest_first else (WorkspaceObjectModel.created_at, WorkspaceObjectModel.id)
+        )
         object_result = await db.execute(
-            object_query.order_by(WorkspaceObjectModel.created_at, WorkspaceObjectModel.id).limit(object_page_size + 1)
+            object_query.order_by(*object_order).limit(object_page_size + 1)
         )
         object_rows = list(object_result.scalars())
     objects_truncated = len(object_rows) > object_page_size

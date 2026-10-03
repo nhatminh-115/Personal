@@ -4,6 +4,12 @@ import type { AIContextItem } from '../../types';
 interface AIContextPanelProps {
   items: AIContextItem[];
   contextIsLive: boolean;
+  hasMore?: boolean;
+  loading?: boolean;
+  loadingOlder?: boolean;
+  loadError?: string | null;
+  onLoadOlder?: () => Promise<void>;
+  onRetry?: () => void;
   onToggleItem: (id: string) => void;
   onFocusItem?: (nodeId: string) => void;
   onClose: () => void;
@@ -18,7 +24,7 @@ const iconByKind = {
   file: FileText,
 } as const;
 
-export function AIContextPanel({ items, contextIsLive, onToggleItem, onFocusItem, onClose }: AIContextPanelProps) {
+export function AIContextPanel({ items, contextIsLive, hasMore = false, loading = false, loadingOlder = false, loadError = null, onLoadOlder, onRetry, onToggleItem, onFocusItem, onClose }: AIContextPanelProps) {
   const included = items.filter((item) => item.included);
   const tokens = included.reduce((sum, item) => sum + item.tokens, 0);
 
@@ -40,7 +46,7 @@ export function AIContextPanel({ items, contextIsLive, onToggleItem, onFocusItem
       </div>
 
       <div className="ai-context-items">
-        {items.length === 0 ? <p className="ai-context-empty">{contextIsLive ? 'No saved workspace objects are available in this project yet.' : 'This demo uses illustrative context only.'}</p> : null}
+        {items.length === 0 ? <p className="ai-context-empty">{loading ? 'Loading saved project objects…' : loadError ? 'Saved project objects could not be loaded.' : contextIsLive ? 'No saved workspace objects are available in this project yet.' : 'This demo uses illustrative context only.'}</p> : null}
         {items.map((item) => {
           const Icon = iconByKind[item.kind];
           return (
@@ -76,6 +82,8 @@ export function AIContextPanel({ items, contextIsLive, onToggleItem, onFocusItem
       </div>
 
       <div className="ai-context-panel__foot">
+        {loadError && onRetry ? <button type="button" onClick={onRetry}>Retry</button> : null}
+        {hasMore && onLoadOlder ? <button type="button" onClick={() => void onLoadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older objects…' : 'Load older objects'}</button> : null}
         <small>{contextIsLive ? 'Only selected saved project objects are sent with this message. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
       </div>
     </div>

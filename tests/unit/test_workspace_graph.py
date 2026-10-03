@@ -112,6 +112,41 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
 
 
 @pytest.mark.asyncio
+async def test_workspace_graph_can_page_newest_objects_before_older_objects(async_client):
+    project_name = "newest-graph-pagination"
+    for title in ("First", "Second", "Third", "Fourth", "Fifth"):
+        response = await async_client.post(
+            f"/v1/workspace/projects/{project_name}/objects",
+            json={"object_type": "manual_note", "title": title, "content": title},
+        )
+        assert response.status_code == 201
+
+    all_objects = (await async_client.get(f"/v1/workspace/projects/{project_name}/graph")).json()["objects"]
+    newest = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={"object_page_size": 2, "newest_first": "true", "edges_exhausted": "true", "include_project_state": "false"},
+    )
+    assert newest.status_code == 200
+    first_page = newest.json()
+    assert [item["id"] for item in first_page["objects"]] == [item["id"] for item in reversed(all_objects)][:2]
+    assert first_page["objects_next_cursor"]
+    assert first_page["edges"] == []
+    assert first_page["execution_traces"] == []
+
+    older = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={
+            "object_page_size": 2,
+            "newest_first": "true",
+            "object_cursor": first_page["objects_next_cursor"],
+            "edges_exhausted": "true",
+            "include_project_state": "false",
+        },
+    )
+    assert [item["id"] for item in older.json()["objects"]] == [item["id"] for item in reversed(all_objects)][2:4]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("cursor_name", ["object_cursor", "edge_cursor"])
 @pytest.mark.parametrize("cursor", ["not-a-cursor", ""])
 async def test_workspace_graph_rejects_invalid_cursor(async_client, cursor_name, cursor):
