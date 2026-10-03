@@ -107,20 +107,7 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-backup.json
 
-          restore_dir="${RUNNER_TEMP}/aura-compose-restore"
-          mkdir -p "${restore_dir}"
-          tar -xzf "${backup_path}" -C "${restore_dir}"
-          docker compose stop --timeout 30 aura-app
-          docker compose cp "${restore_dir}/postgres.dump" postgres:/tmp/aura-postgres.dump
-          docker compose exec -T --user 0 postgres chmod 644 /tmp/aura-postgres.dump
-          docker compose exec -T postgres pg_restore --clean --if-exists --no-owner -U aura -d aura /tmp/aura-postgres.dump
-          docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'rm -f /app/checkpoints/aura_checkpoints.db-wal /app/checkpoints/aura_checkpoints.db-shm'
-          docker compose cp "${restore_dir}/checkpoint/aura_checkpoints.db" aura-app:/app/checkpoints/aura_checkpoints.db
-          if [ -f "${restore_dir}/checkpoint/aura_checkpoints.db-wal" ]; then
-            docker compose cp "${restore_dir}/checkpoint/aura_checkpoints.db-wal" aura-app:/app/checkpoints/aura_checkpoints.db-wal
-          fi
-          docker compose run --rm --no-deps --user 0 --entrypoint sh aura-app -c 'chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*'
-          docker compose start aura-app
+          python scripts/restore_compose.py "${backup_path}" --replace-current-data
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-restore.json
           curl --fail --silent --show-error \
