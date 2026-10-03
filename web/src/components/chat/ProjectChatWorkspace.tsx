@@ -138,7 +138,7 @@ export function ProjectChatWorkspace({
       }
     })();
     return () => { active = false; };
-  }, [activeThread?.id, activeThread?.messages.length, contextObjectsReloadKey, contextPanelOpen, isLiveThread, project.name, selectedContextIds]);
+  }, [activeThread?.id, activeThread?.messages.length, contextObjectsReloadKey, contextPanelOpen, isLiveThread, project.name]);
 
   const loadOlderContextObjects = useCallback(async () => {
     if (!contextObjectsNextCursor || contextObjectsLoading || !isLiveThread) return;
