@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUpRight, BookOpenText, CircleHelp, FileCheck2, LoaderCircle, Network, RefreshCw } from 'lucide-react';
+import { ArrowDown, ArrowUpRight, BookOpenText, CircleHelp, FileCheck2, LoaderCircle, Network, Play, RefreshCw } from 'lucide-react';
 import type { ProjectRecord } from '../../data/workspaceData';
 import { executionErrorText } from '../../lib/executionError';
 import { api } from '../../services/api';
@@ -8,6 +8,7 @@ import './ResearchRadarPanel.css';
 
 interface ResearchRadarPanelProps {
   projects: ProjectRecord[];
+  onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
 }
 
 const researchObjectTypes = new Set(['research_source', 'research_evidence', 'research_claim']);
@@ -34,7 +35,7 @@ function sourceUrl(object: WorkspaceObject): string | null {
   }
 }
 
-export function ResearchRadarPanel({ projects }: ResearchRadarPanelProps) {
+export function ResearchRadarPanel({ projects, onStudyResearchClaim }: ResearchRadarPanelProps) {
   const savedProjects = useMemo(() => projects.filter((project) => project.source === 'user'), [projects]);
   const [projectName, setProjectName] = useState(savedProjects[0]?.name ?? '');
   const [objects, setObjects] = useState<WorkspaceObject[]>([]);
@@ -182,6 +183,15 @@ export function ResearchRadarPanel({ projects }: ResearchRadarPanelProps) {
                         const other = objectsById.get(otherId);
                         return <span key={edge.id}>{edge.relation_type.replace(/_/g, ' ')}{other ? ` · ${other.title}` : ''}</span>;
                       })}</div> : null}
+                      {type === 'research_claim' && metadataText(object, 'verification_status') === 'verified' && onStudyResearchClaim ? (
+                        <button
+                          className="research-radar__study"
+                          type="button"
+                          onClick={() => onStudyResearchClaim(object.id, object.title, projectName)}
+                        >
+                          <Play size={12} /> Study this finding
+                        </button>
+                      ) : null}
                       {url ? <a href={url} target="_blank" rel="noreferrer"><span>Open source</span><ArrowUpRight size={13} /></a> : null}
                     </article>
                   );

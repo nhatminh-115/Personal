@@ -2218,6 +2218,7 @@ export default function App() {
             onConnectFolder={() => void connectFolder()}
             onOpenConnection={openConnection}
             onDisconnectConnection={(connection) => void disconnectConnection(connection)}
+            onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
           />
         ) : null}
         {surface === 'folder-viewer' && activeConnection ? (
