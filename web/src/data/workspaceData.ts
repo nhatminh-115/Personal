@@ -292,6 +292,7 @@ export interface AutomationRecord {
   name: string;
   description: string;
   enabled: boolean;
+  archived?: boolean;
   scope: AutomationScope;
   projectId?: string;
   projectName?: string;

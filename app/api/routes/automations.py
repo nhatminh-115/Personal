@@ -39,6 +39,7 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
         description=metadata.get("description", ""),
         instruction=metadata.get("instruction", ""),
         enabled=job.is_active,
+        archived=metadata.get("archived") is True,
         scope=scope if scope in {"global", "project"} else "global",
         project_name=metadata.get("project_name") if isinstance(metadata.get("project_name"), str) else None,
         interval_seconds=interval_seconds,
@@ -114,11 +115,15 @@ async def list_automations(
     response: Response,
     cursor: str | None = Query(default=None, max_length=512),
     page_size: int = Query(default=100, ge=1, le=MAX_COLLECTION_PAGE_SIZE),
+    include_archived: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> list[AutomationResponse]:
     query = select(ScheduledJobModel).where(
         ScheduledJobModel.metadata_json["kind"].as_string() == "automation"
     )
+    if not include_archived:
+        archived = ScheduledJobModel.metadata_json["archived"].as_boolean()
+        query = query.where(or_(archived.is_(None), archived.is_(False)))
     if cursor is not None:
         cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
         query = query.where(or_(
@@ -159,9 +164,11 @@ async def get_automation_statuses(
 @router.get("/summary", response_model=dict[str, int])
 async def get_automation_summary(db: AsyncSession = Depends(get_db)) -> dict[str, int]:
     automation_filter = ScheduledJobModel.metadata_json["kind"].as_string() == "automation"
-    total = await db.scalar(select(func.count()).select_from(ScheduledJobModel).where(automation_filter))
+    archived_filter = ScheduledJobModel.metadata_json["archived"].as_boolean()
+    visible_filter = or_(archived_filter.is_(None), archived_filter.is_(False))
+    total = await db.scalar(select(func.count()).select_from(ScheduledJobModel).where(automation_filter, visible_filter))
     enabled = await db.scalar(
-        select(func.count()).select_from(ScheduledJobModel).where(automation_filter, ScheduledJobModel.is_active.is_(True))
+        select(func.count()).select_from(ScheduledJobModel).where(automation_filter, visible_filter, ScheduledJobModel.is_active.is_(True))
     )
     return {"total": int(total or 0), "enabled": int(enabled or 0)}
 
@@ -214,7 +221,7 @@ async def set_automation_enabled(
     db: AsyncSession = Depends(get_db),
 ) -> AutomationResponse:
     job = await db.get(ScheduledJobModel, automation_id)
-    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+    if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
         raise HTTPException(status_code=404, detail="Automation not found.")
     was_enabled = job.is_active
     job.is_active = body.enabled
@@ -243,7 +250,7 @@ async def update_automation(
         .execution_options(populate_existing=True)
     )
     job = result.scalar_one_or_none()
-    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+    if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not body.name.strip() or not body.instruction.strip():
         raise HTTPException(status_code=422, detail="Automation name and instruction must not be blank.")
@@ -270,10 +277,47 @@ async def update_automation(
     return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
 
 
+async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSession) -> AutomationResponse:
+    result = await db.execute(
+        select(ScheduledJobModel).where(ScheduledJobModel.id == automation_id)
+        .with_for_update().execution_options(populate_existing=True)
+    )
+    job = result.scalar_one_or_none()
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    metadata = dict(job.metadata_json or {})
+    was_archived = metadata.get("archived") is True
+    if not archived and not was_archived:
+        latest = await _latest_executions(db, [job])
+        return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
+    if archived:
+        metadata["archived"] = True
+    else:
+        metadata.pop("archived", None)
+    job.metadata_json = metadata
+    # Restored automations stay paused until the user explicitly resumes them.
+    job.is_active = False
+    job.updated_at = utc_now()
+    await db.commit()
+    await db.refresh(job)
+    latest = await _latest_executions(db, [job])
+    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
+
+
+@router.post("/{automation_id}/archive", response_model=AutomationResponse)
+async def archive_automation(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
+    return await _set_archived_state(automation_id, True, db)
+
+
+@router.post("/{automation_id}/restore", response_model=AutomationResponse)
+async def restore_automation(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
+    return await _set_archived_state(automation_id, False, db)
+
+
 @router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)
 async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationRunResponse:
     job = await db.get(ScheduledJobModel, automation_id)
-    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+    if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be run.")

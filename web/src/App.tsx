@@ -339,9 +339,11 @@ export default function App() {
     return { total: live.length, enabled: live.filter((item) => item.enabled).length };
   });
   const [automationCursor, setAutomationCursor] = useState<string | null>(null);
+  const [includeArchivedAutomations, setIncludeArchivedAutomations] = useState(false);
   const [automationPageLoading, setAutomationPageLoading] = useState(false);
   const [automationPageError, setAutomationPageError] = useState<string | null>(null);
   const automationPageRequest = useRef(false);
+  const automationArchiveRequests = useRef(new Set<string>());
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() =>
     loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
       .map((thread) => ({ ...thread, loadingOlderMessages: false }))
@@ -1981,6 +1983,7 @@ export default function App() {
     return {
       id: record.id, name: record.name, description: record.description, instruction: record.instruction,
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
+      archived: record.archived,
       trigger: intervalLabel, actions: ['Run through AURA'],
       lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
       nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
@@ -2010,6 +2013,30 @@ export default function App() {
     pushToast('Automation updated', 'Future scheduled runs will use the saved routine settings.');
     return updated;
   }, [automationFromRecord, projectCatalog, pushToast]);
+
+  const setAutomationArchived = useCallback(async (automation: AutomationRecord, archived: boolean) => {
+    if (automation.source !== 'live' || automationArchiveRequests.current.has(automation.id)) return;
+    automationArchiveRequests.current.add(automation.id);
+    try {
+      const record = await api.setAutomationArchived(automation.id, archived);
+      const updated = automationFromRecord(record, projectCatalog);
+      setAutomations((current) => {
+        if (archived && !includeArchivedAutomations) return current.filter((item) => item.id !== automation.id);
+        return current.map((item) => item.id === automation.id ? updated : item);
+      });
+      if (archived) {
+        setAutomationSummary((current) => ({ total: Math.max(0, current.total - 1), enabled: Math.max(0, current.enabled - (automation.enabled ? 1 : 0)) }));
+        pushToast('Automation archived', 'Future scheduled runs are paused. Its run history is preserved.');
+      } else {
+        setAutomationSummary((current) => ({ ...current, total: current.total + 1 }));
+        pushToast('Automation restored', 'It remains paused until you resume it. Its run history is preserved.');
+      }
+    } catch (error) {
+      pushToast(archived ? 'Could not archive automation' : 'Could not restore automation', executionErrorText(error));
+    } finally {
+      automationArchiveRequests.current.delete(automation.id);
+    }
+  }, [automationFromRecord, includeArchivedAutomations, projectCatalog, pushToast]);
 
   const setAutomationEnabled = useCallback(async (automation: AutomationRecord, enabled: boolean) => {
     if (automation.source !== 'live') return;
@@ -2053,13 +2080,13 @@ export default function App() {
     }
   }, [automationFromRecord, projectCatalog, pushToast]);
 
-  const loadAutomationPage = useCallback(async (cursor?: string | null) => {
+  const loadAutomationPage = useCallback(async (cursor?: string | null, includeArchived = includeArchivedAutomations) => {
     if (automationPageRequest.current) return;
     automationPageRequest.current = true;
     setAutomationPageLoading(true);
     setAutomationPageError(null);
     try {
-      const page = await api.fetchAutomations(cursor);
+      const page = await api.fetchAutomations(cursor, 50, includeArchived);
       const records = page.automations.map((record) => automationFromRecord(record, projectCatalog));
       setAutomations((current) => {
         const examples = current.filter((item) => item.source !== 'live');
@@ -2077,7 +2104,16 @@ export default function App() {
       automationPageRequest.current = false;
       setAutomationPageLoading(false);
     }
-  }, [automationFromRecord, projectCatalog, pushToast]);
+  }, [automationFromRecord, includeArchivedAutomations, projectCatalog, pushToast]);
+
+  const toggleArchivedAutomations = useCallback(() => {
+    const next = !includeArchivedAutomations;
+    setIncludeArchivedAutomations(next);
+    setAutomationCursor(null);
+    setAutomations((current) => current.filter((item) => item.source !== 'live'));
+    automationsLoaded.current = false;
+    void loadAutomationPage(undefined, next);
+  }, [includeArchivedAutomations, loadAutomationPage]);
 
   useEffect(() => {
     if (surface !== 'automations' || automationsLoaded.current || automationPageLoading) return;
@@ -2331,7 +2367,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (

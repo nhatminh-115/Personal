@@ -75,6 +75,19 @@ describe('AutomationsView', () => {
     }));
   });
 
+  it('keeps archived routines paused, exposes history, and offers restore', () => {
+    const archived = { ...liveAutomation, archived: true, enabled: false };
+    const onSetArchived = vi.fn();
+    render(<AutomationsView projects={projects} automations={[archived]} includeArchived onToggleArchived={vi.fn()} onSetArchived={onSetArchived} onCreate={vi.fn()} onUpdate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    expect(screen.getByText('waiting for approval')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run now' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Resume Daily digest' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore' }));
+    expect(onSetArchived).toHaveBeenCalledWith(archived, false);
+  });
+
   it('reviews sequential automation approvals and refreshes the run after the final decision', async () => {
     const firstApproval = {
       id: 'approval-1', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-1',

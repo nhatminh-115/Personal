@@ -490,6 +490,7 @@ export interface AutomationRecordResponse {
   description: string;
   instruction: string;
   enabled: boolean;
+  archived: boolean;
   scope: 'global' | 'project';
   project_name: string | null;
   interval_seconds: number;
