@@ -27,6 +27,7 @@ import {
   WorkspaceObject,
   StudySessionRecord,
   StudyCardRecord,
+  StudyCardRating,
   WorkspaceLibraryReferenceRecord,
   WorkspaceProjectRecord,
   WorkspaceSearchResult,
@@ -414,6 +415,14 @@ export const api = {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, answer }),
+    }));
+  },
+
+  async reviewStudyCard(cardId: string, sessionId: string, rating: StudyCardRating): Promise<StudyCardRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}/review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating }),
     }));
   },
 

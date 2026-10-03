@@ -73,7 +73,7 @@ describe('Study sessions use shared Library materials', () => {
     const card = {
       id: 'study-card-1', session_id: sessionId, question: 'What is a noun?',
       answer: 'A person, place, or thing.', created_at: '2026-10-02T00:00:00Z',
-      updated_at: '2026-10-02T00:00:00Z',
+      updated_at: '2026-10-02T00:00:00Z', review_count: 0,
     };
     const onCreateCard = vi.fn().mockResolvedValue(undefined);
     const onUpdateCard = vi.fn().mockResolvedValue(undefined);

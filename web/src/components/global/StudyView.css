@@ -263,6 +263,35 @@
   align-items: center;
 }
 
+.study-card__review {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: #8ea5af;
+  font-size: 8px;
+}
+
+.study-card__review button {
+  border: 1px solid rgba(94, 210, 224, .16);
+  border-radius: 6px;
+  padding: 4px 7px;
+  background: rgba(94, 210, 224, .05);
+  color: #90cbd2;
+  cursor: pointer;
+  font: inherit;
+}
+
+.study-card__review button:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+.study-card__schedule {
+  color: #738c96;
+  font-size: 8px;
+}
+
 .study-card__actions button,
 .study-card__edit > button,
 .study-card__reveal {

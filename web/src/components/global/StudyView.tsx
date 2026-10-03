@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpenText, Play, Save } from 'lucide-react';
 import type { LibraryItem, WorkspaceNote } from '../../data/workspaceData';
-import type { StudyCardRecord, StudySessionRecord } from '../../types';
+import type { StudyCardRating, StudyCardRecord, StudySessionRecord } from '../../types';
 import './StudyView.css';
 
 const EMPTY_STUDY_NOTES: WorkspaceNote[] = [];
@@ -34,6 +34,7 @@ interface StudyViewProps {
   onCompleteSession: (sessionId: string) => void;
   onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
   onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
+  onReviewCard?: (cardId: string, sessionId: string, rating: StudyCardRating) => Promise<StudyCardRecord>;
   onDeleteCard: (cardId: string, sessionId: string) => Promise<void>;
   onSaveReflection: (sessionId: string, reflection: string) => Promise<void>;
   onOpenResearchFinding?: (objectId: string, projectName: string) => void;
@@ -86,12 +87,14 @@ function StudyReflectionEditor({ session, onSave }: { session: StudySessionRecor
   );
 }
 
-function StudyCardRow({ card, onUpdate, onDelete }: {
+function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
   card: StudyCardRecord;
   onUpdate: (question: string, answer: string) => Promise<void>;
+  onReview?: (rating: StudyCardRating) => Promise<StudyCardRecord>;
   onDelete: () => Promise<void>;
 }) {
   const [revealed, setRevealed] = useState(false);
+  const [reviewedCard, setReviewedCard] = useState(card);
   const [editing, setEditing] = useState(false);
   const [question, setQuestion] = useState(card.question);
   const [answer, setAnswer] = useState(card.answer);
@@ -101,7 +104,8 @@ function StudyCardRow({ card, onUpdate, onDelete }: {
   useEffect(() => {
     setQuestion(card.question);
     setAnswer(card.answer);
-  }, [card.id, card.question, card.answer]);
+    setReviewedCard(card);
+  }, [card.id, card.question, card.answer, card.review_count, card.reviewed_at, card.next_review_at]);
 
   const save = async () => {
     setBusy(true);
@@ -127,6 +131,21 @@ function StudyCardRow({ card, onUpdate, onDelete }: {
     }
   };
 
+  const review = async (rating: StudyCardRating) => {
+    if (!onReview) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await onReview(rating);
+      setReviewedCard(updated);
+      setRevealed(false);
+    } catch {
+      setError('Could not save this review. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <article className="study-card">
       {editing ? (
@@ -141,7 +160,22 @@ function StudyCardRow({ card, onUpdate, onDelete }: {
       ) : (
         <>
           <strong>{card.question}</strong>
-          {revealed ? <p>{card.answer}</p> : <button type="button" className="study-card__reveal" onClick={() => setRevealed(true)}>Reveal answer</button>}
+          {revealed ? (
+            <>
+              <p>{card.answer}</p>
+              {onReview ? (
+                <div className="study-card__review" role="group" aria-label="Schedule next review">
+                  <span>How soon should you review this?</span>
+                  <button type="button" disabled={busy} onClick={() => void review('again')}>Again · 1 day</button>
+                  <button type="button" disabled={busy} onClick={() => void review('remembered')}>Remembered · 3 days</button>
+                  <button type="button" disabled={busy} onClick={() => void review('easy')}>Easy · 7 days</button>
+                </div>
+              ) : null}
+            </>
+          ) : <button type="button" className="study-card__reveal" onClick={() => setRevealed(true)}>Reveal answer</button>}
+          <small className="study-card__schedule">
+            {reviewedCard.review_count ? `${reviewedCard.review_count} ${reviewedCard.review_count === 1 ? 'review' : 'reviews'} · next ${reviewedCard.next_review_at ? new Date(reviewedCard.next_review_at).toLocaleDateString() : 'not scheduled'}` : 'Not reviewed yet'}
+          </small>
           <div className="study-card__actions">
             <button type="button" disabled={busy} onClick={() => setEditing(true)}>Edit</button>
             <button type="button" disabled={busy} onClick={() => void remove()}>{busy ? 'Deleting…' : 'Delete'}</button>
@@ -153,10 +187,11 @@ function StudyCardRow({ card, onUpdate, onDelete }: {
   );
 }
 
-function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
+function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete }: {
   cards: StudyCardRecord[];
   onCreate: (question: string, answer: string) => Promise<void>;
   onUpdate: (cardId: string, question: string, answer: string) => Promise<void>;
+  onReview?: (cardId: string, sessionId: string, rating: StudyCardRating) => Promise<StudyCardRecord>;
   onDelete: (cardId: string) => Promise<void>;
 }) {
   const [question, setQuestion] = useState('');
@@ -186,6 +221,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
           key={card.id}
           card={card}
           onUpdate={(nextQuestion, nextAnswer) => onUpdate(card.id, nextQuestion, nextAnswer)}
+          onReview={onReview ? (rating) => onReview(card.id, card.session_id, rating) : undefined}
           onDelete={() => onDelete(card.id)}
         />
       ))}
@@ -199,7 +235,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onReviewCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -260,6 +296,7 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                           cards={cards.filter((card) => card.session_id === session.id)}
                           onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
                           onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                          onReview={onReviewCard}
                           onDelete={(cardId) => onDeleteCard(cardId, session.id)}
                         />
                       </article>
@@ -324,9 +361,10 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                           <StudyReflectionEditor session={session} onSave={onSaveReflection} />
                           <StudyCardCollection
                             cards={cards.filter((card) => card.session_id === session.id)}
-                            onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
-                            onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
-                            onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+                          onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                          onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                          onReview={onReviewCard}
+                          onDelete={(cardId) => onDeleteCard(cardId, session.id)}
                           />
                         </article>
                       ))}
@@ -381,6 +419,7 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                 cards={cards.filter((card) => card.session_id === session.id)}
                 onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
                 onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                onReview={onReviewCard}
                 onDelete={(cardId) => onDeleteCard(cardId, session.id)}
               />
             </article>

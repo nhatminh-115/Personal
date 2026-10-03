@@ -1,13 +1,20 @@
 """Study session lifecycle backed by the shared workspace object graph."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import and_, delete as sa_delete, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import StudyCardResponse, StudyCardWrite, StudyReflectionWrite, StudySessionResponse, StudySessionWrite
+from app.api.schemas import (
+    StudyCardResponse,
+    StudyCardReviewWrite,
+    StudyCardWrite,
+    StudyReflectionWrite,
+    StudySessionResponse,
+    StudySessionWrite,
+)
 from app.api.pagination import (
     MAX_COLLECTION_PAGE_SIZE,
     decode_timestamp_id_cursor,
@@ -219,6 +226,9 @@ async def start_study_session(
 
 def _study_card_response(item: WorkspaceObjectModel) -> StudyCardResponse:
     metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
+    review_count = metadata.get("review_count", 0)
+    if not isinstance(review_count, int) or isinstance(review_count, bool) or review_count < 0:
+        review_count = 0
     return StudyCardResponse(
         id=item.id,
         session_id=metadata.get("study_session_id", ""),
@@ -226,7 +236,20 @@ def _study_card_response(item: WorkspaceObjectModel) -> StudyCardResponse:
         answer=item.content or "",
         created_at=item.created_at,
         updated_at=item.updated_at,
+        review_count=review_count,
+        reviewed_at=_metadata_datetime(metadata, "reviewed_at"),
+        next_review_at=_metadata_datetime(metadata, "next_review_at"),
     )
+
+
+def _metadata_datetime(metadata: dict[str, Any], key: str) -> datetime | None:
+    value = metadata.get(key)
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
 
 
 async def _get_user_study_session(db: AsyncSession, session_id: str) -> WorkspaceObjectModel:
@@ -368,9 +391,60 @@ async def update_study_card(
         raise HTTPException(status_code=404, detail="Study card not found.")
     if not body.question.strip() or not body.answer.strip():
         raise HTTPException(status_code=422, detail="Study card question and answer must not be blank.")
+    content_changed = card.title != body.question or card.content != body.answer
     card.title = body.question
     card.content = body.answer
+    if content_changed:
+        card.metadata_json = {
+            key: value for key, value in metadata.items()
+            if key not in {"review_count", "reviewed_at", "next_review_at", "review_interval_days"}
+        }
     card.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(card)
+    return _study_card_response(card)
+
+
+@router.post(
+    "/sessions/{session_id}/cards/{card_id}/review",
+    response_model=StudyCardResponse,
+)
+async def review_study_card(
+    session_id: str,
+    card_id: str,
+    body: StudyCardReviewWrite,
+    db: AsyncSession = Depends(get_db),
+) -> StudyCardResponse:
+    await _get_user_study_session(db, session_id)
+    card = await db.get(WorkspaceObjectModel, card_id)
+    metadata = card.metadata_json if card and isinstance(card.metadata_json, dict) else {}
+    if (
+        card is None
+        or card.project_name is not None
+        or card.object_type != "study_card"
+        or card.created_by != "user"
+        or metadata.get("study_session_id") != session_id
+    ):
+        raise HTTPException(status_code=404, detail="Study card not found.")
+
+    interval_days = {"again": 1, "remembered": 3, "easy": 7}[body.rating]
+    reviewed_at = datetime.now(timezone.utc)
+    previous_review_count = metadata.get("review_count", 0)
+    review_count = (
+        previous_review_count + 1
+        if isinstance(previous_review_count, int)
+        and not isinstance(previous_review_count, bool)
+        and previous_review_count >= 0
+        else 1
+    )
+    card.metadata_json = {
+        **metadata,
+        "review_count": review_count,
+        "reviewed_at": reviewed_at.isoformat(),
+        "next_review_at": (reviewed_at + timedelta(days=interval_days)).isoformat(),
+        "review_interval_days": interval_days,
+    }
+    card.updated_at = reviewed_at
     await db.commit()
     await db.refresh(card)
     return _study_card_response(card)
