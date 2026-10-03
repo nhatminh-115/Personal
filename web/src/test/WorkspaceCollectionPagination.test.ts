@@ -63,6 +63,19 @@ describe('workspace collection pagination', () => {
     expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').searchParams.get('cursor')).toBe('next-cards');
   });
 
+  it('returns one Study sessions page and its cursor for on-demand loading', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'session-101' }], 'next-sessions'));
+    vi.stubGlobal('fetch', fetch);
+
+    const page = await api.fetchStudySessionsPage('prior-sessions');
+
+    expect(page).toEqual({ items: [{ id: 'session-101' }], nextCursor: 'next-sessions' });
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/study/sessions');
+    expect(url.searchParams.get('page_size')).toBe('100');
+    expect(url.searchParams.get('cursor')).toBe('prior-sessions');
+  });
+
   it('returns one Study cards page and its cursor for on-demand loading', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'card-101' }], 'next-cards'));
     vi.stubGlobal('fetch', fetch);

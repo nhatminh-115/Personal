@@ -10,12 +10,16 @@ const studyMaterial: LibraryItem = {
 };
 
 describe('Study sessions use shared Library materials', () => {
-  it('exposes a retry action for a failed additional card page', async () => {
+  it('exposes retry actions for failed session and card pages', async () => {
+    const onLoadMoreSessions = vi.fn().mockResolvedValue(undefined);
     const onLoadMoreCards = vi.fn().mockResolvedValue(undefined);
     render(<StudyView
       libraryItems={[]}
       sessions={[]}
       cards={[]}
+      hasMoreSessions
+      sessionsLoadError="Temporary session issue"
+      onLoadMoreSessions={onLoadMoreSessions}
       hasMoreCards
       cardsLoadError="Temporary network issue"
       onLoadMoreCards={onLoadMoreCards}
@@ -29,9 +33,12 @@ describe('Study sessions use shared Library materials', () => {
       onDeleteCard={vi.fn().mockResolvedValue(undefined)}
     />);
 
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading sessions' }));
+    await waitFor(() => expect(onLoadMoreSessions).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('button', { name: 'Retry loading cards' }));
     await waitFor(() => expect(onLoadMoreCards).toHaveBeenCalledTimes(1));
-    expect(screen.getByRole('alert')).toHaveTextContent('Temporary network issue');
+    expect(screen.getByText(/Temporary session issue/)).toBeInTheDocument();
+    expect(screen.getByText(/Temporary network issue/)).toBeInTheDocument();
   });
 
   it('creates, reveals, edits, and deletes reusable learning cards', async () => {
