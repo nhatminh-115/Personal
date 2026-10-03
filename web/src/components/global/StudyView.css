@@ -187,6 +187,27 @@
   font-size: 8px;
 }
 
+.study-cards-pagination {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: 24px 0;
+}
+
+.study-cards-pagination > button {
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  border-radius: 999px;
+  background: var(--surface-raised, rgba(255, 255, 255, 0.04));
+  color: inherit;
+  cursor: pointer;
+  padding: 8px 14px;
+}
+
+.study-cards-pagination > button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .study-card {
   display: grid;
   gap: 7px;

@@ -295,6 +295,9 @@ export default function App() {
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
   const [studySessions, setStudySessions] = useState<StudySessionRecord[]>([]);
   const [studyCards, setStudyCards] = useState<StudyCardRecord[]>([]);
+  const [studyCardsNextCursor, setStudyCardsNextCursor] = useState<string | null>(null);
+  const [loadingOlderStudyCards, setLoadingOlderStudyCards] = useState(false);
+  const [studyCardsLoadError, setStudyCardsLoadError] = useState<string | null>(null);
   const studySessionsLoaded = useRef(false);
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -1490,16 +1493,35 @@ export default function App() {
   useEffect(() => {
     if (surface !== 'study' || studySessionsLoaded.current) return;
     let active = true;
-    void Promise.all([api.fetchStudySessions(), api.fetchStudyCards()]).then(([sessions, cards]) => {
+    void Promise.all([api.fetchStudySessions(), api.fetchStudyCardsPage()]).then(([sessions, cardsPage]) => {
       if (!active) return;
       setStudySessions(sessions);
-      setStudyCards(cards);
+      setStudyCards(cardsPage.items);
+      setStudyCardsNextCursor(cardsPage.nextCursor);
       studySessionsLoaded.current = true;
     }).catch((error: unknown) => {
       if (active) pushToast('Could not load Study workspace', executionErrorText(error));
     });
     return () => { active = false; };
   }, [pushToast, surface]);
+
+  const loadOlderStudyCards = useCallback(async () => {
+    if (!studyCardsNextCursor || loadingOlderStudyCards) return;
+    setLoadingOlderStudyCards(true);
+    setStudyCardsLoadError(null);
+    try {
+      const page = await api.fetchStudyCardsPage(studyCardsNextCursor);
+      setStudyCards((current) => {
+        const existingIds = new Set(current.map((card) => card.id));
+        return [...current, ...page.items.filter((card) => !existingIds.has(card.id))];
+      });
+      setStudyCardsNextCursor(page.nextCursor);
+    } catch (error) {
+      setStudyCardsLoadError(executionErrorText(error));
+    } finally {
+      setLoadingOlderStudyCards(false);
+    }
+  }, [loadingOlderStudyCards, studyCardsNextCursor]);
 
   const startStudySession = useCallback(async (item: LibraryItem) => {
     if (item.source !== 'imported' || item.syncState !== 'synced') return;
@@ -2054,7 +2076,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
