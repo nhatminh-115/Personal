@@ -120,6 +120,7 @@ def test_alembic_upgrade_downgrade_cycle():
         keyset_indexes = {
             "runs": {idx["name"] for idx in inspector.get_indexes("runs")},
             "scheduled_jobs": {idx["name"] for idx in inspector.get_indexes("scheduled_jobs")},
+            "routing_confirmations": {idx["name"] for idx in inspector.get_indexes("routing_confirmations")},
             "memories": {idx["name"] for idx in inspector.get_indexes("memories")},
             "approvals": {idx["name"] for idx in inspector.get_indexes("approvals")},
             "run_events": {idx["name"] for idx in inspector.get_indexes("run_events")},
@@ -137,6 +138,10 @@ def test_alembic_upgrade_downgrade_cycle():
         assert "ix_messages_session_created_id" in keyset_indexes["messages"]
         assert "ix_runs_session_created_id" in keyset_indexes["runs"]
         assert "ix_scheduled_jobs_created_id" in keyset_indexes["scheduled_jobs"]
+        assert {
+            "ix_routing_confirmations_status_created_id",
+            "ix_routing_confirmations_status_session_created_id",
+        }.issubset(keyset_indexes["routing_confirmations"])
         assert {
             "ix_memories_created_id",
             "ix_memories_project_created_id",
