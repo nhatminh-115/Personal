@@ -137,6 +137,35 @@ async def list_automations(
     return [_automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)}) for job in jobs]
 
 
+@router.get("/status", response_model=list[AutomationResponse])
+async def get_automation_statuses(
+    automation_ids: list[str] = Query(min_length=1, max_length=MAX_COLLECTION_PAGE_SIZE),
+    db: AsyncSession = Depends(get_db),
+) -> list[AutomationResponse]:
+    """Refresh a bounded set of automation records without scanning the collection."""
+    result = await db.execute(
+        select(ScheduledJobModel)
+        .where(
+            ScheduledJobModel.id.in_(set(automation_ids)),
+            ScheduledJobModel.metadata_json["kind"].as_string() == "automation",
+        )
+        .order_by(ScheduledJobModel.created_at.desc(), ScheduledJobModel.id)
+    )
+    jobs = list(result.scalars())
+    latest = await _latest_executions(db, jobs)
+    return [_automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)}) for job in jobs]
+
+
+@router.get("/summary", response_model=dict[str, int])
+async def get_automation_summary(db: AsyncSession = Depends(get_db)) -> dict[str, int]:
+    automation_filter = ScheduledJobModel.metadata_json["kind"].as_string() == "automation"
+    total = await db.scalar(select(func.count()).select_from(ScheduledJobModel).where(automation_filter))
+    enabled = await db.scalar(
+        select(func.count()).select_from(ScheduledJobModel).where(automation_filter, ScheduledJobModel.is_active.is_(True))
+    )
+    return {"total": int(total or 0), "enabled": int(enabled or 0)}
+
+
 @router.post("", response_model=AutomationResponse, status_code=status.HTTP_201_CREATED)
 async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
     name = body.name.strip()

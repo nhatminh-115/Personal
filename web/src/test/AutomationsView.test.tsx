@@ -17,6 +17,18 @@ const demoAutomation: AutomationRecord = {
 };
 
 describe('AutomationsView', () => {
+  it('offers explicit automation pagination and a retry after a page error', () => {
+    const onLoadMore = vi.fn();
+    const { rerender } = render(<AutomationsView projects={projects} automations={[liveAutomation]} hasMore onLoadMore={onLoadMore} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Load more automations' }));
+    expect(onLoadMore).toHaveBeenCalledOnce();
+
+    rerender(<AutomationsView projects={projects} automations={[liveAutomation]} hasMore pageError="Network unavailable" onLoadMore={onLoadMore} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(onLoadMore).toHaveBeenCalledTimes(2);
+    expect(screen.getByText(/Could not load automations: Network unavailable/)).toBeInTheDocument();
+  });
+
   it('disables Run now while the latest run is awaiting approval', () => {
     const onRunNow = vi.fn();
     render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={onRunNow} onApprovalResolved={vi.fn()} />);

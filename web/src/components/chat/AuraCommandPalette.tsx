@@ -1,12 +1,12 @@
 import { ArrowRight, BookOpen, FolderKanban, Library, NotebookPen, Search, Sparkles, Workflow, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import type { AutomationRecord, LibraryItem, WorkspaceNote } from '../../data/workspaceData';
+import type { LibraryItem, WorkspaceNote } from '../../data/workspaceData';
 
 interface AuraCommandPaletteProps {
   projectName?: string | null;
   libraryItems: LibraryItem[];
   notes: WorkspaceNote[];
-  automations: AutomationRecord[];
+  activeAutomationCount: number;
   onClose: () => void;
   onOpenLibrary?: () => void;
   onOpenNotes?: () => void;
@@ -20,16 +20,15 @@ const suggestions = [
   'Compare the evidence across my active AI projects',
 ];
 
-export function AuraCommandPalette({ projectName, libraryItems, notes, automations, onClose, onOpenLibrary, onOpenNotes, onOpenAutomations, onOpenProject }: AuraCommandPaletteProps) {
+export function AuraCommandPalette({ projectName, libraryItems, notes, activeAutomationCount, onClose, onOpenLibrary, onOpenNotes, onOpenAutomations, onOpenProject }: AuraCommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState<string | null>(null);
   const scope = projectName ? `Current project · ${projectName}` : 'Personal workspace';
   const linkedFiles = libraryItems.filter((item) => item.projectLinks?.length);
-  const activeAutomations = automations.filter((item) => item.enabled);
   const answer = useMemo(() => {
     if (!submitted) return null;
-    return `I searched the local workspace manifest: ${libraryItems.length} Library files, ${notes.length} notes, and ${activeAutomations.length} active automations. The strongest reusable context still comes from explicitly linked project files/notes rather than hidden chat history, so you can open the source object directly or continue inside its project.`;
-  }, [activeAutomations.length, libraryItems.length, notes.length, submitted]);
+    return `I searched the local workspace manifest: ${libraryItems.length} Library files, ${notes.length} notes, and ${activeAutomationCount} active automations. The strongest reusable context still comes from explicitly linked project files/notes rather than hidden chat history, so you can open the source object directly or continue inside its project.`;
+  }, [activeAutomationCount, libraryItems.length, notes.length, submitted]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -77,7 +76,7 @@ export function AuraCommandPalette({ projectName, libraryItems, notes, automatio
               <button type="button" onClick={() => onOpenProject?.('stateful')}><FolderKanban size={13} /><span><strong>Stateful Architecture</strong><small>Project · multiple chats</small></span><ArrowRight size={12} /></button>
               <button type="button" onClick={onOpenLibrary}><Library size={13} /><span><strong>{linkedFiles[0]?.name ?? 'Personal Library'}</strong><small>{libraryItems.length} files · reusable across projects</small></span><ArrowRight size={12} /></button>
               <button type="button" onClick={onOpenNotes}><NotebookPen size={13} /><span><strong>{notes[0]?.title ?? 'Workspace Notes'}</strong><small>{notes.length} notes · project links available</small></span><ArrowRight size={12} /></button>
-              <button type="button" onClick={onOpenAutomations}><Workflow size={13} /><span><strong>Automations</strong><small>{activeAutomations.length} enabled routines</small></span><ArrowRight size={12} /></button>
+              <button type="button" onClick={onOpenAutomations}><Workflow size={13} /><span><strong>Automations</strong><small>{activeAutomationCount} enabled routines</small></span><ArrowRight size={12} /></button>
               <button type="button" onClick={onOpenLibrary}><BookOpen size={13} /><span><strong>Study materials</strong><small>Backed by Library artifacts</small></span><ArrowRight size={12} /></button>
             </div>
           </div>

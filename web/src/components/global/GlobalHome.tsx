@@ -1,10 +1,10 @@
 import { ArrowRight, BookOpenText, Clock3, FolderKanban, Sparkles } from 'lucide-react';
-import type { AutomationRecord, LibraryItem, ProjectRecord } from '../../data/workspaceData';
+import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 
 interface GlobalHomeProps {
   projects: ProjectRecord[];
   libraryItems: LibraryItem[];
-  automations: AutomationRecord[];
+  activeAutomationCount: number;
   noteCount: number;
   onOpenProject: (projectId: string) => void;
   onOpenProjects: () => void;
@@ -19,10 +19,9 @@ function greeting() {
   return 'Good evening';
 }
 
-export function GlobalHome({ projects, libraryItems, automations, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
+export function GlobalHome({ projects, libraryItems, activeAutomationCount, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
   const recent = projects.slice(0, 3);
   const recentFiles = libraryItems.slice(0, 4);
-  const activeAutomations = automations.filter((item) => item.source === 'live' && item.enabled).length;
 
   return (
     <section className="global-home">
@@ -68,7 +67,7 @@ export function GlobalHome({ projects, libraryItems, automations, noteCount, onO
 
         <section className="home-panel home-panel--ambient">
           <span className="eyebrow">WORKSPACE PULSE</span>
-          <div className="ambient-stat"><Sparkles size={16} /><div><strong>{activeAutomations} active automations</strong><span>Across personal + project scopes</span></div></div>
+          <div className="ambient-stat"><Sparkles size={16} /><div><strong>{activeAutomationCount} active automations</strong><span>Across personal + project scopes</span></div></div>
           <div className="ambient-stat"><BookOpenText size={16} /><div><strong>{libraryItems.length} library artifacts</strong><span>Reusable across {projects.length} projects</span></div></div>
           <div className="ambient-note"><span>Linked knowledge</span><strong>{noteCount} notes · {libraryItems.filter((item) => item.projectLinks?.length).length} linked files</strong></div>
         </section>

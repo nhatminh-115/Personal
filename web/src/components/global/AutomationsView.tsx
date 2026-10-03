@@ -16,6 +16,12 @@ interface AutomationInput {
 interface AutomationsViewProps {
   projects: ProjectRecord[];
   automations: AutomationRecord[];
+  totalCount?: number;
+  enabledCount?: number;
+  hasMore?: boolean;
+  loadingPage?: boolean;
+  pageError?: string | null;
+  onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
@@ -42,7 +48,7 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-export function AutomationsView({ projects, automations, onCreate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -227,7 +233,7 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
       </div>
 
       <div className="automation-summary-row">
-        <div><Workflow size={15} /><span><strong>{automations.filter((item) => item.source === 'live' && item.enabled).length} active</strong><small>{automations.filter((item) => item.source === 'live').length} scheduled routines</small></span></div>
+        <div><Workflow size={15} /><span><strong>{enabledCount} active</strong><small>{totalCount} scheduled routines</small></span></div>
         <div><BellRing size={15} /><span><strong>Persistent scheduler</strong><small>Runs are queued through AURA</small></span></div>
       </div>
 
@@ -290,6 +296,10 @@ export function AutomationsView({ projects, automations, onCreate, onToggle, onR
           );
         })}
       </div>
+
+      {pageError ? <div className="notes-list-pagination" role="status"><span>Could not load automations: {pageError}</span><button type="button" disabled={loadingPage} onClick={onLoadMore}>Retry</button></div> : null}
+      {loadingPage && !pageError ? <div className="notes-list-pagination" role="status">Loading automations…</div> : null}
+      {!pageError && hasMore ? <button className="notes-load-more" type="button" disabled={loadingPage} onClick={onLoadMore}>{loadingPage ? 'Loading automations…' : 'Load more automations'}</button> : null}
 
       {runReview ? (
         <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !runLoadingId) setRunReview(null); }}>
