@@ -2375,7 +2375,6 @@ export default function App() {
           projectName={activeProject?.name ?? null}
           libraryItems={libraryItems}
           notes={notes}
-          automations={automations}
           activeAutomationCount={automationSummary.enabled}
           onClose={() => setAuraOpen(false)}
           onOpenLibrary={() => { setAuraOpen(false); handleSidebarNavigate('library'); }}
