@@ -95,6 +95,39 @@ def verify_backup(archive_path: Path) -> dict:
         return manifest
 
 
+def list_backups(directory: Path) -> list[dict[str, str | int | None]]:
+    """Inspect direct .tar.gz children without extracting or modifying archives."""
+    directory = directory.expanduser().resolve()
+    if not directory.is_dir():
+        raise NotADirectoryError(f"Backup directory does not exist: {directory}")
+
+    backups: list[dict[str, str | int | None]] = []
+    for archive_path in sorted(directory.glob("*.tar.gz"), key=lambda path: path.name.casefold()):
+        if not archive_path.is_file():
+            continue
+        size_bytes: int | None = None
+        try:
+            size_bytes = archive_path.stat().st_size
+            manifest = verify_backup(archive_path)
+        except (OSError, ValueError, KeyError, tarfile.TarError) as exc:
+            backups.append({
+                "path": str(archive_path),
+                "status": "invalid",
+                "created_at": None,
+                "size_bytes": size_bytes,
+                "error": str(exc),
+            })
+            continue
+        backups.append({
+            "path": str(archive_path),
+            "status": "verified",
+            "created_at": str(manifest.get("created_at", "unknown")),
+            "size_bytes": size_bytes,
+            "error": None,
+        })
+    return backups
+
+
 def create_backup(destination: Path) -> Path:
     """Write a non-overwriting archive while the API is stopped between stores."""
     destination = destination.expanduser().resolve()
@@ -185,20 +218,44 @@ def main() -> int:
         type=Path,
         help="New .tar.gz path; existing files are never overwritten",
     )
-    parser.add_argument(
+    inspections = parser.add_mutually_exclusive_group()
+    inspections.add_argument(
         "--verify",
         type=Path,
         metavar="ARCHIVE",
         help="Validate a backup without extracting it",
     )
+    inspections.add_argument(
+        "--list",
+        type=Path,
+        metavar="DIRECTORY",
+        help="List direct .tar.gz backups and report checksum verification status",
+    )
     args = parser.parse_args()
     try:
+        if args.list:
+            if args.destination is not None:
+                parser.error("destination cannot be combined with --list")
+            backups = list_backups(args.list)
+            if not backups:
+                print(f"No AURA Compose backups found in {args.list.expanduser().resolve()}")
+                return 0
+            for backup in backups:
+                size = backup["size_bytes"]
+                size_text = f"{size} bytes" if size is not None else "size unavailable"
+                if backup["status"] == "verified":
+                    print(f"VERIFIED  {backup['created_at']}  {size_text}  {backup['path']}")
+                else:
+                    print(f"INVALID   {size_text}  {backup['path']} — {backup['error']}")
+            invalid_count = sum(backup["status"] == "invalid" for backup in backups)
+            print(f"{len(backups) - invalid_count} verified; {invalid_count} invalid")
+            return 1 if invalid_count else 0
         if args.verify:
             manifest = verify_backup(args.verify)
             print(f"Backup verified: {args.verify} (created {manifest['created_at']})")
             return 0
         if args.destination is None:
-            parser.error("destination is required unless --verify is used")
+            parser.error("destination is required unless --verify or --list is used")
         result = create_backup(args.destination)
     except (OSError, RuntimeError, ValueError, KeyError, tarfile.TarError, subprocess.CalledProcessError) as exc:
         print(f"AURA Compose backup operation failed: {exc}", file=sys.stderr)

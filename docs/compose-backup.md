@@ -23,6 +23,17 @@ SHA-256 checksums. Verify an archive before restoring it:
 python scripts/backup_compose.py --verify .\backups\aura-2026-10-03.tar.gz
 ```
 
+List the archive files in a backup directory and verify each one without
+extracting or changing it:
+
+```powershell
+python scripts/backup_compose.py --list .\backups
+```
+
+The command reports each archive as `VERIFIED` or `INVALID` and returns a
+nonzero exit code if any archive failed verification. It does not delete or
+repair invalid files.
+
 Restore with the same Compose configuration and database name used to create
 the backup. The restore command verifies the archive again before it stops
 services, then replaces PostgreSQL and the checkpoint database as one recovery
