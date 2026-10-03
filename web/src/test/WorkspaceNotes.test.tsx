@@ -23,7 +23,7 @@ describe('Persistent personal workspace Notes', () => {
           id: 'personal-note-1', ...body, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:01:00Z',
         }) } as Response);
       }
-      if (url.endsWith('/v1/workspace/notes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.endsWith('/v1/workspace/notes') || url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
     });
   });
@@ -31,7 +31,7 @@ describe('Persistent personal workspace Notes', () => {
   it('hydrates Notes from the graph API and syncs new user-authored notes without uploading demo seeds', async () => {
     await act(async () => { render(<App />); });
     fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes'));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes?page_size=50'));
 
     await screen.findByRole('heading', { name: 'Personal notes' });
     expect(screen.getByText('Novelty framing')).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe('Persistent personal workspace Notes', () => {
         object_id: note.id, object_type: 'manual_note', title: note.title, excerpt: note.body,
         project_name: null, created_by: 'user', updated_at: note.updated_at,
       }]) } as Response);
-      if (url.endsWith('/v1/workspace/notes')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
+      if (url.endsWith('/v1/workspace/notes') || url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
       if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);

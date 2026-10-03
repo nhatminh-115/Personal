@@ -293,6 +293,9 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [notesNextCursor, setNotesNextCursor] = useState<string | null>(null);
+  const [notesPageLoading, setNotesPageLoading] = useState(false);
+  const [notesPageError, setNotesPageError] = useState<string | null>(null);
   const [studySessions, setStudySessions] = useState<StudySessionRecord[]>([]);
   const [studySessionsNextCursor, setStudySessionsNextCursor] = useState<string | null>(null);
   const [loadingOlderStudySessions, setLoadingOlderStudySessions] = useState(false);
@@ -305,6 +308,7 @@ export default function App() {
   const notesRef = useRef(notes);
   notesRef.current = notes;
   const notesLoaded = useRef(false);
+  const notesInitialRequested = useRef(false);
   const noteSyncTimers = useRef(new Map<string, number>());
   const noteCreateInFlight = useRef(new Set<string>());
   const noteUpdateInFlight = useRef(new Set<string>());
@@ -1473,25 +1477,50 @@ export default function App() {
     }
   }, [persistLocalWorkspaceNote, queueWorkspaceNoteUpdate]);
 
-  useEffect(() => {
-    if (surface !== 'notes' || notesLoaded.current) return;
-    let active = true;
-    void api.fetchWorkspaceNotes().then((records) => {
-      if (!active || !Array.isArray(records)) return;
-      const liveNotes = records.map((record) => workspaceNoteFromRecord(record, projectCatalog));
-      savedNoteFingerprints.current = new Map(liveNotes.map((note) => [note.id, workspaceNoteFingerprint(note)]));
-      const localNotes = notesRef.current.filter((note) => note.source !== 'live');
-      const next = [...liveNotes, ...localNotes];
+  const loadWorkspaceNotesPage = useCallback(async (cursor: string | null, append: boolean) => {
+    if (notesPageLoading) return;
+    setNotesPageLoading(true);
+    setNotesPageError(null);
+    try {
+      const page = await api.fetchWorkspaceNotesPage(cursor, 50);
+      const liveNotes = page.items.map((record) => workspaceNoteFromRecord(record, projectCatalog));
+      for (const note of liveNotes) savedNoteFingerprints.current.set(note.id, workspaceNoteFingerprint(note));
+      const currentNotes = append ? notesRef.current : notesRef.current.filter((note) => note.source !== 'live');
+      const existingIds = new Set(currentNotes.map((note) => note.id));
+      const next = append
+        ? [...currentNotes, ...liveNotes.filter((note) => !existingIds.has(note.id))]
+        : [...liveNotes, ...currentNotes];
       notesRef.current = next;
       setNotes(next);
+      setNotesNextCursor(page.nextCursor);
       notesLoaded.current = true;
-      localNotes.filter((note) => note.source === 'local').forEach(persistLocalWorkspaceNote);
-    }).catch((error: unknown) => {
-      if (!active) return;
-      pushToast('Could not load saved Notes', executionErrorText(error));
-    });
-    return () => { active = false; };
-  }, [persistLocalWorkspaceNote, projectCatalog, pushToast, surface]);
+      currentNotes.filter((note) => note.source === 'local').forEach(persistLocalWorkspaceNote);
+    } catch (error) {
+      const message = executionErrorText(error);
+      setNotesPageError(message);
+      pushToast('Could not load saved Notes', message);
+    } finally {
+      setNotesPageLoading(false);
+    }
+  }, [notesPageLoading, persistLocalWorkspaceNote, projectCatalog, pushToast]);
+
+  useEffect(() => {
+    if ((surface !== 'notes' && surface !== 'study') || notesLoaded.current || notesInitialRequested.current || notesPageLoading) return;
+    notesInitialRequested.current = true;
+    void loadWorkspaceNotesPage(null, false);
+  }, [loadWorkspaceNotesPage, notesPageLoading, surface]);
+
+  const loadMoreWorkspaceNotes = useCallback(() => {
+    void loadWorkspaceNotesPage(notesNextCursor, notesLoaded.current);
+  }, [loadWorkspaceNotesPage, notesNextCursor]);
+
+  useEffect(() => {
+    if (
+      surface !== 'notes' || !focusedWorkspaceNoteId || notes.some((note) => note.id === focusedWorkspaceNoteId)
+      || !notesNextCursor || notesPageLoading || notesPageError
+    ) return;
+    void loadWorkspaceNotesPage(notesNextCursor, true);
+  }, [focusedWorkspaceNoteId, loadWorkspaceNotesPage, notes, notesNextCursor, notesPageError, notesPageLoading, surface]);
 
   useEffect(() => {
     if (surface !== 'study' || studySessionsLoaded.current) return;
@@ -2097,8 +2126,8 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
-        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 

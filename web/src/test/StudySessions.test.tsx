@@ -10,6 +10,28 @@ const studyMaterial: LibraryItem = {
 };
 
 describe('Study sessions use shared Library materials', () => {
+  it('loads more saved-note sources on demand', () => {
+    const onLoadMoreNotes = vi.fn();
+    render(<StudyView
+      libraryItems={[]}
+      notes={[]}
+      sessions={[]}
+      hasMoreNotes
+      onLoadMoreNotes={onLoadMoreNotes}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+      onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more saved Notes' }));
+    expect(onLoadMoreNotes).toHaveBeenCalledTimes(1);
+  });
+
   it('exposes retry actions for failed session and card pages', async () => {
     const onLoadMoreSessions = vi.fn().mockResolvedValue(undefined);
     const onLoadMoreCards = vi.fn().mockResolvedValue(undefined);
