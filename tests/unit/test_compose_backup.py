@@ -95,6 +95,48 @@ def test_backup_restarts_api_if_checkpoint_capture_fails(tmp_path, monkeypatch):
     assert not (tmp_path / "aura.tar.gz").exists()
 
 
+def test_backup_restarts_api_if_stop_fails_mid_transition(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[2:5] == ["ps", "--status", "running"]:
+            return subprocess.CompletedProcess(command, 0, stdout="aura-app\n")
+        if command[2:3] == ["stop"]:
+            raise subprocess.CalledProcessError(1, command)
+        return subprocess.CompletedProcess(command, 0, stdout="" if kwargs.get("text") else b"")
+
+    monkeypatch.setattr(backup_compose, "_run_command", fake_run)
+
+    with pytest.raises(subprocess.CalledProcessError):
+        backup_compose.create_backup(tmp_path / "aura.tar.gz")
+
+    assert calls[-1] == ["docker", "compose", "start", "aura-app"]
+    assert not (tmp_path / "aura.tar.gz").exists()
+
+
+def test_backup_rejects_and_removes_archive_that_fails_post_write_verification(tmp_path, monkeypatch):
+    calls, _, _ = _fake_compose(monkeypatch)
+    destination = tmp_path / "aura.tar.gz"
+    real_verify = backup_compose.verify_backup
+    verification_targets = []
+
+    def fail_written_archive(path):
+        verification_targets.append(path)
+        if path == destination.resolve():
+            raise ValueError("post-write verification failed")
+        return real_verify(path)
+
+    monkeypatch.setattr(backup_compose, "verify_backup", fail_written_archive)
+
+    with pytest.raises(ValueError, match="post-write verification"):
+        backup_compose.create_backup(destination)
+
+    assert verification_targets == [destination.resolve()]
+    assert calls[-1] == ["docker", "compose", "start", "aura-app"]
+    assert not destination.exists()
+
+
 def test_backup_never_overwrites_an_existing_archive(tmp_path, monkeypatch):
     calls, _, _ = _fake_compose(monkeypatch)
     destination = tmp_path / "aura.tar.gz"

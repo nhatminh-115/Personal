@@ -104,12 +104,13 @@ def create_backup(destination: Path) -> Path:
 
     running_services = _compose("ps", "--status", "running", "--services", text=True).stdout.splitlines()
     api_was_running = "aura-app" in running_services
-    if api_was_running:
-        _compose("stop", "--timeout", "30", "aura-app")
 
     primary_error: BaseException | None = None
     destination_created = False
     try:
+        if api_was_running:
+            _compose("stop", "--timeout", "30", "aura-app")
+
         with tempfile.TemporaryDirectory(prefix="aura-compose-backup-", dir=destination.parent) as temp_name:
             staging = Path(temp_name)
             database_dump = staging / "postgres.dump"
@@ -156,6 +157,7 @@ def create_backup(destination: Path) -> Path:
                 os.chmod(destination, 0o600)
                 with archive_temp.open("rb") as source:
                     shutil.copyfileobj(source, output)
+            verify_backup(destination)
     except BaseException as exc:
         primary_error = exc
         if destination_created:
