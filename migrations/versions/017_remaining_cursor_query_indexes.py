@@ -1,6 +1,6 @@
 """Index the remaining paginated memory, approval, and execution reads.
 
-Revision ID: 017_remaining_cursor_query_indexes
+Revision ID: 017_cursor_read_indexes
 Revises: 016_keyset_pagination_indexes
 Create Date: 2026-10-03
 """
@@ -9,7 +9,7 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "017_remaining_cursor_query_indexes"
+revision: str = "017_cursor_read_indexes"
 down_revision: Union[str, None] = "016_keyset_pagination_indexes"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
