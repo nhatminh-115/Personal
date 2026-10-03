@@ -24,6 +24,9 @@ interface AutomationsViewProps {
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
   onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds'>) => Promise<AutomationRecord>;
+  onSetArchived?: (automation: AutomationRecord, archived: boolean) => void;
+  includeArchived?: boolean;
+  onToggleArchived?: () => void;
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
   onApprovalResolved: (automationId: string) => void;
@@ -49,7 +52,7 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
   const [name, setName] = useState('');
@@ -255,7 +258,10 @@ export function AutomationsView({ projects, automations, totalCount = automation
           <h1>Background routines without turning AURA into Zapier.</h1>
           <p>Scheduled instructions run through AURA and remain scoped to your workspace or one project.</p>
         </div>
-        <button className="primary-soft-button" type="button" onClick={() => setCreating(true)}><Plus size={15} /> New automation</button>
+        <div className="automations-view__header-actions">
+          {onToggleArchived ? <button className="secondary-button" type="button" onClick={onToggleArchived} disabled={loadingPage}>{includeArchived ? 'Hide archived' : 'Include archived'}</button> : null}
+          <button className="primary-soft-button" type="button" onClick={() => { setEditingAutomation(null); setName(''); setDescription(''); setInstruction(''); setCreating(true); }}><Plus size={15} /> New automation</button>
+        </div>
       </div>
 
       <div className="automation-summary-row">
@@ -271,10 +277,10 @@ export function AutomationsView({ projects, automations, totalCount = automation
           const runInProgress = ['queued', 'running', 'waiting_for_approval', 'waiting_for_routing_confirmation']
             .includes(automation.latestExecution?.status ?? '');
           return (
-            <article key={automation.id} className={`automation-card ${automation.enabled ? '' : 'is-paused'}`}>
-              <button aria-label={`${automation.enabled ? 'Pause' : 'Resume'} ${automation.name}`} className={`automation-toggle ${automation.enabled ? 'is-on' : ''}`} type="button" onClick={() => onToggle(automation, !automation.enabled)} disabled={!live}><span /></button>
+            <article key={automation.id} className={`automation-card ${automation.archived ? 'is-archived' : automation.enabled ? '' : 'is-paused'}`}>
+              <button aria-label={`${automation.enabled ? 'Pause' : 'Resume'} ${automation.name}`} className={`automation-toggle ${automation.enabled ? 'is-on' : ''}`} type="button" onClick={() => onToggle(automation, !automation.enabled)} disabled={!live || automation.archived}><span /></button>
               <div className="automation-card__body">
-                <div className="automation-card__title"><strong>{automation.name}</strong><span>{live ? (automation.scope === 'global' ? 'Global' : project?.name ?? automation.projectName ?? 'Project') : 'Example'}</span></div>
+                <div className="automation-card__title"><strong>{automation.name}</strong><span>{automation.archived ? 'Archived' : live ? (automation.scope === 'global' ? 'Global' : project?.name ?? automation.projectName ?? 'Project') : 'Example'}</span></div>
                 <p>{automation.description}</p>
                 {live ? <details className="automation-instruction"><summary>Instruction</summary><p>{automation.instruction}</p></details> : null}
                 <div className="automation-trigger"><Clock3 size={12} /><strong>{automation.trigger}</strong></div>
@@ -315,11 +321,12 @@ export function AutomationsView({ projects, automations, totalCount = automation
                   </div>
                 ) : null}
                 {live ? <div className="automation-steps">{automation.actions.map((action) => <span key={action}><Check size={10} /> {action}</span>)}</div> : null}
-                <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
+                <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {automation.archived ? 'Archived' : live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
               </div>
               <div className="automation-card__actions">
-                {live ? <button className="secondary-button" type="button" aria-label={`Edit ${automation.name}`} onClick={() => openEditor(automation)} disabled={!onUpdate}><Pencil size={13} /> Edit</button> : null}
-                <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || runInProgress} title={runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled ? <Play size={13} /> : <Pause size={13} />} Run now</button>
+                {live ? <button className="secondary-button" type="button" aria-label={`Edit ${automation.name}`} onClick={() => openEditor(automation)} disabled={!onUpdate || automation.archived}><Pencil size={13} /> Edit</button> : null}
+                {live && onSetArchived ? <button className="secondary-button" type="button" onClick={() => onSetArchived(automation, !automation.archived)} title={automation.archived ? 'Restore this paused routine; its history is preserved' : 'Stop future schedules and keep run history; already queued runs can still finish'}>{automation.archived ? 'Restore' : 'Archive'}</button> : null}
+                <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || automation.archived || runInProgress} title={automation.archived ? 'Archived routines cannot run' : runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled && !automation.archived ? <Play size={13} /> : <Pause size={13} />} Run now</button>
               </div>
             </article>
           );

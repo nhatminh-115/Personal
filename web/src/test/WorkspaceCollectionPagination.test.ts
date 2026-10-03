@@ -141,6 +141,30 @@ describe('workspace collection pagination', () => {
     expect(url.searchParams.get('page_size')).toBe('50');
   });
 
+  it('requests archived automations without changing the default collection request', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'archived-automation', archived: true }]));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.fetchAutomations(undefined, 50, true);
+
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/automations');
+    expect(url.searchParams.get('include_archived')).toBe('true');
+  });
+
+  it('archives and restores an automation through explicit reversible actions', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 'automation/one' }));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.setAutomationArchived('automation/one', true);
+    await api.setAutomationArchived('automation/one', false);
+
+    expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/archive');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/restore');
+    expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST' });
+  });
+
   it('batches automation status refreshes without fetching the full collection', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'automation/one' }]));
     vi.stubGlobal('fetch', fetch);

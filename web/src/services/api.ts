@@ -507,12 +507,13 @@ export const api = {
     }));
   },
 
-  async fetchAutomations(cursor?: string | null, pageSize = 50): Promise<{
+  async fetchAutomations(cursor?: string | null, pageSize = 50, includeArchived = false): Promise<{
     automations: AutomationRecordResponse[];
     nextCursor: string | null;
   }> {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
+    if (includeArchived) params.set('include_archived', 'true');
     const response = await fetch(`${BASE_URL}/v1/automations?${params.toString()}`);
     return {
       automations: await handleResponse<AutomationRecordResponse[]>(response),
@@ -570,6 +571,11 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
+  },
+
+  async setAutomationArchived(id: string, archived: boolean): Promise<AutomationRecordResponse> {
+    const action = archived ? 'archive' : 'restore';
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
   },
 
   async setAutomationEnabled(id: string, enabled: boolean): Promise<AutomationRecordResponse> {

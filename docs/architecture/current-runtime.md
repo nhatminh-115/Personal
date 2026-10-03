@@ -113,6 +113,8 @@ Saved automations can update their name, description, instruction, and interval
 without changing project scope or the stable session used for their history.
 Already queued events keep their original instruction payload; the next
 scheduled event uses the updated settings.
+Automations can be archived to stop future schedules while preserving run
+history; restore returns them as paused routines.
 
 The Library's Research collection includes a read-only Research Radar for saved
 project graphs. It requests bounded graph pages filtered to research sources,

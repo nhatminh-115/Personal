@@ -388,6 +388,7 @@ class AutomationResponse(BaseModel):
     description: str
     instruction: str
     enabled: bool
+    archived: bool = False
     scope: Literal["global", "project"]
     project_name: Optional[str] = None
     interval_seconds: int

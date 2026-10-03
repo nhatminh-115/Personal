@@ -105,6 +105,55 @@ async def test_automation_edit_rejects_blank_instruction(async_client):
 
 
 @pytest.mark.asyncio
+async def test_archived_automation_stops_scheduling_but_keeps_history_and_can_be_restored(async_client):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Archive safely",
+        "instruction": "Keep this run available in history.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    assert queued.status_code == 202
+
+    archived = await async_client.post(f"/v1/automations/{automation_id}/archive")
+    assert archived.status_code == 200
+    assert archived.json()["archived"] is True
+    assert archived.json()["enabled"] is False
+    assert (await async_client.post(f"/v1/automations/{automation_id}/run")).status_code == 404
+    assert (await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True})).status_code == 404
+
+    visible = await async_client.get("/v1/automations")
+    including_archived = await async_client.get("/v1/automations", params={"include_archived": "true"})
+    assert all(item["id"] != automation_id for item in visible.json())
+    archived_record = next(item for item in including_archived.json() if item["id"] == automation_id)
+    assert archived_record["archived"] is True
+    assert archived_record["latest_execution"]["event_id"] == queued.json()["event_id"]
+    assert (await async_client.get("/v1/automations/summary")).json() == {"total": 0, "enabled": 0}
+
+    restored = await async_client.post(f"/v1/automations/{automation_id}/restore")
+    assert restored.status_code == 200
+    assert restored.json()["archived"] is False
+    assert restored.json()["enabled"] is False
+    assert [item["id"] for item in (await async_client.get("/v1/automations")).json()] == [automation_id]
+
+
+@pytest.mark.asyncio
+async def test_restoring_an_unarchived_automation_does_not_pause_it(async_client):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Keep running",
+        "instruction": "Do not pause on redundant restore.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+
+    restored = await async_client.post(f"/v1/automations/{automation_id}/restore")
+
+    assert restored.status_code == 200
+    assert restored.json()["archived"] is False
+    assert restored.json()["enabled"] is True
+
+
+@pytest.mark.asyncio
 async def test_automation_collection_uses_bounded_keyset_pages(async_client):
     for index in range(3):
         created = await async_client.post("/v1/automations", json={
