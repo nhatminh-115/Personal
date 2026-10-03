@@ -197,7 +197,7 @@ async def test_workspace_graph_filters_object_types_and_edge_families_before_pag
 
     second_response = await async_client.get(
         f"/v1/workspace/projects/{project_name}/graph",
-        params={"object_types": ["research_claim", "research_evidence"], "edge_families": ["provenance"], "object_page_size": 1, "newest_first": "true", "object_cursor": first["objects_next_cursor"], "objects_exhausted": "true", "edges_exhausted": "true", "include_project_state": "false"},
+        params={"object_types": ["research_claim", "research_evidence"], "edge_families": ["provenance"], "object_page_size": 1, "newest_first": "true", "object_cursor": first["objects_next_cursor"], "edges_exhausted": "true", "include_project_state": "false"},
     )
     assert second_response.status_code == 200
     assert [item["id"] for item in second_response.json()["objects"]] == ["research-claim-old"]
