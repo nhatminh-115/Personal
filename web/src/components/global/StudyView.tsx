@@ -36,6 +36,7 @@ interface StudyViewProps {
   onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
   onDeleteCard: (cardId: string, sessionId: string) => Promise<void>;
   onSaveReflection: (sessionId: string, reflection: string) => Promise<void>;
+  onOpenResearchFinding?: (objectId: string, projectName: string) => void;
   focusSessionId?: string | null;
 }
 
@@ -198,7 +199,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -366,6 +367,14 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
             >
               <strong>{session.track_title}</strong>
               <span>{session.status === 'completed' ? 'Completed' : 'In progress'}</span>
+              {session.material_id && session.material_project_name && onOpenResearchFinding ? (
+                <button type="button" onClick={() => {
+                  const { material_id: objectId, material_project_name: projectName } = session;
+                  if (objectId && projectName) onOpenResearchFinding(objectId, projectName);
+                }}>
+                  <ArrowRight size={13} /> Open Research finding
+                </button>
+              ) : null}
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
               <StudyReflectionEditor session={session} onSave={onSaveReflection} />
               <StudyCardCollection
