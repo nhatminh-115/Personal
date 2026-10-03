@@ -303,7 +303,7 @@ describe('Persistent workspace graph Board projection', () => {
 
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
     let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
-    vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
+    const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
     vi.spyOn(api, 'putWorkspaceLayout').mockImplementation(async (_project, layout, expectedRevision) => {
       const revision = expectedRevision + 1;
@@ -344,6 +344,7 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(createObject).toHaveBeenCalledTimes(2));
     expect(createObject.mock.calls[1][1].id).toBe(createdId);
     expect(graph.objects.some((object) => object.id === createdId)).toBe(true);
+    expect(fetchGraph).toHaveBeenCalledTimes(1);
   });
 
   it('offers a live chat action on saved branches and restores the selected branch context', async () => {
