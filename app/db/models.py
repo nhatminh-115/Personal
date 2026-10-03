@@ -212,6 +212,7 @@ class EventStatus(str, Enum):
     PENDING = "pending"
     PROCESSING = "processing"
     PROCESSED = "processed"
+    CANCELLED = "cancelled"
     FAILED = "failed"
     DEAD_LETTER = "dead_letter"
 

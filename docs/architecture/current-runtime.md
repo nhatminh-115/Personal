@@ -118,6 +118,9 @@ history; restore returns them as paused routines.
 Saved automations can also be duplicated into a paused routine with its own
 session and run history, so copying a schedule never copies execution history
 or starts a second schedule unexpectedly.
+Queued Automation runs can be cancelled only while their outbox event remains
+pending and unclaimed. Once a worker claims a run, cancellation is rejected; the
+interface does not claim to stop an active tool or model execution.
 
 The Library's Research collection includes a read-only Research Radar for saved
 project graphs. It requests bounded graph pages filtered to research sources,

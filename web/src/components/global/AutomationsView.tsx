@@ -30,6 +30,7 @@ interface AutomationsViewProps {
   onToggleArchived?: () => void;
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
+  onCancelRun?: (automationId: string, eventId: string) => Promise<AutomationExecutionRecord>;
   onApprovalResolved: (automationId: string) => void;
 }
 
@@ -53,7 +54,7 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onCancelRun, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
   const [name, setName] = useState('');
@@ -75,6 +76,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
   const [historyByAutomation, setHistoryByAutomation] = useState<Record<string, AutomationExecutionRecord[]>>({});
   const [historyCursorByAutomation, setHistoryCursorByAutomation] = useState<Record<string, string | null>>({});
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
+  const [cancellingEventId, setCancellingEventId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [runReview, setRunReview] = useState<{ automation: AutomationRecord; detail: RunDetail; routing: RunRoutingDecision[] } | null>(null);
   const [runLoadingId, setRunLoadingId] = useState<string | null>(null);
@@ -131,6 +133,23 @@ export function AutomationsView({ projects, automations, totalCount = automation
     }
     setHistoryAutomationId(automation.id);
     void loadRunHistory(automation.id);
+  };
+
+  const cancelQueuedRun = async (automation: AutomationRecord, run: AutomationExecutionRecord) => {
+    if (!onCancelRun || run.status !== 'queued' || cancellingEventId) return;
+    setCancellingEventId(run.event_id);
+    setHistoryError('');
+    try {
+      const cancelled = await onCancelRun(automation.id, run.event_id);
+      setHistoryByAutomation((current) => ({
+        ...current,
+        [automation.id]: (current[automation.id] ?? []).map((item) => item.event_id === run.event_id ? cancelled : item),
+      }));
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not cancel queued run.');
+    } finally {
+      setCancellingEventId(null);
+    }
   };
 
   const inspectRun = async (automation: AutomationRecord, runId: string) => {
@@ -311,7 +330,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                                 <time dateTime={run.queued_at}>{run.queued_at}</time>
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
-                                <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title={run.status === 'queued' ? 'Run details are available after execution starts' : 'Inspect persisted run result and operational provenance'}>{runLoadingId === run.run_id ? 'Loading run…' : run.status === 'queued' ? 'Queued' : 'Inspect run'}</button>
+                                {run.status === 'queued' && onCancelRun ? <button type="button" onClick={() => void cancelQueuedRun(automation, run)} disabled={cancellingEventId !== null} title="Cancel only if AURA has not started this run">{cancellingEventId === run.event_id ? 'Cancelling…' : 'Cancel queued run'}</button> : run.status === 'cancelled' ? <span>Cancelled before execution</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
                               </li>
                             ))}
                           </ol>

@@ -468,6 +468,56 @@ async def test_automation_run_history_is_newest_first_limited_and_safe(async_cli
 
 
 @pytest.mark.asyncio
+async def test_queued_automation_run_can_be_cancelled_idempotently_and_history_is_retained(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Cancel before dispatch",
+        "instruction": "Run only if the user still wants it.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    event_id = queued.json()["event_id"]
+
+    cancelled = await async_client.post(f"/v1/automations/{automation_id}/runs/{event_id}/cancel")
+
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["event_id"] == event_id
+    assert cancelled.json()["status"] == "cancelled"
+    event = await test_db_session.get(EventRecordModel, event_id)
+    assert event.status == EventStatus.CANCELLED.value
+    assert event.error_message == "Cancelled by user before execution started."
+    history = await async_client.get(f"/v1/automations/{automation_id}/runs")
+    assert history.json()[0]["status"] == "cancelled"
+
+    repeated = await async_client.post(f"/v1/automations/{automation_id}/runs/{event_id}/cancel")
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "cancelled"
+    assert (await async_client.post(f"/v1/automations/{automation_id}/run")).status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_started_automation_run_cannot_be_cancelled(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Already claimed",
+        "instruction": "This run is already being dispatched.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    event = await test_db_session.get(EventRecordModel, queued.json()["event_id"])
+    event.status = EventStatus.PROCESSING.value
+    event.locked_by = "worker-test"
+    await test_db_session.commit()
+
+    response = await async_client.post(f"/v1/automations/{automation_id}/runs/{event.id}/cancel")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Only queued automation runs can be cancelled."
+    await test_db_session.refresh(event)
+    assert event.status == EventStatus.PROCESSING.value
+
+
+@pytest.mark.asyncio
 async def test_automation_run_history_uses_stable_cursor_pages(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Paged history",
