@@ -14,7 +14,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     const consoleWarn = vi.spyOn(console, 'warn');
 
     global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
-      if (url.includes('/v1/workspace/projects/') && url.split('?')[0].endsWith('/graph')) {
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [{
           id: 'workspace-note-1', object_type: 'manual_note', title: 'Shared project constraint',
           content: 'Keep the migration reversible.', metadata_json: {}, created_by: 'user', session_id: null, source_message_id: null,
@@ -129,6 +129,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // The live Context panel uses saved project graph objects and sends their IDs.
     fireEvent.click(screen.getByText('Context').closest('button')!);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/graph?object_page_size=50')));
     await screen.findByText('Shared project constraint');
     expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
     expect((await screen.findByText('Checkpoint evidence')).closest('.ai-context-item')).toHaveTextContent('research evidence');
@@ -172,6 +173,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText(/AURA · 4 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Context').closest('button')!);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/AURA/graph?'));
     fireEvent.click(await screen.findByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
