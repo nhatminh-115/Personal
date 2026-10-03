@@ -367,6 +367,13 @@ class AutomationWrite(BaseModel):
     interval_seconds: int = Field(ge=60, le=31_536_000)
 
 
+class AutomationEditWrite(BaseModel):
+    name: str = Field(min_length=1, max_length=128)
+    description: str = Field(default="", max_length=500)
+    instruction: str = Field(min_length=1, max_length=20_000)
+    interval_seconds: int = Field(ge=60, le=31_536_000)
+
+
 class AutomationExecutionResponse(BaseModel):
     event_id: str
     run_id: str

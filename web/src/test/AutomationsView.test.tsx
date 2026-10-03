@@ -55,6 +55,26 @@ describe('AutomationsView', () => {
     }));
   });
 
+  it('edits a live automation while preserving its project scope', async () => {
+    const projectAutomation = { ...liveAutomation, scope: 'project' as const, projectId: 'p1', projectName: 'AURA' };
+    const onUpdate = vi.fn().mockResolvedValue(projectAutomation);
+    render(<AutomationsView projects={projects} automations={[projectAutomation]} onCreate={vi.fn()} onUpdate={onUpdate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Daily digest' }));
+    expect(await screen.findByRole('dialog', { name: 'Update this routine' })).toBeInTheDocument();
+    expect(screen.getByText(/Scope stays in AURA/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Global' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project review' } });
+    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Summarize decisions and owners.' } });
+    fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Run every').parentElement!.querySelector('select')!, { target: { value: 'hours' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('auto-1', {
+      name: 'Project review', description: 'Summarize changes', instruction: 'Summarize decisions and owners.', interval_seconds: 7200,
+    }));
+  });
+
   it('reviews sequential automation approvals and refreshes the run after the final decision', async () => {
     const firstApproval = {
       id: 'approval-1', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-1',

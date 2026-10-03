@@ -1,4 +1,4 @@
-import { BellRing, Check, Clock3, Pause, Play, Plus, Workflow, X } from 'lucide-react';
+import { BellRing, Check, Clock3, Pause, Pencil, Play, Plus, Workflow, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { ApprovalDetail, AutomationExecutionRecord, RunDetail, RunRoutingDecision, RunEvent } from '../../types';
 import { api } from '../../services/api';
@@ -23,12 +23,13 @@ interface AutomationsViewProps {
   pageError?: string | null;
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
+  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds'>) => Promise<AutomationRecord>;
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
   onApprovalResolved: (automationId: string) => void;
 }
 
-const intervalUnits = { minutes: 60, hours: 3600, days: 86400 } as const;
+const intervalUnits = { seconds: 1, minutes: 60, hours: 3600, days: 86400 } as const;
 type IntervalUnit = keyof typeof intervalUnits;
 
 function safeRunEventSummary(event: RunEvent): string | null {
@@ -48,8 +49,9 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onToggle, onRunNow, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
+  const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instruction, setInstruction] = useState('');
@@ -202,20 +204,44 @@ export function AutomationsView({ projects, automations, totalCount = automation
     }
   };
 
-  const create = async () => {
-    if (saving || !name.trim() || !instruction.trim() || (scope === 'project' && !projectId)) return;
+  const openEditor = (automation: AutomationRecord) => {
+    setEditingAutomation(automation);
+    setName(automation.name);
+    setDescription(automation.description);
+    setInstruction(automation.instruction ?? '');
+    setScope(automation.scope);
+    setProjectId(automation.projectId ?? projects.find((project) => project.name === automation.projectName)?.id ?? '');
+    const seconds = Math.max(1, automation.intervalSeconds ?? 86400);
+    const unit = (Object.entries(intervalUnits).reverse().find(([, size]) => seconds % size === 0)?.[0] ?? 'seconds') as IntervalUnit;
+    setUnit(unit);
+    setInterval(seconds / intervalUnits[unit]);
+    setError('');
+    setCreating(true);
+  };
+
+  const closeEditor = () => {
+    if (saving) return;
+    setCreating(false);
+    setEditingAutomation(null);
+    setError('');
+  };
+
+  const save = async () => {
+    if (saving || !name.trim() || !instruction.trim() || (!editingAutomation && scope === 'project' && !projectId)) return;
     setSaving(true);
     setError('');
     try {
-      const project = projects.find((item) => item.id === projectId);
-      await onCreate({
-        name: name.trim(), description: description.trim(), instruction: instruction.trim(), scope,
-        project_name: scope === 'project' ? project?.name : undefined,
-        interval_seconds: interval * intervalUnits[unit],
-      });
-      setName(''); setDescription(''); setInstruction(''); setCreating(false);
+      const common = { name: name.trim(), description: description.trim(), instruction: instruction.trim(), interval_seconds: interval * intervalUnits[unit] };
+      if (editingAutomation) {
+        if (!onUpdate) throw new Error('Editing automations is unavailable.');
+        await onUpdate(editingAutomation.id, common);
+      } else {
+        const project = projects.find((item) => item.id === projectId);
+        await onCreate({ ...common, scope, project_name: scope === 'project' ? project?.name : undefined });
+      }
+      setName(''); setDescription(''); setInstruction(''); setCreating(false); setEditingAutomation(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create automation.');
+      setError(cause instanceof Error ? cause.message : 'Could not save automation.');
     } finally {
       setSaving(false);
     }
@@ -291,7 +317,10 @@ export function AutomationsView({ projects, automations, totalCount = automation
                 {live ? <div className="automation-steps">{automation.actions.map((action) => <span key={action}><Check size={10} /> {action}</span>)}</div> : null}
                 <div className="automation-card__footer"><span>Last: {automation.lastRun}</span><span>Next: {live && automation.enabled ? automation.nextRun : live ? 'Paused' : 'Example data'}</span></div>
               </div>
-              <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || runInProgress} title={runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled ? <Play size={13} /> : <Pause size={13} />} Run now</button>
+              <div className="automation-card__actions">
+                {live ? <button className="secondary-button" type="button" aria-label={`Edit ${automation.name}`} onClick={() => openEditor(automation)} disabled={!onUpdate}><Pencil size={13} /> Edit</button> : null}
+                <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || runInProgress} title={runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled ? <Play size={13} /> : <Pause size={13} />} Run now</button>
+              </div>
             </article>
           );
         })}
@@ -368,18 +397,17 @@ export function AutomationsView({ projects, automations, totalCount = automation
       ) : null}
 
       {creating ? (
-        <div className="modal-scrim" role="presentation" onMouseDown={() => !saving && setCreating(false)}>
+        <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
           <div className="automation-create-modal" role="dialog" aria-modal="true" aria-labelledby="automation-create-title" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="modal-head"><div><span className="eyebrow">NEW AUTOMATION</span><strong id="automation-create-title">Create a routine</strong></div><button className="icon-button" type="button" onClick={() => setCreating(false)} disabled={saving} aria-label="Close"><X size={15} /></button></div>
+            <div className="modal-head"><div><span className="eyebrow">{editingAutomation ? 'EDIT AUTOMATION' : 'NEW AUTOMATION'}</span><strong id="automation-create-title">{editingAutomation ? 'Update this routine' : 'Create a routine'}</strong></div><button className="icon-button" type="button" onClick={closeEditor} disabled={saving} aria-label="Close"><X size={15} /></button></div>
             <label><span>Name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Weekly literature scan" /></label>
             <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this routine is for" /></label>
             <label><span>Instruction for AURA</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what AURA should do each time it runs" rows={4} /></label>
-            <div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>
-            {scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}
-            <label className="automation-interval"><span>Run every</span><input type="number" min={1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => setUnit(event.target.value as IntervalUnit)}><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label>
+            {editingAutomation ? <p className="modal-note">Scope stays {editingAutomation.scope === 'global' ? 'global' : `in ${editingAutomation.projectName ?? 'its current project'}`} so this routine keeps its existing session and history.</p> : <><div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>{scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}</>}
+            <label className="automation-interval"><span>Run every</span><input type="number" min={unit === 'seconds' ? 60 : 1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(unit === 'seconds' ? 60 : 1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => { const nextUnit = event.target.value as IntervalUnit; setUnit(nextUnit); setInterval((current) => Math.max(nextUnit === 'seconds' ? 60 : 1, current)); }}><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label>
             {error ? <p className="automation-form-error" role="alert">{error}</p> : null}
-            <div className="modal-note">AURA queues scheduled runs through its durable event system. Tool actions still follow their normal approval rules.</div>
-            <button className="primary-soft-button" type="button" onClick={() => void create()} disabled={saving || !name.trim() || !instruction.trim() || (scope === 'project' && !projectId)}>{saving ? 'Creating…' : 'Create automation'}</button>
+            <div className="modal-note">AURA queues scheduled runs through its durable event system. Tool actions still follow their normal approval rules.{editingAutomation ? ' Changing the interval starts a new countdown from save time. Already queued runs keep the instruction snapshot they started with.' : ''}</div>
+            <button className="primary-soft-button" type="button" onClick={() => void save()} disabled={saving || !name.trim() || !instruction.trim() || (!editingAutomation && scope === 'project' && !projectId)}>{saving ? 'Saving…' : editingAutomation ? 'Save changes' : 'Create automation'}</button>
           </div>
         </div>
       ) : null}
