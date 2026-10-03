@@ -330,6 +330,15 @@ class WorkspaceProjectResponse(BaseModel):
     updated_at: datetime
 
 
+class WorkspaceSummaryResponse(BaseModel):
+    note_count: int
+    library_count: int
+    linked_library_count: int
+    project_name: Optional[str] = None
+    project_note_count: int = 0
+    project_library_count: int = 0
+
+
 class WorkspaceSearchResult(BaseModel):
     object_id: str
     object_type: str

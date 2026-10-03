@@ -381,6 +381,36 @@ export const api = {
     };
   },
 
+  async fetchWorkspaceSummary(projectName?: string): Promise<{
+    note_count: number;
+    library_count: number;
+    linked_library_count: number;
+    project_name: string | null;
+    project_note_count: number;
+    project_library_count: number;
+  }> {
+    const params = new URLSearchParams();
+    if (projectName) params.set('project_name', projectName);
+    const query = params.size ? `?${params.toString()}` : '';
+    const summary = await handleResponse<Partial<{
+      note_count: number;
+      library_count: number;
+      linked_library_count: number;
+      project_name: string | null;
+      project_note_count: number;
+      project_library_count: number;
+    }>>(await fetch(`${BASE_URL}/v1/workspace/summary${query}`));
+    const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    return {
+      note_count: count(summary.note_count),
+      library_count: count(summary.library_count),
+      linked_library_count: count(summary.linked_library_count),
+      project_name: typeof summary.project_name === 'string' ? summary.project_name : projectName ?? null,
+      project_note_count: count(summary.project_note_count),
+      project_library_count: count(summary.project_library_count),
+    };
+  },
+
   async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
     return fetchAllCursorPages<WorkspaceProjectRecord>('/v1/workspace/projects');
   },
@@ -419,7 +449,11 @@ export const api = {
   },
 
   async fetchAutomationSummary(): Promise<{ total: number; enabled: number }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/summary`));
+    const summary = await handleResponse<Partial<{ total: number; enabled: number }>>(
+      await fetch(`${BASE_URL}/v1/automations/summary`),
+    );
+    const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    return { total: count(summary.total), enabled: count(summary.enabled) };
   },
 
   async fetchAutomationRuns(id: string, pageSize = 10, cursor?: string | null): Promise<{

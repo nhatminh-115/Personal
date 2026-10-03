@@ -26,6 +26,7 @@ from app.api.schemas import (
     WorkspaceLibraryReferenceWrite,
     WorkspaceProjectResponse,
     WorkspaceProjectWrite,
+    WorkspaceSummaryResponse,
     WorkspaceSearchResult,
     WorkspaceNoteResponse,
     WorkspaceNoteWrite,
@@ -59,6 +60,59 @@ from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1/workspace", tags=["Workspace"])
 MAX_WORKSPACE_COLLECTION_PAGE_SIZE = MAX_COLLECTION_PAGE_SIZE
+
+
+@router.get("/summary", response_model=WorkspaceSummaryResponse)
+async def get_workspace_summary(
+    project_name: str | None = Query(default=None, max_length=128),
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceSummaryResponse:
+    note_filter = (
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "manual_note",
+        WorkspaceObjectModel.created_by == "user",
+    )
+    library_filter = (
+        WorkspaceObjectModel.project_name.is_(None),
+        WorkspaceObjectModel.object_type == "file_reference",
+        WorkspaceObjectModel.created_by == "user",
+    )
+
+    async def count(query) -> int:
+        return int(await db.scalar(query) or 0)
+
+    note_count = await count(select(func.count()).select_from(WorkspaceObjectModel).where(*note_filter))
+    library_count = await count(select(func.count()).select_from(WorkspaceObjectModel).where(*library_filter))
+    linked_library_count = await count(
+        select(func.count(func.distinct(WorkspaceObjectModel.id)))
+        .select_from(WorkspaceObjectModel)
+        .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+        .where(*library_filter)
+    )
+    project_note_count = 0
+    project_library_count = 0
+    if project_name:
+        project_link = WorkspaceObjectProjectLinkModel.project_name == project_name
+        project_note_count = await count(
+            select(func.count(func.distinct(WorkspaceObjectModel.id)))
+            .select_from(WorkspaceObjectModel)
+            .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+            .where(*note_filter, project_link)
+        )
+        project_library_count = await count(
+            select(func.count(func.distinct(WorkspaceObjectModel.id)))
+            .select_from(WorkspaceObjectModel)
+            .join(WorkspaceObjectProjectLinkModel, WorkspaceObjectProjectLinkModel.object_id == WorkspaceObjectModel.id)
+            .where(*library_filter, project_link)
+        )
+    return WorkspaceSummaryResponse(
+        note_count=note_count,
+        library_count=library_count,
+        linked_library_count=linked_library_count,
+        project_name=project_name,
+        project_note_count=project_note_count,
+        project_library_count=project_library_count,
+    )
 
 
 def _descending_timestamp_cursor_filter(timestamp_column, id_column, cursor: str):
