@@ -41,6 +41,7 @@ interface LibraryViewProps {
   onOpenConnection: (connection: DirectoryConnection) => void;
   onDisconnectConnection: (connection: DirectoryConnection) => void;
   onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
+  onOpenProjectObject?: (objectId: string, projectName: string) => void;
   hasMoreLibrary?: boolean;
   loadingMoreLibrary?: boolean;
   libraryLoadError?: string | null;
@@ -79,6 +80,7 @@ export function LibraryView({
   onOpenConnection,
   onDisconnectConnection,
   onStudyResearchClaim,
+  onOpenProjectObject,
   hasMoreLibrary = false,
   loadingMoreLibrary = false,
   libraryLoadError,
@@ -184,7 +186,7 @@ export function LibraryView({
           <div className="library-view-switch"><button type="button" className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')} title="List view"><List size={16} /></button><button type="button" className={view === 'grid' ? 'is-active' : ''} onClick={() => setView('grid')} title="Grid view"><Grid2X2 size={16} /></button></div>
         </div>
 
-        {collection === 'Research' && researchRadarOpen ? <ResearchRadarPanel projects={projects} onStudyResearchClaim={onStudyResearchClaim} /> : null}
+        {collection === 'Research' && researchRadarOpen ? <ResearchRadarPanel projects={projects} onStudyResearchClaim={onStudyResearchClaim} onOpenProjectObject={onOpenProjectObject} /> : null}
 
         <div className={`library-items library-items--${view} library-items--v8`}>
           {items.map((item) => {

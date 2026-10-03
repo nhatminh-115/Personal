@@ -9,6 +9,7 @@ import './ResearchRadarPanel.css';
 interface ResearchRadarPanelProps {
   projects: ProjectRecord[];
   onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
+  onOpenProjectObject?: (objectId: string, projectName: string) => void;
 }
 
 const researchObjectTypes = new Set(['research_source', 'research_evidence', 'research_claim']);
@@ -35,7 +36,7 @@ function sourceUrl(object: WorkspaceObject): string | null {
   }
 }
 
-export function ResearchRadarPanel({ projects, onStudyResearchClaim }: ResearchRadarPanelProps) {
+export function ResearchRadarPanel({ projects, onStudyResearchClaim, onOpenProjectObject }: ResearchRadarPanelProps) {
   const savedProjects = useMemo(() => projects.filter((project) => project.source === 'user'), [projects]);
   const [projectName, setProjectName] = useState(savedProjects[0]?.name ?? '');
   const [objects, setObjects] = useState<WorkspaceObject[]>([]);
@@ -192,6 +193,7 @@ export function ResearchRadarPanel({ projects, onStudyResearchClaim }: ResearchR
                           <Play size={12} /> Study this finding
                         </button>
                       ) : null}
+                      {onOpenProjectObject ? <button className="research-radar__inspect" type="button" onClick={() => onOpenProjectObject(object.id, projectName)}><ArrowUpRight size={12} /> Open in Board</button> : null}
                       {url ? <a href={url} target="_blank" rel="noreferrer"><span>Open source</span><ArrowUpRight size={13} /></a> : null}
                     </article>
                   );
