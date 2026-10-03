@@ -80,22 +80,23 @@ async def _lock_study_session_creation(db: AsyncSession) -> None:
 
 
 async def _ensure_no_active_study_session(db: AsyncSession) -> None:
-    result = await db.execute(
-        select(WorkspaceObjectModel).where(
+    active_session_id = await db.scalar(
+        select(WorkspaceObjectModel.id).where(
             WorkspaceObjectModel.project_name.is_(None),
             WorkspaceObjectModel.object_type == "study_session",
             WorkspaceObjectModel.created_by == "user",
+            or_(
+                WorkspaceObjectModel.metadata_json["status"].as_string().is_(None),
+                WorkspaceObjectModel.metadata_json["status"].as_string() != "completed",
+            ),
         )
+        .limit(1)
     )
-    for item in result.scalars():
-        metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
-        # Older sessions without an explicit completed status are still active,
-        # matching the response projection's in_progress default.
-        if metadata.get("status") != "completed":
-            raise HTTPException(
-                status_code=409,
-                detail="Another Study session is already active. Complete it before starting a new one.",
-            )
+    if active_session_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Another Study session is already active. Complete it before starting a new one.",
+        )
 
 
 @router.post("/sessions", response_model=StudySessionResponse, status_code=status.HTTP_201_CREATED)
