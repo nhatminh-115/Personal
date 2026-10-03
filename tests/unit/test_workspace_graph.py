@@ -117,7 +117,8 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
         params={"object_page_size": 1, "objects_exhausted": "true", "edge_page_size": 1, "newest_first": "true", "include_project_state": "false"},
     )
     newest_edges = newest_edge_page.json()
-    assert [item["id"] for item in newest_edges["edges"]] == [item["id"] for item in reversed(complete["edges"])[:1]]
+    newest_edge_ids = [item["id"] for item in reversed(complete["edges"])]
+    assert [item["id"] for item in newest_edges["edges"]] == newest_edge_ids[:1]
     assert newest_edges["edges_next_cursor"]
     older_edge_page = await async_client.get(
         f"/v1/workspace/projects/{project_name}/graph",
@@ -130,7 +131,7 @@ async def test_workspace_graph_paginates_objects_and_edges_with_stable_cursors(a
             "include_project_state": "false",
         },
     )
-    assert [item["id"] for item in older_edge_page.json()["edges"]] == [item["id"] for item in reversed(complete["edges"])[1:]]
+    assert [item["id"] for item in older_edge_page.json()["edges"]] == newest_edge_ids[1:]
 
 
 @pytest.mark.asyncio
