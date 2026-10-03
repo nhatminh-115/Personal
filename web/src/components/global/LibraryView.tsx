@@ -38,6 +38,10 @@ interface LibraryViewProps {
   onConnectFolder: () => void;
   onOpenConnection: (connection: DirectoryConnection) => void;
   onDisconnectConnection: (connection: DirectoryConnection) => void;
+  hasMoreLibrary?: boolean;
+  loadingMoreLibrary?: boolean;
+  libraryLoadError?: string | null;
+  onLoadMoreLibrary?: () => void;
 }
 
 const collections = ['All', 'Study', 'Books', 'Research', 'Reference'] as const;
@@ -71,6 +75,10 @@ export function LibraryView({
   onConnectFolder,
   onOpenConnection,
   onDisconnectConnection,
+  hasMoreLibrary = false,
+  loadingMoreLibrary = false,
+  libraryLoadError,
+  onLoadMoreLibrary,
 }: LibraryViewProps) {
   const [collection, setCollection] = useState<(typeof collections)[number]>('All');
   const [query, setQuery] = useState('');
@@ -161,7 +169,7 @@ export function LibraryView({
       <section className="library-section library-section--index">
         <div className="library-section-head library-section-head--stackable">
           <div><BookOpen size={17} /><span><strong>Indexed files & artifacts</strong><small>Virtual collections and project references</small></span></div>
-          <span className="library-section-count">{libraryItems.length}</span>
+          <span className="library-section-count">{libraryItems.length}{hasMoreLibrary ? '+' : ''} loaded</span>
         </div>
 
         <div className="library-toolbar library-toolbar--comfortable">
@@ -220,6 +228,12 @@ export function LibraryView({
         </div>
 
         {!items.length ? <div className="library-empty"><File size={26} /><strong>No files here yet.</strong><span>Change the filter, connect a folder, or import a local file.</span></div> : null}
+        {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library references: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
+        {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library references…</div> : null}
+        {!libraryLoadError && hasMoreLibrary ? <>
+          {query.trim() ? <small className="notes-search-scope">Search covers loaded references. Load more to include older items.</small> : null}
+          <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more references'}</button>
+        </> : null}
       </section>
     </section>
   );

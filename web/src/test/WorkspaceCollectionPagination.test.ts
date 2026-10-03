@@ -76,6 +76,19 @@ describe('workspace collection pagination', () => {
     expect(url.searchParams.get('cursor')).toBe('prior-notes');
   });
 
+  it('loads one Library reference page with a bounded page size and optional cursor', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'library-51' }], 'next-library'));
+    vi.stubGlobal('fetch', fetch);
+
+    const page = await api.fetchWorkspaceLibraryPage('prior-library');
+
+    expect(page).toEqual({ items: [{ id: 'library-51' }], nextCursor: 'next-library' });
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/workspace/library');
+    expect(url.searchParams.get('page_size')).toBe('50');
+    expect(url.searchParams.get('cursor')).toBe('prior-library');
+  });
+
   it('returns one Study sessions page and its cursor for on-demand loading', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'session-101' }], 'next-sessions'));
     vi.stubGlobal('fetch', fetch);

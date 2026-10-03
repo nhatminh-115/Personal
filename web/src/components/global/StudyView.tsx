@@ -13,6 +13,10 @@ interface StudyViewProps {
   loadingMoreNotes?: boolean;
   notesLoadError?: string | null;
   onLoadMoreNotes?: () => void;
+  hasMoreLibrary?: boolean;
+  loadingMoreLibrary?: boolean;
+  libraryLoadError?: string | null;
+  onLoadMoreLibrary?: () => void;
   onOpenItem: (item: LibraryItem) => void;
   onBrowseLibrary: () => void;
   onStartSession: (item: LibraryItem) => void;
@@ -194,7 +198,7 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onDelete }: {
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, onCompleteSession, onCreateCard, onUpdateCard, onDeleteCard, onSaveReflection, focusSessionId }: StudyViewProps) {
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -346,6 +350,9 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
       {notesLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load saved Notes: {notesLoadError}</span><button type="button" disabled={loadingMoreNotes} onClick={onLoadMoreNotes}>Retry</button></div> : null}
       {loadingMoreNotes && !hasMoreNotes && !notesLoadError ? <div className="notes-list-pagination" role="status">Loading saved Notes…</div> : null}
       {!notesLoadError && hasMoreNotes ? <button className="notes-load-more" type="button" disabled={loadingMoreNotes} onClick={onLoadMoreNotes}>{loadingMoreNotes ? 'Loading notes…' : 'Load more saved Notes'}</button> : null}
+      {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library sources: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
+      {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library sources…</div> : null}
+      {!libraryLoadError && hasMoreLibrary ? <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading sources…' : 'Load more Library sources'}</button> : null}
 
       {unlinkedSessions.length ? (
         <section className="study-history" aria-label="Earlier Study sessions">

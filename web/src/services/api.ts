@@ -371,6 +371,16 @@ export const api = {
     return fetchAllCursorPages<WorkspaceLibraryReferenceRecord>('/v1/workspace/library');
   },
 
+  async fetchWorkspaceLibraryPage(cursor?: string | null, pageSize = 50): Promise<{ items: WorkspaceLibraryReferenceRecord[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/workspace/library?${params.toString()}`);
+    return {
+      items: await handleResponse<WorkspaceLibraryReferenceRecord[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
+  },
+
   async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
     return fetchAllCursorPages<WorkspaceProjectRecord>('/v1/workspace/projects');
   },

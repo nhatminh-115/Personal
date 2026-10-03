@@ -283,7 +283,11 @@ export default function App() {
   const workspaceSearchRequest = useRef(0);
 
   const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
+  const [libraryNextCursor, setLibraryNextCursor] = useState<string | null>(null);
+  const [libraryPageLoading, setLibraryPageLoading] = useState(false);
+  const [libraryPageError, setLibraryPageError] = useState<string | null>(null);
   const libraryLoaded = useRef(false);
+  const libraryInitialRequested = useRef(false);
   const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
   const [directoryConnections, setDirectoryConnections] = useState<DirectoryConnection[]>([]);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
@@ -1381,27 +1385,56 @@ export default function App() {
   }, [pushToast]);
 
 
-  useEffect(() => {
-    if (surface !== 'library' || libraryLoaded.current) return;
-    let active = true;
-    void api.fetchWorkspaceLibrary().then((records) => {
-      if (!active || !Array.isArray(records)) return;
+  const loadWorkspaceLibraryPage = useCallback(async (cursor: string | null, append: boolean) => {
+    if (libraryPageLoading) return;
+    setLibraryPageLoading(true);
+    setLibraryPageError(null);
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(cursor, 50);
+      const records = page.items.map((record) => workspaceLibraryFromRecord(record, projectCatalog));
       setLibraryItems((current) => {
         const currentById = new Map(current.map((item) => [item.id, item]));
-        const remoteItems = records.map((record) => {
-          const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const remoteItems = records.map((remote) => {
           const local = currentById.get(remote.id);
           return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
         });
-        const remoteIds = new Set(remoteItems.map((item) => item.id));
+        const remoteById = new Map(remoteItems.map((item) => [item.id, item]));
+        const remoteIds = new Set(remoteById.keys());
+        if (append) {
+          const merged = current.map((item) => remoteById.get(item.id) ?? item);
+          const existingIds = new Set(current.map((item) => item.id));
+          return [...merged, ...remoteItems.filter((item) => !existingIds.has(item.id))];
+        }
         return [...remoteItems, ...current.filter((item) => item.source !== 'imported' || !remoteIds.has(item.id))];
       });
+      setLibraryNextCursor(page.nextCursor);
       libraryLoaded.current = true;
-    }).catch((error: unknown) => {
-      if (active) pushToast('Could not load Library references', executionErrorText(error));
-    });
-    return () => { active = false; };
-  }, [projectCatalog, pushToast, surface]);
+    } catch (error) {
+      const message = executionErrorText(error);
+      setLibraryPageError(message);
+      pushToast('Could not load Library references', message);
+    } finally {
+      setLibraryPageLoading(false);
+    }
+  }, [libraryPageLoading, projectCatalog, pushToast]);
+
+  useEffect(() => {
+    if ((surface !== 'library' && surface !== 'study' && surface !== 'project-files') || libraryLoaded.current || libraryInitialRequested.current || libraryPageLoading) return;
+    libraryInitialRequested.current = true;
+    void loadWorkspaceLibraryPage(null, false);
+  }, [libraryPageLoading, loadWorkspaceLibraryPage, surface]);
+
+  const loadMoreWorkspaceLibrary = useCallback(() => {
+    void loadWorkspaceLibraryPage(libraryNextCursor, libraryLoaded.current);
+  }, [libraryNextCursor, loadWorkspaceLibraryPage]);
+
+  useEffect(() => {
+    if (
+      surface !== 'library' || !focusedLibraryItemId || libraryItems.some((item) => item.id === focusedLibraryItemId)
+      || !libraryNextCursor || libraryPageLoading || libraryPageError
+    ) return;
+    void loadWorkspaceLibraryPage(libraryNextCursor, true);
+  }, [focusedLibraryItemId, libraryItems, libraryNextCursor, libraryPageError, libraryPageLoading, loadWorkspaceLibraryPage, surface]);
 
   const replaceWorkspaceNote = useCallback((previousId: string, nextNote: WorkspaceNote) => {
     const next = notesRef.current.map((item) => item.id === previousId ? nextNote : item);
@@ -2103,6 +2136,10 @@ export default function App() {
           <LibraryView
             projects={projectCatalog}
             items={libraryItems}
+            hasMoreLibrary={Boolean(libraryNextCursor)}
+            loadingMoreLibrary={libraryPageLoading}
+            libraryLoadError={libraryPageError}
+            onLoadMoreLibrary={loadMoreWorkspaceLibrary}
             focusItemId={focusedLibraryItemId}
             connections={directoryConnections}
             directoryPickerSupported={supportsDirectoryPicker()}
@@ -2127,7 +2164,7 @@ export default function App() {
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
-        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
+        {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
@@ -2150,6 +2187,10 @@ export default function App() {
           <ProjectFilesView
             project={activeProject}
             libraryItems={libraryItems}
+            hasMoreLibrary={Boolean(libraryNextCursor)}
+            loadingMoreLibrary={libraryPageLoading}
+            libraryLoadError={libraryPageError}
+            onLoadMoreLibrary={loadMoreWorkspaceLibrary}
             onBack={openProjectOverview}
             onOpenItem={(item) => void handleLibraryItem(item)}
             onImportFiles={(files, projectId) => void importFiles(files, projectId)}

@@ -9,6 +9,10 @@ interface ProjectFilesViewProps {
   onOpenItem: (item: LibraryItem) => void;
   onImportFiles: (files: File[], projectId: string) => void;
   onToggleProjectLink: (itemId: string, projectId: string) => void;
+  hasMoreLibrary?: boolean;
+  loadingMoreLibrary?: boolean;
+  libraryLoadError?: string | null;
+  onLoadMoreLibrary?: () => void;
 }
 
 function iconForKind(kind: string) {
@@ -18,7 +22,7 @@ function iconForKind(kind: string) {
   return File;
 }
 
-export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink }: ProjectFilesViewProps) {
+export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary }: ProjectFilesViewProps) {
   const [query, setQuery] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -56,6 +60,7 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
       </div>
 
       <label className="project-files-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files and artifacts" /></label>
+      {query.trim() && hasMoreLibrary ? <small className="notes-search-scope">Search covers loaded Library references. Load more below to include older items.</small> : null}
 
       {linkOpen ? (
         <div className="project-link-picker">
@@ -73,7 +78,7 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
       ) : null}
 
       <div className="project-files-section">
-        <div className="section-heading section-heading--compact"><div><span className="eyebrow">LINKED FROM LIBRARY</span><h2>{linked.length} personal files</h2></div><small>Reusable across projects</small></div>
+        <div className="section-heading section-heading--compact"><div><span className="eyebrow">LINKED FROM LIBRARY</span><h2>{linked.length}{hasMoreLibrary ? '+' : ''} loaded personal files</h2></div><small>Reusable across projects</small></div>
         <div className="project-file-list">
           {filteredLinked.length ? filteredLinked.map((item) => {
             const Icon = iconForKind(item.kind);
@@ -87,6 +92,9 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
             );
           }) : <div className="empty-section">No linked Library files match this search.</div>}
         </div>
+        {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library references: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
+        {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library references…</div> : null}
+        {!libraryLoadError && hasMoreLibrary ? <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more Library references'}</button> : null}
       </div>
 
       <div className="project-files-section">

@@ -12,12 +12,15 @@ const studyMaterial: LibraryItem = {
 describe('Study sessions use shared Library materials', () => {
   it('loads more saved-note sources on demand', () => {
     const onLoadMoreNotes = vi.fn();
+    const onLoadMoreLibrary = vi.fn();
     render(<StudyView
       libraryItems={[]}
       notes={[]}
       sessions={[]}
       hasMoreNotes
       onLoadMoreNotes={onLoadMoreNotes}
+      hasMoreLibrary
+      onLoadMoreLibrary={onLoadMoreLibrary}
       onOpenItem={vi.fn()}
       onBrowseLibrary={vi.fn()}
       onStartSession={vi.fn()}
@@ -30,6 +33,8 @@ describe('Study sessions use shared Library materials', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Load more saved Notes' }));
     expect(onLoadMoreNotes).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Load more Library sources' }));
+    expect(onLoadMoreLibrary).toHaveBeenCalledTimes(1);
   });
 
   it('exposes retry actions for failed session and card pages', async () => {
