@@ -44,4 +44,39 @@ describe('StudyView', () => {
       'A verified claim is distinct from its evidence.',
     ));
   });
+
+  it('opens the source research claim from its Study session', () => {
+    const session: StudySessionRecord = {
+      id: 'study-session-research',
+      track_id: 'claim-1',
+      track_title: 'A verified research claim',
+      material_id: 'claim-object-1',
+      material_project_name: 'Research project',
+      status: 'completed',
+      reflection: '',
+      started_at: '2026-10-02T00:00:00Z',
+      completed_at: '2026-10-02T01:00:00Z',
+    };
+    const onOpenResearchFinding = vi.fn();
+
+    render(
+      <StudyView
+        libraryItems={[]}
+        onOpenItem={vi.fn()}
+        onBrowseLibrary={vi.fn()}
+        onStartSession={vi.fn()}
+        sessions={[session]}
+        cards={[]}
+        onCompleteSession={vi.fn()}
+        onCreateCard={vi.fn().mockResolvedValue(undefined)}
+        onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+        onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+        onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+        onOpenResearchFinding={onOpenResearchFinding}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Research finding' }));
+    expect(onOpenResearchFinding).toHaveBeenCalledWith('claim-object-1', 'Research project');
+  });
 });
