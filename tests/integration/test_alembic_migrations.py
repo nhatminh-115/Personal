@@ -110,6 +110,26 @@ def test_alembic_upgrade_downgrade_cycle():
 
         routing_indexes = {idx["name"] for idx in inspector.get_indexes("routing_profiles")}
         assert "uq_routing_profiles_single_default" in routing_indexes
+        keyset_indexes = {
+            "sessions": {idx["name"] for idx in inspector.get_indexes("sessions")},
+            "messages": {idx["name"] for idx in inspector.get_indexes("messages")},
+            "workspace_projects": {idx["name"] for idx in inspector.get_indexes("workspace_projects")},
+            "workspace_objects": {idx["name"] for idx in inspector.get_indexes("workspace_objects")},
+            "workspace_edges": {idx["name"] for idx in inspector.get_indexes("workspace_edges")},
+        }
+        assert {
+            "ix_sessions_updated_id",
+            "ix_sessions_project_updated_id",
+        }.issubset(keyset_indexes["sessions"])
+        assert "ix_messages_session_created_id" in keyset_indexes["messages"]
+        assert "ix_workspace_projects_created_id" in keyset_indexes["workspace_projects"]
+        assert {
+            "ix_workspace_objects_project_created_id",
+            "ix_workspace_objects_personal_updated_id",
+            "ix_workspace_objects_personal_created_id",
+            "ix_workspace_objects_personal_card_created_id",
+        }.issubset(keyset_indexes["workspace_objects"])
+        assert "ix_workspace_edges_project_created_id" in keyset_indexes["workspace_edges"]
         with engine.connect() as connection:
             defaults = connection.execute(text(
                 "SELECT id FROM routing_profiles WHERE is_default = TRUE"
@@ -160,6 +180,8 @@ def test_alembic_upgrade_downgrade_cycle():
         inspector = inspect(engine)
         reupgraded_tables = set(inspector.get_table_names())
         assert expected_tables.issubset(reupgraded_tables)
+        reupgraded_indexes = {idx["name"] for idx in inspector.get_indexes("workspace_objects")}
+        assert "ix_workspace_objects_project_created_id" in reupgraded_indexes
         engine.dispose()
 
     finally:
