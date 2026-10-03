@@ -115,16 +115,35 @@ describe('workspace collection pagination', () => {
     expect(url.searchParams.get('cursor')).toBe('prior-cards');
   });
 
-  it('uses the same paged loader for automations', async () => {
-    const fetch = vi.fn()
-      .mockResolvedValueOnce(jsonResponse([{ id: 'automation-1' }], 'next-automations'))
-      .mockResolvedValueOnce(jsonResponse([{ id: 'automation-2' }]));
+  it('returns one automation page and its cursor for on-demand loading', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'automation-1' }], 'next-automations'));
     vi.stubGlobal('fetch', fetch);
 
-    const automations = await api.fetchAutomations();
+    const page = await api.fetchAutomations();
 
-    expect(automations.map((automation) => automation.id)).toEqual(['automation-1', 'automation-2']);
-    expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').searchParams.get('cursor')).toBe('next-automations');
+    expect(page).toEqual({ automations: [{ id: 'automation-1' }], nextCursor: 'next-automations' });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/automations');
+    expect(url.searchParams.get('page_size')).toBe('50');
+  });
+
+  it('batches automation status refreshes without fetching the full collection', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'automation/one' }]));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.fetchAutomationStatuses(['automation/one', 'automation-two'])).resolves.toEqual([{ id: 'automation/one' }]);
+    const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
+    expect(url.pathname).toBe('/v1/automations/status');
+    expect(url.searchParams.getAll('automation_ids')).toEqual(['automation/one', 'automation-two']);
+  });
+
+  it('fetches automation aggregate counts', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ total: 8, enabled: 6 }));
+    vi.stubGlobal('fetch', fetch);
+
+    await expect(api.fetchAutomationSummary()).resolves.toEqual({ total: 8, enabled: 6 });
+    expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/summary');
   });
 
   it('returns one automation run-history page and its next cursor', async () => {

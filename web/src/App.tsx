@@ -319,6 +319,15 @@ export default function App() {
   const savedNoteFingerprints = useRef(new Map<string, string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const automationsLoaded = useRef(false);
+  const [automationSummary, setAutomationSummary] = useState(() => {
+    const initial = loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations);
+    const live = initial.filter((item) => item.source === 'live');
+    return { total: live.length, enabled: live.filter((item) => item.enabled).length };
+  });
+  const [automationCursor, setAutomationCursor] = useState<string | null>(null);
+  const [automationPageLoading, setAutomationPageLoading] = useState(false);
+  const [automationPageError, setAutomationPageError] = useState<string | null>(null);
+  const automationPageRequest = useRef(false);
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() =>
     loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
       .map((thread) => ({ ...thread, loadingOlderMessages: false }))
@@ -334,6 +343,10 @@ export default function App() {
 
   const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
   const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
+
+  useEffect(() => {
+    void api.fetchAutomationSummary().then(setAutomationSummary).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!userProjects.length) return;
@@ -1872,6 +1885,7 @@ export default function App() {
     const record = await api.createAutomation(input);
     const item = automationFromRecord(record, projectCatalog);
     setAutomations((current) => [item, ...current.filter((entry) => entry.id !== item.id)]);
+    setAutomationSummary((current) => ({ total: current.total + 1, enabled: current.enabled + (item.enabled ? 1 : 0) }));
     return item;
   }, [automationFromRecord, projectCatalog]);
 
@@ -1881,6 +1895,9 @@ export default function App() {
       const record = await api.setAutomationEnabled(automation.id, enabled);
       const updated = automationFromRecord(record, projectCatalog);
       setAutomations((current) => current.map((item) => item.id === updated.id ? updated : item));
+      if (updated.enabled !== automation.enabled) {
+        setAutomationSummary((current) => ({ ...current, enabled: Math.max(0, current.enabled + (updated.enabled ? 1 : -1)) }));
+      }
     } catch (error) {
       pushToast('Could not update automation', executionErrorText(error));
     }
@@ -1890,8 +1907,8 @@ export default function App() {
     if (automation.source !== 'live' || !automation.enabled) return;
     try {
       const result = await api.runAutomation(automation.id);
-      void api.fetchAutomations().then((records) => {
-        const updated = records.find((record) => record.id === automation.id);
+      void api.fetchAutomationStatuses([automation.id]).then((records) => {
+        const updated = records[0];
         if (updated?.latest_execution?.event_id !== result.event_id) return;
         const item = automationFromRecord(updated, projectCatalog);
         setAutomations((current) => current.map((entry) => entry.id === item.id ? item : entry));
@@ -1904,8 +1921,8 @@ export default function App() {
 
   const refreshAutomationAfterApproval = useCallback(async (automationId: string) => {
     try {
-      const records = await api.fetchAutomations();
-      const record = records.find((item) => item.id === automationId);
+      const records = await api.fetchAutomationStatuses([automationId]);
+      const record = records[0];
       if (!record) return;
       const updated = automationFromRecord(record, projectCatalog);
       setAutomations((current) => current.map((item) => item.id === automationId ? updated : item));
@@ -1914,35 +1931,53 @@ export default function App() {
     }
   }, [automationFromRecord, projectCatalog, pushToast]);
 
-  useEffect(() => {
-    if (surface !== 'automations' || automationsLoaded.current) return;
-    let active = true;
-    void api.fetchAutomations().then((records) => {
-      if (!active || !Array.isArray(records)) return;
+  const loadAutomationPage = useCallback(async (cursor?: string | null) => {
+    if (automationPageRequest.current) return;
+    automationPageRequest.current = true;
+    setAutomationPageLoading(true);
+    setAutomationPageError(null);
+    try {
+      const page = await api.fetchAutomations(cursor);
+      const records = page.automations.map((record) => automationFromRecord(record, projectCatalog));
       setAutomations((current) => {
         const examples = current.filter((item) => item.source !== 'live');
-        return [...records.map((record) => automationFromRecord(record, projectCatalog)), ...examples];
+        if (!cursor) return [...records, ...examples];
+        const merged = new Map(current.map((item) => [item.id, item]));
+        records.forEach((item) => merged.set(item.id, item));
+        return [...merged.values()];
       });
+      setAutomationCursor(page.nextCursor);
       automationsLoaded.current = true;
-    }).catch((error: unknown) => {
-      if (active) pushToast('Could not load automations', executionErrorText(error));
-    });
-    return () => { active = false; };
-  }, [automationFromRecord, projectCatalog, pushToast, surface]);
+    } catch (error) {
+      setAutomationPageError(executionErrorText(error));
+      if (!cursor) pushToast('Could not load automations', executionErrorText(error));
+    } finally {
+      automationPageRequest.current = false;
+      setAutomationPageLoading(false);
+    }
+  }, [automationFromRecord, projectCatalog, pushToast]);
 
-  const hasAutomationInFlight = automations.some((item) => item.source === 'live' && ['queued', 'running'].includes(item.latestExecution?.status ?? ''));
   useEffect(() => {
-    if (surface !== 'automations' || !automationsLoaded.current || !hasAutomationInFlight) return;
+    if (surface !== 'automations' || automationsLoaded.current || automationPageLoading) return;
+    void loadAutomationPage();
+  }, [automationPageLoading, loadAutomationPage, surface]);
+
+  const inFlightAutomationIds = automations
+    .filter((item) => item.source === 'live' && ['queued', 'running'].includes(item.latestExecution?.status ?? ''))
+    .map((item) => item.id);
+  const inFlightAutomationKey = inFlightAutomationIds.join('|');
+  useEffect(() => {
+    if (surface !== 'automations' || !automationsLoaded.current || !inFlightAutomationKey) return;
     const timer = window.setInterval(() => {
-      void api.fetchAutomations().then((records) => {
+      void api.fetchAutomationStatuses(inFlightAutomationKey.split('|')).then((records) => {
+        const updates = new Map(records.map((record) => [record.id, automationFromRecord(record, projectCatalog)]));
         setAutomations((current) => {
-          const examples = current.filter((item) => item.source !== 'live');
-          return [...records.map((record) => automationFromRecord(record, projectCatalog)), ...examples];
+          return current.map((item) => updates.get(item.id) ?? item);
         });
       }).catch(() => {});
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [automationFromRecord, hasAutomationInFlight, projectCatalog, surface]);
+  }, [automationFromRecord, inFlightAutomationKey, projectCatalog, surface]);
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
@@ -2120,7 +2155,7 @@ export default function App() {
           <GlobalHome
             projects={projectCatalog}
             libraryItems={libraryItems}
-            automations={automations}
+            activeAutomationCount={automationSummary.enabled}
             noteCount={notes.length}
             onOpenProject={openProject}
             onOpenProjects={() => handleSidebarNavigate('projects')}
@@ -2165,7 +2200,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (
@@ -2340,7 +2375,7 @@ export default function App() {
           projectName={activeProject?.name ?? null}
           libraryItems={libraryItems}
           notes={notes}
-          automations={automations}
+          activeAutomationCount={automationSummary.enabled}
           onClose={() => setAuraOpen(false)}
           onOpenLibrary={() => { setAuraOpen(false); handleSidebarNavigate('library'); }}
           onOpenNotes={() => { setAuraOpen(false); handleSidebarNavigate('notes'); }}

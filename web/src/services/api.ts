@@ -398,8 +398,28 @@ export const api = {
     }));
   },
 
-  async fetchAutomations(): Promise<AutomationRecordResponse[]> {
-    return fetchAllCursorPages<AutomationRecordResponse>('/v1/automations');
+  async fetchAutomations(cursor?: string | null, pageSize = 50): Promise<{
+    automations: AutomationRecordResponse[];
+    nextCursor: string | null;
+  }> {
+    const params = new URLSearchParams({ page_size: String(pageSize) });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/automations?${params.toString()}`);
+    return {
+      automations: await handleResponse<AutomationRecordResponse[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
+  },
+
+  async fetchAutomationStatuses(ids: string[]): Promise<AutomationRecordResponse[]> {
+    if (ids.length === 0) return [];
+    const params = new URLSearchParams();
+    ids.forEach((id) => params.append('automation_ids', id));
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/status?${params.toString()}`));
+  },
+
+  async fetchAutomationSummary(): Promise<{ total: number; enabled: number }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/summary`));
   },
 
   async fetchAutomationRuns(id: string, pageSize = 10, cursor?: string | null): Promise<{

@@ -80,6 +80,39 @@ async def test_automation_collection_rejects_invalid_cursor(async_client):
 
 
 @pytest.mark.asyncio
+async def test_automation_status_refresh_is_batched_and_scoped(async_client):
+    created = []
+    for name in ("First status", "Second status", "Unrequested status"):
+        response = await async_client.post("/v1/automations", json={
+            "name": name,
+            "instruction": "Refresh this routine status.",
+            "interval_seconds": 3600,
+        })
+        created.append(response.json())
+    queued = await async_client.post(f"/v1/automations/{created[0]['id']}/run")
+
+    response = await async_client.get("/v1/automations/status", params=[
+        ("automation_ids", created[0]["id"]),
+        ("automation_ids", created[1]["id"]),
+        ("automation_ids", "missing"),
+    ])
+
+    assert response.status_code == 200, response.text
+    records = response.json()
+    assert {record["id"] for record in records} == {created[0]["id"], created[1]["id"]}
+    status_by_id = {record["id"]: record["latest_execution"] for record in records}
+    assert status_by_id[created[0]["id"]]["event_id"] == queued.json()["event_id"]
+    assert status_by_id[created[0]["id"]]["status"] == "queued"
+    assert status_by_id[created[1]["id"]] is None
+
+    summary = await async_client.get("/v1/automations/summary")
+    assert summary.json() == {"total": 3, "enabled": 3}
+    await async_client.put(f"/v1/automations/{created[1]['id']}", json={"enabled": False})
+    summary = await async_client.get("/v1/automations/summary")
+    assert summary.json() == {"total": 3, "enabled": 2}
+
+
+@pytest.mark.asyncio
 async def test_run_now_blocks_overlapping_queued_or_waiting_runs(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Single-flight routine",
