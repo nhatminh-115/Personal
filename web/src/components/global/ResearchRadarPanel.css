@@ -111,6 +111,8 @@
 .research-radar__relations span { overflow: hidden; color: #79cbd2; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .research-radar__card a { display: inline-flex; align-items: center; gap: 5px; margin-top: 9px; color: #79dce2; font-size: 10px; text-decoration: none; }
 .research-radar__card a:hover { color: #c1fbff; text-decoration: underline; }
+.research-radar__study { display: inline-flex; align-items: center; gap: 5px; margin: 8px 8px 0 0; border: 1px solid rgba(94, 234, 240, .2); border-radius: 7px; padding: 5px 8px; background: rgba(94, 234, 240, .07); color: #a9e9ed; font: inherit; font-size: 10px; cursor: pointer; }
+.research-radar__study:hover { border-color: rgba(94, 234, 240, .42); background: rgba(94, 234, 240, .13); }
 .research-radar__column-empty { margin: 0; padding: 12px; color: #778fa0; font-size: 11px; }
 .research-radar__empty { display: flex; align-items: center; gap: 9px; min-height: 70px; color: #9db0bd; font-size: 12px; }
 .research-radar__empty svg { flex: none; color: #66d9e1; }
