@@ -402,6 +402,14 @@ export const api = {
     return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
   },
 
+  async fetchStudyReviewQueuePage(cursor?: string | null): Promise<{ items: StudyCardRecord[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ page_size: '50' });
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/study/review-queue?${params.toString()}`);
+    const items = await handleResponse<StudyCardRecord[]>(response);
+    return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
+  },
+
   async createStudyCard(sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards`, {
       method: 'POST',

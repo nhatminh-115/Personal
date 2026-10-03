@@ -117,4 +117,32 @@ describe('StudyView', () => {
     await waitFor(() => expect(onReviewCard).toHaveBeenCalledWith('card-1', 'study-session-cards', 'remembered'));
     expect(await screen.findByText(/1 review · next/)).toBeInTheDocument();
   });
+
+  it('shows unreviewed cards in the global review queue', () => {
+    const card: StudyCardRecord = {
+      id: 'queue-card', session_id: 'older-session', question: 'What is a keyset cursor?', answer: 'A stable position in a sorted collection.',
+      created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', review_count: 0,
+    };
+
+    render(
+      <StudyView
+        libraryItems={[]}
+        onOpenItem={vi.fn()}
+        onBrowseLibrary={vi.fn()}
+        onStartSession={vi.fn()}
+        sessions={[]}
+        cards={[]}
+        dueCards={[card]}
+        onCompleteSession={vi.fn()}
+        onCreateCard={vi.fn().mockResolvedValue(undefined)}
+        onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+        onReviewCard={vi.fn().mockResolvedValue(card)}
+        onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+        onSaveReflection={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByRole('region', { name: 'Cards due for review' })).toHaveTextContent('What is a keyset cursor?');
+    expect(screen.getByText('Earlier Study session')).toBeInTheDocument();
+  });
 });
