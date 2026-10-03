@@ -165,6 +165,16 @@ describe('workspace collection pagination', () => {
     expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST' });
   });
 
+  it('duplicates an automation through a separate endpoint', async () => {
+    const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 'automation-copy' }));
+    vi.stubGlobal('fetch', fetch);
+
+    await api.duplicateAutomation('automation/one');
+
+    expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/duplicate');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+  });
+
   it('batches automation status refreshes without fetching the full collection', async () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse([{ id: 'automation/one' }]));
     vi.stubGlobal('fetch', fetch);

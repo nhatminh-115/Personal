@@ -2038,6 +2038,19 @@ export default function App() {
     }
   }, [automationFromRecord, includeArchivedAutomations, projectCatalog, pushToast]);
 
+  const duplicateAutomation = useCallback(async (automation: AutomationRecord) => {
+    if (automation.source !== 'live') return;
+    try {
+      const record = await api.duplicateAutomation(automation.id);
+      const duplicate = automationFromRecord(record, projectCatalog);
+      setAutomations((current) => [duplicate, ...current.filter((item) => item.id !== duplicate.id)]);
+      setAutomationSummary((current) => ({ ...current, total: current.total + 1 }));
+      pushToast('Automation duplicated', 'The new copy is paused and has separate run history.');
+    } catch (error) {
+      pushToast('Could not duplicate automation', executionErrorText(error));
+    }
+  }, [automationFromRecord, projectCatalog, pushToast]);
+
   const setAutomationEnabled = useCallback(async (automation: AutomationRecord, enabled: boolean) => {
     if (automation.source !== 'live') return;
     try {
@@ -2367,7 +2380,7 @@ export default function App() {
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
-        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
+        {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
 
         {surface === 'project-overview' && activeProject ? (

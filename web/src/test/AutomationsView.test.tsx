@@ -88,6 +88,15 @@ describe('AutomationsView', () => {
     expect(onSetArchived).toHaveBeenCalledWith(archived, false);
   });
 
+  it('offers a paused duplicate with independent run history', () => {
+    const onDuplicate = vi.fn();
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onDuplicate={onDuplicate} onCreate={vi.fn()} onUpdate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicate' }));
+
+    expect(onDuplicate).toHaveBeenCalledWith(liveAutomation);
+  });
+
   it('reviews sequential automation approvals and refreshes the run after the final decision', async () => {
     const firstApproval = {
       id: 'approval-1', run_id: 'run-1', session_id: 'session-1', tool_call_id: 'call-1',
