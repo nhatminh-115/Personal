@@ -343,6 +343,38 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
 
 
 @pytest.mark.asyncio
+async def test_workspace_summary_counts_saved_and_project_linked_collections(async_client):
+    note = await async_client.post("/v1/workspace/notes", json={
+        "title": "Linked note", "body": "Note body", "project_names": ["aura"],
+    })
+    await async_client.post("/v1/workspace/notes", json={"title": "Personal note", "body": "Private"})
+    linked_file = await async_client.post("/v1/workspace/library", json={
+        "name": "linked.pdf", "kind": "PDF", "collection": "Research", "project_names": ["aura"],
+    })
+    await async_client.post("/v1/workspace/library", json={
+        "name": "personal.pdf", "kind": "PDF", "collection": "Books", "project_names": [],
+    })
+    assert note.status_code == 201
+    assert linked_file.status_code == 201
+
+    global_summary = await async_client.get("/v1/workspace/summary")
+    project_summary = await async_client.get("/v1/workspace/summary", params={"project_name": "aura"})
+
+    assert global_summary.status_code == 200
+    assert global_summary.json() == {
+        "note_count": 2,
+        "library_count": 2,
+        "linked_library_count": 1,
+        "project_name": None,
+        "project_note_count": 0,
+        "project_library_count": 0,
+    }
+    assert project_summary.json()["project_name"] == "aura"
+    assert project_summary.json()["project_note_count"] == 1
+    assert project_summary.json()["project_library_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_project_context_can_select_a_personal_note_and_board_delete_only_unlinks(async_client):
     from app.models.base import ModelRole
     from app.models.router import model_router

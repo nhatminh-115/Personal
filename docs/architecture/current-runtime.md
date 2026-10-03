@@ -102,8 +102,10 @@ provenance. Semantic relationships may cycle; context-flow edges are validated
 to remain acyclic. Board layout is stored separately from object relationships.
 Project, personal note, Library, Study, and Automation collection reads use
 bounded keyset pages; the API returns arrays with an `X-Next-Cursor` response
-header, and the workspace client transparently loads subsequent pages.
-Automation run history is also cursor-paged, with older runs loaded on demand.
+header. Notes, Library references, and automations load older pages on demand;
+aggregate counts come from lightweight summary endpoints instead of the pages
+currently held in the browser. Automation run history is also cursor-paged,
+with older runs loaded on demand.
 
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context

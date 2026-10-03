@@ -297,6 +297,14 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof api.fetchWorkspaceSummary>>>(() => ({
+    note_count: 0,
+    library_count: 0,
+    linked_library_count: 0,
+    project_name: null,
+    project_note_count: 0,
+    project_library_count: 0,
+  }));
   const [notesNextCursor, setNotesNextCursor] = useState<string | null>(null);
   const [notesPageLoading, setNotesPageLoading] = useState(false);
   const [notesPageError, setNotesPageError] = useState<string | null>(null);
@@ -343,6 +351,24 @@ export default function App() {
 
   const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
   const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
+
+  const workspaceSummaryRefreshKey = JSON.stringify({
+    project: activeProject?.name ?? null,
+    notes: notes.map((note) => `${note.id}:${note.projectIds.join(',')}`),
+    library: libraryItems.map((item) => `${item.id}:${(item.projectLinks ?? []).join(',')}`),
+  });
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      void api.fetchWorkspaceSummary(activeProject?.name).then((summary) => {
+        if (active) setWorkspaceSummary(summary);
+      }).catch(() => {});
+    }, 250);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [activeProject?.name, workspaceSummaryRefreshKey]);
 
   useEffect(() => {
     void api.fetchAutomationSummary().then(setAutomationSummary).catch(() => {});
@@ -2072,8 +2098,13 @@ export default function App() {
     handleSidebarNavigate('study');
   };
 
-  const projectFileCount = activeProjectId ? libraryItems.filter((item) => item.projectLinks?.includes(activeProjectId)).length + projectArtifacts.filter((item) => item.projectId === activeProjectId).length : 0;
-  const projectNoteCount = activeProjectId ? notes.filter((note) => note.projectIds.includes(activeProjectId)).length : 0;
+  const hasActiveProjectSummary = Boolean(activeProject && workspaceSummary.project_name === activeProject.name);
+  const projectFileCount = activeProjectId
+    ? (hasActiveProjectSummary ? workspaceSummary.project_library_count : 0) + projectArtifacts.filter((item) => item.projectId === activeProjectId).length
+    : 0;
+  const projectNoteCount = activeProjectId
+    ? (hasActiveProjectSummary ? workspaceSummary.project_note_count : 0) + notes.filter((note) => note.source === 'demo' && note.projectIds.includes(activeProjectId)).length
+    : 0;
 
   return (
     <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
@@ -2082,7 +2113,7 @@ export default function App() {
         collapsed={sidebarCollapsed}
         active={activeNav}
         activeProjectId={activeProjectId}
-        libraryCount={libraryItems.length}
+        libraryCount={workspaceSummary.library_count}
         onCollapsedChange={setSidebarCollapsed}
         onNavigate={handleSidebarNavigate}
         onProjectOpen={openProject}
@@ -2155,8 +2186,10 @@ export default function App() {
           <GlobalHome
             projects={projectCatalog}
             libraryItems={libraryItems}
+            libraryCount={workspaceSummary.library_count}
+            linkedLibraryCount={workspaceSummary.linked_library_count}
             activeAutomationCount={automationSummary.enabled}
-            noteCount={notes.length}
+            noteCount={workspaceSummary.note_count}
             onOpenProject={openProject}
             onOpenProjects={() => handleSidebarNavigate('projects')}
             onOpenLibrary={() => handleSidebarNavigate('library')}
@@ -2376,6 +2409,8 @@ export default function App() {
           libraryItems={libraryItems}
           notes={notes}
           activeAutomationCount={automationSummary.enabled}
+          libraryCount={workspaceSummary.library_count}
+          noteCount={workspaceSummary.note_count}
           onClose={() => setAuraOpen(false)}
           onOpenLibrary={() => { setAuraOpen(false); handleSidebarNavigate('library'); }}
           onOpenNotes={() => { setAuraOpen(false); handleSidebarNavigate('notes'); }}

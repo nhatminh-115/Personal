@@ -4,6 +4,8 @@ import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 interface GlobalHomeProps {
   projects: ProjectRecord[];
   libraryItems: LibraryItem[];
+  libraryCount: number;
+  linkedLibraryCount: number;
   activeAutomationCount: number;
   noteCount: number;
   onOpenProject: (projectId: string) => void;
@@ -19,7 +21,7 @@ function greeting() {
   return 'Good evening';
 }
 
-export function GlobalHome({ projects, libraryItems, activeAutomationCount, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
+export function GlobalHome({ projects, libraryItems, libraryCount, linkedLibraryCount, activeAutomationCount, noteCount, onOpenProject, onOpenProjects, onOpenLibrary, onOpenFile }: GlobalHomeProps) {
   const recent = projects.slice(0, 3);
   const recentFiles = libraryItems.slice(0, 4);
 
@@ -68,8 +70,8 @@ export function GlobalHome({ projects, libraryItems, activeAutomationCount, note
         <section className="home-panel home-panel--ambient">
           <span className="eyebrow">WORKSPACE PULSE</span>
           <div className="ambient-stat"><Sparkles size={16} /><div><strong>{activeAutomationCount} active automations</strong><span>Across personal + project scopes</span></div></div>
-          <div className="ambient-stat"><BookOpenText size={16} /><div><strong>{libraryItems.length} library artifacts</strong><span>Reusable across {projects.length} projects</span></div></div>
-          <div className="ambient-note"><span>Linked knowledge</span><strong>{noteCount} notes · {libraryItems.filter((item) => item.projectLinks?.length).length} linked files</strong></div>
+          <div className="ambient-stat"><BookOpenText size={16} /><div><strong>{libraryCount} saved Library references</strong><span>Reusable across {projects.length} projects</span></div></div>
+          <div className="ambient-note"><span>Linked knowledge</span><strong>{noteCount} notes · {linkedLibraryCount} linked files</strong></div>
         </section>
       </div>
     </section>

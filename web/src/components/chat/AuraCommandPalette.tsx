@@ -7,6 +7,8 @@ interface AuraCommandPaletteProps {
   libraryItems: LibraryItem[];
   notes: WorkspaceNote[];
   activeAutomationCount: number;
+  libraryCount: number;
+  noteCount: number;
   onClose: () => void;
   onOpenLibrary?: () => void;
   onOpenNotes?: () => void;
@@ -20,15 +22,15 @@ const suggestions = [
   'Compare the evidence across my active AI projects',
 ];
 
-export function AuraCommandPalette({ projectName, libraryItems, notes, activeAutomationCount, onClose, onOpenLibrary, onOpenNotes, onOpenAutomations, onOpenProject }: AuraCommandPaletteProps) {
+export function AuraCommandPalette({ projectName, libraryItems, notes, activeAutomationCount, libraryCount, noteCount, onClose, onOpenLibrary, onOpenNotes, onOpenAutomations, onOpenProject }: AuraCommandPaletteProps) {
   const [query, setQuery] = useState('');
   const [submitted, setSubmitted] = useState<string | null>(null);
   const scope = projectName ? `Current project · ${projectName}` : 'Personal workspace';
   const linkedFiles = libraryItems.filter((item) => item.projectLinks?.length);
   const answer = useMemo(() => {
     if (!submitted) return null;
-    return `I searched the local workspace manifest: ${libraryItems.length} Library files, ${notes.length} notes, and ${activeAutomationCount} active automations. The strongest reusable context still comes from explicitly linked project files/notes rather than hidden chat history, so you can open the source object directly or continue inside its project.`;
-  }, [activeAutomationCount, libraryItems.length, notes.length, submitted]);
+    return `The workspace has ${libraryCount} saved Library references, ${noteCount} saved Notes, and ${activeAutomationCount} active automations. The strongest reusable context still comes from explicitly linked project files/notes rather than hidden chat history, so you can open the source object directly or continue inside its project.`;
+  }, [activeAutomationCount, libraryCount, noteCount, submitted]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -74,8 +76,8 @@ export function AuraCommandPalette({ projectName, libraryItems, notes, activeAut
 
             <div className="aura-command__sources">
               <button type="button" onClick={() => onOpenProject?.('stateful')}><FolderKanban size={13} /><span><strong>Stateful Architecture</strong><small>Project · multiple chats</small></span><ArrowRight size={12} /></button>
-              <button type="button" onClick={onOpenLibrary}><Library size={13} /><span><strong>{linkedFiles[0]?.name ?? 'Personal Library'}</strong><small>{libraryItems.length} files · reusable across projects</small></span><ArrowRight size={12} /></button>
-              <button type="button" onClick={onOpenNotes}><NotebookPen size={13} /><span><strong>{notes[0]?.title ?? 'Workspace Notes'}</strong><small>{notes.length} notes · project links available</small></span><ArrowRight size={12} /></button>
+              <button type="button" onClick={onOpenLibrary}><Library size={13} /><span><strong>{linkedFiles[0]?.name ?? 'Personal Library'}</strong><small>{libraryCount} saved references · reusable across projects</small></span><ArrowRight size={12} /></button>
+              <button type="button" onClick={onOpenNotes}><NotebookPen size={13} /><span><strong>{notes[0]?.title ?? 'Workspace Notes'}</strong><small>{noteCount} saved Notes · project links available</small></span><ArrowRight size={12} /></button>
               <button type="button" onClick={onOpenAutomations}><Workflow size={13} /><span><strong>Automations</strong><small>{activeAutomationCount} enabled routines</small></span><ArrowRight size={12} /></button>
               <button type="button" onClick={onOpenLibrary}><BookOpen size={13} /><span><strong>Study materials</strong><small>Backed by Library artifacts</small></span><ArrowRight size={12} /></button>
             </div>
