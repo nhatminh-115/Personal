@@ -34,7 +34,23 @@ function graph(objects: WorkspaceObject[], edges: WorkspaceGraph['edges'] = [], 
 }
 
 describe('Research Radar', () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('requests only research artifacts and provenance edges from the graph API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(graph([])), { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.fetchWorkspaceResearchPage('Research project');
+
+    const requestedUrl = new URL(fetchMock.mock.calls[0][0] as string, 'http://localhost');
+    expect(requestedUrl.pathname).toBe('/v1/workspace/projects/Research%20project/graph');
+    expect(requestedUrl.searchParams.getAll('object_types')).toEqual(['research_source', 'research_evidence', 'research_claim']);
+    expect(requestedUrl.searchParams.getAll('edge_families')).toEqual(['provenance']);
+    expect(requestedUrl.searchParams.get('include_project_state')).toBe('false');
+  });
 
   it('shows source, evidence, verified claim, and their saved provenance links', async () => {
     const source = researchObject('source-1', 'research_source', 'A durable workspace study', {
@@ -44,7 +60,7 @@ describe('Research Radar', () => {
     const claim = researchObject('claim-1', 'research_claim', 'source_supported_fact · A measured finding', {
       verification_status: 'verified',
     }, 'Claim type: source_supported_fact\nVerification: verified\n\nA measured finding.');
-    vi.spyOn(api, 'fetchWorkspaceGraphPage').mockResolvedValue(graph([source, evidence, claim], [
+    vi.spyOn(api, 'fetchWorkspaceResearchPage').mockResolvedValue(graph([source, evidence, claim], [
       { id: 'edge-1', project_name: 'Research project', source_object_id: 'source-1', target_object_id: 'evidence-1', relation_type: 'contains_evidence', edge_family: 'provenance', created_by: 'research', metadata_json: {}, created_at: '2026-10-01T00:00:00Z' },
       { id: 'edge-2', project_name: 'Research project', source_object_id: 'evidence-1', target_object_id: 'claim-1', relation_type: 'supports_claim', edge_family: 'provenance', created_by: 'research', metadata_json: {}, created_at: '2026-10-01T00:00:00Z' },
     ]));
@@ -60,7 +76,7 @@ describe('Research Radar', () => {
     expect(screen.getByText('verified')).toBeInTheDocument();
     expect(screen.getByText(/contains evidence · Evidence · A durable workspace study/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Open source' })).toHaveAttribute('href', 'https://example.org/paper');
-    expect(api.fetchWorkspaceGraphPage).toHaveBeenCalledWith('Research project');
+    expect(api.fetchWorkspaceResearchPage).toHaveBeenCalledWith('Research project');
     fireEvent.click(screen.getByRole('button', { name: 'Study this finding' }));
     expect(onStudy).toHaveBeenCalledWith('claim-1', 'source_supported_fact · A measured finding', 'Research project');
     fireEvent.click(screen.getAllByRole('button', { name: 'Open in Board' })[1]);
@@ -70,8 +86,8 @@ describe('Research Radar', () => {
   it('loads older graph pages on demand and excludes untrusted URL schemes', async () => {
     const first = researchObject('source-1', 'research_source', 'First source', { status: 'selected', url: 'javascript:alert(1)' });
     const older = researchObject('claim-2', 'research_claim', 'Older claim', { verification_status: 'qualified' }, 'A qualified result.');
-    const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
-      .mockResolvedValueOnce(graph([first, researchObject('message-1', 'conversation_turn', 'Chat turn')], [], { objects: 'older-objects' }))
+    const fetchPage = vi.spyOn(api, 'fetchWorkspaceResearchPage')
+      .mockResolvedValueOnce(graph([first], [], { objects: 'older-objects' }))
       .mockResolvedValueOnce(graph([older], [], {}));
 
     render(<ResearchRadarPanel projects={savedProjects} />);
@@ -110,8 +126,8 @@ describe('Research Radar', () => {
   });
 
   it('offers pagination when the newest project page has no research objects', async () => {
-    const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
-      .mockResolvedValueOnce(graph([researchObject('chat-1', 'conversation_turn', 'Recent chat')], [], { objects: 'older-objects' }))
+    const fetchPage = vi.spyOn(api, 'fetchWorkspaceResearchPage')
+      .mockResolvedValueOnce(graph([], [], { objects: 'older-objects' }))
       .mockResolvedValueOnce(graph([researchObject('claim-1', 'research_claim', 'Older verified claim', { verification_status: 'verified' })]));
 
     render(<ResearchRadarPanel projects={savedProjects} />);

@@ -111,8 +111,9 @@ the pages currently held in the browser. Automation run history is also
 cursor-paged, with older runs loaded on demand.
 
 The Library's Research collection includes a read-only Research Radar for saved
-project graphs. It presents persisted research sources, evidence, claims, and
-their provenance links using bounded graph pages; it does not infer new
+project graphs. It requests bounded graph pages filtered to research sources,
+evidence, claims, and provenance edges, so unrelated conversation objects do
+not consume its pages. It does not infer new
 relationships or modify research artifacts. Each artifact can open at its saved
 object in the project Board. Verified claims can start a Study session through
 the existing Study API; qualified or unsupported claims cannot. Study history

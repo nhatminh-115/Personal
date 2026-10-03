@@ -64,7 +64,7 @@ export function ResearchRadarPanel({ projects, onStudyResearchClaim, onOpenProje
     if (!projectName) return () => { active = false; };
 
     setLoading(true);
-    void api.fetchWorkspaceGraphPage(projectName).then((page) => {
+    void api.fetchWorkspaceResearchPage(projectName).then((page) => {
       if (!active) return;
       setObjects(page.objects.filter((object) => researchObjectTypes.has(object.object_type)));
       setEdges(page.edges.filter((edge) => edge.edge_family === 'provenance'));
@@ -97,7 +97,7 @@ export function ResearchRadarPanel({ projects, onStudyResearchClaim, onOpenProje
     setLoadingMore(true);
     setError(null);
     try {
-      const page = await api.fetchWorkspaceGraphPage(projectName, { object: objectCursor, edge: edgeCursor });
+      const page = await api.fetchWorkspaceResearchPage(projectName, { object: objectCursor, edge: edgeCursor });
       setObjects((current) => {
         const ids = new Set(current.map((object) => object.id));
         return [...current, ...page.objects.filter((object) => researchObjectTypes.has(object.object_type) && !ids.has(object.id))];
@@ -147,7 +147,7 @@ export function ResearchRadarPanel({ projects, onStudyResearchClaim, onOpenProje
       ) : !researchObjects.length ? (
         <div className="research-radar__empty">
           <BookOpenText size={18} />
-          <span>{objectCursor || edgeCursor ? 'No Research artifacts on this page. Older project objects may contain saved sources and claims.' : 'No Research artifacts in this project yet. Research sources and verified claims appear here after a live or deterministic Research run.'}</span>
+          <span>{objectCursor || edgeCursor ? 'No Research artifacts on this page. Older research artifacts may be available.' : 'No Research artifacts in this project yet. Research sources and verified claims appear here after a live or deterministic Research run.'}</span>
           {objectCursor || edgeCursor ? <button className="research-radar__more" type="button" disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? <LoaderCircle size={14} className="research-radar__spin" /> : <ArrowDown size={14} />} Load older research artifacts</button> : null}
         </div>
       ) : (
