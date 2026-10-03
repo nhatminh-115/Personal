@@ -289,6 +289,29 @@ export const api = {
     return { ...graph, layout };
   },
 
+  async fetchWorkspaceResearchPage(projectName: string, cursors?: {
+    object?: string | null;
+    edge?: string | null;
+  }): Promise<WorkspaceGraph> {
+    const params = new URLSearchParams({
+      object_page_size: '50',
+      edge_page_size: '250',
+      newest_first: 'true',
+      include_project_state: 'false',
+    });
+    for (const objectType of ['research_source', 'research_evidence', 'research_claim']) {
+      params.append('object_types', objectType);
+    }
+    params.append('edge_families', 'provenance');
+    if (cursors?.object) params.set('object_cursor', cursors.object);
+    else if (cursors) params.set('objects_exhausted', 'true');
+    if (cursors?.edge) params.set('edge_cursor', cursors.edge);
+    else if (cursors) params.set('edges_exhausted', 'true');
+    return handleResponse(await fetch(
+      `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
+    ));
+  },
+
   async fetchWorkspaceObjectPage(projectName: string, cursor?: string | null, pageSize = 50): Promise<{
     objects: WorkspaceGraph['objects'];
     nextCursor: string | null;

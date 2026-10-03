@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.memory.service import SQLMemoryService
-from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceObjectModel
+from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, WorkspaceEdgeModel, WorkspaceObjectModel
 from app.core.errors import ContextSelectionError
 from app.memory.context_compiler import MAX_COMPILED_OBJECTS, WorkspaceContextCompiler
 from app.api.schemas import MAX_WORKSPACE_LAYOUT_BYTES, MAX_WORKSPACE_METADATA_BYTES, WorkspaceLayoutWrite, WorkspaceObjectCreate
@@ -167,6 +167,51 @@ async def test_workspace_graph_can_page_newest_objects_before_older_objects(asyn
         },
     )
     assert [item["id"] for item in older.json()["objects"]] == [item["id"] for item in reversed(all_objects)][2:4]
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_filters_object_types_and_edge_families_before_pagination(async_client, test_db_session):
+    project_name = "research-graph-filter"
+    created_at = datetime.now(timezone.utc)
+    objects = [
+        WorkspaceObjectModel(id="research-claim-new", project_name=project_name, object_type="research_claim", created_by="research", title="New claim", content="", metadata_json={}, created_at=created_at, updated_at=created_at),
+        WorkspaceObjectModel(id="research-claim-old", project_name=project_name, object_type="research_claim", created_by="research", title="Old claim", content="", metadata_json={}, created_at=created_at - timedelta(seconds=1), updated_at=created_at - timedelta(seconds=1)),
+        WorkspaceObjectModel(id="research-chat", project_name=project_name, object_type="conversation_turn", created_by="assistant", title="Chat turn", content="", metadata_json={}, created_at=created_at + timedelta(seconds=1), updated_at=created_at + timedelta(seconds=1)),
+    ]
+    test_db_session.add_all(objects)
+    test_db_session.add_all([
+        WorkspaceEdgeModel(id="research-provenance-edge", project_name=project_name, source_object_id="research-claim-new", target_object_id="research-claim-old", relation_type="supports_claim", edge_family="provenance", created_by="research", metadata_json={}, created_at=created_at),
+        WorkspaceEdgeModel(id="research-semantic-edge", project_name=project_name, source_object_id="research-claim-new", target_object_id="research-claim-old", relation_type="related_to", edge_family="semantic", created_by="user", metadata_json={}, created_at=created_at + timedelta(seconds=1)),
+    ])
+    await test_db_session.commit()
+
+    first_response = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={"object_types": ["research_claim", "research_evidence"], "edge_families": ["provenance"], "object_page_size": 1, "newest_first": "true", "include_project_state": "false"},
+    )
+    assert first_response.status_code == 200
+    first = first_response.json()
+    assert [item["id"] for item in first["objects"]] == ["research-claim-new"]
+    assert [edge["id"] for edge in first["edges"]] == ["research-provenance-edge"]
+    assert first["objects_next_cursor"]
+
+    second_response = await async_client.get(
+        f"/v1/workspace/projects/{project_name}/graph",
+        params={"object_types": ["research_claim", "research_evidence"], "edge_families": ["provenance"], "object_page_size": 1, "newest_first": "true", "object_cursor": first["objects_next_cursor"], "edges_exhausted": "true", "include_project_state": "false"},
+    )
+    assert second_response.status_code == 200
+    assert [item["id"] for item in second_response.json()["objects"]] == ["research-claim-old"]
+
+
+@pytest.mark.asyncio
+async def test_workspace_graph_rejects_unknown_edge_family_filter(async_client):
+    response = await async_client.get(
+        "/v1/workspace/projects/research-graph-filter/graph",
+        params={"edge_families": "invented"},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"] == "Unsupported workspace edge family filter."
 
 
 @pytest.mark.asyncio

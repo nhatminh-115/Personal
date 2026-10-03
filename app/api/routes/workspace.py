@@ -731,14 +731,20 @@ async def get_workspace_graph(
     execution_page_size: int = Query(default=MAX_EXECUTION_GRAPH_RUNS, ge=1, le=MAX_EXECUTION_GRAPH_RUNS),
     object_cursor: str | None = Query(default=None, max_length=512),
     object_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_OBJECTS_PER_PAGE),
+    object_types: list[str] | None = Query(default=None, max_length=16),
     newest_first: bool = Query(default=False),
     objects_exhausted: bool = Query(default=False),
     edge_cursor: str | None = Query(default=None, max_length=512),
     edge_page_size: int = Query(default=250, ge=1, le=MAX_WORKSPACE_GRAPH_EDGES_PER_PAGE),
+    edge_families: list[str] | None = Query(default=None, max_length=4),
     edges_exhausted: bool = Query(default=False),
     include_project_state: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceGraphResponse:
+    supported_edge_families = {"semantic", "context", "execution", "provenance"}
+    if edge_families and not set(edge_families) <= supported_edge_families:
+        raise HTTPException(status_code=422, detail="Unsupported workspace edge family filter.")
+
     linked_ids = select(WorkspaceObjectProjectLinkModel.object_id).where(
         WorkspaceObjectProjectLinkModel.project_name == project_name
     )
@@ -756,6 +762,8 @@ async def get_workspace_graph(
         raise HTTPException(status_code=422, detail="Exhausted workspace graph edges cannot include a cursor.")
 
     object_query = select(WorkspaceObjectModel).where(visible_filter)
+    if object_types:
+        object_query = object_query.where(WorkspaceObjectModel.object_type.in_(set(object_types)))
     if objects_exhausted:
         object_rows = []
     else:
@@ -788,6 +796,8 @@ async def get_workspace_graph(
         WorkspaceEdgeModel.source_object_id.in_(select(WorkspaceObjectModel.id).where(visible_filter)),
         WorkspaceEdgeModel.target_object_id.in_(select(WorkspaceObjectModel.id).where(visible_filter)),
     )
+    if edge_families:
+        edge_query = edge_query.where(WorkspaceEdgeModel.edge_family.in_(set(edge_families)))
     if edges_exhausted:
         edges = []
         edges_next_cursor = None
