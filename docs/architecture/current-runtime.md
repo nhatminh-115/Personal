@@ -113,8 +113,9 @@ cursor-paged, with older runs loaded on demand.
 The Library's Research collection includes a read-only Research Radar for saved
 project graphs. It presents persisted research sources, evidence, claims, and
 their provenance links using bounded graph pages; it does not infer new
-relationships or modify research artifacts. Verified claims can start a Study
-session through the existing Study API; qualified or unsupported claims cannot.
+relationships or modify research artifacts. Each artifact can open at its saved
+object in the project Board. Verified claims can start a Study session through
+the existing Study API; qualified or unsupported claims cannot.
 
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context

@@ -113,6 +113,8 @@
 .research-radar__card a:hover { color: #c1fbff; text-decoration: underline; }
 .research-radar__study { display: inline-flex; align-items: center; gap: 5px; margin: 8px 8px 0 0; border: 1px solid rgba(94, 234, 240, .2); border-radius: 7px; padding: 5px 8px; background: rgba(94, 234, 240, .07); color: #a9e9ed; font: inherit; font-size: 10px; cursor: pointer; }
 .research-radar__study:hover { border-color: rgba(94, 234, 240, .42); background: rgba(94, 234, 240, .13); }
+.research-radar__inspect { display: inline-flex; align-items: center; gap: 5px; margin: 8px 8px 0 0; border: 1px solid rgba(148, 163, 184, .2); border-radius: 7px; padding: 5px 8px; background: rgba(148, 163, 184, .06); color: #b5c6d2; font: inherit; font-size: 10px; cursor: pointer; }
+.research-radar__inspect:hover { border-color: rgba(94, 234, 240, .32); color: #d4f8fa; }
 .research-radar__column-empty { margin: 0; padding: 12px; color: #778fa0; font-size: 11px; }
 .research-radar__empty { display: flex; align-items: center; gap: 9px; min-height: 70px; color: #9db0bd; font-size: 12px; }
 .research-radar__empty svg { flex: none; color: #66d9e1; }

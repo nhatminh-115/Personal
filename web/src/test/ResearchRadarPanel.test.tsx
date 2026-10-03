@@ -49,8 +49,9 @@ describe('Research Radar', () => {
       { id: 'edge-2', project_name: 'Research project', source_object_id: 'evidence-1', target_object_id: 'claim-1', relation_type: 'supports_claim', edge_family: 'provenance', created_by: 'research', metadata_json: {}, created_at: '2026-10-01T00:00:00Z' },
     ]));
     const onStudy = vi.fn();
+    const onOpenObject = vi.fn();
 
-    render(<ResearchRadarPanel projects={savedProjects} onStudyResearchClaim={onStudy} />);
+    render(<ResearchRadarPanel projects={savedProjects} onStudyResearchClaim={onStudy} onOpenProjectObject={onOpenObject} />);
 
     expect(await screen.findByText('A durable workspace study')).toBeInTheDocument();
     expect(screen.getByText('1 sources')).toBeInTheDocument();
@@ -62,6 +63,8 @@ describe('Research Radar', () => {
     expect(api.fetchWorkspaceGraphPage).toHaveBeenCalledWith('Research project');
     fireEvent.click(screen.getByRole('button', { name: 'Study this finding' }));
     expect(onStudy).toHaveBeenCalledWith('claim-1', 'source_supported_fact · A measured finding', 'Research project');
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open in Board' })[1]);
+    expect(onOpenObject).toHaveBeenCalledWith('evidence-1', 'Research project');
   });
 
   it('loads older graph pages on demand and excludes untrusted URL schemes', async () => {

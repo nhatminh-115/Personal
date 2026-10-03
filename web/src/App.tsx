@@ -769,6 +769,23 @@ export default function App() {
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
   }, [openOrActivateTab, projectCatalog]);
 
+  const openResearchProjectObject = useCallback((objectId: string, projectName: string) => {
+    const project = projectCatalog.find((item) => item.name === projectName && item.source === 'user');
+    if (!project) return;
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    openOrActivateTab({
+      id: `project-${project.id}`,
+      title: project.name,
+      subtitle: 'Board',
+      kind: 'project',
+      surface: 'workspace',
+      projectId: project.id,
+      mode: 'board',
+    });
+    setFocusNodeId(objectId);
+  }, [openOrActivateTab, projectCatalog]);
+
   const createProject = useCallback(async (input: { name: string; subtitle: string }) => {
     if (projectCatalog.some((project) => project.name.toLowerCase() === input.name.toLowerCase())) {
       throw new Error('A project with this name already exists.');
@@ -2219,6 +2236,7 @@ export default function App() {
             onOpenConnection={openConnection}
             onDisconnectConnection={(connection) => void disconnectConnection(connection)}
             onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
+            onOpenProjectObject={openResearchProjectObject}
           />
         ) : null}
         {surface === 'folder-viewer' && activeConnection ? (
