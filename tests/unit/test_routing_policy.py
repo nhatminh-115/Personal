@@ -230,6 +230,7 @@ async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
     """Verify that the routed model identity strictly reaches the outbound HTTP payload."""
     from app.models.openai_provider import OpenAICompatibleProvider
     captured_payloads = []
+    captured_timeouts = []
 
     class DummyResponse:
         status_code = 200
@@ -248,11 +249,17 @@ async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
 
     async def mock_post(self, url, **kwargs):
         captured_payloads.append(kwargs.get("json", {}))
+        captured_timeouts.append(self.timeout.read)
         return DummyResponse()
 
     monkeypatch.setattr("httpx.AsyncClient.post", mock_post)
 
-    provider = OpenAICompatibleProvider(api_key="sk-test", base_url="https://api.test/v1", model_name="default-gpt")
+    provider = OpenAICompatibleProvider(
+        api_key="sk-test",
+        base_url="https://api.test/v1",
+        model_name="default-gpt",
+        request_timeout_seconds=123,
+    )
     router = ModelRouter()
     router.register_provider(
         provider,
@@ -271,6 +278,7 @@ async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
     await router.route(req1, provider_name="openai")
     assert len(captured_payloads) == 1
     assert captured_payloads[0]["model"] == "routed-gpt-4o-mini"
+    assert captured_timeouts == [123]
 
     # 2. Explicit model override
     req2 = ModelRequest(
@@ -280,3 +288,4 @@ async def test_routed_model_reaches_openai_outbound_payload(monkeypatch):
     await router.route(req2)
     assert len(captured_payloads) == 2
     assert captured_payloads[1]["model"] == "custom-fine-tuned-model"
+    assert captured_timeouts == [123, 123]

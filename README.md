@@ -100,6 +100,9 @@ OPENAI_API_KEY=
 For hosted inference, set `MODEL_PROVIDER=openai` and put a real key in
 `OPENAI_API_KEY`. Keep it empty for mock or local-provider use; a placeholder
 string is treated as a configured credential by the model catalog.
+OpenAI-compatible chat requests use `MODEL_REQUEST_TIMEOUT_SECONDS` (60
+seconds by default, maximum 600) to accommodate slower local inference when
+needed.
 
 For PostgreSQL, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL. The
 included Docker Compose file starts PostgreSQL and the API service, applies
