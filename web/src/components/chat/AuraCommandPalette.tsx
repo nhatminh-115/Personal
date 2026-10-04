@@ -43,6 +43,7 @@ export function AuraCommandPalette({ projectName, onClose, onOpenResult, onOpenF
     setResults([]);
     setNextCursor(null);
     setLoading(true);
+    setLoadingMore(false);
     setError(null);
     try {
       const [workspace, folders] = await Promise.allSettled([
