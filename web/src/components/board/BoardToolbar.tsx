@@ -11,6 +11,8 @@ interface BoardToolbarProps {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  layoutSaveState?: 'unsaved' | 'conflict' | null;
+  onRetryLayoutSave?: () => void;
   layers: Record<LayerKey, boolean>;
   executionHistoryTruncated?: boolean;
   onLoadOlderExecution?: () => void;
@@ -30,6 +32,8 @@ export function BoardToolbar({
   onRedo,
   canUndo,
   canRedo,
+  layoutSaveState = null,
+  onRetryLayoutSave,
   layers,
   executionHistoryTruncated = false,
   onLoadOlderExecution,
@@ -65,6 +69,15 @@ export function BoardToolbar({
           </button>
         ))}
       </div>
+
+      {layoutSaveState ? (
+        <div className="board-layout-save-warning" role="status" aria-live="polite">
+          <span>{layoutSaveState === 'conflict' ? 'Layout changed elsewhere' : 'Layout not saved'}</span>
+          {layoutSaveState === 'unsaved' && onRetryLayoutSave ? (
+            <button type="button" onClick={onRetryLayoutSave}>Retry save</button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

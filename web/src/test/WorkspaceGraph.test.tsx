@@ -3,7 +3,7 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BoardCanvas } from '../components/board/BoardCanvas';
 import { ProjectChatWorkspace } from '../components/chat/ProjectChatWorkspace';
-import { api } from '../services/api';
+import { ApiError, api } from '../services/api';
 import { projects } from '../data/workspaceData';
 import type { AuraFlowNode, WorkspaceExecutionHistory, WorkspaceGraph, WorkspaceObject } from '../types';
 
@@ -628,6 +628,77 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(saveCalls).toEqual([3, 4]));
     await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
     expect(fetchGraph).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a failed Board layout visible and retries the latest layout', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      layout: {
+        ...savedGraph.layout,
+        layout: {
+          positions: { 'turn-1': { x: 80, y: 60 } },
+          densities: { 'turn-1': 'compact' },
+        },
+      },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const saveLayout = vi.spyOn(api, 'putWorkspaceLayout')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementationOnce(async (_project, layout, expectedRevision) => ({
+        ...graph.layout,
+        layout,
+        revision: expectedRevision + 1,
+      }));
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="retryable-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    fireEvent.click(container.querySelector('[data-id="turn-1"] button[title^="Current density"]')!);
+
+    await waitFor(() => expect(saveLayout).toHaveBeenCalledTimes(1), { timeout: 2500 });
+    expect(await screen.findByText('Layout not saved')).toBeInTheDocument();
+    const retryButton = screen.getByRole('button', { name: 'Retry save' });
+    fireEvent.click(retryButton);
+
+    await waitFor(() => expect(saveLayout).toHaveBeenCalledTimes(2));
+    expect(saveLayout.mock.calls[1][1]).toEqual(expect.objectContaining({
+      positions: { 'turn-1': { x: 80, y: 60 } },
+      densities: { 'turn-1': 'full' },
+    }));
+    expect(saveLayout.mock.calls[1][2]).toBe(3);
+    await waitFor(() => expect(screen.queryByText('Layout not saved')).not.toBeInTheDocument());
+  });
+
+  it('does not offer blind Board layout retries after a revision conflict', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      layout: {
+        ...savedGraph.layout,
+        layout: {
+          positions: { 'turn-1': { x: 80, y: 60 } },
+          densities: { 'turn-1': 'compact' },
+        },
+      },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const saveLayout = vi.spyOn(api, 'putWorkspaceLayout').mockRejectedValue(new ApiError(409, 'Workspace layout changed elsewhere'));
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="conflicted-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    fireEvent.click(container.querySelector('[data-id="turn-1"] button[title^="Current density"]')!);
+
+    await waitFor(() => expect(saveLayout).toHaveBeenCalledTimes(1), { timeout: 2500 });
+    expect(await screen.findByText('Layout changed elsewhere')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry save' })).not.toBeInTheDocument();
   });
 
   it('offers a live chat action on saved branches and restores the selected branch context', async () => {
