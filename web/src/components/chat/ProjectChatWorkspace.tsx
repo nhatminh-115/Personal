@@ -4,6 +4,7 @@ import { projectArtifacts, type ChatThreadRecord, type LibraryItem, type Project
 import type { AIContextItem, ApprovalDetail, ChatMessage, WorkspaceObject } from '../../types';
 import { api } from '../../services/api';
 import { getLocalFile } from '../../lib/localFiles';
+import { MAX_LOCAL_DOCX_BYTES } from '../../lib/docxText';
 import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { ChatPane } from './ChatPane';
 
@@ -14,7 +15,9 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
     const localFileKindSupported = Boolean(localFile && (
       ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(localFile.kind)
         ? (localFile.size ?? 0) <= 80_000
-        : localFile.kind === 'PDF' && (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
+        : localFile.kind === 'PDF'
+          ? (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
+          : localFile.kind === 'DOCX' && (localFile.size ?? 0) <= MAX_LOCAL_DOCX_BYTES
     ));
     const fileContentAvailable = Boolean(localContextFileIds.has(object.id)
       && localFile?.source === 'imported' && localFile.blobKey
@@ -29,8 +32,10 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
       ? fileContentAvailable
         ? localFile?.kind === 'PDF'
           ? 'browser-local PDF · text is extracted here only after you explicitly send it with a message'
-          : 'browser-local text · stays here until you explicitly send it with a message'
-        : 'file reference · metadata only · this browser has no supported local text or PDF copy available'
+          : localFile?.kind === 'DOCX'
+            ? 'browser-local Word document · text is extracted here only after you explicitly send it with a message'
+            : 'browser-local text · stays here until you explicitly send it with a message'
+        : 'file reference · metadata only · this browser has no supported local text, PDF, or Word document copy available'
       : object.object_type === 'research_claim' && typeof verification === 'string'
         ? `research claim · ${verification} · saved in this project`
         : `${object.object_type.split('_').join(' ')} · saved in this project`;
@@ -133,7 +138,8 @@ export function ProjectChatWorkspace({
       const local = libraryItems.find((entry) => entry.id === item.nodeId);
       const supportedText = Boolean(local && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(local.kind) && (local.size ?? 0) <= 80_000);
       const supportedPdf = Boolean(local?.kind === 'PDF' && (local.size ?? 0) <= MAX_LOCAL_PDF_BYTES);
-      if (!local?.blobKey || (!supportedText && !supportedPdf)) return [];
+      const supportedDocx = Boolean(local?.kind === 'DOCX' && (local.size ?? 0) <= MAX_LOCAL_DOCX_BYTES);
+      if (!local?.blobKey || (!supportedText && !supportedPdf && !supportedDocx)) return [];
       return [{ objectId: item.nodeId, blobKey: local.blobKey }];
     });
     void Promise.all(candidates.map(async ({ objectId, blobKey }) => {

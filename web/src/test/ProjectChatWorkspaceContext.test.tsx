@@ -105,7 +105,7 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     expect(await view.findByText(/file\|Local budget\.pdf\|file reference · metadata only/)).toHaveTextContent(
-      'file reference · metadata only · this browser has no supported local text or PDF copy available|4',
+      'file reference · metadata only · this browser has no supported local text, PDF, or Word document copy available|4',
     );
   });
 
@@ -146,6 +146,27 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     const contextItem = await view.findByText(/file\|Local chapters\.pdf\|browser-local PDF/);
+    expect(contextItem).toHaveTextContent('text is extracted here only after you explicitly send it with a message');
+    fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
+    expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
+  });
+
+  it('offers browser-local Word text extraction only for an imported DOCX available in this browser', async () => {
+    vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
+      objects: [{
+        id: 'file-reference-1', project_name: null, object_type: 'file_reference', created_by: 'user',
+        title: 'Local report.docx', content: '', metadata_json: { storage_location: 'browser_local' },
+        created_at: '2026-10-03T00:00:00Z', updated_at: '2026-10-03T00:00:00Z',
+      } as any],
+      nextCursor: null,
+    });
+    const onSendFileContent = vi.fn();
+    const view = renderWorkspace([{
+      id: 'file-reference-1', name: 'Local report', kind: 'DOCX', source: 'imported', blobKey: 'local-docx-1', size: 1_500,
+    }], onSendFileContent);
+    fireEvent.click(view.getByRole('button', { name: 'Open context' }));
+
+    const contextItem = await view.findByText(/file\|Local report\.docx\|browser-local Word document/);
     expect(contextItem).toHaveTextContent('text is extracted here only after you explicitly send it with a message');
     fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
     expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);

@@ -57,6 +57,21 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
 
 
 @pytest.mark.asyncio
+async def test_workspace_library_accepts_docx_reference_metadata(async_client):
+    created = await async_client.post("/v1/workspace/library", json={
+        "name": "Local report",
+        "kind": "DOCX",
+        "collection": "Reference",
+        "detail": "Imported local Word document",
+        "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    })
+
+    assert created.status_code == 201
+    assert created.json()["kind"] == "DOCX"
+    assert created.json()["mime_type"] == "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+@pytest.mark.asyncio
 async def test_library_search_matches_metadata_and_keeps_cursor_pagination(async_client):
     references = [
         {"id": str(uuid4()), "name": "Alpha paper", "detail": "target in imported detail", "collection": "Research", "tags": []},
