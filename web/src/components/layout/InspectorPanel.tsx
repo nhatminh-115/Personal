@@ -9,7 +9,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   AuraFlowNode,
   MemoryItem,
@@ -25,6 +25,7 @@ import { api } from '../../services/api';
 export interface InspectorPanelProps {
   selectedNode?: AuraFlowNode;
   runDetail?: RunDetail | null;
+  focusRunId?: string | null;
   effectiveRouting?: EffectiveRouting | null;
   routingData?: RunRoutingDecision[] | null;
   researchData?: ResearchInspectorData | null;
@@ -41,6 +42,7 @@ export interface InspectorPanelProps {
   onLoadMoreProfileMemories?: () => Promise<void>;
   onSetMemoryActive?: (memory: MemoryItem, isActive: boolean) => Promise<void>;
   onOpenSourceChat?: (sessionId: string) => void;
+  onOpenSourceRun?: (runId: string) => void;
   onClose: () => void;
   onContextSelect?: (nodeId: string) => void;
 }
@@ -61,7 +63,7 @@ const memoryMetadataStringList = (value: unknown): string[] => (
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
 );
 
-function MemoryProvenance({ memory, onOpenSourceChat }: { memory: MemoryItem; onOpenSourceChat?: (sessionId: string) => void }) {
+function MemoryProvenance({ memory, onOpenSourceChat, onOpenSourceRun }: { memory: MemoryItem; onOpenSourceChat?: (sessionId: string) => void; onOpenSourceRun?: (runId: string) => void }) {
   const metadata = memory.metadata_json ?? {};
   const claims = memoryMetadataStringList(metadata.claim_ids);
   const evidence = memoryMetadataStringList(metadata.evidence_ids);
@@ -85,6 +87,11 @@ function MemoryProvenance({ memory, onOpenSourceChat }: { memory: MemoryItem; on
         </button>
       ) : null}
       {typeof metadata.source_run_id === 'string' ? <div className="inspector-row"><span>Source run</span><code>{metadata.source_run_id}</code></div> : null}
+      {typeof metadata.source_run_id === 'string' && onOpenSourceRun ? (
+        <button className="secondary-button" type="button" onClick={() => onOpenSourceRun(metadata.source_run_id)} style={{ marginTop: 6, fontSize: 10 }}>
+          Open source run
+        </button>
+      ) : null}
       {claims.length ? <div className="inspector-row"><span>Validated claims</span><strong>{claims.join(', ')}</strong></div> : null}
       {evidence.length ? <div className="inspector-row"><span>Evidence records</span><strong>{evidence.join(', ')}</strong></div> : null}
       {sources.length ? <div className="inspector-row"><span>Sources</span><strong>{sources.join(', ')}</strong></div> : null}
@@ -97,6 +104,7 @@ function MemoryProvenance({ memory, onOpenSourceChat }: { memory: MemoryItem; on
 export function InspectorPanel({
   selectedNode,
   runDetail,
+  focusRunId,
   effectiveRouting,
   routingData,
   researchData,
@@ -113,6 +121,7 @@ export function InspectorPanel({
   onLoadMoreProfileMemories,
   onSetMemoryActive,
   onOpenSourceChat,
+  onOpenSourceRun,
   onClose,
   onContextSelect,
 }: InspectorPanelProps) {
@@ -128,6 +137,10 @@ export function InspectorPanel({
   const [refreshingCapabilityId, setRefreshingCapabilityId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
   const [memoryActionError, setMemoryActionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (focusRunId && runDetail?.id === focusRunId) setTab('execution');
+  }, [focusRunId, runDetail?.id]);
 
   const updateMemoryStatus = async (memory: MemoryItem, isActive: boolean) => {
     if (!onSetMemoryActive) return;
@@ -519,7 +532,7 @@ export function InspectorPanel({
                     >
                       {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why AURA remembers this'}
                     </button>
-                    {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} onOpenSourceChat={onOpenSourceChat} /> : null}
+                    {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} onOpenSourceChat={onOpenSourceChat} onOpenSourceRun={onOpenSourceRun} /> : null}
                     {(m.memory_type === 'project' || m.memory_type === 'profile') && onSetMemoryActive ? (
                       <button
                         className="secondary-button"

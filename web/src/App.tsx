@@ -275,6 +275,7 @@ export default function App() {
   const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
     const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
+  const [inspectorFocusRunId, setInspectorFocusRunId] = useState<string | null>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(params.get('focus'));
   const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
@@ -1225,7 +1226,7 @@ export default function App() {
     }
   }, [activeProjectId, chatThreads]);
 
-  const openMemorySourceChat = useCallback(async (sessionId: string) => {
+  const openMemorySourceChat = useCallback(async (sessionId: string): Promise<ChatThreadRecord | null> => {
     try {
       let sourceThread = chatThreads.find((thread) => thread.sessionId === sessionId && thread.source === 'live');
       let sourceProject = sourceThread
@@ -1270,10 +1271,34 @@ export default function App() {
         projectId: resolvedProject.id,
         mode: 'chat',
       });
+      return resolvedThread;
     } catch (error) {
       pushToast('Could not open source chat', executionErrorText(error));
+      return null;
     }
   }, [activeProject, chatThreads, openOrActivateTab, projectCatalog, pushToast]);
+
+  const openMemorySourceRun = useCallback(async (runId: string) => {
+    try {
+      const detail = await api.fetchRunDetails(runId);
+      if (!detail.session_id) throw new Error('The source run is not linked to a saved chat.');
+      const [thread, routing] = await Promise.all([
+        openMemorySourceChat(detail.session_id),
+        api.fetchRunRouting(runId).catch(() => null),
+      ]);
+      if (!thread) return;
+      patchThreadLive(thread.id, {
+        runId,
+        runStatus: detail.status,
+        runDetail: detail,
+        routingData: routing?.decisions ?? [],
+      });
+      setInspectorFocusRunId(runId);
+      setInspectorOpen(true);
+    } catch (error) {
+      pushToast('Could not open source run', executionErrorText(error));
+    }
+  }, [openMemorySourceChat, patchThreadLive, pushToast]);
 
   const loadOlderMessages = useCallback(async (threadId: string) => {
     const thread = chatThreads.find((candidate) => candidate.id === threadId);
@@ -3019,6 +3044,7 @@ export default function App() {
           <InspectorPanel
             selectedNode={selectedNode}
             runDetail={activeThreadLive.runDetail}
+            focusRunId={inspectorFocusRunId}
             effectiveRouting={effectiveRouting}
             routingData={activeThreadLive.routingData}
             researchData={activeThreadLive.researchData}
@@ -3035,6 +3061,7 @@ export default function App() {
             onLoadMoreProfileMemories={() => loadProfileMemoryPage(profileMemoryNextCursor, true)}
             onSetMemoryActive={setMemoryActive}
             onOpenSourceChat={(sessionId) => { void openMemorySourceChat(sessionId); }}
+            onOpenSourceRun={(runId) => { void openMemorySourceRun(runId); }}
             onClose={() => setInspectorOpen(false)}
             onContextSelect={openBoardNode}
           />
