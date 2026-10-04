@@ -4,6 +4,66 @@ from app.memory.service import SQLMemoryService
 
 
 @pytest.mark.asyncio
+async def test_memory_by_id_requires_project_or_session_scope(async_client, test_db_session):
+    project_memory = MemoryModel(
+        id="old-project-memory", memory_type="semantic", project_name="Atlas",
+        key="prior_constraint", content="Keep the migration reversible.", confidence=0.88,
+        is_active=True, metadata_json={},
+    )
+    episode = MemoryModel(
+        id="source-session-episode", memory_type="episodic", session_id="source-session",
+        key="completed_run", content="The migration completed after restart.", confidence=0.91,
+        is_active=True, metadata_json={},
+    )
+    other_project_memory = MemoryModel(
+        id="other-project-memory", memory_type="semantic", project_name="Borealis",
+        key="secret", content="Other project content.", confidence=0.9, is_active=True, metadata_json={},
+    )
+    test_db_session.add_all([project_memory, episode, other_project_memory])
+    await test_db_session.commit()
+
+    missing_scope = await async_client.get(f"/v1/memory/by-id/{project_memory.id}")
+    assert missing_scope.status_code == 422
+
+    project_match = await async_client.get(
+        f"/v1/memory/by-id/{project_memory.id}", params={"project_name": "Atlas"}
+    )
+    assert project_match.status_code == 200
+    assert project_match.json()["content"] == "Keep the migration reversible."
+
+    wrong_project = await async_client.get(
+        f"/v1/memory/by-id/{project_memory.id}", params={"project_name": "Borealis"}
+    )
+    assert wrong_project.status_code == 404
+    assert (await async_client.get(
+        f"/v1/memory/by-id/{episode.id}", params={"session_id": "source-session"}
+    )).json()["id"] == episode.id
+    assert (await async_client.get(
+        f"/v1/memory/by-id/{episode.id}", params={"session_id": "other-session"}
+    )).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_profile_memory_by_id_is_limited_to_global_profile_scope(async_client, test_db_session):
+    global_memory = MemoryModel(
+        id="global-profile-memory", memory_type="profile", project_name=None,
+        key="preferred_language", content="Vietnamese", confidence=1.0,
+        is_active=True, metadata_json={},
+    )
+    project_profile_memory = MemoryModel(
+        id="project-profile-memory", memory_type="profile", project_name="Atlas",
+        key="project_voice", content="Concise", confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add_all([global_memory, project_profile_memory])
+    await test_db_session.commit()
+
+    response = await async_client.get(f"/v1/memory/profile/{global_memory.id}")
+    assert response.status_code == 200
+    assert response.json()["content"] == "Vietnamese"
+    assert (await async_client.get(f"/v1/memory/profile/{project_profile_memory.id}")).status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_project_memory_can_be_deactivated_and_restored_without_deletion(async_client, test_db_session):
     memory = MemoryModel(
         memory_type="project",

@@ -3043,6 +3043,7 @@ export default function App() {
         <Suspense fallback={<aside className="inspector-panel inspector-panel--loading" role="status">Loading Inspector…</aside>}>
           <InspectorPanel
             selectedNode={selectedNode}
+            projectName={activeProject?.name}
             runDetail={activeThreadLive.runDetail}
             focusRunId={inspectorFocusRunId}
             effectiveRouting={effectiveRouting}

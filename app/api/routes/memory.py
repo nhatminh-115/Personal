@@ -73,6 +73,66 @@ async def list_memories(
     ]
 
 
+def _memory_response(memory: MemoryModel) -> MemoryItemResponse:
+    return MemoryItemResponse(
+        id=memory.id,
+        session_id=memory.session_id,
+        memory_type=memory.memory_type,
+        project_name=memory.project_name,
+        key=memory.key,
+        content=memory.content,
+        confidence=memory.confidence,
+        is_active=memory.is_active,
+        supersedes_id=memory.supersedes_id,
+        superseded_by_id=memory.superseded_by_id,
+        metadata_json=memory.metadata_json,
+        created_at=memory.created_at,
+    )
+
+
+@router.get("/by-id/{memory_id}", response_model=MemoryItemResponse)
+async def get_scoped_memory(
+    memory_id: str,
+    project_name: Optional[str] = Query(default=None, min_length=1, max_length=255),
+    session_id: Optional[str] = Query(default=None, min_length=1, max_length=255),
+    db: AsyncSession = Depends(get_db),
+) -> MemoryItemResponse:
+    """Read one memory by ID, scoped to the visible project or source session."""
+    scope_filters = []
+    if project_name:
+        scope_filters.append(MemoryModel.project_name == project_name.strip())
+    if session_id:
+        scope_filters.append(MemoryModel.session_id == session_id.strip())
+    if not scope_filters:
+        raise HTTPException(status_code=422, detail="A project or session scope is required.")
+
+    result = await db.execute(select(MemoryModel).where(
+        MemoryModel.id == memory_id,
+        or_(*scope_filters),
+    ))
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found in this workspace scope.")
+    return _memory_response(memory)
+
+
+@router.get("/profile/{memory_id}", response_model=MemoryItemResponse)
+async def get_profile_memory(
+    memory_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> MemoryItemResponse:
+    """Read one cross-project profile memory by ID."""
+    result = await db.execute(select(MemoryModel).where(
+        MemoryModel.id == memory_id,
+        MemoryModel.memory_type == "profile",
+        MemoryModel.project_name.is_(None),
+    ))
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Profile memory not found.")
+    return _memory_response(memory)
+
+
 @router.patch("/projects/{project_name}/{memory_id}", response_model=MemoryItemResponse)
 async def set_project_memory_active(
     project_name: str,

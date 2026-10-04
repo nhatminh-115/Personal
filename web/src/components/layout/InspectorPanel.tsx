@@ -24,6 +24,7 @@ import { api } from '../../services/api';
 
 export interface InspectorPanelProps {
   selectedNode?: AuraFlowNode;
+  projectName?: string | null;
   runDetail?: RunDetail | null;
   focusRunId?: string | null;
   effectiveRouting?: EffectiveRouting | null;
@@ -118,6 +119,7 @@ function MemoryProvenance({ memory, onOpenSourceChat, onOpenSourceRun }: { memor
 
 export function InspectorPanel({
   selectedNode,
+  projectName,
   runDetail,
   focusRunId,
   effectiveRouting,
@@ -152,6 +154,9 @@ export function InspectorPanel({
   const [refreshingCapabilityId, setRefreshingCapabilityId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
   const [memoryActionError, setMemoryActionError] = useState<string | null>(null);
+  const [memoryReviewError, setMemoryReviewError] = useState<string | null>(null);
+  const [loadingReviewMemoryId, setLoadingReviewMemoryId] = useState<string | null>(null);
+  const [reviewedMemories, setReviewedMemories] = useState<MemoryItem[]>([]);
 
   useEffect(() => {
     if (focusRunId && runDetail?.id === focusRunId) setTab('execution');
@@ -178,9 +183,24 @@ export function InspectorPanel({
     setExpandedMemoryProvenance((previous) => ({ ...previous, [id]: !previous[id] }));
   };
 
-  const reviewUsedMemory = (id: string, tier: MemoryTier) => {
-    const memory = availableMemoriesById.get(id);
-    if (!memory) return;
+  const reviewUsedMemory = async (id: string, tier: MemoryTier) => {
+    let memory = availableMemoriesById.get(id);
+    if (!memory) {
+      setLoadingReviewMemoryId(id);
+      setMemoryReviewError(null);
+      try {
+        memory = tier === 'profile'
+          ? await api.fetchProfileMemoryById(id)
+          : await api.fetchMemoryById(id, projectName ?? undefined, runDetail?.session_id);
+        setReviewedMemories((current) => current.some((item) => item.id === memory?.id) ? current : [...current, memory!]);
+      } catch (error) {
+        setMemoryReviewError(error instanceof Error ? error.message : 'Could not load this saved memory.');
+        setLoadingReviewMemoryId(null);
+        setTab('memory');
+        return;
+      }
+      setLoadingReviewMemoryId(null);
+    }
     const targetScope = memory.memory_type === 'profile' || tier === 'profile' ? 'profile' : 'project';
     setMemoryScope(targetScope);
     setExpandedMemoryProvenance((previous) => ({ ...previous, [id]: true }));
@@ -259,7 +279,11 @@ export function InspectorPanel({
       privacyById: new Map<string, string>(),
     }].filter((run) => run.groups.length > 0) : [];
   const availableMemories = [...memories, ...(profileMemories ?? [])];
-  const availableMemoriesById = new Map(availableMemories.map((memory) => [memory.id, memory]));
+  const availableMemoriesById = new Map([...availableMemories, ...reviewedMemories].map((memory) => [memory.id, memory]));
+  const visibleMemories = [...new Map([
+    ...(memoryScope === 'project' ? memories : profileMemories ?? []),
+    ...reviewedMemories.filter((memory) => memory.memory_type === 'profile' ? memoryScope === 'profile' : memoryScope === 'project'),
+  ].map((memory) => [memory.id, memory])).values()];
   const contextManifestEntries = routingData?.flatMap((decision) => decision.context_manifest ? [{
     runId: decision.run_id,
     role: String(decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'),
@@ -556,19 +580,20 @@ export function InspectorPanel({
           <div data-testid="inspector-memory">
             <div className="inspector-kpi">
               <span>{memoryScope === 'project' ? 'Project Memory' : 'Personal Profile Memory'}</span>
-              <strong>Showing {(memoryScope === 'project' ? memories : profileMemories ?? []).length} item{(memoryScope === 'project' ? memories : profileMemories ?? []).length === 1 ? '' : 's'}</strong>
+              <strong>Showing {visibleMemories.length} item{visibleMemories.length === 1 ? '' : 's'}</strong>
               <small>{memoryScope === 'project' ? 'Used inside this project' : 'Used across projects'} · persisted memory</small>
             </div>
+            {memoryReviewError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryReviewError}</div> : null}
             <div className="inspector-tabs" style={{ marginTop: 10 }} role="group" aria-label="Memory scope">
               <button type="button" className={memoryScope === 'project' ? 'is-active' : ''} onClick={() => setMemoryScope('project')}>Project</button>
               <button type="button" className={memoryScope === 'profile' ? 'is-active' : ''} onClick={() => {
                 setMemoryScope('profile');
                 void onLoadProfileMemories?.();
-              }}>Personal profile</button>
+            }}>Personal profile</button>
             </div>
             <div style={{ marginTop: 12 }}>
-              {(memoryScope === 'project' ? memories : profileMemories ?? []).length > 0 ? (
-                (memoryScope === 'project' ? memories : profileMemories ?? []).map((m) => (
+              {visibleMemories.length > 0 ? (
+                visibleMemories.map((m) => (
                   <div key={m.id} className="inspector-event-item" data-testid="memory-item">
                     <div className="inspector-event-header">
                       <strong style={{ fontSize: 11.5, color: '#b9d4e2' }}>{m.key}</strong>
@@ -659,13 +684,13 @@ export function InspectorPanel({
                           className="context-block"
                           type="button"
                           key={`${tier}-${id}`}
-                          disabled={!memory}
-                          onClick={() => reviewUsedMemory(id, tier)}
-                          aria-label={`${memory ? 'Review memory' : 'Memory'} ${memory?.key ?? id}`}
+                          disabled={(!memory && tier !== 'profile' && !projectName && !runDetail?.session_id) || loadingReviewMemoryId === id}
+                          onClick={() => { void reviewUsedMemory(id, tier); }}
+                          aria-label={`${loadingReviewMemoryId === id ? 'Loading memory' : 'Review memory'} ${memory?.key ?? id}`}
                         >
                           <span className="context-block__copy">
                             <strong>{memory?.key ?? id}</strong>
-                            <small>{memory ? `${memory.memory_type.replace(/_/g, ' ')} · ${id}` : id}{privacy ? ` · ${privacy.replace(/_/g, ' ')}` : ''}</small>
+                            <small>{memory ? `${memory.memory_type.replace(/_/g, ' ')} · ${id}` : loadingReviewMemoryId === id ? 'Loading saved memory…' : id}{privacy ? ` · ${privacy.replace(/_/g, ' ')}` : ''}</small>
                           </span>
                         </button>;
                       })}
@@ -673,6 +698,7 @@ export function InspectorPanel({
                   ))}
                 </div>
               )) : <div className="inspector-empty">No saved memory IDs were recorded for this run tree.</div>}
+              {memoryReviewError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 0' }}>{memoryReviewError}</div> : null}
             </section>
             {contextManifestEntries.length ? contextManifestEntries.map(({ runId, role, manifest }) => {
               const objects = Array.isArray(manifest.objects)
