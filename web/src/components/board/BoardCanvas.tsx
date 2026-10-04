@@ -221,6 +221,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const lastRefreshedGraphRevision = useRef(workspaceGraphRevision);
   const workspaceSessionKeyRef = useRef('');
   const [workspaceLoadVersion, setWorkspaceLoadVersion] = useState(0);
+  const [layoutSaveState, setLayoutSaveState] = useState<'unsaved' | 'conflict' | null>(null);
   const layoutRevision = useRef(0);
   const layoutSnapshot = useRef('');
   const layoutTimer = useRef<number | null>(null);
@@ -254,6 +255,15 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const result = await api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current);
         layoutRevision.current = result.revision;
         layoutSnapshot.current = snapshot;
+        if (!layoutConflict.current) setLayoutSaveState(null);
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 409) {
+          layoutConflict.current = true;
+          setLayoutSaveState('conflict');
+        } else {
+          setLayoutSaveState('unsaved');
+        }
+        throw error;
       } finally {
         layoutWritesPending.current -= 1;
       }
@@ -261,6 +271,22 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     layoutSync.current = save;
     return save;
   }, [workspaceProjectName]);
+
+  const retryWorkspaceLayoutSave = useCallback(() => {
+    if (!workspaceProjectName || layoutConflict.current) return;
+    const persistentNodes = nodesRef.current.filter((node) => !node.id.startsWith('branch-') && !node.id.startsWith('note-') && !node.id.startsWith('merge-') && !node.id.startsWith('lens-answer-') && !node.id.startsWith('bridge-'));
+    const layout = {
+      positions: Object.fromEntries(persistentNodes.map((node) => [node.id, node.position])),
+      densities: Object.fromEntries(persistentNodes.map((node) => [node.id, node.data.density])),
+      viewport: viewportRef.current,
+    };
+    void saveWorkspaceLayout(layout, JSON.stringify(layout)).then(
+      () => toast('Board layout saved', 'Your latest Board positions and view are saved.'),
+      (error) => error instanceof ApiError && error.status === 409
+        ? toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.')
+        : toast('Board layout retry failed', 'Your current layout remains visible here. Check the connection and retry again.'),
+    );
+  }, [saveWorkspaceLayout, toast, workspaceProjectName]);
 
   const queueWorkspaceObjectWrite = useCallback((id: string, snapshot?: AuraFlowNode) => {
     if (!workspaceProjectName) return Promise.resolve();
@@ -361,6 +387,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     const graph = await api.fetchWorkspaceGraphPage(workspaceProjectName);
     if (graph.layout.revision !== layoutRevision.current && layoutWritesPending.current === 0) {
       layoutConflict.current = true;
+      setLayoutSaveState('conflict');
       toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
     }
     const projected = mapWorkspaceGraph(graph);
@@ -574,7 +601,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           }, revision);
           revision = savedLayout.revision;
         } catch (error) {
-          if (error instanceof ApiError && error.status === 409) layoutConflict.current = true;
+          if (error instanceof ApiError && error.status === 409) {
+            layoutConflict.current = true;
+            setLayoutSaveState('conflict');
+          }
           toast('Some Board positions were not saved', 'AURA could not initialize the missing positions in the saved layout.');
         }
       }
@@ -629,6 +659,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       });
       if (graph.layout.revision !== layoutRevision.current && layoutWritesPending.current === 0) {
         layoutConflict.current = true;
+        setLayoutSaveState('conflict');
         toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
       }
       const projected = mapWorkspaceGraph(graph);
@@ -687,9 +718,11 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       void saveWorkspaceLayout(layout, snapshot).catch((error) => {
         if (error instanceof ApiError && error.status === 409) {
           layoutConflict.current = true;
+          setLayoutSaveState('conflict');
           toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
         } else {
-          toast('Board layout was not saved', 'Check the connection and retry after reopening the Board.');
+          setLayoutSaveState('unsaved');
+          toast('Board layout was not saved', 'Your current layout remains visible here. Click Retry save to try again.');
         }
       });
     }, 450);
@@ -1544,6 +1577,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         onRedo={() => { if (redo()) toast('Redone'); }}
         canUndo={canUndo}
         canRedo={canRedo}
+        layoutSaveState={layoutSaveState}
+        onRetryLayoutSave={retryWorkspaceLayoutSave}
         layers={layers}
         executionHistoryTruncated={executionHistoryTruncated || Boolean(executionNextCursor)}
         onLoadOlderExecution={executionNextCursor ? () => void loadOlderExecution() : undefined}

@@ -1741,6 +1741,11 @@ input:focus-visible {
   margin: 0 5px;
 }
 
+.board-layout-save-warning { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid rgba(238, 173, 100, .16); padding: 6px 7px 2px; color: #d9a86f; font-size: 8px; }
+.board-layout-save-warning button { border: 1px solid rgba(238, 173, 100, .2); border-radius: 5px; padding: 3px 6px; background: rgba(238, 173, 100, .08); color: #e6bd8f; font: inherit; cursor: pointer; white-space: nowrap; }
+.board-layout-save-warning button:hover { background: rgba(238, 173, 100, .15); color: #f1d2ac; }
+.board-layout-save-warning button:focus-visible { outline: 1px solid rgba(238, 173, 100, .65); outline-offset: 1px; }
+
 .layer-toggle button {
   flex: 1;
   justify-content: center;
