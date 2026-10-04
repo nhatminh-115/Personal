@@ -185,6 +185,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [executionEdges, setExecutionEdges] = useState<AuraFlowEdge[]>([]);
   const [executionHistoryTruncated, setExecutionHistoryTruncated] = useState(false);
   const [executionTraces, setExecutionTraces] = useState<WorkspaceExecutionTrace[]>([]);
+  const executionTracesRef = useRef(executionTraces);
   const [executionNextCursor, setExecutionNextCursor] = useState<string | null>(null);
   const [loadingOlderExecution, setLoadingOlderExecution] = useState(false);
   const [graphObjectCursor, setGraphObjectCursor] = useState<string | null>(null);
@@ -230,6 +231,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   edgesRef.current = edges;
   viewportRef.current = viewport;
   focusNodeIdRef.current = focusNodeId;
+  executionTracesRef.current = executionTraces;
   workspaceGraphRevisionRef.current = workspaceGraphRevision;
 
   const workspaceSessionKey = useMemo(() => [...new Set(workspaceSessionIds)].sort().join('\u0000'), [workspaceSessionIds]);
@@ -289,27 +291,37 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     const projected = mapWorkspaceGraph(graph);
     const savedPositions = graph.layout.layout?.positions ?? {};
     const maxLoadedY = Math.max(0, ...nodesRef.current.map((node) => node.position.y + 190));
-    setNodes((current) => {
-      const byId = new Map(current.map((node) => [node.id, node]));
-      projected.nodes.forEach((node, index) => {
-        if (byId.has(node.id)) return;
-        byId.set(node.id, savedPositions[node.id] ? { ...node, selected: false } : {
-          ...node,
-          selected: false,
-          position: { x: 120 + (index % 3) * 390, y: maxLoadedY + 100 + Math.floor(index / 3) * 210 },
-        });
+    const nodesById = new Map(nodesRef.current.map((node) => [node.id, node]));
+    projected.nodes.forEach((node, index) => {
+      if (nodesById.has(node.id)) return;
+      nodesById.set(node.id, savedPositions[node.id] ? { ...node, selected: false } : {
+        ...node,
+        selected: false,
+        position: { x: 120 + (index % 3) * 390, y: maxLoadedY + 100 + Math.floor(index / 3) * 210 },
       });
-      const next = [...byId.values()];
-      nodesRef.current = next;
-      return next;
     });
-    setEdges((current) => {
-      const byId = new Map(current.map((edge) => [edge.id, edge]));
-      for (const edge of projected.edges) if (!byId.has(edge.id)) byId.set(edge.id, edge);
-      const next = [...byId.values()];
-      edgesRef.current = next;
-      return next;
-    });
+    const mergedNodes = [...nodesById.values()];
+    nodesRef.current = mergedNodes;
+    setNodes(mergedNodes);
+    const edgesById = new Map(edgesRef.current.map((edge) => [edge.id, edge]));
+    for (const edge of projected.edges) if (!edgesById.has(edge.id)) edgesById.set(edge.id, edge);
+    const mergedEdges = [...edgesById.values()];
+    edgesRef.current = mergedEdges;
+    setEdges(mergedEdges);
+    const tracesByRun = new Map(executionTracesRef.current.map((trace) => [trace.run_id, trace]));
+    for (const trace of projected.executionTraces) {
+      const existing = tracesByRun.get(trace.run_id);
+      const eventsById = new Map((existing?.events ?? []).map((event) => [event.id, event]));
+      for (const event of trace.events) eventsById.set(event.id, event);
+      tracesByRun.set(trace.run_id, { ...existing, ...trace, events: [...eventsById.values()] });
+    }
+    const mergedTraces = [...tracesByRun.values()];
+    executionTracesRef.current = mergedTraces;
+    setExecutionTraces(mergedTraces);
+    const execution = projectExecutionGraph(mergedTraces, mergedNodes);
+    setExecutionNodes(execution.nodes);
+    setExecutionEdges(execution.edges);
+    setExecutionHistoryTruncated((current) => current || projected.executionHistoryTruncated);
     if (fitView) requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
   }, [compact, setEdges, setNodes, toast, workspaceProjectName]);
 
@@ -402,6 +414,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         setGraphEdgeCursor(graph.edges_next_cursor ?? null);
         setExecutionHistoryTruncated(projected.executionHistoryTruncated);
         setExecutionTraces(projected.executionTraces);
+        executionTracesRef.current = projected.executionTraces;
         setExecutionNextCursor(projected.executionNextCursor);
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
@@ -441,6 +454,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setExecutionEdges([]);
     setExecutionHistoryTruncated(false);
     setExecutionTraces([]);
+    executionTracesRef.current = [];
     setExecutionNextCursor(null);
     setGraphObjectCursor(null);
     setGraphEdgeCursor(null);
@@ -496,6 +510,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionEdges(nextExecutionEdges);
       setExecutionHistoryTruncated(nextExecutionHistoryTruncated);
       setExecutionTraces(nextExecutionTraces);
+      executionTracesRef.current = nextExecutionTraces;
       setExecutionNextCursor(nextExecutionNextCursor);
       setGraphObjectCursor(loadedGraph.objects_next_cursor ?? null);
       setGraphEdgeCursor(loadedGraph.edges_next_cursor ?? null);
@@ -924,6 +939,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       });
       const projected = projectExecutionGraph(combinedTraces, nodesRef.current);
       setExecutionTraces(combinedTraces);
+      executionTracesRef.current = combinedTraces;
       setExecutionNodes(projected.nodes);
       setExecutionEdges(projected.edges);
       setExecutionNextCursor(page.execution_next_cursor ?? null);
