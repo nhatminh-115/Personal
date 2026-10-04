@@ -560,6 +560,7 @@ async def test_study_session_rejects_unknown_note_privacy_classification(async_c
         "title": "Classified note",
         "content": "Source content.",
         "metadata_json": {"privacy_policy": "unspecified"},
+        "expected_revision": note_response.json()["revision"],
     })
     assert updated.status_code == 200
 
@@ -594,6 +595,7 @@ async def test_study_card_uses_current_privacy_from_unlinked_note(async_client: 
         "body": "Private source text.",
         "project_names": [],
         "privacy_policy": "local_only",
+        "expected_revision": note_response.json()["revision"],
     })
     assert updated.status_code == 200
 

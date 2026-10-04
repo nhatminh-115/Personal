@@ -13,6 +13,7 @@ const savedGraph: WorkspaceGraph = {
     id: 'turn-1', project_name: 'AURA Project', session_id: 'session-1', source_message_id: 'message-1',
     object_type: 'conversation_turn', created_by: 'assistant', title: 'Persistent answer',
     content: 'Loaded from the shared workspace object graph.', metadata_json: { role: 'assistant' },
+    revision: 1,
     created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
   }],
   edges: [],
@@ -201,6 +202,7 @@ describe('Persistent workspace graph Board projection', () => {
       id: 'study-session-1', project_name: null, object_type: 'study_session', created_by: 'user',
       title: 'Verified finding', content: '',
       metadata_json: { material_id: 'turn-1', material_project_name: 'AURA Project', status: 'in_progress' },
+      revision: 1,
       created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
     };
     const graph: WorkspaceGraph = {
@@ -262,12 +264,14 @@ describe('Persistent workspace graph Board projection', () => {
           bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false, constraints: false, decisions: false },
           bridge_sections: { conclusions: 'Preserve the rollback path.', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
         },
+        revision: 1,
         created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
-    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockResolvedValue({} as never);
+    let revision = 1;
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
 
     const { container } = render(
       <ReactFlowProvider>
@@ -290,6 +294,7 @@ describe('Persistent workspace graph Board projection', () => {
         bridge_options: { conclusions: true, observations: false, failed: false, artifacts: false, constraints: false, decisions: false },
         bridge_sections: { conclusions: 'Keep rollback available.', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
       }),
+      expected_revision: 1,
     })), { timeout: 2000 });
   });
 
@@ -308,7 +313,8 @@ describe('Persistent workspace graph Board projection', () => {
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
-    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockResolvedValue({} as never);
+    let revision = 1;
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
     const { container } = render(
       <ReactFlowProvider>
         <BoardCanvas boardKey="classified-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
@@ -323,12 +329,14 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'classified-note', expect.objectContaining({
       content: 'Updated internal wording.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
+      expected_revision: 1,
     })), { timeout: 2000 });
 
     fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
     await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('AURA Project', 'classified-note', expect.objectContaining({
       content: 'Keep this internal.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
+      expected_revision: 2,
     })));
   });
 
@@ -347,7 +355,8 @@ describe('Persistent workspace graph Board projection', () => {
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
-    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockResolvedValue({} as never);
+    let revision = 1;
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
     const { container } = render(
       <ReactFlowProvider>
         <BoardCanvas boardKey="privacy-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
@@ -363,11 +372,13 @@ describe('Persistent workspace graph Board projection', () => {
     fireEvent.change(privacySelect, { target: { value: 'local_only' } });
     await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
       metadata_json: { required_capabilities: ['document_parse'], privacy_policy: 'local_only' },
+      expected_revision: 1,
     })));
 
     fireEvent.change(privacySelect, { target: { value: '' } });
     await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
       metadata_json: { required_capabilities: ['document_parse'] },
+      expected_revision: 2,
     })));
   });
 
@@ -426,9 +437,9 @@ describe('Persistent workspace graph Board projection', () => {
     let releaseFirstSave!: () => void;
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => {
       if (updateObject.mock.calls.length === 1) {
-        return new Promise((resolve) => { releaseFirstSave = () => resolve({} as never); });
+        return new Promise((resolve) => { releaseFirstSave = () => resolve({ revision: 2 } as never); });
       }
-      return {} as never;
+      return { revision: 3 } as never;
     });
     const { container } = render(
       <ReactFlowProvider>
@@ -452,6 +463,7 @@ describe('Persistent workspace graph Board projection', () => {
     expect(updateObject.mock.calls[1][2]).toEqual(expect.objectContaining({
       content: 'Newest saved draft.',
       metadata_json: { privacy_policy: 'confidential' },
+      expected_revision: 2,
     }));
   });
 

@@ -83,6 +83,7 @@ def test_alembic_upgrade_downgrade_cycle():
             col["name"]: col for col in inspector.get_columns("workspace_objects")
         }
         assert workspace_object_columns["project_name"]["nullable"] is True
+        assert workspace_object_columns["revision"]["nullable"] is False
         workspace_link_columns = {
             col["name"] for col in inspector.get_columns("workspace_object_project_links")
         }

@@ -21,6 +21,7 @@ function researchObject(id: string, object_type: string, title: string, metadata
   return {
     id, project_name: 'Research project', object_type, created_by: 'research', title, content,
     metadata_json, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+    revision: 1,
   };
 }
 

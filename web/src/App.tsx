@@ -43,7 +43,7 @@ import {
   type DirectoryConnection,
   type IndexedFolderFile,
 } from './lib/folderConnections';
-import { api } from './services/api';
+import { ApiError, api } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
@@ -148,7 +148,7 @@ function workspaceNoteFromRecord(record: WorkspaceNoteRecord, projectCatalog: Pr
   };
 }
 
-function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord[] = projects): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'> {
+function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord[] = projects): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'> {
   return {
     title: note.title,
     body: note.body,
@@ -335,6 +335,7 @@ export default function App() {
   const noteUpdateInFlight = useRef(new Set<string>());
   const savedNoteFingerprints = useRef(new Map<string, string>());
   const savedNotePrivacyPolicies = useRef(new Map<string, WorkspaceNote['privacyPolicy']>());
+  const savedNoteRevisions = useRef(new Map<string, number>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const automationsLoaded = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
@@ -1597,11 +1598,20 @@ export default function App() {
         queueWorkspaceNoteUpdate(latest);
         return;
       }
+      const expectedRevision = savedNoteRevisions.current.get(latest.id);
+      if (expectedRevision === undefined) {
+        pushToast('Note could not be saved', 'Reload saved Notes before editing this item again.');
+        return;
+      }
       noteUpdateInFlight.current.add(latest.id);
       const sentFingerprint = workspaceNoteFingerprint(latest);
       const sentPrivacyPolicy = latest.privacyPolicy;
-      void api.updateWorkspaceNote(latest.id, workspaceNotePayload(latest, projectCatalog)).then((record) => {
+      void api.updateWorkspaceNote(latest.id, {
+        ...workspaceNotePayload(latest, projectCatalog),
+        expected_revision: expectedRevision,
+      }).then((record) => {
         const saved = workspaceNoteFromRecord(record, projectCatalog);
+        savedNoteRevisions.current.set(record.id, record.revision);
         savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
         savedNotePrivacyPolicies.current.set(saved.id, saved.privacyPolicy);
         const current = notesRef.current.find((item) => item.id === saved.id);
@@ -1617,7 +1627,10 @@ export default function App() {
           notesRef.current = next;
           setNotes(next);
         }
-        pushToast('Note was not saved', executionErrorText(error));
+        pushToast(error instanceof ApiError && error.status === 409 ? 'Note changed elsewhere' : 'Note was not saved',
+          error instanceof ApiError && error.status === 409
+            ? 'Reload saved Notes before continuing so newer content is not replaced.'
+            : executionErrorText(error));
       }).finally(() => {
         noteUpdateInFlight.current.delete(latest.id);
       });
@@ -1631,6 +1644,7 @@ export default function App() {
     const submittedFingerprint = workspaceNoteFingerprint(note);
     void api.createWorkspaceNote(workspaceNotePayload(note, projectCatalog)).then((record) => {
       const saved = workspaceNoteFromRecord(record, projectCatalog);
+      savedNoteRevisions.current.set(record.id, record.revision);
       savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
       savedNotePrivacyPolicies.current.set(saved.id, saved.privacyPolicy);
       const latest = notesRef.current.find((item) => item.id === note.id);
@@ -1669,6 +1683,7 @@ export default function App() {
     try {
       const page = await api.fetchWorkspaceNotesPage(cursor, 50);
       const liveNotes = page.items.map((record) => workspaceNoteFromRecord(record, projectCatalog));
+      for (const record of page.items) savedNoteRevisions.current.set(record.id, record.revision);
       for (const note of liveNotes) {
         savedNoteFingerprints.current.set(note.id, workspaceNoteFingerprint(note));
         savedNotePrivacyPolicies.current.set(note.id, note.privacyPolicy);

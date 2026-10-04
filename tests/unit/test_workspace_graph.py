@@ -360,7 +360,7 @@ async def test_context_bridge_and_manual_note_are_user_authored_and_editable(asy
 
     updated = await async_client.put(
         f"/v1/workspace/projects/aura/objects/{source.json()['id']}",
-        json={"title": "Source edited", "content": "Keep exact wording, edited by the user.", "metadata_json": {}},
+        json={"title": "Source edited", "content": "Keep exact wording, edited by the user.", "metadata_json": {}, "expected_revision": source.json()["revision"]},
     )
     assert updated.status_code == 200
     assert updated.json()["content"] == "Keep exact wording, edited by the user."
@@ -410,6 +410,7 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
         "title": "Shared migration note",
         "content": "Preserve the rollback path.",
         "metadata_json": {"privacy_policy": "local_only", "tags": ["migration"], "pinned": True},
+        "expected_revision": note["revision"],
     })
     assert board_edit.status_code == 200
 
@@ -419,6 +420,7 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
         "tags": ["decision"],
         "project_names": ["aura"],
         "pinned": False,
+        "expected_revision": board_edit.json()["revision"],
     })
     assert updated.status_code == 200
     assert updated.json()["project_names"] == ["aura"]
@@ -436,6 +438,7 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
         "project_names": ["aura"],
         "pinned": False,
         "privacy_policy": None,
+        "expected_revision": updated.json()["revision"],
     })
     assert cleared.status_code == 200
     assert cleared.json()["privacy_policy"] is None
@@ -443,6 +446,66 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
     linked_note = next(item for item in aura_graph["objects"] if item["id"] == note["id"])
     assert "privacy_policy" not in linked_note["metadata_json"]
     assert note["id"] not in {item["id"] for item in transport_graph["objects"]}
+
+
+@pytest.mark.asyncio
+async def test_workspace_object_revisions_reject_stale_board_and_notes_updates(async_client):
+    created = await async_client.post("/v1/workspace/notes", json={
+        "title": "Shared note",
+        "body": "Original body",
+        "project_names": ["aura"],
+    })
+    assert created.status_code == 201
+    note = created.json()
+    assert note["revision"] == 1
+
+    board_update = await async_client.put(f"/v1/workspace/projects/aura/objects/{note['id']}", json={
+        "title": "Shared note",
+        "content": "Updated from the Board",
+        "metadata_json": {},
+        "expected_revision": note["revision"],
+    })
+    assert board_update.status_code == 200
+    assert board_update.json()["revision"] == 2
+
+    stale_note_update = await async_client.put(f"/v1/workspace/notes/{note['id']}", json={
+        "title": "Shared note",
+        "body": "Stale Notes tab content",
+        "project_names": ["aura"],
+        "expected_revision": note["revision"],
+    })
+    assert stale_note_update.status_code == 409
+    assert stale_note_update.json()["detail"]["current_revision"] == 2
+
+    stale_board_update = await async_client.put(f"/v1/workspace/projects/aura/objects/{note['id']}", json={
+        "title": "Shared note",
+        "content": "Stale Board tab content",
+        "metadata_json": {},
+        "expected_revision": note["revision"],
+    })
+    assert stale_board_update.status_code == 409
+    assert stale_board_update.json()["detail"]["current_revision"] == 2
+
+    current_graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    current_note = next(item for item in current_graph["objects"] if item["id"] == note["id"])
+    assert current_note["content"] == "Updated from the Board"
+    assert current_note["revision"] == 2
+
+
+@pytest.mark.asyncio
+async def test_workspace_object_update_requires_an_expected_revision(async_client):
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Revision-required note",
+        "content": "Original body",
+    })
+    assert created.status_code == 201
+    response = await async_client.put(f"/v1/workspace/projects/aura/objects/{created.json()['id']}", json={
+        "title": "Revision-required note",
+        "content": "New body",
+        "metadata_json": {},
+    })
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -493,6 +556,7 @@ async def test_project_context_can_select_a_personal_note_and_board_delete_only_
         "title": "Deployment constraint",
         "content": "Keep the migration reversible.",
         "metadata_json": {"privacy_policy": "local_only"},
+        "expected_revision": created.json()["revision"],
     })
     assert board_edit.status_code == 200
     response = await async_client.post("/v1/chat", json={

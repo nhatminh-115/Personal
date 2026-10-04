@@ -90,6 +90,7 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
         workspaceObjectType: object.object_type,
         workspaceCreatedBy: object.created_by,
         workspaceMetadata: object.metadata_json,
+        workspaceRevision: object.revision,
         sourceCount: typeof object.metadata_json.source_count === 'number' ? object.metadata_json.source_count : mergeItems.length,
         mergeItems,
         bridgeOptions: kind === 'bridge' ? {
@@ -228,6 +229,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutWritesPending = useRef(0);
   const viewportRef = useRef(viewport);
   const workspaceObjectWriteSync = useRef<Map<string, Promise<void>>>(new Map());
+  const workspaceObjectRevisions = useRef<Map<string, number>>(new Map());
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
   const privacySaveVersions = useRef<Map<string, number>>(new Map());
@@ -266,7 +268,19 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     const save = previous.catch(() => undefined).then(async () => {
       const node = snapshot ?? nodesRef.current.find((item) => item.id === id);
       if (!node) return;
-      await api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(node));
+      const expectedRevision = workspaceObjectRevisions.current.get(id) ?? node.data.workspaceRevision;
+      if (typeof expectedRevision !== 'number') throw new Error('Workspace object revision is unavailable. Reload the Board before saving.');
+      const saved = await api.updateWorkspaceObject(workspaceProjectName, id, {
+        ...workspaceObjectWrite(node),
+        expected_revision: expectedRevision,
+      });
+      workspaceObjectRevisions.current.set(id, saved.revision);
+      nodesRef.current = nodesRef.current.map((item) => item.id === id
+        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision } }
+        : item);
+      setNodes((current) => current.map((item) => item.id === id
+        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision } }
+        : item));
     });
     workspaceObjectWriteSync.current.set(id, save);
     void save.then(
@@ -274,7 +288,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       () => { if (workspaceObjectWriteSync.current.get(id) === save) workspaceObjectWriteSync.current.delete(id); },
     );
     return save;
-  }, [workspaceProjectName]);
+  }, [setNodes, workspaceProjectName]);
 
   const attachWorkspaceSessions = useCallback((projectName: string, sessionIds: string[]) => {
     let scheduledNewAttachment = false;
@@ -402,12 +416,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const before = currentObjects.get(id);
         if (!before) {
           const sourceIds = target.edges.filter((edge) => edge.target === id && edge.data?.edgeFamily === 'context').map((edge) => edge.source);
-          await api.createWorkspaceObject(workspaceProjectName, {
+          const created = await api.createWorkspaceObject(workspaceProjectName, {
             id,
             object_type: node.data.workspaceObjectType as 'manual_note' | 'context_bridge' | 'context_set' | 'conversation_branch',
             ...workspaceObjectWrite(node),
             source_object_ids: sourceIds,
           });
+          workspaceObjectRevisions.current.set(id, created.revision);
           continue;
         }
         if (['manual_note', 'context_bridge'].includes(node.data.workspaceObjectType ?? '')
@@ -694,7 +709,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           const timer = window.setTimeout(() => {
             const latestNode = nodesRef.current.find((item) => item.id === id);
             if (!latestNode) return;
-            void queueWorkspaceObjectWrite(id).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
+              ? toast('Workspace object changed elsewhere', 'Reload the Board before editing again so newer saved content is not replaced.')
+              : toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
             timers.delete(id);
           }, 500);
           timers.set(id, timer);
@@ -719,7 +736,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setNodes((current) => current.map((item) => item.id === id ? updatedNode : item));
       if (workspaceProjectName) {
         void queueWorkspaceObjectWrite(id, updatedNode)
-          .catch(() => {
+          .catch((error) => {
             if (privacySaveVersions.current.get(id) !== saveVersion) return;
             setNodes((current) => current.map((item) => {
               if (item.id !== id) return item;
@@ -729,7 +746,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               else currentMetadata.privacy_policy = previousPolicy;
               return { ...item, data: { ...item.data, workspaceMetadata: currentMetadata } };
             }));
-            toast('Privacy setting was not saved', 'The previous saved classification remains active.');
+            toast('Privacy setting was not saved', error instanceof ApiError && error.status === 409
+              ? 'This object changed in another view. Reload the Board before changing its classification.'
+              : 'The previous saved classification remains active.');
           });
       }
     },
@@ -759,7 +778,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const latestNode = nodesRef.current.find((item) => item.id === id);
           if (!latestNode || latestNode.data.kind !== 'bridge') return;
-          void queueWorkspaceObjectWrite(id).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+          void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
+            ? toast('Workspace object changed elsewhere', 'Reload the Board before changing this Context Bridge again.')
+            : toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
@@ -781,7 +802,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const node = nodesRef.current.find((item) => item.id === id);
           if (!node || node.data.kind !== 'bridge') return;
-          void queueWorkspaceObjectWrite(id).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
+            ? toast('Workspace object changed elsewhere', 'Reload the Board before changing this Context Bridge again.')
+            : toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
@@ -1005,12 +1028,15 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const createNoteAt = useCallback(
     async (position: { x: number; y: number }, body = 'New manual note. Double-click the density control until Full to edit inline.') => {
       let id = `note-${idRef.current++}`;
+      let workspaceRevision: number | undefined;
       if (workspaceProjectName) {
         try {
           const created = await api.createWorkspaceObject(workspaceProjectName, {
             object_type: 'manual_note', title: 'Untitled note', content: body,
           });
           id = created.id;
+          workspaceRevision = created.revision;
+          workspaceObjectRevisions.current.set(id, created.revision);
         } catch {
           toast('Manual note was not saved', 'AURA could not create this note in the project graph.');
           return null;
@@ -1031,7 +1057,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         manual: true,
         accent: 'amber',
         layer: 'knowledge',
-        ...(workspaceProjectName ? { workspaceObjectType: 'manual_note', workspaceCreatedBy: 'user', workspaceMetadata: {} } : {}),
+        ...(workspaceProjectName ? { workspaceObjectType: 'manual_note', workspaceCreatedBy: 'user', workspaceMetadata: {}, workspaceRevision } : {}),
       },
       };
       setNodes((current) => [...current, note]);

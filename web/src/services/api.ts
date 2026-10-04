@@ -345,14 +345,14 @@ export const api = {
     };
   },
 
-  async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
+  async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'>): Promise<WorkspaceNoteRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
   },
 
-  async updateWorkspaceNote(id: string, input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceNoteRecord> {
+  async updateWorkspaceNote(id: string, input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'> & { expected_revision: number }): Promise<WorkspaceNoteRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
@@ -642,7 +642,7 @@ export const api = {
   },
 
   async updateWorkspaceObject(projectName: string, objectId: string, input: {
-    title: string; content: string; metadata_json?: Record<string, unknown>;
+    title: string; content: string; metadata_json?: Record<string, unknown>; expected_revision: number;
   }): Promise<WorkspaceObject> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),

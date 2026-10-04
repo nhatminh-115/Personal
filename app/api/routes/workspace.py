@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import String, and_, bindparam, case, delete as sa_delete, func, or_, select, text
+from sqlalchemy import String, and_, bindparam, case, delete as sa_delete, func, or_, select, text, update as sa_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -430,9 +430,54 @@ def _object_response(item: WorkspaceObjectModel) -> WorkspaceObjectResponse:
         title=item.title,
         content=item.content,
         metadata_json=item.metadata_json or {},
+        revision=item.revision,
         created_at=item.created_at,
         updated_at=item.updated_at,
     )
+
+
+async def _compare_and_swap_workspace_object(
+    db: AsyncSession,
+    item: WorkspaceObjectModel,
+    *,
+    expected_revision: int,
+    title: str,
+    content: str,
+    metadata_json: dict[str, object],
+) -> WorkspaceObjectModel:
+    object_id = item.id
+    result = await db.execute(
+        sa_update(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.id == object_id,
+            WorkspaceObjectModel.revision == expected_revision,
+        )
+        .values(
+            title=title,
+            content=content,
+            metadata_json=metadata_json,
+            revision=WorkspaceObjectModel.revision + 1,
+            updated_at=datetime.now(timezone.utc),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == object_id)
+        )
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Workspace object not found.")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Workspace object changed since it was loaded.",
+                "current_revision": current_revision,
+            },
+        )
+    await db.flush()
+    await db.refresh(item)
+    return item
 
 
 def _edge_response(edge: WorkspaceEdgeModel) -> WorkspaceEdgeResponse:
@@ -539,6 +584,7 @@ async def _workspace_note_responses(
             project_names=projects_by_note[item.id],
             pinned=metadata.get("pinned") is True,
             privacy_policy=metadata.get("privacy_policy") if isinstance(metadata.get("privacy_policy"), str) else None,
+            revision=item.revision,
             created_at=item.created_at,
             updated_at=item.updated_at,
         ))
@@ -960,16 +1006,22 @@ async def update_personal_workspace_note(
         or item.created_by != "user"
     ):
         raise HTTPException(status_code=404, detail="Personal workspace note not found.")
-    item.title = body.title
-    item.content = body.body
+    if body.expected_revision is None:
+        raise HTTPException(status_code=422, detail="expected_revision is required when updating a saved Note.")
     metadata = {**(item.metadata_json or {}), **_note_metadata(body)}
     if "privacy_policy" in body.model_fields_set:
         if body.privacy_policy is None:
             metadata.pop("privacy_policy", None)
         else:
             metadata["privacy_policy"] = body.privacy_policy
-    item.metadata_json = metadata
-    item.updated_at = datetime.now(timezone.utc)
+    await _compare_and_swap_workspace_object(
+        db,
+        item,
+        expected_revision=body.expected_revision,
+        title=body.title,
+        content=body.body,
+        metadata_json=metadata,
+    )
     await _sync_workspace_note_links(db, item, body.project_names)
     await db.commit()
     await db.refresh(item)
@@ -1143,12 +1195,15 @@ async def update_workspace_object(
         raise HTTPException(status_code=404, detail="Workspace object not found.")
     if item.created_by != "user" or item.object_type not in {"manual_note", "context_bridge"}:
         raise HTTPException(status_code=409, detail="Only user-authored notes and bridges can be edited.")
-    item.title = body.title
-    item.content = body.content
-    item.metadata_json = body.metadata_json
-    item.updated_at = datetime.now(timezone.utc)
+    await _compare_and_swap_workspace_object(
+        db,
+        item,
+        expected_revision=body.expected_revision,
+        title=body.title,
+        content=body.content,
+        metadata_json=body.metadata_json,
+    )
     await db.commit()
-    await db.refresh(item)
     return _object_response(item)
 
 

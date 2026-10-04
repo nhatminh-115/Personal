@@ -45,6 +45,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   workspaceObjectType?: string;
   workspaceCreatedBy?: string;
   workspaceMetadata?: Record<string, unknown>;
+  workspaceRevision?: number;
   layer: LayerKey;
   from?: string;
   to?: string;
@@ -229,6 +230,7 @@ export interface WorkspaceObject {
   title: string;
   content: string;
   metadata_json: Record<string, unknown>;
+  revision: number;
   created_at: string;
   updated_at: string;
 }
@@ -421,6 +423,7 @@ export interface WorkspaceNoteRecord {
   project_names: string[];
   pinned: boolean;
   privacy_policy?: string | null;
+  revision: number;
   created_at: string;
   updated_at: string;
 }
