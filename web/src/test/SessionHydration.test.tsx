@@ -126,6 +126,54 @@ describe('Session Hydration', () => {
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/sessions?page_size=25&project_name=Stateful+Architecture'));
   });
 
+  it('opens the exact source run from project-memory provenance', async () => {
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([{
+        id: 'memory-source-run', memory_type: 'project', project_name: 'Stateful Architecture',
+        key: 'runtime decision', content: 'Keep execution traceable.', confidence: 0.95, is_active: true,
+        created_at: '2026-10-04T00:00:00Z',
+        metadata_json: { source_session_id: 'source-session-1', source_run_id: 'source-run-1' },
+      }]) });
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, headers: { get: () => null }, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/routing/effective')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ profile: { id: 'system-balanced', name: 'System Balanced', version: 1, routes: {} }, winning_scope: 'system' }) });
+      if (url.includes('/v1/runs/source-run-1/routing')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ run_id: 'source-run-1', decisions: [] }) });
+      if (url.includes('/v1/runs/source-run-1')) return Promise.resolve({
+        ok: true,
+        headers: { get: () => null },
+        json: () => Promise.resolve({
+          id: 'source-run-1', session_id: 'source-session-1', status: 'completed',
+          user_message: 'Explain the persisted route', final_response: 'The route was persisted.',
+          created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:01Z',
+          events: [{ id: 'source-run-event', event_type: 'model_selected', payload: { provider: 'ollama', model: 'local-chat' }, created_at: '2026-10-04T00:00:00Z' }],
+        }),
+      });
+      if (url.includes('/v1/sessions/source-session-1')) return Promise.resolve({ ok: true, json: () => Promise.resolve({
+        id: 'source-session-1', title: 'Originating chat', project_name: 'Stateful Architecture',
+        created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:01Z', messages: [],
+      }) });
+      if (url.includes('/v1/sessions/source-session-1/state')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'source-session-1', run_id: null, run_status: null, approval: null }) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Chat' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Inspector' })); });
+    await screen.findByTestId('inspector-panel');
+    await act(async () => { fireEvent.click(screen.getByTestId('inspector-tab-memory')); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Why AURA remembers this' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open source run' })); });
+
+    expect(await screen.findByTestId('inspector-execution')).toBeInTheDocument();
+    expect(screen.getByText(/Run ID: source-run-1/)).toBeInTheDocument();
+    expect(screen.getByText('model_selected')).toBeInTheDocument();
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/runs/source-run-1?page_size=100'));
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/runs/source-run-1/routing'));
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/sessions/source-session-1'));
+  });
+
   it('loads older live messages with the next session cursor', async () => {
     const newerMessage = { ...BACKEND_MESSAGE, id: 'newer-message', content: 'Newest page message' };
     const olderMessage = { ...BACKEND_MESSAGE, id: 'older-message', content: 'Older page message' };
