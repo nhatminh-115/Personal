@@ -4658,6 +4658,23 @@ input:focus-visible {
   padding: 6px 12px 14px;
 }
 
+.aura-command__loading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 4px 4px;
+  color: #78909b;
+  font-size: 9px;
+}
+
+.aura-command__loading svg {
+  animation: aura-command-spin 1s linear infinite;
+}
+
+@keyframes aura-command-spin {
+  to { transform: rotate(360deg); }
+}
+
 .aura-command__answer {
   padding: 12px;
   border: 1px solid rgba(150, 180, 198, 0.07);
@@ -4737,6 +4754,29 @@ input:focus-visible {
 .aura-command__sources small {
   color: #536671;
   font-size: 7.2px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.aura-command__more {
+  width: 100%;
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid rgba(144, 174, 192, 0.07);
+  border-radius: 8px;
+  background: rgba(119, 149, 168, 0.035);
+  color: #8aa0aa;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.aura-command__more:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 .aura-command__foot {

@@ -121,6 +121,10 @@ cursor pagination, so matches are not limited to the references already loaded
 in the browser. It searches names, collection, detail, and tags; local file
 contents remain outside the index. Project Files applies the same search within
 references linked to the current project and keeps paging within that scope.
+The top-bar Quick Ask overlay is a workspace text-search surface: it queries
+persisted workspace objects through that search endpoint, shows returned
+excerpts and opens the selected saved object. It does not generate an AI answer
+or invent source cards; model-backed question answering remains in a live chat.
 Saved automations can update their name, description, instruction, and interval
 without changing project scope or the stable session used for their history.
 Already queued events keep their original instruction payload; the next

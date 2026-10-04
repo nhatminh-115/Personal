@@ -91,9 +91,9 @@ export function Topbar({
       ) : <div className="topbar__global-spacer" />}
 
       <div className="topbar__actions">
-        <button className="soft-pill aura-quick-trigger" type="button" onClick={onOpenAura} title="Ask AURA · Ctrl/⌘ K">
+        <button className="soft-pill aura-quick-trigger" type="button" onClick={onOpenAura} title="Search workspace · Ctrl/⌘ K">
           <Sparkles size={13} />
-          <span>Ask AURA</span>
+          <span>Search</span>
           <Command size={11} />
         </button>
         {inProject ? (

@@ -2757,6 +2757,24 @@ export default function App() {
     handleSidebarNavigate('study');
   };
 
+  const handleOpenQuickAskResult = (result: WorkspaceSearchResult) => {
+    setAuraOpen(false);
+    if (result.object_type === 'manual_note' && !result.project_name) {
+      handleOpenWorkspaceSearchNote(result.object_id);
+    } else if (result.object_type === 'file_reference' && !result.project_name) {
+      handleOpenWorkspaceSearchLibraryItem(result.object_id);
+    } else if (result.object_type === 'study_session') {
+      handleOpenWorkspaceSearchStudySession(result.object_id);
+    } else if (result.object_type === 'study_card' && result.related_object_id) {
+      handleOpenWorkspaceSearchStudySession(result.related_object_id);
+    } else if (result.project_name) {
+      handleOpenWorkspaceSearchResult(result.project_name, result.object_id);
+    } else {
+      setWorkspaceSearch({ query: result.title, projectName: null, results: [result], nextCursor: null, loading: false, loadingMore: false, error: null });
+      openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
+    }
+  };
+
   const hasActiveProjectSummary = Boolean(activeProject && workspaceSummary.project_name === activeProject.name);
   const projectFileCount = activeProjectId
     ? (hasActiveProjectSummary ? workspaceSummary.project_library_count : 0) + projectArtifacts.filter((item) => item.projectId === activeProjectId).length
@@ -3104,16 +3122,8 @@ export default function App() {
       {auraOpen ? (
         <AuraCommandPalette
           projectName={activeProject?.name ?? null}
-          libraryItems={libraryItems}
-          notes={notes}
-          activeAutomationCount={automationSummary.enabled}
-          libraryCount={workspaceSummary.library_count}
-          noteCount={workspaceSummary.note_count}
           onClose={() => setAuraOpen(false)}
-          onOpenLibrary={() => { setAuraOpen(false); handleSidebarNavigate('library'); }}
-          onOpenNotes={() => { setAuraOpen(false); handleSidebarNavigate('notes'); }}
-          onOpenAutomations={() => { setAuraOpen(false); handleSidebarNavigate('automations'); }}
-          onOpenProject={(projectId) => { setAuraOpen(false); openProject(projectId); }}
+          onOpenResult={handleOpenQuickAskResult}
         />
       ) : null}
       <ToastStack toasts={toasts} />
