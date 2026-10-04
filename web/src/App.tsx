@@ -474,10 +474,15 @@ export default function App() {
   const [sessionPageError, setSessionPageError] = useState<string | null>(null);
   const sessionPageRequestId = useRef(0);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
+  const [profileMemories, setProfileMemories] = useState<MemoryItem[] | null>(null);
+  const [profileMemoryNextCursor, setProfileMemoryNextCursor] = useState<string | null>(null);
+  const [profileMemoryLoading, setProfileMemoryLoading] = useState(false);
+  const [profileMemoryError, setProfileMemoryError] = useState<string | null>(null);
   const [memoryNextCursor, setMemoryNextCursor] = useState<string | null>(null);
   const [memoryPageLoading, setMemoryPageLoading] = useState(false);
   const [memoryPageError, setMemoryPageError] = useState<string | null>(null);
   const memoryPageRequestId = useRef(0);
+  const profileMemoryRequestId = useRef(0);
   const [threadRoutingOverrides, setThreadRoutingOverrides] = useState<Record<string, { model: string | null; reasoning: ReasoningEffort | null }>>({});
 
   const loadMemoryPage = useCallback(async (projectName: string, cursor?: string | null, append = false) => {
@@ -495,6 +500,24 @@ export default function App() {
       if (requestId === memoryPageRequestId.current) setMemoryPageError('Could not load project memories. Retry to continue.');
     } finally {
       if (requestId === memoryPageRequestId.current) setMemoryPageLoading(false);
+    }
+  }, []);
+
+  const loadProfileMemoryPage = useCallback(async (cursor?: string | null, append = false) => {
+    const requestId = ++profileMemoryRequestId.current;
+    setProfileMemoryLoading(true);
+    setProfileMemoryError(null);
+    try {
+      const page = await api.fetchMemories(undefined, undefined, cursor, true, 'profile');
+      if (requestId !== profileMemoryRequestId.current) return;
+      setProfileMemories((current) => append && current
+        ? [...current, ...page.items.filter((item) => !current.some((loaded) => loaded.id === item.id))]
+        : page.items);
+      setProfileMemoryNextCursor(page.nextCursor);
+    } catch {
+      if (requestId === profileMemoryRequestId.current) setProfileMemoryError('Could not load personal memories. Retry to continue.');
+    } finally {
+      if (requestId === profileMemoryRequestId.current) setProfileMemoryLoading(false);
     }
   }, []);
 
@@ -563,10 +586,16 @@ export default function App() {
     const append = Boolean(memoryNextCursor && memories.length > 0);
     await loadMemoryPage(activeProject.name, append ? memoryNextCursor : null, append);
   }, [activeProject?.name, loadMemoryPage, memories.length, memoryNextCursor, memoryPageLoading]);
-  const setProjectMemoryActive = useCallback(async (memoryId: string, isActive: boolean) => {
-    if (!activeProject?.name) throw new Error('Select a project before changing its memories.');
-    const updated = await api.setProjectMemoryActive(activeProject.name, memoryId, isActive);
-    setMemories((current) => current.map((memory) => memory.id === updated.id ? updated : memory));
+  const setMemoryActive = useCallback(async (memory: MemoryItem, isActive: boolean) => {
+    const updated = memory.memory_type === 'profile'
+      ? await api.setProfileMemoryActive(memory.id, isActive)
+      : activeProject?.name
+        ? await api.setProjectMemoryActive(activeProject.name, memory.id, isActive)
+        : null;
+    if (!updated) throw new Error('Select a project before changing project memories.');
+    const updateList = (current: MemoryItem[]) => current.map((item) => item.id === updated.id ? updated : item);
+    if (updated.memory_type === 'profile') setProfileMemories((current) => current ? updateList(current) : current);
+    else setMemories(updateList);
   }, [activeProject?.name]);
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
@@ -2944,11 +2973,17 @@ export default function App() {
             routingData={activeThreadLive.routingData}
             researchData={activeThreadLive.researchData}
             memories={memories}
+            profileMemories={profileMemories}
             memoryNextCursor={memoryNextCursor}
             memoryPageLoading={memoryPageLoading}
             memoryPageError={memoryPageError}
             onLoadMoreMemories={loadMoreMemories}
-            onSetMemoryActive={setProjectMemoryActive}
+            profileMemoryNextCursor={profileMemoryNextCursor}
+            profileMemoryLoading={profileMemoryLoading}
+            profileMemoryError={profileMemoryError}
+            onLoadProfileMemories={() => loadProfileMemoryPage()}
+            onLoadMoreProfileMemories={() => loadProfileMemoryPage(profileMemoryNextCursor, true)}
+            onSetMemoryActive={setMemoryActive}
             onClose={() => setInspectorOpen(false)}
             onContextSelect={openBoardNode}
           />

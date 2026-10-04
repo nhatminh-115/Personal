@@ -18,6 +18,7 @@ async def list_memories(
     response: Response,
     project_name: Optional[str] = Query(None, description="Optional project name scope"),
     session_id: Optional[str] = Query(None, description="Optional session ID scope"),
+    memory_type: Optional[str] = Query(default=None, max_length=32),
     cursor: Optional[str] = Query(default=None, max_length=512),
     page_size: int = Query(default=25, ge=1, le=100),
     include_inactive: bool = Query(default=True),
@@ -29,6 +30,10 @@ async def list_memories(
         stmt = stmt.where(MemoryModel.project_name == project_name)
     if session_id:
         stmt = stmt.where(MemoryModel.session_id == session_id)
+    if memory_type:
+        stmt = stmt.where(MemoryModel.memory_type == memory_type)
+        if memory_type == "profile":
+            stmt = stmt.where(MemoryModel.project_name.is_(None))
     if not include_inactive:
         stmt = stmt.where(MemoryModel.is_active.is_(True))
     if cursor is not None:
@@ -78,30 +83,72 @@ async def set_project_memory_active(
     if not normalized_project:
         raise HTTPException(status_code=422, detail="Project name must not be blank.")
 
+    return await _set_memory_active(
+        db,
+        memory_id=memory_id,
+        memory_type="project",
+        project_name=normalized_project,
+        not_found_detail="Project memory not found.",
+        is_active=body.is_active,
+    )
+
+
+@router.patch("/profile/{memory_id}", response_model=MemoryItemResponse)
+async def set_profile_memory_active(
+    memory_id: str,
+    body: MemoryActivationUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> MemoryItemResponse:
+    """Deactivate or restore one cross-project profile memory."""
+    return await _set_memory_active(
+        db,
+        memory_id=memory_id,
+        memory_type="profile",
+        project_name=None,
+        not_found_detail="Profile memory not found.",
+        is_active=body.is_active,
+    )
+
+
+async def _set_memory_active(
+    db: AsyncSession,
+    *,
+    memory_id: str,
+    memory_type: str,
+    project_name: Optional[str],
+    not_found_detail: str,
+    is_active: bool,
+) -> MemoryItemResponse:
+    scope_filter = (
+        MemoryModel.project_name == project_name
+        if project_name is not None
+        else MemoryModel.project_name.is_(None)
+    )
     result = await db.execute(select(MemoryModel).where(
         MemoryModel.id == memory_id,
-        MemoryModel.memory_type == "project",
-        MemoryModel.project_name == normalized_project,
+        MemoryModel.memory_type == memory_type,
+        scope_filter,
     ))
     memory = result.scalar_one_or_none()
     if memory is None:
-        raise HTTPException(status_code=404, detail="Project memory not found.")
+        raise HTTPException(status_code=404, detail=not_found_detail)
 
-    if body.is_active and not memory.is_active:
-        active_result = await db.execute(select(MemoryModel.id).where(
+    if is_active and not memory.is_active:
+        active_query = select(MemoryModel.id).where(
             MemoryModel.memory_type == memory.memory_type,
-            MemoryModel.project_name == normalized_project,
+            scope_filter,
             MemoryModel.key == memory.key,
             MemoryModel.is_active.is_(True),
             MemoryModel.id != memory.id,
-        ).limit(1))
+        ).limit(1)
+        active_result = await db.execute(active_query)
         if active_result.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=409,
-                detail="A newer active memory already uses this key. Deactivate it before restoring this version.",
+                detail="An active memory already uses this key. Deactivate it before restoring this version.",
             )
 
-    memory.is_active = body.is_active
+    memory.is_active = is_active
     await db.commit()
     await db.refresh(memory)
     return MemoryItemResponse(

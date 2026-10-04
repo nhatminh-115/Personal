@@ -828,7 +828,7 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
   },
 
-  async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null, includeInactive = false): Promise<{
+  async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null, includeInactive = false, memoryType?: string): Promise<{
     items: MemoryItem[];
     nextCursor: string | null;
   }> {
@@ -836,6 +836,7 @@ export const api = {
     if (projectName) params.append('project_name', projectName);
     if (sessionId) params.append('session_id', sessionId);
     if (includeInactive) params.set('include_inactive', 'true');
+    if (memoryType) params.set('memory_type', memoryType);
     params.set('page_size', '25');
     if (cursor) params.set('cursor', cursor);
 
@@ -850,6 +851,17 @@ export const api = {
   async setProjectMemoryActive(projectName: string, memoryId: string, isActive: boolean): Promise<MemoryItem> {
     return handleResponse(await fetch(
       `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive }),
+      },
+    ));
+  },
+
+  async setProfileMemoryActive(memoryId: string, isActive: boolean): Promise<MemoryItem> {
+    return handleResponse(await fetch(
+      `${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
