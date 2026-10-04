@@ -1,5 +1,5 @@
 import { ArrowLeft, ExternalLink, File, FileCode2, FileSpreadsheet, FileText, Link2, Plus, Search, Upload, X } from 'lucide-react';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { projectArtifacts, type LibraryItem, type ProjectRecord } from '../../data/workspaceData';
 
 interface ProjectFilesViewProps {
@@ -13,6 +13,12 @@ interface ProjectFilesViewProps {
   loadingMoreLibrary?: boolean;
   libraryLoadError?: string | null;
   onLoadMoreLibrary?: () => void;
+  searchItems?: LibraryItem[];
+  searchHasMore?: boolean;
+  searchLoading?: boolean;
+  searchError?: string | null;
+  onSearchLibrary?: (query: string) => void;
+  onLoadMoreSearch?: () => void;
 }
 
 function iconForKind(kind: string) {
@@ -22,16 +28,21 @@ function iconForKind(kind: string) {
   return File;
 }
 
-export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary }: ProjectFilesViewProps) {
+export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, searchItems = [], searchHasMore = false, searchLoading = false, searchError, onSearchLibrary, onLoadMoreSearch }: ProjectFilesViewProps) {
   const [query, setQuery] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const linked = useMemo(() => libraryItems.filter((item) => item.projectLinks?.includes(project.id)), [libraryItems, project.id]);
+  const linked = useMemo(() => (query.trim() ? searchItems : libraryItems).filter((item) => item.projectLinks?.includes(project.id)), [libraryItems, project.id, query, searchItems]);
   const available = useMemo(() => libraryItems.filter((item) => !item.projectLinks?.includes(project.id)), [libraryItems, project.id]);
   const localArtifacts = useMemo(() => projectArtifacts.filter((item) => item.projectId === project.id), [project.id]);
   const q = query.trim().toLowerCase();
-  const filteredLinked = linked.filter((item) => !q || `${item.name} ${item.detail}`.toLowerCase().includes(q));
+  const filteredLinked = linked.filter((item) => !q || `${item.name} ${item.collection} ${item.detail} ${item.tags.join(' ')}`.toLowerCase().includes(q));
   const filteredLocal = localArtifacts.filter((item) => !q || `${item.name} ${item.detail}`.toLowerCase().includes(q));
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => onSearchLibrary?.(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [onSearchLibrary, query]);
 
   return (
     <section className="project-files-view">
@@ -60,7 +71,7 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
       </div>
 
       <label className="project-files-search"><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project files and artifacts" /></label>
-      {query.trim() && hasMoreLibrary ? <small className="notes-search-scope">Search covers loaded Library references. Load more below to include older items.</small> : null}
+      {query.trim() && <small className="notes-search-scope">Search covers all Library references linked to this project, plus project-local artifacts.</small>}
 
       {linkOpen ? (
         <div className="project-link-picker">
@@ -78,7 +89,7 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
       ) : null}
 
       <div className="project-files-section">
-        <div className="section-heading section-heading--compact"><div><span className="eyebrow">LINKED FROM LIBRARY</span><h2>{linked.length}{hasMoreLibrary ? '+' : ''} loaded personal files</h2></div><small>Reusable across projects</small></div>
+        <div className="section-heading section-heading--compact"><div><span className="eyebrow">LINKED FROM LIBRARY</span><h2>{q ? `${filteredLinked.length}${searchHasMore ? '+' : ''} matching personal files` : `${linked.length}${hasMoreLibrary ? '+' : ''} loaded personal files`}</h2></div><small>Reusable across projects</small></div>
         <div className="project-file-list">
           {filteredLinked.length ? filteredLinked.map((item) => {
             const Icon = iconForKind(item.kind);
@@ -90,11 +101,13 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
                 <button className="unlink-button" type="button" onClick={() => onToggleProjectLink(item.id, project.id)}>Unlink</button>
               </div>
             );
-          }) : <div className="empty-section">No linked Library files match this search.</div>}
+          }) : q && searchLoading ? <div className="notes-list-pagination" role="status">Searching project Library references…</div> : <div className="empty-section">No linked Library files match this search.</div>}
         </div>
+        {q && searchError ? <div className="notes-list-pagination" role="status"><span>Could not search project Library references: {searchError}</span><button type="button" disabled={searchLoading} onClick={() => onSearchLibrary?.(q)}>Retry</button></div> : null}
         {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library references: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
         {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library references…</div> : null}
-        {!libraryLoadError && hasMoreLibrary ? <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more Library references'}</button> : null}
+        {!q && !libraryLoadError && hasMoreLibrary ? <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more Library references'}</button> : null}
+        {q && searchHasMore && !searchError ? <button className="notes-load-more" type="button" disabled={searchLoading} onClick={onLoadMoreSearch}>{searchLoading ? 'Loading matches…' : 'Load more matches'}</button> : null}
       </div>
 
       <div className="project-files-section">
