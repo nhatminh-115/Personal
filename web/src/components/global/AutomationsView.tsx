@@ -11,6 +11,7 @@ interface AutomationInput {
   scope: 'global' | 'project';
   project_name?: string;
   interval_seconds: number;
+  schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
 }
 
 interface AutomationsViewProps {
@@ -23,7 +24,7 @@ interface AutomationsViewProps {
   pageError?: string | null;
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
-  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds'>) => Promise<AutomationRecord>;
+  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds' | 'schedule'>) => Promise<AutomationRecord>;
   onDuplicate?: (automation: AutomationRecord) => void;
   onSetArchived?: (automation: AutomationRecord, archived: boolean) => void;
   includeArchived?: boolean;
@@ -36,6 +37,7 @@ interface AutomationsViewProps {
 
 const intervalUnits = { seconds: 1, minutes: 60, hours: 3600, days: 86400 } as const;
 type IntervalUnit = keyof typeof intervalUnits;
+const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 function safeRunEventSummary(event: RunEvent): string | null {
   const payload = event.payload;
@@ -64,6 +66,10 @@ export function AutomationsView({ projects, automations, totalCount = automation
   const [projectId, setProjectId] = useState(projects[0]?.id ?? '');
   const [interval, setInterval] = useState(1);
   const [unit, setUnit] = useState<IntervalUnit>('days');
+  const [scheduleMode, setScheduleMode] = useState<'interval' | 'daily' | 'weekly'>('interval');
+  const [scheduleTime, setScheduleTime] = useState('09:00');
+  const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+  const [scheduleTimezone, setScheduleTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [approvalReview, setApprovalReview] = useState<{ automation: AutomationRecord; approval: ApprovalDetail } | null>(null);
@@ -238,6 +244,11 @@ export function AutomationsView({ projects, automations, totalCount = automation
     const unit = (Object.entries(intervalUnits).reverse().find(([, size]) => seconds % size === 0)?.[0] ?? 'seconds') as IntervalUnit;
     setUnit(unit);
     setInterval(seconds / intervalUnits[unit]);
+    const schedule = automation.schedule ?? { mode: 'interval' as const, local_time: null, weekdays: [], timezone: 'UTC' };
+    setScheduleMode(schedule.mode);
+    setScheduleTime(schedule.local_time ?? '09:00');
+    setScheduleWeekdays(schedule.weekdays.length ? schedule.weekdays : [0, 1, 2, 3, 4]);
+    setScheduleTimezone(schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
     setError('');
     setCreating(true);
   };
@@ -254,7 +265,16 @@ export function AutomationsView({ projects, automations, totalCount = automation
     setSaving(true);
     setError('');
     try {
-      const common = { name: name.trim(), description: description.trim(), instruction: instruction.trim(), interval_seconds: interval * intervalUnits[unit] };
+      const common = {
+        name: name.trim(), description: description.trim(), instruction: instruction.trim(),
+        interval_seconds: interval * intervalUnits[unit],
+        schedule: {
+          mode: scheduleMode,
+          local_time: scheduleMode === 'interval' ? null : scheduleTime,
+          weekdays: scheduleMode === 'weekly' ? scheduleWeekdays : [],
+          timezone: scheduleTimezone,
+        },
+      };
       if (editingAutomation) {
         if (!onUpdate) throw new Error('Editing automations is unavailable.');
         await onUpdate(editingAutomation.id, common);
@@ -262,7 +282,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         const project = projects.find((item) => item.id === projectId);
         await onCreate({ ...common, scope, project_name: scope === 'project' ? project?.name : undefined });
       }
-      setName(''); setDescription(''); setInstruction(''); setCreating(false); setEditingAutomation(null);
+      setName(''); setDescription(''); setInstruction(''); setCreating(false); setEditingAutomation(null); setScheduleMode('interval');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save automation.');
     } finally {
@@ -280,7 +300,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         </div>
         <div className="automations-view__header-actions">
           {onToggleArchived ? <button className="secondary-button" type="button" onClick={onToggleArchived} disabled={loadingPage}>{includeArchived ? 'Hide archived' : 'Include archived'}</button> : null}
-          <button className="primary-soft-button" type="button" onClick={() => { setEditingAutomation(null); setName(''); setDescription(''); setInstruction(''); setCreating(true); }}><Plus size={15} /> New automation</button>
+          <button className="primary-soft-button" type="button" onClick={() => { setEditingAutomation(null); setName(''); setDescription(''); setInstruction(''); setScheduleMode('interval'); setScheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); setCreating(true); }}><Plus size={15} /> New automation</button>
         </div>
       </div>
 
@@ -432,10 +452,16 @@ export function AutomationsView({ projects, automations, totalCount = automation
             <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this routine is for" /></label>
             <label><span>Instruction for AURA</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what AURA should do each time it runs" rows={4} /></label>
             {editingAutomation ? <p className="modal-note">Scope stays {editingAutomation.scope === 'global' ? 'global' : `in ${editingAutomation.projectName ?? 'its current project'}`} so this routine keeps its existing session and history.</p> : <><div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>{scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}</>}
-            <label className="automation-interval"><span>Run every</span><input type="number" min={unit === 'seconds' ? 60 : 1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(unit === 'seconds' ? 60 : 1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => { const nextUnit = event.target.value as IntervalUnit; setUnit(nextUnit); setInterval((current) => Math.max(nextUnit === 'seconds' ? 60 : 1, current)); }}><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label>
+            <label><span>Schedule</span><select aria-label="Schedule" value={scheduleMode} onChange={(event) => setScheduleMode(event.target.value as typeof scheduleMode)}><option value="interval">Repeat after an interval</option><option value="daily">Every day at a local time</option><option value="weekly">Selected weekdays at a local time</option></select></label>
+            {scheduleMode === 'interval' ? <label className="automation-interval"><span>Run every</span><input type="number" min={unit === 'seconds' ? 60 : 1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(unit === 'seconds' ? 60 : 1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => { const nextUnit = event.target.value as IntervalUnit; setUnit(nextUnit); setInterval((current) => Math.max(nextUnit === 'seconds' ? 60 : 1, current)); }}><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label> : <>
+              <label><span>Local time</span><input aria-label="Local time" type="time" value={scheduleTime} onChange={(event) => setScheduleTime(event.target.value)} /></label>
+              {scheduleMode === 'weekly' ? <fieldset className="automation-weekdays"><legend>Run on</legend>{weekdays.map((day, index) => <label key={day}><input type="checkbox" checked={scheduleWeekdays.includes(index)} onChange={(event) => setScheduleWeekdays((current) => event.target.checked ? [...current, index].sort() : current.filter((value) => value !== index))} />{day}</label>)}</fieldset> : null}
+              <label><span>Timezone</span><input aria-label="Timezone" value={scheduleTimezone} onChange={(event) => setScheduleTimezone(event.target.value)} placeholder="Asia/Saigon" /></label>
+              {scheduleMode === 'weekly' && scheduleWeekdays.length === 0 ? <p className="automation-form-error" role="alert">Choose at least one weekday.</p> : null}
+            </>}
             {error ? <p className="automation-form-error" role="alert">{error}</p> : null}
             <div className="modal-note">AURA queues scheduled runs through its durable event system. Tool actions still follow their normal approval rules.{editingAutomation ? ' Changing the interval starts a new countdown from save time. Already queued runs keep the instruction snapshot they started with.' : ''}</div>
-            <button className="primary-soft-button" type="button" onClick={() => void save()} disabled={saving || !name.trim() || !instruction.trim() || (!editingAutomation && scope === 'project' && !projectId)}>{saving ? 'Saving…' : editingAutomation ? 'Save changes' : 'Create automation'}</button>
+            <button className="primary-soft-button" type="button" onClick={() => void save()} disabled={saving || !name.trim() || !instruction.trim() || (!editingAutomation && scope === 'project' && !projectId) || (scheduleMode === 'weekly' && scheduleWeekdays.length === 0) || !scheduleTimezone.trim()}>{saving ? 'Saving…' : editingAutomation ? 'Save changes' : 'Create automation'}</button>
           </div>
         </div>
       ) : null}

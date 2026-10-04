@@ -224,6 +224,8 @@ typing-inspection==0.4.4
     #   mcp
     #   pydantic
     #   pydantic-settings
+tzdata==2026.5
+    # via aura (pyproject.toml)
 urllib3==2.8.0
     # via
     #   docker

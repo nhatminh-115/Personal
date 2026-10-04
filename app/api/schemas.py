@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.capabilities.registry import CapabilityProviderMetadata
+from app.events.automation_schedule import AutomationSchedule
 
 MAX_CHAT_METADATA_BYTES = 64 * 1024
 MAX_APPROVAL_EDITED_INPUT_BYTES = 2 * 1024 * 1024
@@ -393,14 +394,16 @@ class AutomationWrite(BaseModel):
     instruction: str = Field(min_length=1, max_length=20_000)
     scope: Literal["global", "project"] = "global"
     project_name: Optional[str] = Field(default=None, max_length=128)
-    interval_seconds: int = Field(ge=60, le=31_536_000)
+    interval_seconds: int = Field(default=86_400, ge=60, le=31_536_000)
+    schedule: AutomationSchedule = Field(default_factory=AutomationSchedule)
 
 
 class AutomationEditWrite(BaseModel):
     name: str = Field(min_length=1, max_length=128)
     description: str = Field(default="", max_length=500)
     instruction: str = Field(min_length=1, max_length=20_000)
-    interval_seconds: int = Field(ge=60, le=31_536_000)
+    interval_seconds: int = Field(default=86_400, ge=60, le=31_536_000)
+    schedule: Optional[AutomationSchedule] = None
 
 
 class AutomationDuplicateWrite(BaseModel):
@@ -425,6 +428,7 @@ class AutomationResponse(BaseModel):
     scope: Literal["global", "project"]
     project_name: Optional[str] = None
     interval_seconds: int
+    schedule: AutomationSchedule = Field(default_factory=AutomationSchedule)
     last_run_at: Optional[datetime] = None
     next_run_at: datetime
     created_at: datetime

@@ -507,6 +507,7 @@ export interface AutomationRecordResponse {
   scope: 'global' | 'project';
   project_name: string | null;
   interval_seconds: number;
+  schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   last_run_at: string | null;
   next_run_at: string;
   created_at: string;
