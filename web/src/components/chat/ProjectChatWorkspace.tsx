@@ -7,20 +7,24 @@ import { ChatPane } from './ChatPane';
 
 function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>): AIContextItem[] {
   return objects.map((object) => {
-    const kind: AIContextItem['kind'] = object.object_type === 'manual_note' ? 'note'
+    const metadataOnlyFile = object.object_type === 'file_reference' && !object.content;
+    const kind: AIContextItem['kind'] = object.object_type === 'file_reference' ? 'file'
+      : object.object_type === 'manual_note' ? 'note'
       : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
         : object.object_type === 'research_claim' ? 'claim' : 'turn';
     const verification = object.metadata_json.verification_status;
-    const detail = object.object_type === 'research_claim' && typeof verification === 'string'
-      ? `research claim · ${verification} · saved in this project`
-      : `${object.object_type.split('_').join(' ')} · saved in this project`;
+    const detail = metadataOnlyFile
+      ? 'file reference · metadata only · file content stays in your browser; only this reference is available to AURA'
+      : object.object_type === 'research_claim' && typeof verification === 'string'
+        ? `research claim · ${verification} · saved in this project`
+        : `${object.object_type.split('_').join(' ')} · saved in this project`;
     return {
       id: `workspace-${object.id}`,
       nodeId: object.id,
       kind,
       title: object.title || object.object_type.split('_').join(' '),
       detail,
-      tokens: Math.max(1, Math.ceil(object.content.length / 4)),
+      tokens: metadataOnlyFile ? 0 : Math.max(1, Math.ceil(object.content.length / 4)),
       included: selectedIds.has(object.id),
     };
   });
