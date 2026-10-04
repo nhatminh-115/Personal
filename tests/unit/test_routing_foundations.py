@@ -1692,6 +1692,44 @@ async def test_fallback_blocked_event_recorded_on_routing_rejection(test_db_sess
     assert ev.payload["privacy_boundary"] == "local_only"
 
 
+@pytest.mark.asyncio
+async def test_reason_node_applies_configured_model_generation_settings(monkeypatch):
+    from app.core.settings import settings
+    from app.orchestrator.nodes import reason_node
+
+    monkeypatch.setattr(settings, "MODEL_TEMPERATURE", 0.35)
+    monkeypatch.setattr(settings, "MODEL_MAX_TOKENS", 512)
+    provider = SpyModelProvider(name="spy-local", privacy="local")
+    router = ModelRouter(default_provider_name="spy-local")
+    router.register_provider(
+        provider,
+        ProviderMetadata(
+            name="spy-local",
+            capabilities=["general"],
+            default_model="spy-v1",
+            models=["spy-v1"],
+            privacy_status="local",
+        ),
+    )
+
+    class EmptyToolRegistry:
+        def get_tool_definitions(self):
+            return []
+
+    await reason_node(
+        {
+            "run_id": str(uuid.uuid4()),
+            "session_id": str(uuid.uuid4()),
+            "messages": [{"role": "user", "content": "Answer briefly."}],
+        },
+        {"configurable": {"model_router": router, "tool_registry": EmptyToolRegistry()}},
+    )
+
+    assert provider.last_request is not None
+    assert provider.last_request.temperature == 0.35
+    assert provider.last_request.max_tokens == 512
+
+
 def test_required_context_window_filters_known_short_model_before_selection():
     policy = DeterministicRoutingPolicy()
     metadata = {
