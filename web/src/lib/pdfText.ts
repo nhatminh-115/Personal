@@ -28,10 +28,13 @@ export async function extractPdfText(blob: Blob): Promise<string> {
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber);
       const content = await page.getTextContent();
+      let previousItemEndedLine = false;
       const pageText = content.items.reduce((rendered, item) => {
-        if (!('str' in item) || !item.str.trim()) return rendered;
-        const separator = rendered ? (item.hasEOL ? '\n' : ' ') : '';
-        return `${rendered}${separator}${item.str.trim()}`;
+        if (!('str' in item)) return rendered;
+        const text = item.str.trim();
+        const separator = rendered ? (previousItemEndedLine ? '\n' : ' ') : '';
+        previousItemEndedLine = item.hasEOL === true;
+        return text ? `${rendered}${separator}${text}` : rendered;
       }, '');
       if (pageText) {
         characterCount += Array.from(pageText).length;

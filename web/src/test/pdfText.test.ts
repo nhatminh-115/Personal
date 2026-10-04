@@ -16,6 +16,13 @@ function mockPdf(pages: string[][]) {
   return { getPage, destroy };
 }
 
+function mockPdfItems(items: Array<{ str: string; hasEOL?: boolean }>) {
+  const getPage = vi.fn(async () => ({ getTextContent: async () => ({ items }) }));
+  const destroy = vi.fn().mockResolvedValue(undefined);
+  pdfjs.getDocument.mockReturnValue({ promise: Promise.resolve({ numPages: 1, getPage }), destroy });
+  return { destroy };
+}
+
 describe('browser-local PDF text extraction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,6 +42,17 @@ describe('browser-local PDF text extraction', () => {
     expect(getPage).toHaveBeenNthCalledWith(2, 2);
     expect(pdfjs.getDocument).toHaveBeenCalledWith(expect.objectContaining({ stopAtErrors: true, disableAutoFetch: true }));
     expect(destroy).toHaveBeenCalledOnce();
+  });
+
+  it('preserves PDF line breaks from text item boundaries', async () => {
+    mockPdfItems([
+      { str: 'Heading', hasEOL: true },
+      { str: 'First line' },
+      { str: 'continues' },
+      { str: 'Second line', hasEOL: true },
+    ]);
+
+    await expect(extractPdfText(new Blob(['%PDF fixture']))).resolves.toBe('Heading\nFirst line continues Second line');
   });
 
   it('rejects oversized PDFs before parsing', async () => {
