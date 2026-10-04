@@ -606,6 +606,42 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.getByTitle('Redo · Ctrl ⇧ Z')).toBeDisabled();
   });
 
+  it('does not create a phantom Undo entry when a saved semantic link fails', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [
+        savedGraph.objects[0],
+        { ...savedGraph.objects[0], id: 'turn-2', title: 'Second answer', content: 'Another persisted node.' },
+      ],
+      layout: {
+        ...savedGraph.layout,
+        layout: {
+          positions: { 'turn-1': { x: 80, y: 60 }, 'turn-2': { x: 480, y: 60 } },
+          densities: { 'turn-1': 'compact', 'turn-2': 'compact' },
+        },
+      },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const createEdge = vi.spyOn(api, 'createWorkspaceEdge').mockRejectedValue(new Error('offline'));
+    const onToast = vi.fn();
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="failed-semantic-link" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    await screen.findByText('Second answer');
+    fireEvent.click(screen.getByRole('button', { name: 'Link' }));
+    fireEvent.click(screen.getByText('Persistent answer'));
+    fireEvent.click(screen.getByText('Second answer'));
+
+    await waitFor(() => expect(createEdge).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith('Link was not saved', expect.anything()));
+    expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
+  });
+
   it('serializes layout writes from live Board changes and undo/redo against the latest revision', async () => {
     const initialGraph: WorkspaceGraph = {
       ...savedGraph,
