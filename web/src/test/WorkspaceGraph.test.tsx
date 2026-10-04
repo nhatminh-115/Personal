@@ -701,6 +701,29 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByRole('button', { name: 'Retry save' })).not.toBeInTheDocument();
   });
 
+  it('offers retry when the initial Board layout bootstrap save fails', async () => {
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(savedGraph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const saveLayout = vi.spyOn(api, 'putWorkspaceLayout')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ ...savedGraph.layout, revision: 4 });
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="retryable-layout-bootstrap" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    await waitFor(() => expect(saveLayout).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText('Layout not saved')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry save' }));
+
+    await waitFor(() => expect(saveLayout).toHaveBeenCalledTimes(2));
+    expect(saveLayout.mock.calls[1][1]).toEqual(saveLayout.mock.calls[0][1]);
+    expect(saveLayout.mock.calls[1][2]).toBe(3);
+    await waitFor(() => expect(screen.queryByText('Layout not saved')).not.toBeInTheDocument());
+  });
+
   it('offers a live chat action on saved branches and restores the selected branch context', async () => {
     const branchId = 'branch-object-1';
     const graph: WorkspaceGraph = {

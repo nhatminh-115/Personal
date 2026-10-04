@@ -593,19 +593,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const persistedDensities = loadedGraph.layout.layout?.densities ?? {};
       const missingLayout = nextNodes.some((node) => !persistedPositions[node.id] || !persistedDensities[node.id]);
       if (missingLayout) {
+        const initialLayout = {
+          positions: Object.fromEntries(nextNodes.map((node) => [node.id, node.position])),
+          densities: Object.fromEntries(nextNodes.map((node) => [node.id, node.data.density])),
+          viewport: savedViewport,
+        };
+        layoutRevision.current = revision;
         try {
-          const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, {
-            positions: Object.fromEntries(nextNodes.map((node) => [node.id, node.position])),
-            densities: Object.fromEntries(nextNodes.map((node) => [node.id, node.data.density])),
-            viewport: savedViewport,
-          }, revision);
-          revision = savedLayout.revision;
+          await saveWorkspaceLayout(initialLayout, JSON.stringify(initialLayout));
+          revision = layoutRevision.current;
         } catch (error) {
           if (error instanceof ApiError && error.status === 409) {
             layoutConflict.current = true;
             setLayoutSaveState('conflict');
           }
-          toast('Some Board positions were not saved', 'AURA could not initialize the missing positions in the saved layout.');
+          toast('Some Board positions were not saved', 'The current layout remains visible here. Click Retry save to try again.');
         }
       }
       if (cancelled) return;
@@ -636,7 +638,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from AURA.');
     });
     return () => { cancelled = true; };
-  }, [attachWorkspaceSessions, workspaceProjectName, setEdges, setNodes, toast]);
+  }, [attachWorkspaceSessions, saveWorkspaceLayout, workspaceProjectName, setEdges, setNodes, toast]);
 
   useEffect(() => {
     if (!workspaceProjectName || !workspaceSessionKey) return;
