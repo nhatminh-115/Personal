@@ -3,8 +3,19 @@ import json
 import os
 import subprocess
 import sys
+import uuid
+from contextlib import asynccontextmanager
 
-from scripts.dogfood_coding_impact_live import _chat_request_payload, _safe_run_events, live_environment_error
+import pytest
+
+from app.db.models import RunModel, SessionModel
+
+from scripts.dogfood_coding_impact_live import (
+    _chat_request_payload,
+    _latest_run_id_for_session,
+    _safe_run_events,
+    live_environment_error,
+)
 
 
 def test_preflight_requires_openai_and_never_accepts_mock():
@@ -89,3 +100,21 @@ def test_pending_approvals_are_taken_from_persisted_approval_events():
     from scripts.dogfood_coding_impact_live import _pending_approval_ids
 
     assert _pending_approval_ids([Event()]) == ["approval-child"]
+
+
+@pytest.mark.asyncio
+async def test_dogfood_can_find_run_id_after_chat_returns_an_error(test_db_session, monkeypatch):
+    session_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(id=run_id, session_id=session_id, user_message="Dogfood request"))
+    await test_db_session.commit()
+
+    @asynccontextmanager
+    async def use_test_session():
+        yield test_db_session
+
+    from app.db import session as db_session
+    monkeypatch.setattr(db_session, "async_session_factory", use_test_session)
+
+    assert await _latest_run_id_for_session(session_id) == run_id

@@ -133,6 +133,30 @@ def _safe_run_events(events: list[Any]) -> dict[str, Any]:
     return {"tool_sequence": tools, "artifacts": artifacts, "failures": failures}
 
 
+async def _latest_run_id_for_session(session_id: str) -> str | None:
+    """Find the persisted run when /v1/chat failed before returning its run ID."""
+    from sqlalchemy import select
+    from app.db.models import RunModel
+    from app.db.session import async_session_factory
+
+    async with async_session_factory() as db:
+        result = await db.execute(
+            select(RunModel.id)
+            .where(RunModel.session_id == session_id)
+            .order_by(RunModel.created_at.desc(), RunModel.id.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+
+def _write_coding_report(report: dict[str, Any]) -> Path:
+    output_dir = Path("artifacts/dogfood").resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / f"coding-impact-{report['parent_run_id']}.json"
+    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    return report_path
+
+
 def configure_isolated_runtime(workspace_root: Path, run_key: str) -> None:
     """Point all mutable runtime state at ignored, run-specific dogfood files."""
     from sqlalchemy.engine import URL
@@ -217,6 +241,7 @@ async def audit_coding_run(parent_run_id: str, response_status: str, elapsed_sec
             "elapsed_seconds": round(elapsed_seconds, 2),
             "routing_decisions": _model_decisions(parent_events),
             "context_manifest": _context_manifest(parent_events),
+            "parent_execution": _safe_run_events(parent_events),
             "children": children,
             "checkpoint_status": checkpoints,
             "pending_approval_ids": _pending_approval_ids(parent_events),
@@ -253,26 +278,42 @@ async def run_live_dogfood() -> None:
     app = create_app()
     session_id = f"sess-dogfood-coding-{run_key}"
     started = time.monotonic()
+    response_status = "unknown"
+    http_failure_status: int | None = None
     async with lifespan(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=300.0) as client:
             response = await client.post("/v1/chat", json=_chat_request_payload(session_id))
             if response.status_code != 200:
-                raise SystemExit(f"/v1/chat failed with HTTP {response.status_code}; inspect the server log.")
-            payload = response.json()
-            parent_run_id = payload.get("run_id")
-            response_status = payload.get("status", "unknown")
+                http_failure_status = response.status_code
+                response_status = f"http_{response.status_code}"
+                parent_run_id = await _latest_run_id_for_session(session_id)
+                if isinstance(parent_run_id, str):
+                    print(
+                        f"/v1/chat returned HTTP {response.status_code}; "
+                        f"auditing persisted run {parent_run_id}."
+                    )
+                else:
+                    raise SystemExit(
+                        f"/v1/chat failed with HTTP {response.status_code} and no persisted run was found."
+                    )
+            else:
+                payload = response.json()
+                parent_run_id = payload.get("run_id")
+                response_status = payload.get("status", "unknown")
             if not isinstance(parent_run_id, str):
                 raise SystemExit("/v1/chat returned no run_id; no durable run can be audited.")
 
     report = await audit_coding_run(parent_run_id, response_status, time.monotonic() - started)
-    output_dir = Path("artifacts/dogfood").resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
-    report_path = output_dir / f"coding-impact-{parent_run_id}.json"
-    report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    if http_failure_status is not None:
+        report["http_status"] = http_failure_status
+        report["acceptance_result"] = "not_accepted"
+    report_path = _write_coding_report(report)
     print(json.dumps(report, indent=2))
     print(f"Audit artifact: {report_path}")
 
+    if http_failure_status is not None:
+        raise SystemExit(f"Acceptance failed: /v1/chat returned HTTP {http_failure_status}.")
     if report["pending_approval_ids"]:
         print("Run is paused for human approval. No decision was submitted by this dogfood script.")
         raise SystemExit(2)
