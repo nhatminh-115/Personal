@@ -6,14 +6,16 @@ export interface FilePreviewRecord {
   url: string;
   mimeType: string;
   virtualPath: string;
+  sourceFile?: File;
 }
 
 interface FilePreviewViewProps {
   preview: FilePreviewRecord;
   onOpenExternal: () => void;
+  onImportCopy?: (file: File, sourcePath: string) => void;
 }
 
-export function FilePreviewView({ preview, onOpenExternal }: FilePreviewViewProps) {
+export function FilePreviewView({ preview, onOpenExternal, onImportCopy }: FilePreviewViewProps) {
   const image = preview.mimeType.startsWith('image/');
   const embeddable = image || preview.mimeType === 'application/pdf' || preview.mimeType === 'text/html' || preview.name.toLowerCase().endsWith('.html');
 
@@ -24,8 +26,12 @@ export function FilePreviewView({ preview, onOpenExternal }: FilePreviewViewProp
           <span className="file-preview-icon"><FileText size={19} /></span>
           <div><strong>{preview.name}</strong><span><FolderOpen size={13} /> {preview.virtualPath}</span></div>
         </div>
-        <button className="secondary-button secondary-button--lg" type="button" onClick={onOpenExternal}><ExternalLink size={16} /> Open in browser</button>
+        <div className="file-preview-actions">
+          {preview.sourceFile && onImportCopy ? <button className="secondary-button secondary-button--lg" type="button" onClick={() => onImportCopy(preview.sourceFile!, preview.virtualPath)}>Copy to Library</button> : null}
+          <button className="secondary-button secondary-button--lg" type="button" onClick={onOpenExternal}><ExternalLink size={16} /> Open in browser</button>
+        </div>
       </header>
+      {preview.sourceFile && onImportCopy ? <p className="file-preview-source-note">Copying keeps a browser-local Library copy. The original file stays in the connected folder.</p> : null}
       <div className="file-preview-canvas">
         {image ? <img src={preview.url} alt={preview.name} /> : null}
         {!image && embeddable ? <iframe src={preview.url} title={preview.name} /> : null}

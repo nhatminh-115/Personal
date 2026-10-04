@@ -44,7 +44,7 @@ separate capability scopes, and specialists cannot recursively delegate.
 | LangGraph execution checkpoints | `AsyncSqliteSaver` at `CHECKPOINT_DB_PATH`, separate from the SQLAlchemy database. Docker Compose stores it in the persistent `checkpoint_data` volume. |
 | Board layout | Project workspace layout with revision checks; layout is user state rather than graph knowledge. |
 | User-created projects | Workspace project directory in the SQLAlchemy database; built-in sample projects remain clearly client-side demo data. |
-| Connected folder handles and search index | Browser IndexedDB; the user explicitly indexes a connected folder, storing file names and metadata only. File contents remain at the original path and are read only when the user opens a file. |
+| Connected folder handles and search index | Browser IndexedDB; the user explicitly indexes a connected folder, storing file names and metadata only. File contents remain at the original path and are read only when the user opens a file. From the File tab, the user may explicitly copy an opened file into the browser-local Library for later Send text context; the original stays in place. |
 | Provider inventory | In-memory capability registry populated by native tool registration and MCP discovery. |
 
 Strict LangGraph MessagePack deserialization is enabled by

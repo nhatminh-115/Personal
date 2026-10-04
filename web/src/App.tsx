@@ -1031,7 +1031,7 @@ export default function App() {
 
   const handleConnectedFile = useCallback((file: File, virtualPath: string) => {
     const url = URL.createObjectURL(file);
-    openFilePreview({ id: `fs-${crypto.randomUUID()}`, name: file.name, url, mimeType: file.type || 'application/octet-stream', virtualPath });
+    openFilePreview({ id: `fs-${crypto.randomUUID()}`, name: file.name, url, mimeType: file.type || 'application/octet-stream', virtualPath, sourceFile: file });
   }, [openFilePreview]);
 
   const connectFolder = useCallback(async () => {
@@ -1075,7 +1075,7 @@ export default function App() {
     }
   }, [pushToast]);
 
-  const importFiles = useCallback(async (files: File[], projectId?: string) => {
+  const importFiles = useCallback(async (files: File[], projectId?: string, connectedSourcePath?: string) => {
     if (!files.length) return;
     const imported: LibraryItem[] = [];
     for (const file of files) {
@@ -1088,7 +1088,7 @@ export default function App() {
           name: stripExtension(file.name),
           kind: inferLibraryKind(file),
           collection: projectId ? 'Research' : 'Reference',
-          detail: `Imported local file · ${file.name}`,
+          detail: connectedSourcePath ? `Copied from connected folder · ${connectedSourcePath}` : `Imported local file · ${file.name}`,
           updated: 'just now',
           tags: ['local', 'imported'],
           projectLinks: projectId ? [projectId] : [],
@@ -2886,7 +2886,7 @@ export default function App() {
           />
         ) : null}
         {surface === 'file-viewer' && activeFilePreview ? (
-          <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} />
+          <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} onImportCopy={activeFilePreview.sourceFile ? (file, sourcePath) => void importFiles([file], undefined, sourcePath) : undefined} />
         ) : null}
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
