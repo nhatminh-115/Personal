@@ -46,6 +46,12 @@ interface LibraryViewProps {
   loadingMoreLibrary?: boolean;
   libraryLoadError?: string | null;
   onLoadMoreLibrary?: () => void;
+  searchItems?: LibraryItem[];
+  searchHasMore?: boolean;
+  searchLoading?: boolean;
+  searchError?: string | null;
+  onSearchLibrary?: (query: string) => void;
+  onLoadMoreSearch?: () => void;
 }
 
 const collections = ['All', 'Study', 'Books', 'Research', 'Reference'] as const;
@@ -85,6 +91,12 @@ export function LibraryView({
   loadingMoreLibrary = false,
   libraryLoadError,
   onLoadMoreLibrary,
+  searchItems = [],
+  searchHasMore = false,
+  searchLoading = false,
+  searchError,
+  onSearchLibrary,
+  onLoadMoreSearch,
 }: LibraryViewProps) {
   const [collection, setCollection] = useState<(typeof collections)[number]>('All');
   const [query, setQuery] = useState('');
@@ -98,12 +110,18 @@ export function LibraryView({
 
   const items = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return libraryItems.filter((item) => {
+    const source = q ? searchItems : libraryItems;
+    return source.filter((item) => {
       const inCollection = collection === 'All' || item.collection === collection;
-      const searchable = `${item.name} ${item.detail} ${item.tags.join(' ')}`.toLowerCase();
+      const searchable = `${item.name} ${item.collection} ${item.detail} ${item.tags.join(' ')}`.toLowerCase();
       return inCollection && (!q || searchable.includes(q));
     });
-  }, [collection, libraryItems, query]);
+  }, [collection, libraryItems, query, searchItems]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => onSearchLibrary?.(query.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [onSearchLibrary, query]);
 
   useEffect(() => {
     if (!focusItemId || !libraryItems.some((item) => item.id === focusItemId)) return;
@@ -176,11 +194,11 @@ export function LibraryView({
       <section className="library-section library-section--index">
         <div className="library-section-head library-section-head--stackable">
           <div><BookOpen size={17} /><span><strong>Indexed files & artifacts</strong><small>Virtual collections and project references</small></span></div>
-          <span className="library-section-count">{libraryItems.length}{hasMoreLibrary ? '+' : ''} loaded</span>
+          <span className="library-section-count">{query.trim() ? `${items.length}${searchHasMore ? '+' : ''} matches` : `${libraryItems.length}${hasMoreLibrary ? '+' : ''} loaded`}</span>
         </div>
 
         <div className="library-toolbar library-toolbar--comfortable">
-          <label className="library-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files, tags, notes…" /></label>
+          <label className="library-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search files, tags, details…" /></label>
           <div className="library-collections">{collections.map((item) => <button key={item} type="button" className={collection === item ? 'is-active' : ''} onClick={() => setCollection(item)}>{item}</button>)}</div>
           {collection === 'Research' ? <button className={`library-radar-toggle${researchRadarOpen ? ' is-active' : ''}`} type="button" aria-pressed={researchRadarOpen} onClick={() => setResearchRadarOpen((open) => !open)}><Radar size={15} /> Research Radar</button> : null}
           <div className="library-view-switch"><button type="button" className={view === 'list' ? 'is-active' : ''} onClick={() => setView('list')} title="List view"><List size={16} /></button><button type="button" className={view === 'grid' ? 'is-active' : ''} onClick={() => setView('grid')} title="Grid view"><Grid2X2 size={16} /></button></div>
@@ -237,13 +255,14 @@ export function LibraryView({
           })}
         </div>
 
-        {!items.length ? <div className="library-empty"><File size={26} /><strong>{collection === 'Research' ? 'No Library references here yet.' : 'No files here yet.'}</strong><span>Change the filter, connect a folder, or import a local file.</span></div> : null}
+        {!items.length && query.trim() && searchLoading ? <div className="notes-list-pagination" role="status">Searching all Library references…</div> : null}
+        {!items.length && query.trim() && !searchLoading && !searchError ? <div className="library-empty"><File size={26} /><strong>No matching Library references.</strong><span>Try another name, collection, detail, or tag.</span></div> : null}
+        {!items.length && !query.trim() ? <div className="library-empty"><File size={26} /><strong>{collection === 'Research' ? 'No Library references here yet.' : 'No files here yet.'}</strong><span>Change the filter, connect a folder, or import a local file.</span></div> : null}
+        {query.trim() && searchError ? <div className="notes-list-pagination" role="status"><span>Could not search Library references: {searchError}</span><button type="button" disabled={searchLoading} onClick={() => onSearchLibrary?.(query.trim())}>Retry</button></div> : null}
         {libraryLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load Library references: {libraryLoadError}</span><button type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>Retry</button></div> : null}
         {loadingMoreLibrary && !hasMoreLibrary && !libraryLoadError ? <div className="notes-list-pagination" role="status">Loading Library references…</div> : null}
-        {!libraryLoadError && hasMoreLibrary ? <>
-          {query.trim() ? <small className="notes-search-scope">Search covers loaded references. Load more to include older items.</small> : null}
-          <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more references'}</button>
-        </> : null}
+        {!query.trim() && !libraryLoadError && hasMoreLibrary ? <button className="notes-load-more" type="button" disabled={loadingMoreLibrary} onClick={onLoadMoreLibrary}>{loadingMoreLibrary ? 'Loading references…' : 'Load more references'}</button> : null}
+        {query.trim() && searchHasMore && !searchError ? <button className="notes-load-more" type="button" disabled={searchLoading} onClick={onLoadMoreSearch}>{searchLoading ? 'Loading matches…' : 'Load more matches'}</button> : null}
       </section>
     </section>
   );

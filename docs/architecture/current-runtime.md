@@ -113,6 +113,10 @@ automation history. Notes, Library references, and automations load older pages
 on demand; aggregate counts come from lightweight summary endpoints instead of
 the pages currently held in the browser. Automation run history is also
 cursor-paged, with older runs loaded on demand.
+Library search runs against persisted reference metadata and keeps the same
+cursor pagination, so matches are not limited to the references already loaded
+in the browser. It searches names, collection, detail, and tags; local file
+contents remain outside the index.
 Saved automations can update their name, description, instruction, and interval
 without changing project scope or the stable session used for their history.
 Already queued events keep their original instruction payload; the next

@@ -291,6 +291,14 @@ export default function App() {
   const [libraryNextCursor, setLibraryNextCursor] = useState<string | null>(null);
   const [libraryPageLoading, setLibraryPageLoading] = useState(false);
   const [libraryPageError, setLibraryPageError] = useState<string | null>(null);
+  const [librarySearch, setLibrarySearch] = useState<{
+    query: string;
+    items: LibraryItem[];
+    nextCursor: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ query: '', items: [], nextCursor: null, loading: false, error: null });
+  const librarySearchRequest = useRef(0);
   const libraryLoaded = useRef(false);
   const libraryInitialRequested = useRef(false);
   const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
@@ -1577,6 +1585,56 @@ export default function App() {
     void loadWorkspaceLibraryPage(libraryNextCursor, libraryLoaded.current);
   }, [libraryNextCursor, loadWorkspaceLibraryPage]);
 
+  const handleLibrarySearch = useCallback(async (query: string) => {
+    const requestId = ++librarySearchRequest.current;
+    if (!query) {
+      setLibrarySearch({ query: '', items: [], nextCursor: null, loading: false, error: null });
+      return;
+    }
+    setLibrarySearch({ query, items: [], nextCursor: null, loading: true, error: null });
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(null, 50, query);
+      if (librarySearchRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      const remoteIds = new Set(remoteItems.map((item) => item.id));
+      const normalizedQuery = query.toLocaleLowerCase();
+      const localMatches = libraryItems.filter((item) => !remoteIds.has(item.id)
+        && `${item.name} ${item.detail} ${item.collection} ${item.tags.join(' ')}`.toLocaleLowerCase().includes(normalizedQuery));
+      setLibrarySearch({ query, items: [...remoteItems, ...localMatches], nextCursor: page.nextCursor, loading: false, error: null });
+    } catch (error) {
+      if (librarySearchRequest.current !== requestId) return;
+      setLibrarySearch({ query, items: [], nextCursor: null, loading: false, error: executionErrorText(error) });
+    }
+  }, [libraryItems, projectCatalog]);
+
+  const loadMoreLibrarySearch = useCallback(async () => {
+    if (!librarySearch.query || !librarySearch.nextCursor || librarySearch.loading) return;
+    const requestId = ++librarySearchRequest.current;
+    const { query, nextCursor } = librarySearch;
+    setLibrarySearch((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(nextCursor, 50, query);
+      if (librarySearchRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      setLibrarySearch((current) => current.query === query
+        ? { ...current, items: [...current.items, ...remoteItems.filter((item) => !current.items.some((existing) => existing.id === item.id))], nextCursor: page.nextCursor, loading: false }
+        : current);
+    } catch (error) {
+      if (librarySearchRequest.current !== requestId) return;
+      setLibrarySearch((current) => current.query === query ? { ...current, loading: false, error: executionErrorText(error) } : current);
+    }
+  }, [libraryItems, librarySearch, projectCatalog]);
+
   useEffect(() => {
     if (
       surface !== 'library' || !focusedLibraryItemId || libraryItems.some((item) => item.id === focusedLibraryItemId)
@@ -2474,6 +2532,12 @@ export default function App() {
             loadingMoreLibrary={libraryPageLoading}
             libraryLoadError={libraryPageError}
             onLoadMoreLibrary={loadMoreWorkspaceLibrary}
+            searchItems={librarySearch.items}
+            searchHasMore={Boolean(librarySearch.nextCursor)}
+            searchLoading={librarySearch.loading}
+            searchError={librarySearch.error}
+            onSearchLibrary={handleLibrarySearch}
+            onLoadMoreSearch={() => void loadMoreLibrarySearch()}
             focusItemId={focusedLibraryItemId}
             connections={directoryConnections}
             directoryPickerSupported={supportsDirectoryPicker()}
