@@ -1,4 +1,4 @@
-import { ArrowRight, FolderKanban, Plus, X } from 'lucide-react';
+import { Archive, ArchiveRestore, ArrowRight, FolderKanban, Plus, X } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import type { ProjectRecord } from '../../data/workspaceData';
 
@@ -7,13 +7,16 @@ interface ProjectsViewProps {
   createRequest: number;
   onOpenProject: (projectId: string) => void;
   onCreateProject: (input: { name: string; subtitle: string }) => Promise<void>;
+  onSetArchived: (project: ProjectRecord, archived: boolean) => Promise<void>;
 }
 
-export function ProjectsView({ projects, createRequest, onOpenProject, onCreateProject }: ProjectsViewProps) {
+export function ProjectsView({ projects, createRequest, onOpenProject, onCreateProject, onSetArchived }: ProjectsViewProps) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [subtitle, setSubtitle] = useState('');
   const [saving, setSaving] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [archivePendingId, setArchivePendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,6 +40,18 @@ export function ProjectsView({ projects, createRequest, onOpenProject, onCreateP
     }
   };
 
+  const visibleProjects = projects.filter((project) => Boolean(project.archived) === includeArchived);
+  const archivedCount = projects.filter((project) => project.archived && project.source === 'user').length;
+  const setProjectArchived = async (project: ProjectRecord, archived: boolean) => {
+    if (archivePendingId) return;
+    setArchivePendingId(project.id);
+    try {
+      await onSetArchived(project, archived);
+    } finally {
+      setArchivePendingId(null);
+    }
+  };
+
   return (
     <section className="projects-view">
       <div className="library-view__header">
@@ -45,7 +60,12 @@ export function ProjectsView({ projects, createRequest, onOpenProject, onCreateP
           <h1>Separate contexts, one personal workspace.</h1>
           <p>Each project gets its own overview, conversation graph, research context and artifacts.</p>
         </div>
-        <button className="primary-soft-button" type="button" onClick={() => { setCreating((value) => !value); setError(null); }}><Plus size={15} /> New project</button>
+        <div className="projects-view__actions">
+          <button className="soft-action-button" type="button" aria-pressed={includeArchived} onClick={() => setIncludeArchived((value) => !value)}>
+            {includeArchived ? 'Hide archived' : `Show archived${archivedCount ? ` (${archivedCount})` : ''}`}
+          </button>
+          <button className="primary-soft-button" type="button" onClick={() => { setCreating((value) => !value); setError(null); }}><Plus size={15} /> New project</button>
+        </div>
       </div>
 
       {creating ? (
@@ -59,18 +79,38 @@ export function ProjectsView({ projects, createRequest, onOpenProject, onCreateP
       ) : null}
 
       <div className="projects-list-grid">
-        {projects.map((project) => (
-          <button key={project.id} className={`project-overview-card project-overview-card--${project.accent}`} type="button" onClick={() => onOpenProject(project.id)}>
-            <span className="project-overview-card__icon"><FolderKanban size={18} /></span>
-            <span className="project-overview-card__copy">
-              <strong>{project.name}</strong>
-              <small>{project.subtitle}</small>
-              <span>{project.meta}</span>
-            </span>
-            <span className="project-overview-card__updated">{project.updated}</span>
-            <ArrowRight size={15} />
-          </button>
+        {visibleProjects.map((project) => (
+          <div key={project.id} className="project-overview-card-wrap">
+            <button className={`project-overview-card project-overview-card--${project.accent}`} type="button" onClick={() => onOpenProject(project.id)}>
+              <span className="project-overview-card__icon"><FolderKanban size={18} /></span>
+              <span className="project-overview-card__copy">
+                <strong>{project.name}</strong>
+                <small>{project.subtitle}</small>
+                <span>{project.meta}</span>
+                {project.archived ? <span className="project-overview-card__status">Archived</span> : null}
+              </span>
+              <span className="project-overview-card__updated">{project.updated}</span>
+              <ArrowRight size={15} />
+            </button>
+            {project.source === 'user' ? (
+              <button
+                className="project-overview-card__archive"
+                type="button"
+                aria-label={`${project.archived ? 'Restore' : 'Archive'} ${project.name}`}
+                title={project.archived ? 'Restore project' : 'Archive project'}
+                disabled={archivePendingId === project.id}
+                onClick={() => { void setProjectArchived(project, !project.archived); }}
+              >
+                {project.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+              </button>
+            ) : null}
+          </div>
         ))}
+        {visibleProjects.length === 0 ? (
+          <p className="projects-view__empty">
+            {includeArchived ? 'No archived projects yet. Archiving keeps project data and history available for later restore.' : 'No projects yet. Create a project to give related chats and files a shared home.'}
+          </p>
+        ) : null}
       </div>
     </section>
   );

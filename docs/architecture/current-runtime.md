@@ -11,6 +11,10 @@ model routing, capability-scoped tools, and approval-gated execution. The web
 workspace has permanent Home, Library, Notes, Study, Automations, and Projects
 surfaces. A project is one reusable tab with Overview, Chat, Board, Split, and
 Files views. Chat and Board are views over shared project conversation objects.
+User-created projects can be archived and restored. Archiving hides them from
+default project navigation while retaining their project record, conversations,
+files, notes, routing assignment, and history; it does not delete data or stop
+scheduled automations.
 
 ## Request and execution path
 
