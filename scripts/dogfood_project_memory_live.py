@@ -10,6 +10,7 @@ from pathlib import Path
 import time
 import uuid
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 TARGET_FACT = "A blue-lantern release requires a two-person review and an immediate rollback trigger."
 DECOY_FACT = "A blue-lantern release is single-owner and has no rollback trigger."
@@ -19,9 +20,49 @@ def live_environment_error(environ: Mapping[str, str] | None = None) -> str | No
     values = os.environ if environ is None else environ
     if values.get("MODEL_PROVIDER", "").strip().lower() != "openai":
         return "Project-memory live dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
-    if not values.get("OPENAI_API_KEY", "").strip():
-        return "Project-memory live dogfood requires OPENAI_API_KEY; no model call was made."
-    return None
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override.startswith("ollama:"):
+        _override_provider, separator, override_model = model_override.partition(":")
+        if not separator or not override_model.strip():
+            return "AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+        local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+        try:
+            parsed_url = urlparse(local_url)
+            is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
+                "localhost", "127.0.0.1", "::1",
+            }
+        except ValueError:
+            is_loopback = False
+        if not is_loopback:
+            return "OLLAMA_BASE_URL must point to localhost or a loopback IP for an Ollama model override."
+        return None
+    if values.get("OPENAI_API_KEY", "").strip():
+        return None
+    if not model_override:
+        return "Project-memory live dogfood requires OPENAI_API_KEY or an explicit local model override; no model call was made."
+    return "Without OPENAI_API_KEY, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+
+
+def _chat_request_payload(
+    session_id: str,
+    project_name: str,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    values = os.environ if environ is None else environ
+    payload = {
+        "session_id": session_id,
+        "project_name": project_name,
+        "message": (
+            "Using only this project's persisted memory, what review and rollback guard applies to a "
+            "blue-lantern release? State the rule directly. Do not infer or use unrelated project memory."
+        ),
+    }
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override:
+        payload["model_override"] = model_override
+        if model_override.startswith("ollama:"):
+            payload["reasoning_override"] = "instant"
+    return payload
 
 
 def _payload(event: Any) -> dict[str, Any]:
@@ -158,14 +199,7 @@ async def run_live_dogfood() -> None:
         await _seed_project_memories(project_name, target_memory_id, decoy_project, decoy_memory_id)
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=180.0) as client:
-            response = await client.post("/v1/chat", json={
-                "session_id": session_id,
-                "project_name": project_name,
-                "message": (
-                    "Using only this project's persisted memory, what review and rollback guard applies to a "
-                    "blue-lantern release? State the rule directly. Do not infer or use unrelated project memory."
-                ),
-            })
+            response = await client.post("/v1/chat", json=_chat_request_payload(session_id, project_name))
             if response.status_code != 200:
                 raise SystemExit(f"/v1/chat failed with HTTP {response.status_code}; inspect the server log.")
             payload = response.json()

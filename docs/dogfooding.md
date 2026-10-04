@@ -9,14 +9,16 @@ Use Python 3.12 and the repository's installed dependencies. Live model scenario
 - **MODEL_PROVIDER=openai**
 - **OPENAI_API_KEY** available in the process environment
 
-The Coding Specialist scenario can instead use a local Ollama model without a
-cloud key. Set an exact installed model override and keep the Ollama endpoint
-on loopback:
+The Coding Specialist and project-memory scenarios can instead use a local
+Ollama model without a cloud key. Set an exact installed model override and
+keep the Ollama endpoint on loopback:
 
     $env:MODEL_PROVIDER = "openai"
     $env:OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
     $env:AURA_DOGFOOD_MODEL_OVERRIDE = "ollama:qwen2.5-coder:3b"
     python scripts/dogfood_coding_impact_live.py
+
+    python scripts/dogfood_project_memory_live.py
 
 The override is sent as an exact provider/model lock. Without a cloud key, the
 harness rejects non-Ollama overrides and non-loopback Ollama URLs. It requests
@@ -39,14 +41,14 @@ Run the scripts from the repository root. They use isolated SQLite databases and
 | Scenario | Command | Required setup | What the report proves |
 | --- | --- | --- | --- |
 | Research prior-art investigation | **python scripts/dogfood_research_live.py** | Live model and research providers | Root-to-Research Specialist lineage, real model selection, research tools, checkpointed state, evidence and memory counts |
-| Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Live model | A fresh session retrieves the expected project memory and does not retrieve a conflicting fact from another project |
+| Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Hosted model credentials or an exact local Ollama override | A fresh session retrieves the expected project memory and does not retrieve a conflicting fact from another project |
 | Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Live model and research providers | A Research Specialist claim and evidence are persisted, selected into a durable Context Bridge, then compiled into a new chat as the sole selected object |
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and hosted model | Exact catalog models preserve local-only and cloud-allowed profile policies through zero-invocation routing preview |
 | Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Hosted model credentials or an exact local Ollama override; CodeGraph is optional | Provider smoke test passed in the maintainer's Windows environment: CodeGraph 0.20.1 was installed with telemetry disabled, AURA discovered 9 allowlisted tools, and a read-only `symbol_search` query returned `app/mcp/manager.py:157`. |
 
 The provider smoke test verifies MCP health, discovery, and one read-only tool
 call; it is not a complete AURA Coding Specialist run and has no AURA run ID.
-The live dogfood script requires **MODEL_PROVIDER=openai** and either
+The Coding Specialist and project-memory live dogfood scripts require **MODEL_PROVIDER=openai** and either
 **OPENAI_API_KEY** or **AURA_DOGFOOD_MODEL_OVERRIDE=ollama:model** with
 **OLLAMA_BASE_URL** on loopback. This scenario does not block other independent
 AURA milestones. CodeGraph remains optional, external, and absent from CI; AURA
