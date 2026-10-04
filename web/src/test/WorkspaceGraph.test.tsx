@@ -71,6 +71,10 @@ describe('Persistent workspace graph Board projection', () => {
     const updatedGraph: WorkspaceGraph = {
       ...savedGraph,
       objects: [...savedGraph.objects, nextTurn],
+      execution_traces: [{
+        run_id: 'live-run-2', session_id: 'session-1', user_object_id: 'turn-1', response_object_id: 'turn-2',
+        events: [{ id: 'live-model-selection', event_type: 'model_selected', created_at: '2026-10-02T00:00:00Z', agent_role: 'root', provider: 'ollama', model: 'live-test-model' }],
+      }],
       layout: {
         ...savedGraph.layout,
         layout: { positions: { 'turn-1': { x: 900, y: 700 }, 'turn-2': { x: 420, y: 240 } } },
@@ -84,7 +88,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     const renderBoard = (sessionIds: string[], revision = 0) => (
       <ReactFlowProvider>
-        <BoardCanvas boardKey="revision-refresh" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={sessionIds} workspaceGraphRevision={revision} />
+        <BoardCanvas boardKey="revision-refresh" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={sessionIds} workspaceGraphRevision={revision} executionExpanded />
       </ReactFlowProvider>
     );
     const view = render(renderBoard(['session-1']));
@@ -96,6 +100,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     view.rerender(renderBoard(['session-1'], 1));
     expect(await screen.findByText('New live answer')).toBeInTheDocument();
+    expect(await screen.findByText('Root · live-test-model')).toBeInTheDocument();
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(view.container.querySelector('[data-id="turn-1"]')).toHaveStyle({ transform: 'translate(80px,60px)' });
   });
