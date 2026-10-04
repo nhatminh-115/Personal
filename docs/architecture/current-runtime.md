@@ -57,7 +57,10 @@ Outbox workers renew processing leases while handlers run and reclaim leases
 left by crashed workers. Proactive event runs use deterministic run IDs; a
 retry resumes a persisted LangGraph checkpoint, or starts the run if the
 process stopped before the first checkpoint. Completed and approval-paused
-runs are not invoked again by duplicate event delivery.
+runs are not invoked again by duplicate event delivery. Manual, webhook, and
+retry triggers acquire a shared atomic short lease before enqueueing, so
+single-run admission also holds with the local SQLite database where row-level
+`FOR UPDATE` locks are not available.
 
 ## Routing and model calls
 
