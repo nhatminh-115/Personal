@@ -5,6 +5,7 @@ import sys
 import pytest
 from pydantic import ValidationError
 
+from app.api.routes import capabilities as capabilities_route
 from app.capabilities.registry import (
     CapabilityProviderHealth,
     CapabilityProviderMetadata,
@@ -14,7 +15,46 @@ from app.capabilities.registry import (
 from app.mcp.config import MCPServerConfig, MCPTransportType
 from app.mcp.manager import MCPClientManager
 from app.tools.base import ToolResult
-from app.tools.registry import ToolRegistry
+from app.tools.registry import ToolRegistry, tool_registry
+
+
+@pytest.mark.asyncio
+async def test_capability_refresh_rechecks_one_mcp_provider_without_invoking_tools(async_client, monkeypatch):
+    manager = MCPClientManager(registry=tool_registry)
+    manager.register_server(MCPServerConfig(
+        id="refresh-fixture",
+        name="Refresh fixture",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        read_only=True,
+        allowed_tools=["read_metric"],
+        capabilities_by_tool={"read_metric": ["code_graph.query"]},
+    ))
+
+    async def unexpected_tool_call(*_args, **_kwargs):
+        pytest.fail("provider health refresh must not invoke a capability tool")
+
+    monkeypatch.setattr(manager, "call_tool", unexpected_tool_call)
+    monkeypatch.setattr(capabilities_route, "mcp_manager", manager)
+
+    try:
+        response = await async_client.post("/v1/capabilities/providers/mcp.refresh-fixture/refresh")
+
+        assert response.status_code == 200
+        provider = response.json()
+        assert provider["provider_id"] == "mcp.refresh-fixture"
+        assert provider["health"] == "healthy"
+        assert provider["capability_tools"] == {"code_graph.query": ["mcp_refresh-fixture_read_metric"]}
+        assert provider["declared_capability_tools"] == provider["capability_tools"]
+        assert response.text.count("read_metric") == 2
+        assert "sensitive-token" not in response.text
+
+        missing = await async_client.post("/v1/capabilities/providers/aura.workspace/refresh")
+        assert missing.status_code == 404
+    finally:
+        await manager.disconnect_all()
 
 
 @pytest.mark.asyncio
@@ -81,6 +121,42 @@ async def test_mcp_provider_inventory_uses_explicit_facts_and_capability_mapping
     assert registry.capability_providers.get_capability_tools("mcp.docs") == expected_bindings
     assert registry.resolve_available_capabilities(["research.library.search"]) == ["mcp_docs_read_metric"]
     assert "sensitive-token" not in provider.model_dump_json()
+    await manager.disconnect_all()
+
+
+@pytest.mark.asyncio
+async def test_mcp_rediscovery_removes_tools_no_longer_in_the_allowlist():
+    registry = ToolRegistry()
+    manager = MCPClientManager(registry=registry)
+    initial = MCPServerConfig(
+        id="refresh-allowlist",
+        name="Refresh allowlist fixture",
+        transport=MCPTransportType.STDIO,
+        command=sys.executable,
+        args=["tests/fixtures/sample_mcp_server.py"],
+        timeout_seconds=10.0,
+        allowed_tools=["read_metric", "provider_read_metric"],
+        capabilities_by_tool={
+            "read_metric": ["code_graph.query"],
+            "provider_read_metric": ["code_graph.trace"],
+        },
+    )
+    manager.register_server(initial)
+    await manager.discover_tools(initial.id)
+    stale_name = "mcp_refresh-allowlist_provider_read_metric"
+    assert registry.get(stale_name) is not None
+
+    updated = initial.model_copy(update={
+        "allowed_tools": ["read_metric"],
+        "capabilities_by_tool": {"read_metric": ["code_graph.query"]},
+    })
+    manager.register_server(updated)
+    await manager.discover_tools(updated.id)
+
+    assert registry.get(stale_name) is None
+    assert registry.capability_providers.get_capability_tools("mcp.refresh-allowlist") == {
+        "code_graph.query": ["mcp_refresh-allowlist_read_metric"],
+    }
     await manager.disconnect_all()
 
 
