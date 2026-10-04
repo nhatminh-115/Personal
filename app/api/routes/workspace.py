@@ -1033,6 +1033,7 @@ async def list_personal_library_references(
     response: Response,
     cursor: str | None = Query(default=None, max_length=512),
     page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
+    q: str | None = Query(default=None, min_length=1, max_length=200),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceLibraryReferenceResponse]:
     query = select(WorkspaceObjectModel).where(
@@ -1040,6 +1041,18 @@ async def list_personal_library_references(
         WorkspaceObjectModel.object_type == "file_reference",
         WorkspaceObjectModel.created_by == "user",
     )
+    if q is not None:
+        normalized = " ".join(q.split())
+        if not normalized:
+            raise HTTPException(status_code=422, detail="Search query must not be blank.")
+        escaped = normalized.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        query = query.where(or_(
+            WorkspaceObjectModel.title.ilike(pattern, escape="\\"),
+            WorkspaceObjectModel.metadata_json["detail"].as_string().ilike(pattern, escape="\\"),
+            WorkspaceObjectModel.metadata_json["collection"].as_string().ilike(pattern, escape="\\"),
+            WorkspaceObjectModel.metadata_json["tags"].cast(String).ilike(pattern, escape="\\"),
+        ))
     if cursor is not None:
         query = query.where(_descending_timestamp_cursor_filter(
             WorkspaceObjectModel.updated_at, WorkspaceObjectModel.id, cursor,

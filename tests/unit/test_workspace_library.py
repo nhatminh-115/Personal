@@ -50,3 +50,49 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
     removed = await async_client.delete(f"/v1/workspace/library/{reference_id}")
     assert removed.status_code == 204
     assert (await async_client.get("/v1/workspace/library")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_library_search_matches_metadata_and_keeps_cursor_pagination(async_client):
+    references = [
+        {"id": str(uuid4()), "name": "Alpha paper", "detail": "target in imported detail", "collection": "Research", "tags": []},
+        {"id": str(uuid4()), "name": "Target title", "detail": "A local reference", "collection": "Books", "tags": []},
+        {"id": str(uuid4()), "name": "Tagged paper", "detail": "Another local reference", "collection": "Reference", "tags": ["target-tag"]},
+        {"id": str(uuid4()), "name": "Collection paper", "detail": "Another local reference", "collection": "Study", "tags": []},
+        {"id": str(uuid4()), "name": "Unrelated paper", "detail": "No matching metadata", "collection": "Books", "tags": ["misc"]},
+    ]
+    for item in references:
+        response = await async_client.post("/v1/workspace/library", json={
+            "id": item["id"], "name": item["name"], "kind": "PDF", "collection": item["collection"],
+            "detail": item["detail"], "tags": item["tags"], "project_names": [], "size": 128,
+            "mime_type": "application/pdf",
+        })
+        assert response.status_code == 201
+
+    first = await async_client.get("/v1/workspace/library", params={"q": "target", "page_size": 2})
+    first_items = first.json()
+    assert len(first_items) == 2
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/workspace/library", params={"q": "target", "page_size": 2, "cursor": cursor})
+    second_items = second.json()
+    assert len(second_items) == 1
+    all_items = first_items + second_items
+    assert {item["id"] for item in all_items} == {item["id"] for item in references[:3]}
+    assert not ({item["id"] for item in first_items} & {item["id"] for item in second_items})
+    assert all(item["detail"] != "" for item in all_items)
+
+    collection_match = await async_client.get("/v1/workspace/library", params={"q": "research"})
+    assert [item["id"] for item in collection_match.json()] == [references[0]["id"]]
+
+
+@pytest.mark.asyncio
+async def test_library_search_escapes_sql_wildcards_and_rejects_blank_query(async_client):
+    await async_client.post("/v1/workspace/library", json={
+        "id": str(uuid4()), "name": "100% local", "kind": "TXT", "collection": "Reference",
+        "detail": "Literal title", "tags": ["safe"], "project_names": [],
+    })
+    assert len((await async_client.get("/v1/workspace/library", params={"q": "%"})).json()) == 1
+    assert (await async_client.get("/v1/workspace/library", params={"q": "_"})).json() == []
+    assert (await async_client.get("/v1/workspace/library", params={"q": "   "})).status_code == 422

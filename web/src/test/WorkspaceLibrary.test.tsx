@@ -57,6 +57,45 @@ describe('Workspace Library references', () => {
     expect(JSON.stringify(payload)).not.toContain('blobKey');
   });
 
+  it('searches the full Library through paged backend results', async () => {
+    const firstMatch = {
+      id: 'library-match-1', name: 'Result one', kind: 'PDF', collection: 'cross-page',
+      detail: 'Found by backend search', tags: ['metadata'], project_names: [], size: 2048,
+      mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    const secondMatch = {
+      ...firstMatch, id: 'library-match-2', name: 'Result two',
+      updated_at: '2026-10-01T00:00:00Z',
+    };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/v1/workspace/library?')) {
+        const params = new URL(url, 'http://aura.test').searchParams;
+        if (params.has('q')) {
+          return Promise.resolve(params.has('cursor')
+            ? jsonResponse([secondMatch])
+            : jsonResponse([firstMatch], 'search-next'));
+        }
+        return Promise.resolve(jsonResponse([]));
+      }
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: /^Library$/i }));
+    await screen.findByRole('heading', { name: 'Your files can stay where they already live.' });
+
+    fireEvent.change(screen.getByPlaceholderText('Search files, tags, details…'), { target: { value: 'cross-page' } });
+    expect(await screen.findByText('Result one')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&q=cross-page'));
+    expect(screen.queryByText(/Search covers loaded references/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more matches' }));
+    expect(await screen.findByText('Result two')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&cursor=search-next&q=cross-page'));
+  });
+
   it('opens a workspace search match at its exact Library reference', async () => {
     const reference = {
       id: 'library-search-match', name: 'Methods paper', kind: 'PDF', collection: 'Research',
