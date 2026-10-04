@@ -4201,6 +4201,29 @@ input:focus-visible {
   color: #9bd9e2;
 }
 
+.ai-context-item__content {
+  min-height: 29px;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid rgba(147, 179, 198, 0.13);
+  border-radius: 8px;
+  background: transparent;
+  color: #8fa5b2;
+  font-size: 9px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ai-context-item__content:hover,
+.ai-context-item__content.is-enabled {
+  border-color: rgba(103, 201, 218, 0.35);
+  background: rgba(103, 201, 218, 0.08);
+  color: #9bd9e2;
+}
+
 .ai-context-item:hover {
   background: rgba(117, 149, 170, 0.035);
 }

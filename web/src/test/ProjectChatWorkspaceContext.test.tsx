@@ -8,16 +8,22 @@ vi.mock('../services/api', () => ({
   api: { fetchWorkspaceObjectPage: vi.fn() },
 }));
 
+vi.mock('../lib/localFiles', () => ({
+  getLocalFile: vi.fn().mockResolvedValue(new Blob(['Local note contents'])),
+}));
+
 vi.mock('../components/chat/ChatPane', () => ({
   ChatPane: (props: {
     contextItems?: AIContextItem[];
     onContextPanelOpenChange?: (open: boolean) => void;
     onContextObjectIdsChange?: (objectIds: string[]) => void;
+    onContextFileContentIdsChange?: (objectIds: string[]) => void;
   }) => (
     <div>
       {props.contextItems?.map((item) => <span key={item.id}>{`${item.kind}|${item.title}|${item.detail}|${item.tokens}`}</span>)}
       <button onClick={() => props.onContextPanelOpenChange?.(true)}>Open context</button>
       <button onClick={() => props.onContextObjectIdsChange?.(['object-1'])}>Select object</button>
+      <button onClick={() => props.onContextFileContentIdsChange?.(['file-reference-1'])}>Send file text</button>
     </div>
   ),
 }));
@@ -33,18 +39,19 @@ const thread = {
   initialContextObjectIds: [],
 } as any;
 
-function renderWorkspace() {
+function renderWorkspace(libraryItems: any[] = [], onContextFileContentIdsChange = vi.fn()) {
   return render(
     <ProjectChatWorkspace
       project={project}
       threads={[thread]}
       activeThreadId={thread.id}
-      libraryItems={[]}
+      libraryItems={libraryItems}
       notes={[]}
       onSelectThread={vi.fn()}
       onNewThread={vi.fn()}
       onUpdateMessages={vi.fn()}
       onContextObjectIdsChange={vi.fn()}
+      onContextFileContentIdsChange={onContextFileContentIdsChange}
     />,
   );
 }
@@ -98,7 +105,28 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     expect(await view.findByText(/file\|Local budget\.pdf\|file reference · metadata only/)).toHaveTextContent(
-      'file reference · metadata only · file content stays in your browser; only this reference is available to AURA|4',
+      'file reference · metadata only · this browser has no supported local text copy available|4',
     );
+  });
+
+  it('offers explicit text sending only for supported files stored in this browser', async () => {
+    vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
+      objects: [{
+        id: 'file-reference-1', project_name: null, object_type: 'file_reference', created_by: 'user',
+        title: 'Local notes.md', content: '', metadata_json: { storage_location: 'browser_local' },
+        created_at: '2026-10-03T00:00:00Z', updated_at: '2026-10-03T00:00:00Z',
+      } as any],
+      nextCursor: null,
+    });
+    const onSendFileContent = vi.fn();
+    const view = renderWorkspace([{
+      id: 'file-reference-1', name: 'Local notes', kind: 'MD', source: 'imported', blobKey: 'local-file-1', size: 100,
+    }], onSendFileContent);
+    fireEvent.click(view.getByRole('button', { name: 'Open context' }));
+
+    const contextItem = await view.findByText(/file\|Local notes\.md\|browser-local text/);
+    expect(contextItem).toHaveTextContent('stays here until you explicitly send it with a message');
+    fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
+    expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
   });
 });

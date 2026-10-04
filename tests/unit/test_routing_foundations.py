@@ -43,6 +43,7 @@ from app.models.routing_profile import ReasoningConfig, RouteConfig, RoutingProf
 from app.models.routing_resolver import (
     apply_routing_profile_to_context,
     get_system_balanced_profile,
+    inherit_routing_boundaries,
     model_to_routing_profile,
     resolve_routing_profile,
 )
@@ -355,6 +356,45 @@ async def test_ask_before_cloud_structured_outcome_and_zero_invocations():
 
     # Critical invariant: cloud provider invocation count == 0 before confirmation!
     assert spy_cloud.generate_call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_explicit_cloud_confirmation_does_not_widen_none_fallback_policy():
+    spy_cloud = SpyModelProvider(name="spy-cloud", privacy="cloud")
+    router = ModelRouter(default_provider_name="spy-cloud", providers={"spy-cloud": spy_cloud})
+    router.register_provider(
+        spy_cloud,
+        ProviderMetadata(
+            name="spy-cloud",
+            capabilities=["general"],
+            privacy_status="cloud",
+            default_model="cloud-m",
+            models=["cloud-m"],
+        ),
+    )
+
+    ctx = RoutingContext(
+        fallback_policy=FallbackPolicy.NONE,
+        require_cloud_confirmation=True,
+    )
+
+    with pytest.raises(RoutingConfirmationRequired):
+        router.select_model_for_task(ctx)
+
+    assert spy_cloud.generate_call_count == 0
+
+
+def test_cloud_confirmation_requirement_is_inherited_by_specialist_without_changing_fallback():
+    child = inherit_routing_boundaries(
+        RoutingContext(fallback_policy=FallbackPolicy.SAME_PROVIDER_ONLY),
+        {
+            "fallback_policy": FallbackPolicy.CLOUD_ALLOWED.value,
+            "require_cloud_confirmation": True,
+        },
+    )
+
+    assert child.fallback_policy == FallbackPolicy.SAME_PROVIDER_ONLY
+    assert child.require_cloud_confirmation is True
 
 
 # =============================================================================

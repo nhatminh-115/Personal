@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from app.capabilities.registry import CapabilityProviderMetadata
 
 MAX_CHAT_METADATA_BYTES = 64 * 1024
@@ -12,6 +12,8 @@ MAX_APPROVAL_EDITED_INPUT_BYTES = 2 * 1024 * 1024
 MAX_APPROVAL_DECISION_NOTES_CHARS = 4_000
 MAX_WORKSPACE_METADATA_BYTES = 64 * 1024
 MAX_WORKSPACE_LAYOUT_BYTES = 2 * 1024 * 1024
+MAX_CHAT_ATTACHMENT_CHARS = 20_000
+MAX_CHAT_ATTACHMENT_TOTAL_CHARS = 40_000
 
 
 def _validate_json_size(value: Dict[str, Any], max_bytes: int, field_name: str) -> Dict[str, Any]:
@@ -25,6 +27,13 @@ def _validate_json_size(value: Dict[str, Any], max_bytes: int, field_name: str) 
 
 
 # --- Chat Schemas ---
+class ChatContextAttachment(BaseModel):
+    object_id: str = Field(..., min_length=1, max_length=36)
+    text: str = Field(..., min_length=1, max_length=MAX_CHAT_ATTACHMENT_CHARS)
+
+    model_config = {"extra": "forbid"}
+
+
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=36, description="Unique UUID of the conversation session")
     message: str = Field(..., min_length=1, description="User query or instruction")
@@ -41,6 +50,7 @@ class ChatRequest(BaseModel):
         max_length=50,
         description="Explicit project workspace objects to compile into this turn's context",
     )
+    context_attachments: List[ChatContextAttachment] = Field(default_factory=list, max_length=5)
 
     @field_validator("metadata")
     @classmethod
@@ -55,6 +65,20 @@ class ChatRequest(BaseModel):
         if any(not object_id or len(object_id) > 36 for object_id in value):
             raise ValueError("context_object_ids must contain non-empty object IDs of 36 characters or fewer.")
         return value
+
+    @model_validator(mode="after")
+    def validate_context_attachments(self) -> "ChatRequest":
+        attachment_ids = [attachment.object_id for attachment in self.context_attachments]
+        if len(attachment_ids) != len(set(attachment_ids)):
+            raise ValueError("context_attachments must not contain duplicate object IDs.")
+        if any(object_id not in self.context_object_ids for object_id in attachment_ids):
+            raise ValueError("Each context attachment must also be selected in context_object_ids.")
+        total_chars = sum(len(attachment.text) for attachment in self.context_attachments)
+        if total_chars > MAX_CHAT_ATTACHMENT_TOTAL_CHARS:
+            raise ValueError(
+                f"context_attachments must contain {MAX_CHAT_ATTACHMENT_TOTAL_CHARS} characters or fewer in total."
+            )
+        return self
 
 
 class ChatResponse(BaseModel):

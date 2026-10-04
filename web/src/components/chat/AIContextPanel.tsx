@@ -1,4 +1,4 @@
-import { BadgeCheck, BookOpen, Braces, FileText, LocateFixed, Network, NotebookPen, ScrollText, X } from 'lucide-react';
+import { BadgeCheck, BookOpen, Braces, FileText, LocateFixed, Network, NotebookPen, ScrollText, Send, X } from 'lucide-react';
 import type { AIContextItem } from '../../types';
 
 interface AIContextPanelProps {
@@ -11,6 +11,7 @@ interface AIContextPanelProps {
   onLoadOlder?: () => Promise<void>;
   onRetry?: () => void;
   onToggleItem: (id: string) => void;
+  onToggleFileContent?: (objectId: string, include: boolean) => void;
   onFocusItem?: (nodeId: string) => void;
   onClose: () => void;
 }
@@ -24,7 +25,7 @@ const iconByKind = {
   file: FileText,
 } as const;
 
-export function AIContextPanel({ items, contextIsLive, hasMore = false, loading = false, loadingOlder = false, loadError = null, onLoadOlder, onRetry, onToggleItem, onFocusItem, onClose }: AIContextPanelProps) {
+export function AIContextPanel({ items, contextIsLive, hasMore = false, loading = false, loadingOlder = false, loadError = null, onLoadOlder, onRetry, onToggleItem, onToggleFileContent, onFocusItem, onClose }: AIContextPanelProps) {
   const included = items.filter((item) => item.included);
   const tokens = included.reduce((sum, item) => sum + item.tokens, 0);
 
@@ -76,6 +77,18 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
                   <LocateFixed size={13} />
                 </button>
               ) : null}
+              {contextIsLive && item.nodeId && item.kind === 'file' && item.fileContentAvailable && onToggleFileContent ? (
+                <button
+                  className={`ai-context-item__content ${item.fileContentIncluded ? 'is-enabled' : ''}`}
+                  type="button"
+                  aria-pressed={Boolean(item.fileContentIncluded)}
+                  aria-label={`${item.fileContentIncluded ? 'Stop sending' : 'Send'} ${item.title} text to AURA`}
+                  title={item.fileContentIncluded ? 'File text will be sent with the next message' : 'Send this browser-local text file with the next message'}
+                  onClick={() => onToggleFileContent(item.nodeId!, !item.fileContentIncluded)}
+                >
+                  <Send size={12} /> {item.fileContentIncluded ? 'Text on' : 'Send text'}
+                </button>
+              ) : null}
             </div>
           );
         })}
@@ -84,7 +97,7 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
       <div className="ai-context-panel__foot">
         {loadError && onRetry ? <button type="button" onClick={onRetry}>Retry</button> : null}
         {hasMore && onLoadOlder ? <button type="button" onClick={() => void onLoadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older objects…' : 'Load older objects'}</button> : null}
-        <small>{contextIsLive ? 'Only selected saved project objects are sent with this message. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
+        <small>{contextIsLive ? 'File text stays in this browser until you choose Send text. Included text is copied into the durable AURA run; cloud routing pauses for confirmation. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
       </div>
     </div>
   );

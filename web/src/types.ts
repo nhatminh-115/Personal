@@ -97,6 +97,13 @@ export interface AIContextItem {
   tokens: number;
   included: boolean;
   nodeId?: string;
+  fileContentAvailable?: boolean;
+  fileContentIncluded?: boolean;
+}
+
+export interface ChatContextAttachment {
+  object_id: string;
+  text: string;
 }
 
 export interface AIProvenanceItem {
