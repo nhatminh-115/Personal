@@ -40,3 +40,13 @@ the normal approval flow and local-only Automation routing policy.
 HTTP `202` means the trigger was queued; it does not mean the Automation run
 has completed. Paused automations return `409`. Invalid credentials return
 `401`; missing, archived, or unconfigured webhook triggers return `404`.
+
+## Retry a failed run
+
+Run history offers **Retry run** for a failed or dead-lettered execution. AURA
+queues a new run with a new event and run ID, using the Automation's current
+saved instruction and scope. The request body and payload of the earlier
+webhook are not replayed. The new history entry records the source event ID;
+the original entry remains unchanged. Retries are available only while the
+Automation is enabled and no other run is queued, executing, or waiting for an
+approval.

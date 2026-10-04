@@ -524,7 +524,8 @@ export interface AutomationExecutionRecord {
   queued_at: string;
   status: string;
   retry_count: number;
-  trigger_type?: 'schedule' | 'manual' | 'webhook';
+  trigger_type?: 'schedule' | 'manual' | 'webhook' | 'retry';
+  retry_of_event_id?: string | null;
 }
 
 export interface AutomationRunResponse {

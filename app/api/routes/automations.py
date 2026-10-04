@@ -5,7 +5,7 @@ import hmac
 import re
 import secrets
 import uuid
-from datetime import timedelta
+from datetime import timedelta, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel
@@ -29,7 +29,9 @@ router = APIRouter(prefix="/v1/automations", tags=["Automations"])
 WEBHOOK_EVENT_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
-def _automation_trigger_type(event_type: str) -> str:
+def _automation_trigger_type(event_type: str, source: str | None = None) -> str:
+    if source == "automation_retry":
+        return "retry"
     return {
         EventType.CRON_TICK.value: "schedule",
         EventType.WEBHOOK_RECEIVED.value: "webhook",
@@ -134,7 +136,12 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
             queued_at=event.occurred_at,
             status=execution_status,
             retry_count=event.retry_count,
-            trigger_type=_automation_trigger_type(event.event_type),
+            trigger_type=_automation_trigger_type(event.event_type, event.source),
+            retry_of_event_id=(
+                event.payload_json.get("retry_of_event_id")
+                if isinstance(event.payload_json, dict) and isinstance(event.payload_json.get("retry_of_event_id"), str)
+                else None
+            ),
         )
     return response
 
@@ -615,7 +622,12 @@ async def list_automation_runs(
                 else runs[run_id].status if run_id in runs else event_status.get(event.status, event.status)
             ),
             retry_count=event.retry_count,
-            trigger_type=_automation_trigger_type(event.event_type),
+            trigger_type=_automation_trigger_type(event.event_type, event.source),
+            retry_of_event_id=(
+                event.payload_json.get("retry_of_event_id")
+                if isinstance(event.payload_json, dict) and isinstance(event.payload_json.get("retry_of_event_id"), str)
+                else None
+            ),
         )
         for event, run_id in zip(events, run_ids)
     ]
@@ -678,6 +690,77 @@ async def cancel_queued_automation_run(
         queued_at=event.occurred_at,
         status="cancelled",
         retry_count=event.retry_count,
-        trigger_type=_automation_trigger_type(event.event_type),
+        trigger_type=_automation_trigger_type(event.event_type, event.source),
+        retry_of_event_id=(
+            event.payload_json.get("retry_of_event_id")
+            if isinstance(event.payload_json, dict) and isinstance(event.payload_json.get("retry_of_event_id"), str)
+            else None
+        ),
+    )
+
+
+@router.post("/{automation_id}/runs/{event_id}/retry", response_model=AutomationExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
+async def retry_automation_run(
+    automation_id: str,
+    event_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> AutomationExecutionResponse:
+    """Queue a fresh run from the saved instruction after a failed execution."""
+    result = await db.execute(
+        select(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    job = result.scalar_one_or_none()
+    if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    if not job.is_active:
+        raise HTTPException(status_code=409, detail="Paused automations cannot be retried.")
+    if job.locked_at is not None:
+        locked_at = job.locked_at
+        if locked_at.tzinfo is None:
+            locked_at = locked_at.replace(tzinfo=timezone.utc)
+        if locked_at >= utc_now() - timedelta(seconds=60):
+            raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
+
+    source_event = await db.scalar(
+        select(EventRecordModel).where(
+            EventRecordModel.id == event_id,
+            EventRecordModel.correlation_id == automation_id,
+            EventRecordModel.event_type.in_({"timer.fired", "cron.tick", EventType.WEBHOOK_RECEIVED.value}),
+        )
+    )
+    if source_event is None:
+        raise HTTPException(status_code=404, detail="Automation run not found.")
+    source_run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{source_event.id}"))
+    source_run = await db.get(RunModel, source_run_id)
+    can_retry = source_event.status in {EventStatus.FAILED.value, EventStatus.DEAD_LETTER.value} or (
+        source_event.status == EventStatus.PROCESSED.value
+        and source_run is not None
+        and source_run.status == RunStatus.FAILED.value
+    )
+    if not can_retry:
+        raise HTTPException(status_code=409, detail="Only failed or dead-lettered runs can be retried.")
+    if await persistent_scheduler.has_active_automation_execution(db, job):
+        raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
+
+    saved_payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+    event = AURAEvent(
+        event_type=EventType.TIMER_FIRED.value,
+        source="automation_retry",
+        payload={**saved_payload, "retry_of_event_id": source_event.id},
+        correlation_id=job.id,
+        idempotency_key=f"automation-retry-{job.id}-{source_event.id}-{uuid.uuid4()}",
+    )
+    queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
+    return AutomationExecutionResponse(
+        event_id=queued.id,
+        run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{queued.id}")),
+        queued_at=queued.occurred_at,
+        status="queued",
+        retry_count=0,
+        trigger_type="retry",
+        retry_of_event_id=source_event.id,
     )
 
