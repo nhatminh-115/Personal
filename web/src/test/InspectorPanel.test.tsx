@@ -293,7 +293,13 @@ describe('InspectorPanel Component', () => {
     expect(onContextSelect).toHaveBeenCalledWith('selected-context-set');
   });
 
-  it('shows tiered saved memory provenance and opens a known memory for review', () => {
+  it('shows tiered memory provenance and loads an older memory for review by ID', async () => {
+    const childMemory: MemoryItem = {
+      id: 'child-semantic-memory', key: 'earlier_research_finding', memory_type: 'semantic',
+      project_name: 'Stateful Architecture', content: 'This saved finding predates the current memory page.',
+      confidence: 0.87, is_active: true, created_at: new Date().toISOString(),
+    };
+    vi.spyOn(api, 'fetchMemoryById').mockResolvedValue(childMemory);
     const profileMemory: MemoryItem = {
       id: 'profile-memory-1',
       key: 'preferred_work_style',
@@ -322,6 +328,7 @@ describe('InspectorPanel Component', () => {
 
     render(<InspectorPanel
       runDetail={runDetail}
+      projectName="Stateful Architecture"
       memories={sampleMemories}
       profileMemories={[profileMemory]}
       routingData={[
@@ -348,6 +355,11 @@ describe('InspectorPanel Component', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Review memory project_architecture_thesis' }));
     expect(screen.getByText(/AURA workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hide provenance' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+    fireEvent.click(screen.getByRole('button', { name: 'Review memory child-semantic-memory' }));
+    expect(api.fetchMemoryById).toHaveBeenCalledWith('child-semantic-memory', 'Stateful Architecture', 'sess-inspect-001');
+    expect(await screen.findByText(/This saved finding predates the current memory page/i)).toBeInTheDocument();
   });
 
   it('shows context manifests for the root and specialist runs', () => {

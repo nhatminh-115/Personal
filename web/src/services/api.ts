@@ -848,6 +848,17 @@ export const api = {
     };
   },
 
+  async fetchMemoryById(memoryId: string, projectName?: string, sessionId?: string): Promise<MemoryItem> {
+    const params = new URLSearchParams();
+    if (projectName) params.set('project_name', projectName);
+    if (sessionId) params.set('session_id', sessionId);
+    return handleResponse(await fetch(`${BASE_URL}/v1/memory/by-id/${encodeURIComponent(memoryId)}?${params.toString()}`));
+  },
+
+  async fetchProfileMemoryById(memoryId: string): Promise<MemoryItem> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`));
+  },
+
   async setProjectMemoryActive(projectName: string, memoryId: string, isActive: boolean): Promise<MemoryItem> {
     return handleResponse(await fetch(
       `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
