@@ -104,6 +104,10 @@ class ToolRegistry:
         """Register a tool instance."""
         self._tools[tool.name] = tool
 
+    def unregister(self, name: str) -> None:
+        """Remove a tool by its canonical name if it is currently registered."""
+        self._tools.pop(name, None)
+
     def register_capability_provider(
         self,
         metadata: CapabilityProviderMetadata,

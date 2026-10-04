@@ -22,6 +22,7 @@ import {
   WorkspaceEdge,
   WorkspaceGraph,
   WorkspaceExecutionHistory,
+  CapabilityProviderMetadata,
   CapabilityProvidersResponse,
   WorkspaceLayout,
   WorkspaceNoteRecord,
@@ -94,6 +95,13 @@ async function fetchAllCursorPages<T>(path: string, pageSize = 100): Promise<T[]
 export const api = {
   async fetchCapabilityProviders(): Promise<CapabilityProvidersResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/capabilities/providers`));
+  },
+
+  async refreshCapabilityProvider(providerId: string): Promise<CapabilityProviderMetadata> {
+    return handleResponse(await fetch(
+      `${BASE_URL}/v1/capabilities/providers/${encodeURIComponent(providerId)}/refresh`,
+      { method: 'POST' },
+    ));
   },
 
   async fetchModels(): Promise<ModelCatalog> {

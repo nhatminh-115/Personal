@@ -292,6 +292,7 @@ describe('InspectorPanel Component', () => {
 
     fireEvent.click(screen.getByTestId('inspector-tab-capabilities'));
     await waitFor(() => expect(fetchProviders).toHaveBeenCalledOnce());
+    expect(screen.getByText(/refresh checks tool discovery only/i)).toBeInTheDocument();
     expect(await screen.findByText('AURA Workspace')).toBeInTheDocument();
     expect(screen.getByText('aura.workspace')).toBeInTheDocument();
     expect(screen.getByText('Local')).toBeInTheDocument();
@@ -302,6 +303,49 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('No tools verified available')).toBeInTheDocument();
     expect(screen.getAllByText('Unknown').length).toBeGreaterThan(1);
     expect(screen.queryByText(/endpoint|credential|secret/i)).not.toBeInTheDocument();
+  });
+
+  it('refreshes MCP provider health without invoking a provider tool', async () => {
+    vi.spyOn(api, 'fetchCapabilityProviders').mockResolvedValue({
+      providers: [{
+        provider_id: 'mcp.codegraph',
+        name: 'CodeGraph MCP',
+        version: '0.20.1',
+        health: 'unavailable',
+        health_checked_at: null,
+        enabled: true,
+        capabilities: ['code_graph.query'],
+        capability_tools: {},
+        declared_capability_tools: { 'code_graph.query': ['mcp_codegraph_codegraph_symbol_search'] },
+        privacy_boundary: 'local',
+        network_requirement: 'unknown',
+        data_touched: ['repository_source'],
+        permissions: ['read'],
+        approval_requirement: 'per_tool_policy',
+      }],
+    });
+    const refreshProvider = vi.spyOn(api, 'refreshCapabilityProvider').mockResolvedValue({
+      provider_id: 'mcp.codegraph',
+      name: 'CodeGraph MCP',
+      version: '0.20.1',
+      health: 'healthy',
+      health_checked_at: '2026-10-04T14:00:00Z',
+      enabled: true,
+      capabilities: ['code_graph.query'],
+      capability_tools: { 'code_graph.query': ['mcp_codegraph_codegraph_symbol_search'] },
+      declared_capability_tools: { 'code_graph.query': ['mcp_codegraph_codegraph_symbol_search'] },
+      privacy_boundary: 'local',
+      network_requirement: 'unknown',
+      data_touched: ['repository_source'],
+      permissions: ['read'],
+      approval_requirement: 'per_tool_policy',
+    });
+    render(<InspectorPanel onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-capabilities'));
+    expect(await screen.findByText('Unavailable')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh health for CodeGraph MCP' }));
+    await waitFor(() => expect(refreshProvider).toHaveBeenCalledWith('mcp.codegraph'));
+    expect(await screen.findByText('Healthy')).toBeInTheDocument();
   });
 
   it('does not invent context usage when a run has no compiled manifest event', () => {

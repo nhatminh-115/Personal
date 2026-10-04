@@ -66,9 +66,8 @@ class MCPClientManager:
             # Remove any tools registered from this server
             if server_id in self._discovered_tools:
                 for tool in self._discovered_tools[server_id]:
-                    # Remove from registry if supported
-                    if hasattr(self.registry, "_tools") and tool.name in self.registry._tools:
-                        del self.registry._tools[tool.name]
+                    if self.registry.get(tool.name) is tool:
+                        self.registry.unregister(tool.name)
                 del self._discovered_tools[server_id]
             self._discovery_degraded.discard(server_id)
             del self._servers[server_id]
@@ -253,8 +252,11 @@ class MCPClientManager:
                 self.registry.register(adapter)
                 adapters.append(adapter)
 
-            self._discovered_tools[server_id] = adapters
             discovered_names = {adapter.name for adapter in adapters}
+            for previous in self._discovered_tools.get(server_id, []):
+                if previous.name not in discovered_names and self.registry.get(previous.name) is previous:
+                    self.registry.unregister(previous.name)
+            self._discovered_tools[server_id] = adapters
             missing_declared_tools = set(config.capabilities_by_tool) - {adapter.mcp_tool_name for adapter in adapters}
             if missing_declared_tools:
                 self._discovery_degraded.add(server_id)

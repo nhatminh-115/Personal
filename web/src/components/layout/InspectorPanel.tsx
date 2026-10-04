@@ -4,6 +4,7 @@ import {
   Database,
   Network,
   NotebookPen,
+  RefreshCw,
   Route,
   Search,
   X,
@@ -68,6 +69,8 @@ export function InspectorPanel({
   const [capabilityProviders, setCapabilityProviders] = useState<CapabilityProviderMetadata[]>([]);
   const [capabilityState, setCapabilityState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const [capabilityRefreshError, setCapabilityRefreshError] = useState<string | null>(null);
+  const [refreshingCapabilityId, setRefreshingCapabilityId] = useState<string | null>(null);
 
   const toggleEvent = (id: string) => {
     setExpandedEvents((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -83,6 +86,21 @@ export function InspectorPanel({
     } catch {
       setCapabilityError('Provider inventory is unavailable. Check the AURA connection and retry.');
       setCapabilityState('error');
+    }
+  };
+
+  const refreshCapabilityProvider = async (providerId: string) => {
+    setRefreshingCapabilityId(providerId);
+    setCapabilityRefreshError(null);
+    try {
+      const updated = await api.refreshCapabilityProvider(providerId);
+      setCapabilityProviders((current) => current.map((provider) => (
+        provider.provider_id === updated.provider_id ? updated : provider
+      )));
+    } catch {
+      setCapabilityRefreshError('Could not refresh this provider. Check the AURA connection and retry.');
+    } finally {
+      setRefreshingCapabilityId(null);
     }
   };
 
@@ -491,14 +509,25 @@ export function InspectorPanel({
             <div className="inspector-kpi">
               <span>Capability providers</span>
               <strong>{capabilityProviders.length} registered</strong>
-              <small>Sanitized runtime inventory · no provider invocation</small>
+              <small>Sanitized runtime inventory · refresh checks tool discovery only</small>
             </div>
             {capabilityState === 'loading' ? <div className="inspector-empty">Loading provider inventory…</div> : null}
             {capabilityError ? <div className="inspector-empty" role="alert">{capabilityError}<button type="button" onClick={() => void loadCapabilityProviders()}>Retry</button></div> : null}
+            {capabilityRefreshError ? <div className="inspector-empty" role="alert">{capabilityRefreshError}</div> : null}
             {capabilityState === 'loaded' && capabilityProviders.length === 0 ? <div className="inspector-empty">No capability providers are registered.</div> : null}
             {capabilityProviders.map((provider) => (
               <section className="inspector-group" key={provider.provider_id}>
                 <h4>{provider.name}</h4>
+                {provider.provider_id.startsWith('mcp.') && provider.enabled ? (
+                  <button
+                    type="button"
+                    onClick={() => void refreshCapabilityProvider(provider.provider_id)}
+                    disabled={refreshingCapabilityId !== null}
+                    aria-label={`Refresh health for ${provider.name}`}
+                  >
+                    <RefreshCw size={12} /> {refreshingCapabilityId === provider.provider_id ? 'Checking…' : 'Refresh health'}
+                  </button>
+                ) : null}
                 <div className="inspector-row"><span>Provider ID</span><strong>{provider.provider_id}</strong></div>
                 <div className="inspector-row"><span>Version</span><strong>{provider.version ?? 'Unknown'}</strong></div>
                 <div className="inspector-row"><span>Health</span><strong>{provider.health === 'unknown' ? 'Unknown' : formatProviderValue(provider.health)}</strong></div>
