@@ -166,7 +166,9 @@ manifest with the run. Context Bridges compile their user-authored handoff note
 and only the structured sections the user enabled. Source links retain
 provenance and strengthen privacy routing without copying full source content
 into the handoff. Context Sets and branches expand their explicitly linked
-sources.
+sources. The root prompt labels assembled material as retrieved AURA context
+and directs the model to use content already present there; tools remain for
+missing information, current-state checks, and requested actions.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Imported PDFs
