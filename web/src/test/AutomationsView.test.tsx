@@ -52,6 +52,7 @@ describe('AutomationsView', () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({
       name: 'Project digest', description: 'A short summary', instruction: 'Review the latest project activity.',
       scope: 'project', project_name: 'AURA', interval_seconds: 7200,
+      webhook_enabled: false,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
     }));
   });
@@ -73,8 +74,35 @@ describe('AutomationsView', () => {
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('auto-1', {
       name: 'Project review', description: 'Summarize changes', instruction: 'Summarize decisions and owners.', interval_seconds: 7200,
+      webhook_enabled: false,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     }));
+  });
+
+  it('creates a signed webhook and reveals its secret only in the one-time setup dialog', async () => {
+    const onCreate = vi.fn().mockResolvedValue({
+      ...liveAutomation, webhookEnabled: true, webhookPath: '/v1/automations/auto-2/webhook/events', webhookSecret: 'one-time-webhook-secret',
+    });
+    render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Deploy signal' } });
+    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Check deployment status.' } });
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create automation' }));
+
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ webhook_enabled: true })));
+    expect(await screen.findByRole('dialog', { name: 'Save this secret now' })).toBeInTheDocument();
+    expect(screen.getByText('/v1/automations/auto-2/webhook/events')).toBeInTheDocument();
+    expect(screen.getByText('one-time-webhook-secret')).toBeInTheDocument();
+    expect(screen.getByText(/request body is ignored/i)).toBeInTheDocument();
+  });
+
+  it('shows the configured webhook endpoint without exposing a saved secret', () => {
+    const configured = { ...liveAutomation, webhookEnabled: true, webhookPath: '/v1/automations/auto-1/webhook/events' };
+    render(<AutomationsView projects={projects} automations={[configured]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByText('Signed webhook endpoint'));
+    expect(screen.getByText('/v1/automations/auto-1/webhook/events')).toBeInTheDocument();
+    expect(screen.queryByText(/Bearer/)).not.toBeInTheDocument();
   });
 
   it('creates a weekly wall-clock schedule in the selected timezone', async () => {

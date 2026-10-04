@@ -130,6 +130,14 @@ or starts a second schedule unexpectedly.
 Queued Automation runs can be cancelled only while their outbox event remains
 pending and unclaimed. Once a worker claims a run, cancellation is rejected; the
 interface does not claim to stop an active tool or model execution.
+Automations may also accept signed webhook signals. A newly enabled trigger
+returns a random bearer secret once and stores only its SHA-256 digest. Send
+`Authorization: Bearer <secret>` and a unique `X-Aura-Event-Id`; duplicate
+deliveries return the original queued event. The request body is deliberately
+ignored and never enters the run prompt or event record. Webhook signals use
+the same durable outbox, approval flow, and local-only routing policy as other
+Automation runs. Paused or archived automations reject new webhook runs.
+See the [webhook setup and delivery contract](../automations-webhooks.md).
 
 The Library's Research collection includes a read-only Research Radar for saved
 project graphs. It requests bounded graph pages filtered to research sources,

@@ -396,6 +396,7 @@ class AutomationWrite(BaseModel):
     project_name: Optional[str] = Field(default=None, max_length=128)
     interval_seconds: int = Field(default=86_400, ge=60, le=31_536_000)
     schedule: AutomationSchedule = Field(default_factory=AutomationSchedule)
+    webhook_enabled: bool = False
 
 
 class AutomationEditWrite(BaseModel):
@@ -404,6 +405,7 @@ class AutomationEditWrite(BaseModel):
     instruction: str = Field(min_length=1, max_length=20_000)
     interval_seconds: int = Field(default=86_400, ge=60, le=31_536_000)
     schedule: Optional[AutomationSchedule] = None
+    webhook_enabled: Optional[bool] = None
 
 
 class AutomationDuplicateWrite(BaseModel):
@@ -429,6 +431,9 @@ class AutomationResponse(BaseModel):
     project_name: Optional[str] = None
     interval_seconds: int
     schedule: AutomationSchedule = Field(default_factory=AutomationSchedule)
+    webhook_enabled: bool = False
+    webhook_path: Optional[str] = None
+    webhook_secret: Optional[str] = None
     last_run_at: Optional[datetime] = None
     next_run_at: datetime
     created_at: datetime

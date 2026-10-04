@@ -12,6 +12,7 @@ interface AutomationInput {
   project_name?: string;
   interval_seconds: number;
   schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+  webhook_enabled?: boolean;
 }
 
 interface AutomationsViewProps {
@@ -24,7 +25,7 @@ interface AutomationsViewProps {
   pageError?: string | null;
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
-  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds' | 'schedule'>) => Promise<AutomationRecord>;
+  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds' | 'schedule' | 'webhook_enabled'>) => Promise<AutomationRecord>;
   onDuplicate?: (automation: AutomationRecord) => void;
   onSetArchived?: (automation: AutomationRecord, archived: boolean) => void;
   includeArchived?: boolean;
@@ -70,6 +71,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
   const [scheduleTime, setScheduleTime] = useState('09:00');
   const [scheduleWeekdays, setScheduleWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
   const [scheduleTimezone, setScheduleTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [webhookEnabled, setWebhookEnabled] = useState(false);
+  const [webhookSetup, setWebhookSetup] = useState<{ path: string; secret: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [approvalReview, setApprovalReview] = useState<{ automation: AutomationRecord; approval: ApprovalDetail } | null>(null);
@@ -249,6 +252,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
     setScheduleTime(schedule.local_time ?? '09:00');
     setScheduleWeekdays(schedule.weekdays.length ? schedule.weekdays : [0, 1, 2, 3, 4]);
     setScheduleTimezone(schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+    setWebhookEnabled(automation.webhookEnabled ?? false);
     setError('');
     setCreating(true);
   };
@@ -274,14 +278,17 @@ export function AutomationsView({ projects, automations, totalCount = automation
           weekdays: scheduleMode === 'weekly' ? scheduleWeekdays : [],
           timezone: scheduleTimezone,
         },
+        webhook_enabled: webhookEnabled,
       };
+      let saved: AutomationRecord;
       if (editingAutomation) {
         if (!onUpdate) throw new Error('Editing automations is unavailable.');
-        await onUpdate(editingAutomation.id, common);
+        saved = await onUpdate(editingAutomation.id, common);
       } else {
         const project = projects.find((item) => item.id === projectId);
-        await onCreate({ ...common, scope, project_name: scope === 'project' ? project?.name : undefined });
+        saved = await onCreate({ ...common, scope, project_name: scope === 'project' ? project?.name : undefined });
       }
+      if (saved.webhookSecret && saved.webhookPath) setWebhookSetup({ path: saved.webhookPath, secret: saved.webhookSecret });
       setName(''); setDescription(''); setInstruction(''); setCreating(false); setEditingAutomation(null); setScheduleMode('interval');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Could not save automation.');
@@ -296,11 +303,11 @@ export function AutomationsView({ projects, automations, totalCount = automation
         <div>
           <span className="eyebrow">AUTOMATIONS</span>
           <h1>Background routines without turning AURA into Zapier.</h1>
-          <p>Scheduled instructions run through AURA and remain scoped to your workspace or one project.</p>
+          <p>Scheduled instructions and signed webhook signals run through AURA, scoped to your workspace or one project.</p>
         </div>
         <div className="automations-view__header-actions">
           {onToggleArchived ? <button className="secondary-button" type="button" onClick={onToggleArchived} disabled={loadingPage}>{includeArchived ? 'Hide archived' : 'Include archived'}</button> : null}
-          <button className="primary-soft-button" type="button" onClick={() => { setEditingAutomation(null); setName(''); setDescription(''); setInstruction(''); setScheduleMode('interval'); setScheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); setCreating(true); }}><Plus size={15} /> New automation</button>
+          <button className="primary-soft-button" type="button" onClick={() => { setEditingAutomation(null); setName(''); setDescription(''); setInstruction(''); setScheduleMode('interval'); setWebhookEnabled(false); setScheduleTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'); setCreating(true); }}><Plus size={15} /> New automation</button>
         </div>
       </div>
 
@@ -308,6 +315,18 @@ export function AutomationsView({ projects, automations, totalCount = automation
         <div><Workflow size={15} /><span><strong>{enabledCount} active</strong><small>{totalCount} scheduled routines</small></span></div>
         <div><BellRing size={15} /><span><strong>Persistent scheduler</strong><small>Runs are queued through AURA</small></span></div>
       </div>
+
+      {webhookSetup ? (
+        <div className="modal-scrim" role="presentation">
+          <div className="automation-create-modal automation-webhook-secret" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-title">
+            <div className="modal-head"><div><span className="eyebrow">SIGNED WEBHOOK</span><strong id="automation-webhook-title">Save this secret now</strong></div><button className="icon-button" type="button" onClick={() => setWebhookSetup(null)} aria-label="Close"><X size={15} /></button></div>
+            <p>This secret is shown once. Send a POST request with <code>Authorization: Bearer &lt;secret&gt;</code> and a unique <code>X-Aura-Event-Id</code>. The request body is ignored; AURA runs only the saved instruction.</p>
+            <label><span>Webhook path</span><code>{webhookSetup.path}</code></label>
+            <label><span>Secret</span><code>{webhookSetup.secret}</code></label>
+            <div className="automation-approval-actions"><button type="button" className="secondary-button" onClick={() => void navigator.clipboard?.writeText(webhookSetup.secret)}>Copy secret</button><button type="button" className="primary-soft-button" onClick={() => setWebhookSetup(null)}>Done</button></div>
+          </div>
+        </div>
+      ) : null}
 
       {approvalError && !approvalReview ? <p className="automation-form-error" role="alert">{approvalError}</p> : null}
       <div className="automation-list">
@@ -324,6 +343,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                 <p>{automation.description}</p>
                 {live ? <details className="automation-instruction"><summary>Instruction</summary><p>{automation.instruction}</p></details> : null}
                 <div className="automation-trigger"><Clock3 size={12} /><strong>{automation.trigger}</strong></div>
+                {live && automation.webhookEnabled && automation.webhookPath ? <details className="automation-instruction"><summary>Signed webhook endpoint</summary><code>{automation.webhookPath}</code><p>The signing secret is never shown again. Disable then re-enable this trigger to rotate it.</p></details> : null}
                 {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}{automation.latestExecution.status === 'waiting_for_approval' ? <button type="button" onClick={() => void openApprovalReview(automation)} disabled={approvalLoading}>{approvalLoading ? 'Loading approval…' : 'Review approval'}</button> : null}</div> : null}
                 {live ? (
                   <div className="automation-history">
@@ -451,6 +471,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
             <label><span>Name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Weekly literature scan" /></label>
             <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this routine is for" /></label>
             <label><span>Instruction for AURA</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what AURA should do each time it runs" rows={4} /></label>
+            <label className="automation-webhook-option"><input type="checkbox" checked={webhookEnabled} onChange={(event) => setWebhookEnabled(event.target.checked)} /><span><strong>Allow signed webhook triggers</strong><small>External services can queue this saved instruction. Request bodies are ignored.</small></span></label>
             {editingAutomation ? <p className="modal-note">Scope stays {editingAutomation.scope === 'global' ? 'global' : `in ${editingAutomation.projectName ?? 'its current project'}`} so this routine keeps its existing session and history.</p> : <><div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>{scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}</>}
             <label><span>Schedule</span><select aria-label="Schedule" value={scheduleMode} onChange={(event) => setScheduleMode(event.target.value as typeof scheduleMode)}><option value="interval">Repeat after an interval</option><option value="daily">Every day at a local time</option><option value="weekly">Selected weekdays at a local time</option></select></label>
             {scheduleMode === 'interval' ? <label className="automation-interval"><span>Run every</span><input type="number" min={unit === 'seconds' ? 60 : 1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(unit === 'seconds' ? 60 : 1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => { const nextUnit = event.target.value as IntervalUnit; setUnit(nextUnit); setInterval((current) => Math.max(nextUnit === 'seconds' ? 60 : 1, current)); }}><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label> : <>

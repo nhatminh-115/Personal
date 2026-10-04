@@ -508,6 +508,9 @@ export interface AutomationRecordResponse {
   project_name: string | null;
   interval_seconds: number;
   schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+  webhook_enabled: boolean;
+  webhook_path: string | null;
+  webhook_secret: string | null;
   last_run_at: string | null;
   next_run_at: string;
   created_at: string;

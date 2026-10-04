@@ -2294,6 +2294,7 @@ export default function App() {
     return {
       id: record.id, name: record.name, description: record.description, instruction: record.instruction, schedule,
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
+      webhookEnabled: record.webhook_enabled, webhookPath: record.webhook_path, webhookSecret: record.webhook_secret,
       archived: record.archived,
       trigger: intervalLabel, actions: ['Run through AURA'],
       lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
@@ -2308,10 +2309,12 @@ export default function App() {
     name: string; description: string; instruction: string; scope: 'global' | 'project';
     project_name?: string; interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+    webhook_enabled?: boolean;
   }) => {
     const record = await api.createAutomation(input);
     const item = automationFromRecord(record, projectCatalog);
-    setAutomations((current) => [item, ...current.filter((entry) => entry.id !== item.id)]);
+    const savedItem = { ...item, webhookSecret: null };
+    setAutomations((current) => [savedItem, ...current.filter((entry) => entry.id !== item.id)]);
     setAutomationSummary((current) => ({ total: current.total + 1, enabled: current.enabled + (item.enabled ? 1 : 0) }));
     return item;
   }, [automationFromRecord, projectCatalog]);
@@ -2319,10 +2322,11 @@ export default function App() {
   const updateAutomation = useCallback(async (automationId: string, input: {
     name: string; description: string; instruction: string; interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+    webhook_enabled?: boolean;
   }) => {
     const record = await api.updateAutomation(automationId, input);
     const updated = automationFromRecord(record, projectCatalog);
-    setAutomations((current) => current.map((item) => item.id === automationId ? updated : item));
+    setAutomations((current) => current.map((item) => item.id === automationId ? { ...updated, webhookSecret: null } : item));
     pushToast('Automation updated', 'Future scheduled runs will use the saved routine settings.');
     return updated;
   }, [automationFromRecord, projectCatalog, pushToast]);

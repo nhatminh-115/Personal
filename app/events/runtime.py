@@ -19,6 +19,7 @@ async def start_automation_runtime() -> Callable[[], Awaitable[None]]:
     bridge = EventToAgentBridge()
     event_bus.subscribe(EventType.TIMER_FIRED.value, bridge.handle_event)
     event_bus.subscribe(EventType.CRON_TICK.value, bridge.handle_event)
+    event_bus.subscribe(EventType.WEBHOOK_RECEIVED.value, bridge.handle_event)
     worker = OutboxWorker()
     stopped = asyncio.Event()
 
@@ -64,5 +65,6 @@ async def start_automation_runtime() -> Callable[[], Awaitable[None]]:
         await asyncio.gather(*tasks, return_exceptions=True)
         event_bus.unsubscribe(EventType.TIMER_FIRED.value, bridge.handle_event)
         event_bus.unsubscribe(EventType.CRON_TICK.value, bridge.handle_event)
+        event_bus.unsubscribe(EventType.WEBHOOK_RECEIVED.value, bridge.handle_event)
 
     return stop
