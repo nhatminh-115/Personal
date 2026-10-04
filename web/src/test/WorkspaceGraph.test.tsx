@@ -408,6 +408,53 @@ describe('Persistent workspace graph Board projection', () => {
     expect(onToast).toHaveBeenCalledWith('Privacy setting was not saved', 'The previous saved classification remains active.');
   });
 
+  it('serializes manual note autosaves so a slow earlier write cannot race a newer edit', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: 'note-save-order',
+        object_type: 'manual_note',
+        created_by: 'user',
+        title: 'Autosave ordering',
+        content: 'Original content.',
+        metadata_json: { privacy_policy: 'confidential' },
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    let releaseFirstSave!: () => void;
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => {
+      if (updateObject.mock.calls.length === 1) {
+        return new Promise((resolve) => { releaseFirstSave = () => resolve({} as never); });
+      }
+      return {} as never;
+    });
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="note-save-order" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Autosave ordering');
+    fireEvent.click(container.querySelector('[data-id="note-save-order"] button[title^="Current density"]')!);
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit manual note"]')!;
+    fireEvent.change(editor, { target: { value: 'First saved draft.' } });
+    await waitFor(() => expect(updateObject).toHaveBeenCalledTimes(1), { timeout: 2000 });
+
+    fireEvent.change(editor, { target: { value: 'Newest saved draft.' } });
+    await new Promise((resolve) => window.setTimeout(resolve, 600));
+    expect(updateObject).toHaveBeenCalledTimes(1);
+
+    releaseFirstSave();
+    await waitFor(() => expect(updateObject).toHaveBeenCalledTimes(2));
+    expect(updateObject.mock.calls[1][2]).toEqual(expect.objectContaining({
+      content: 'Newest saved draft.',
+      metadata_json: { privacy_policy: 'confidential' },
+    }));
+  });
+
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
     let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);

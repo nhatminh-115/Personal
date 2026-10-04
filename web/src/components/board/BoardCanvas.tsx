@@ -227,6 +227,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutSync = useRef<Promise<void>>(Promise.resolve());
   const layoutWritesPending = useRef(0);
   const viewportRef = useRef(viewport);
+  const workspaceObjectWriteSync = useRef<Map<string, Promise<void>>>(new Map());
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
   const privacySaveVersions = useRef<Map<string, number>>(new Map());
@@ -256,6 +257,22 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       }
     });
     layoutSync.current = save;
+    return save;
+  }, [workspaceProjectName]);
+
+  const queueWorkspaceObjectWrite = useCallback((id: string, snapshot?: AuraFlowNode) => {
+    if (!workspaceProjectName) return Promise.resolve();
+    const previous = workspaceObjectWriteSync.current.get(id) ?? Promise.resolve();
+    const save = previous.catch(() => undefined).then(async () => {
+      const node = snapshot ?? nodesRef.current.find((item) => item.id === id);
+      if (!node) return;
+      await api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(node));
+    });
+    workspaceObjectWriteSync.current.set(id, save);
+    void save.then(
+      () => { if (workspaceObjectWriteSync.current.get(id) === save) workspaceObjectWriteSync.current.delete(id); },
+      () => { if (workspaceObjectWriteSync.current.get(id) === save) workspaceObjectWriteSync.current.delete(id); },
+    );
     return save;
   }, [workspaceProjectName]);
 
@@ -395,7 +412,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }
         if (['manual_note', 'context_bridge'].includes(node.data.workspaceObjectType ?? '')
           && JSON.stringify(workspaceObjectWrite(before)) !== JSON.stringify(workspaceObjectWrite(node))) {
-          await api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(node));
+          await queueWorkspaceObjectWrite(id, node);
         }
       }
 
@@ -449,7 +466,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         toast('Board reload failed', 'Reopen the Board to reconcile it with the saved project graph.');
       }
     });
-  }, [saveWorkspaceLayout, setEdges, setNodes, toast, workspaceProjectName]);
+  }, [queueWorkspaceObjectWrite, saveWorkspaceLayout, setEdges, setNodes, toast, workspaceProjectName]);
 
   const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
     nodesRef,
@@ -677,22 +694,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           const timer = window.setTimeout(() => {
             const latestNode = nodesRef.current.find((item) => item.id === id);
             if (!latestNode) return;
-            void api.updateWorkspaceObject(workspaceProjectName, id, {
-              title: latestNode.data.title,
-              content: latestNode.data.kind === 'bridge' ? (latestNode.data.bridgeNote ?? body) : body,
-              metadata_json: latestNode.data.kind === 'bridge' ? {
-                ...(latestNode.data.workspaceMetadata ?? {}),
-                bridge_options: latestNode.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false },
-                bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
-              } : latestNode.data.workspaceMetadata ?? {},
-            }).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            void queueWorkspaceObjectWrite(id).catch(() => toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
             timers.delete(id);
           }, 500);
           timers.set(id, timer);
         }
       }
     },
-    [recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const setPrivacyPolicy = useCallback(
@@ -709,7 +718,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const updatedNode = { ...node, data: { ...node.data, workspaceMetadata: metadata } };
       setNodes((current) => current.map((item) => item.id === id ? updatedNode : item));
       if (workspaceProjectName) {
-        void api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(updatedNode))
+        void queueWorkspaceObjectWrite(id, updatedNode)
           .catch(() => {
             if (privacySaveVersions.current.get(id) !== saveVersion) return;
             setNodes((current) => current.map((item) => {
@@ -724,7 +733,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           });
       }
     },
-    [recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const updateBridgeOption = useCallback(
@@ -750,21 +759,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const latestNode = nodesRef.current.find((item) => item.id === id);
           if (!latestNode || latestNode.data.kind !== 'bridge') return;
-          void api.updateWorkspaceObject(workspaceProjectName, id, {
-            title: latestNode.data.title,
-            content: latestNode.data.bridgeNote ?? latestNode.data.body,
-            metadata_json: {
-              ...(latestNode.data.workspaceMetadata ?? {}),
-              bridge_options: latestNode.data.bridgeOptions ?? bridgeOptions,
-              bridge_sections: latestNode.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
-            },
-          }).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+          void queueWorkspaceObjectWrite(id).catch(() => toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
-    [recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const updateBridgeSection = useCallback(
@@ -780,21 +781,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const node = nodesRef.current.find((item) => item.id === id);
           if (!node || node.data.kind !== 'bridge') return;
-          void api.updateWorkspaceObject(workspaceProjectName, id, {
-            title: node.data.title,
-            content: node.data.bridgeNote ?? node.data.body,
-            metadata_json: {
-              ...(node.data.workspaceMetadata ?? {}),
-              bridge_options: node.data.bridgeOptions ?? { conclusions: true, observations: true, failed: false, artifacts: false, constraints: false, decisions: false },
-              bridge_sections: node.data.bridgeSections ?? { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' },
-            },
-          }).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          void queueWorkspaceObjectWrite(id).catch(() => toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
-    [recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
   );
 
   const addBranch = useCallback(
