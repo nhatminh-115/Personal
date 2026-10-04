@@ -105,7 +105,7 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     expect(await view.findByText(/file\|Local budget\.pdf\|file reference · metadata only/)).toHaveTextContent(
-      'file reference · metadata only · this browser has no supported local text copy available|4',
+      'file reference · metadata only · this browser has no supported local text or PDF copy available|4',
     );
   });
 
@@ -126,6 +126,27 @@ describe('live chat context loading', () => {
 
     const contextItem = await view.findByText(/file\|Local notes\.md\|browser-local text/);
     expect(contextItem).toHaveTextContent('stays here until you explicitly send it with a message');
+    fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
+    expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
+  });
+
+  it('offers browser-local PDF text extraction only for an imported PDF available in this browser', async () => {
+    vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
+      objects: [{
+        id: 'file-reference-1', project_name: null, object_type: 'file_reference', created_by: 'user',
+        title: 'Local chapters.pdf', content: '', metadata_json: { storage_location: 'browser_local' },
+        created_at: '2026-10-03T00:00:00Z', updated_at: '2026-10-03T00:00:00Z',
+      } as any],
+      nextCursor: null,
+    });
+    const onSendFileContent = vi.fn();
+    const view = renderWorkspace([{
+      id: 'file-reference-1', name: 'Local chapters', kind: 'PDF', source: 'imported', blobKey: 'local-pdf-1', size: 1_500,
+    }], onSendFileContent);
+    fireEvent.click(view.getByRole('button', { name: 'Open context' }));
+
+    const contextItem = await view.findByText(/file\|Local chapters\.pdf\|browser-local PDF/);
+    expect(contextItem).toHaveTextContent('text is extracted here only after you explicitly send it with a message');
     fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
     expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
   });
