@@ -24,6 +24,7 @@ import {
   type WorkspaceNote,
 } from './data/workspaceData';
 import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
+import { extractDocxText, MAX_LOCAL_DOCX_BYTES } from './lib/docxText';
 import { extractPdfText, MAX_CONTEXT_FILE_CHARS, MAX_LOCAL_PDF_BYTES } from './lib/pdfText';
 import { executionErrorText } from './lib/executionError';
 import {
@@ -236,6 +237,7 @@ function inferLibraryKind(file: File): LibraryKind {
   const ext = file.name.split('.').pop()?.toLowerCase();
   if (ext === 'html' || ext === 'htm' || file.type === 'text/html') return 'HTML';
   if (ext === 'pdf' || file.type === 'application/pdf') return 'PDF';
+  if (ext === 'docx') return 'DOCX';
   if (ext === 'md' || ext === 'markdown') return 'MD';
   if (ext === 'csv') return 'CSV';
   if (ext === 'json' || file.type === 'application/json') return 'JSON';
@@ -1408,18 +1410,19 @@ export default function App() {
         for (const objectId of uniqueContextFileIds) {
           const item = libraryItems.find((candidate) => candidate.id === objectId);
           const isPdf = item?.kind === 'PDF';
+          const isDocx = item?.kind === 'DOCX';
           const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(item.kind));
-          if (!item?.blobKey || (!supportedText && !isPdf)) {
-            throw new Error('This browser does not have a supported local text or PDF copy of one selected file.');
+          if (!item?.blobKey || (!supportedText && !isPdf && !isDocx)) {
+            throw new Error('This browser does not have a supported local text, PDF, or Word document copy of one selected file.');
           }
           const blob = await getLocalFile(item.blobKey);
-          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : 80_000;
+          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : 80_000;
           if (!blob || blob.size > maxBytes) {
-            throw new Error(isPdf
-              ? 'A selected local PDF is missing or exceeds the 10 MB browser parsing limit.'
+            throw new Error(isPdf || isDocx
+              ? `A selected local ${isPdf ? 'PDF' : 'Word document'} is missing or exceeds the 10 MB browser parsing limit.`
               : 'A selected local file is missing or exceeds the 20,000-character text limit.');
           }
-          const fileText = isPdf ? await extractPdfText(blob) : await blob.text();
+          const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : await blob.text();
           const fileCharacterCount = Array.from(fileText).length;
           if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
             throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);

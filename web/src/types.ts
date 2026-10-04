@@ -460,7 +460,7 @@ export type StudyCardRating = 'again' | 'remembered' | 'easy';
 export interface WorkspaceLibraryReferenceRecord {
   id: string;
   name: string;
-  kind: 'HTML' | 'PDF' | 'MD' | 'CSV' | 'TXT' | 'JSON' | 'IMAGE' | 'FILE';
+  kind: 'HTML' | 'PDF' | 'DOCX' | 'MD' | 'CSV' | 'TXT' | 'JSON' | 'IMAGE' | 'FILE';
   collection: 'Study' | 'Books' | 'Research' | 'Reference';
   detail: string;
   tags: string[];
