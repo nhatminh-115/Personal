@@ -102,6 +102,12 @@ included Docker Compose file starts PostgreSQL and the API service, applies
 Alembic migrations to `head`, and then starts the API. This automatic migration
 step is scoped to the single-service Compose setup; deployments using the image
 directly should run `python -m alembic upgrade head` as a separate release step.
+Compose reads this `.env` file and forwards the model, embedding, research, and
+CORS settings to the API container. The model provider stays `mock` unless you
+set `MODEL_PROVIDER=openai` and configure `OPENAI_API_KEY`. The key is passed
+only to the API container; it is not available to the web app. After changing
+provider settings, recreate the API container with
+`docker compose up -d --force-recreate aura-app` so it receives the new values.
 Compose persists PostgreSQL data and LangGraph checkpoints in separate named
 volumes (`postgres_data` and `checkpoint_data`); both are required to restore a
 durable run after container recreation.
