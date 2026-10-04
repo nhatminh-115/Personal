@@ -164,9 +164,11 @@ content. If the configured provider cannot meet that boundary, AURA skips
 semantic lookup or retains the memory without a vector; it does not silently
 send the text to a cloud embedding service or substitute another provider.
 
-The Execution Graph is a read-only projection of persisted run events. It may
-show routing, delegation, tool, and result metadata while excluding prompts,
-tool arguments, raw outputs, and hidden reasoning.
+The Execution Graph is a read-only projection of persisted run events. Run-event
+records and their structured logs keep operational metadata while excluding
+prompts, tool arguments, raw outputs, and hidden reasoning. Chat messages and
+final responses remain in their dedicated session/run records so conversation
+history can be restored; they are not copied into telemetry events.
 
 ## Frontend and verification
 

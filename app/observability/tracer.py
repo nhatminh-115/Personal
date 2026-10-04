@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger, mask_sensitive_data
 from app.db.models import RunEventModel, RunModel
+from app.observability.payloads import sanitize_trace_payload
 
 
 class TraceService:
@@ -22,7 +23,7 @@ class TraceService:
         session_id: Optional[str] = None,
     ) -> RunEventModel:
         """Persist a run event and emit structured log."""
-        safe_payload = mask_sensitive_data(payload or {})
+        safe_payload = mask_sensitive_data(sanitize_trace_payload(event_type, payload or {}))
 
         event = RunEventModel(
             run_id=run_id,
