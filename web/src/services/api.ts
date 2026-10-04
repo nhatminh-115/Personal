@@ -870,6 +870,17 @@ export const api = {
     ));
   },
 
+  async editProjectMemory(projectName: string, memoryId: string, content: string): Promise<MemoryItem> {
+    return handleResponse(await fetch(
+      `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      },
+    ));
+  },
+
   async setProfileMemoryActive(memoryId: string, isActive: boolean): Promise<MemoryItem> {
     return handleResponse(await fetch(
       `${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`,

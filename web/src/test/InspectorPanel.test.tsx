@@ -445,6 +445,45 @@ describe('InspectorPanel Component', () => {
     await waitFor(() => expect(onSetMemoryActive).toHaveBeenLastCalledWith(archivedMemory, true));
   });
 
+  it('corrects an active project memory through an explicit versioned edit action', async () => {
+    const projectMemory = { ...sampleMemories[0], memory_type: 'project', is_active: true };
+    const replacement: MemoryItem = {
+      ...projectMemory,
+      id: 'project-memory-v2',
+      content: 'Require two reviewers before release.',
+      supersedes_id: projectMemory.id,
+    };
+    const onEditProjectMemory = vi.fn().mockResolvedValue(replacement);
+    render(
+      <InspectorPanel
+        memories={[projectMemory]}
+        onEditProjectMemory={onEditProjectMemory}
+        onClose={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit memory' }));
+    const editor = screen.getByLabelText('Correct this project memory');
+    fireEvent.change(editor, { target: { value: replacement.content } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save correction' }));
+
+    await waitFor(() => expect(onEditProjectMemory).toHaveBeenCalledWith(projectMemory, replacement.content));
+    expect(screen.queryByLabelText('Correct this project memory')).not.toBeInTheDocument();
+  });
+
+  it('labels a superseding memory as a user correction instead of reusing its old source attribution', () => {
+    const correctedMemory = {
+      ...sampleMemories[0],
+      memory_type: 'project',
+      metadata_json: { edited_by: 'user', edited_from_memory_id: 'prior-version', privacy_policy: 'internal' },
+    };
+    render(<InspectorPanel memories={[correctedMemory]} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
+    expect(screen.getByText('User correction')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open source run' })).not.toBeInTheDocument();
+  });
+
   it('loads and manages cross-project profile memories separately', async () => {
     const onLoadProfileMemories = vi.fn().mockResolvedValue(undefined);
     const onSetMemoryActive = vi.fn().mockResolvedValue(undefined);

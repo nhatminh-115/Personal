@@ -1,14 +1,17 @@
 """Project and session memory inspection and lifecycle endpoints."""
 
+import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
-from app.api.schemas import MemoryActivationUpdate, MemoryItemResponse
+from app.api.schemas import MemoryActivationUpdate, MemoryItemResponse, ProjectMemoryContentUpdate
 from app.db.models import MemoryModel
 from app.db.session import get_db
+from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError
+from app.memory.service import SQLMemoryService
 
 router = APIRouter(prefix="/v1/memory", tags=["Memory"])
 
@@ -153,6 +156,95 @@ async def set_project_memory_active(
         not_found_detail="Project memory not found.",
         is_active=body.is_active,
     )
+
+
+@router.put("/projects/{project_name}/{memory_id}", response_model=MemoryItemResponse)
+async def edit_project_memory(
+    project_name: str,
+    memory_id: str,
+    body: ProjectMemoryContentUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> MemoryItemResponse:
+    """Correct a project memory by creating a new version and retaining its history."""
+    normalized_project = project_name.strip()
+    if not normalized_project:
+        raise HTTPException(status_code=422, detail="Project name must not be blank.")
+    result = await db.execute(select(MemoryModel).where(
+        MemoryModel.id == memory_id,
+        MemoryModel.memory_type == "project",
+        MemoryModel.project_name == normalized_project,
+    ))
+    current = result.scalar_one_or_none()
+    if current is None:
+        raise HTTPException(status_code=404, detail="Project memory not found.")
+    if not current.is_active:
+        raise HTTPException(status_code=409, detail="Only the active project-memory version can be edited.")
+    if current.content == body.content:
+        return _memory_response(current)
+
+    new_id = str(uuid.uuid4())
+    memory_service = SQLMemoryService(db)
+    privacy_requirement = (current.metadata_json or {}).get("privacy_policy")
+    embedding = None
+    embedding_model = None
+    embedding_dim = None
+    try:
+        memory_service.embedding_router.validate_privacy_requirement(privacy_requirement)
+        embedding = await memory_service.embedding_router.embed_query(
+            body.content,
+            privacy_requirement=privacy_requirement,
+        )
+        embedding_model = memory_service.embedding_router.current_model_name
+        embedding_dim = len(embedding)
+    except EmbeddingPrivacyBoundaryError:
+        # Preserve the edit without sending private text to a disallowed embedder.
+        embedding = None
+
+    changed = await db.execute(
+        update(MemoryModel)
+        .where(
+            MemoryModel.id == current.id,
+            MemoryModel.memory_type == "project",
+            MemoryModel.project_name == normalized_project,
+            MemoryModel.is_active.is_(True),
+        )
+        .values(is_active=False, superseded_by_id=new_id)
+    )
+    if changed.rowcount != 1:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This project memory changed while you were editing it. Reload and try again.",
+        )
+
+    previous_metadata = dict(current.metadata_json or {})
+    metadata = {
+        key: previous_metadata[key]
+        for key in ("privacy_policy", "project_name")
+        if key in previous_metadata
+    }
+    metadata["edited_by"] = "user"
+    metadata["edited_from_memory_id"] = current.id
+    metadata["source"] = "user_edit"
+    replacement = MemoryModel(
+        id=new_id,
+        session_id=None,
+        memory_type="project",
+        key=current.key,
+        content=body.content,
+        embedding=embedding,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        project_name=normalized_project,
+        confidence=current.confidence,
+        is_active=True,
+        supersedes_id=current.id,
+        metadata_json=metadata,
+    )
+    db.add(replacement)
+    await db.commit()
+    await db.refresh(replacement)
+    return _memory_response(replacement)
 
 
 @router.patch("/profile/{memory_id}", response_model=MemoryItemResponse)
