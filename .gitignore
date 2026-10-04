@@ -236,6 +236,7 @@ workspace/*
 node_modules/
 web/node_modules/
 web/dist/
+/web/public/ocr/
 
 # Prototypes & Scratch
 aura-ui-prototype-v9.1-scrollbar-fix/
