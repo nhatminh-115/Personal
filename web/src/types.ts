@@ -46,6 +46,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   workspaceCreatedBy?: string;
   workspaceMetadata?: Record<string, unknown>;
   workspaceRevision?: number;
+  workspaceSaveFailed?: boolean;
   layer: LayerKey;
   from?: string;
   to?: string;
@@ -71,6 +72,7 @@ export interface AuraNodeData extends Record<string, unknown> {
   onCycleDensity?: (id: string) => void;
   onBranch?: (id: string) => void;
   onChangeBody?: (id: string, body: string) => void;
+  onRetryWorkspaceSave?: (id: string) => void;
   onSetPrivacyPolicy?: (id: string, policy: RoutingPrivacy | null) => void;
   onBridgeApply?: (id: string) => void;
   onBridgeOption?: (id: string, key: 'conclusions' | 'observations' | 'failed' | 'artifacts' | 'constraints' | 'decisions', value: boolean) => void;
