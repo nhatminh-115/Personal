@@ -899,17 +899,29 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       const source = nodesRef.current.find((node) => node.id === sourceId || node.data.messageId === sourceId);
       if (!source) return;
       if (workspaceProjectName) {
-        void api.createWorkspaceObject(workspaceProjectName, {
-          object_type: 'conversation_branch',
-          title: 'Continue from this point…',
-          content: '',
-          metadata_json: { branch_source_title: source.data.title },
-          source_object_ids: [source.id],
-        }).then(async () => {
+        void (async () => {
+          try {
+            await api.createWorkspaceObject(workspaceProjectName, {
+              object_type: 'conversation_branch',
+              title: 'Continue from this point…',
+              content: '',
+              metadata_json: { branch_source_title: source.data.title },
+              source_object_ids: [source.id],
+            });
+          } catch {
+            toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.');
+            return;
+          }
           recordHistory();
-          await refreshRecentWorkspacePage();
+          try {
+            await refreshRecentWorkspacePage();
+          } catch {
+            resetHistoryRef.current();
+            toast('Branch saved, but Board could not refresh', 'Reopen the Board to load the saved branch.');
+            return;
+          }
           toast('Branch point saved', 'The source turn is linked. Add a prompt before treating it as a live chat.');
-        }).catch(() => toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.'));
+        })();
         return;
       }
       recordHistory();

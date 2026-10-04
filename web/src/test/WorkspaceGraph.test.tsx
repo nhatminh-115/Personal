@@ -685,6 +685,31 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
   });
 
+  it('reports a branch point as saved when only the Board refresh fails', async () => {
+    vi.spyOn(api, 'fetchWorkspaceGraphPage')
+      .mockResolvedValueOnce(savedGraph)
+      .mockRejectedValueOnce(new Error('offline during refresh'));
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({
+      ...savedGraph.objects[0], id: 'saved-branch', object_type: 'conversation_branch', title: 'Continue from this point…',
+    });
+    const onToast = vi.fn();
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="branch-refresh-failure" seedNodes={[]} seedEdges={[]} branchRequest={{ nodeId: 'turn-1', nonce: 1 }} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+
+    await waitFor(() => expect(createObject).toHaveBeenCalledWith('AURA Project', expect.objectContaining({
+      object_type: 'conversation_branch', source_object_ids: ['turn-1'],
+    })));
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith('Branch saved, but Board could not refresh', expect.anything()));
+    expect(onToast).not.toHaveBeenCalledWith('Branch was not saved', expect.anything());
+    expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
+  });
+
   it('serializes layout writes from live Board changes and undo/redo against the latest revision', async () => {
     const initialGraph: WorkspaceGraph = {
       ...savedGraph,
