@@ -165,6 +165,7 @@ describe('InspectorPanel Component', () => {
 
   it('shows memory provenance without exposing the stored evidence snapshot', () => {
     const onOpenSourceChat = vi.fn();
+    const onOpenSourceRun = vi.fn();
     const memory: MemoryItem = {
       ...sampleMemories[0],
       metadata_json: {
@@ -179,7 +180,7 @@ describe('InspectorPanel Component', () => {
       },
       superseded_by_id: 'memory-next-version',
     };
-    render(<InspectorPanel memories={[memory]} onOpenSourceChat={onOpenSourceChat} onClose={vi.fn()} />);
+    render(<InspectorPanel memories={[memory]} onOpenSourceChat={onOpenSourceChat} onOpenSourceRun={onOpenSourceRun} onClose={vi.fn()} />);
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
     fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
 
@@ -193,6 +194,25 @@ describe('InspectorPanel Component', () => {
     expect(screen.queryByText(/Sensitive source excerpt/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open source chat' }));
     expect(onOpenSourceChat).toHaveBeenCalledWith('source-session-1');
+    fireEvent.click(screen.getByRole('button', { name: 'Open source run' }));
+    expect(onOpenSourceRun).toHaveBeenCalledWith('source-run-1');
+  });
+
+  it('opens the execution tab for the exact run selected from memory provenance', () => {
+    render(<InspectorPanel
+      runDetail={{
+        id: 'source-run-1', session_id: 'source-session-1', status: 'completed',
+        user_message: 'Explain the persisted route', created_at: '2026-10-04T00:00:00Z',
+        updated_at: '2026-10-04T00:00:01Z',
+        events: [{ id: 'event-source-1', event_type: 'model_selected', created_at: '2026-10-04T00:00:00Z', payload: {} }],
+      }}
+      focusRunId="source-run-1"
+      onClose={vi.fn()}
+    />);
+
+    expect(screen.getByTestId('inspector-execution')).toBeInTheDocument();
+    expect(screen.getByText(/Run ID: source-run-1/)).toBeInTheDocument();
+    expect(screen.getByText('model_selected')).toBeInTheDocument();
   });
 
   it('renders routing tab without invented prototype routing data', () => {
