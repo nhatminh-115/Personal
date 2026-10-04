@@ -279,6 +279,7 @@ export default function App() {
   const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const toastTimers = useRef(new Map<number, number>());
   const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
   const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
   const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
@@ -684,7 +685,16 @@ export default function App() {
   const pushToast = useCallback((title: string, detail?: string) => {
     const id = Date.now() + Math.floor(Math.random() * 999);
     setToasts((current) => [...current, { id, title, detail }]);
-    window.setTimeout(() => setToasts((current) => current.filter((toast) => toast.id !== id)), 3200);
+    const timer = window.setTimeout(() => {
+      toastTimers.current.delete(id);
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 3200);
+    toastTimers.current.set(id, timer);
+  }, []);
+
+  useEffect(() => () => {
+    toastTimers.current.forEach((timer) => window.clearTimeout(timer));
+    toastTimers.current.clear();
   }, []);
 
   const applyTab = useCallback((tab: AppTab) => {
