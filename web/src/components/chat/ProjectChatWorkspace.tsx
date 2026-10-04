@@ -13,6 +13,7 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
       : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
         : object.object_type === 'research_claim' ? 'claim' : 'turn';
     const verification = object.metadata_json.verification_status;
+    const tokenSource = metadataOnlyFile ? object.title || object.object_type : object.content;
     const detail = metadataOnlyFile
       ? 'file reference · metadata only · file content stays in your browser; only this reference is available to AURA'
       : object.object_type === 'research_claim' && typeof verification === 'string'
@@ -24,7 +25,7 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
       kind,
       title: object.title || object.object_type.split('_').join(' '),
       detail,
-      tokens: metadataOnlyFile ? 0 : Math.max(1, Math.ceil(object.content.length / 4)),
+      tokens: Math.max(1, Math.ceil(tokenSource.length / 4)),
       included: selectedIds.has(object.id),
     };
   });

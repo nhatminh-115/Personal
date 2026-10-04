@@ -78,7 +78,7 @@ describe('live chat context loading', () => {
     await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledTimes(1));
   });
 
-  it('labels Library file references as metadata-only context with no content tokens', async () => {
+  it('labels Library file references as metadata-only context and estimates only the reference title', async () => {
     vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
       objects: [{
         id: 'file-reference-1',
@@ -98,7 +98,7 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     expect(await view.findByText(/file\|Local budget\.pdf\|file reference · metadata only/)).toHaveTextContent(
-      'file reference · metadata only · file content stays in your browser; only this reference is available to AURA|0',
+      'file reference · metadata only · file content stays in your browser; only this reference is available to AURA|4',
     );
   });
 });
