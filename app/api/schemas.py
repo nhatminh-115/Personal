@@ -678,6 +678,8 @@ class MemoryItemResponse(BaseModel):
     content: str
     confidence: float
     is_active: bool = True
+    supersedes_id: Optional[str] = None
+    superseded_by_id: Optional[str] = None
     metadata_json: Optional[Dict[str, Any]] = None
     created_at: datetime
 

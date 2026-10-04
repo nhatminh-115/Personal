@@ -655,6 +655,8 @@ export interface MemoryItem {
   content: string;
   confidence: number;
   is_active: boolean;
+  supersedes_id?: string | null;
+  superseded_by_id?: string | null;
   metadata_json?: Record<string, any>;
   created_at: string;
 }
