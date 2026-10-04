@@ -17,7 +17,9 @@ interface FilePreviewViewProps {
 
 export function FilePreviewView({ preview, onOpenExternal, onImportCopy }: FilePreviewViewProps) {
   const image = preview.mimeType.startsWith('image/');
-  const embeddable = image || preview.mimeType === 'application/pdf' || preview.mimeType === 'text/html' || preview.name.toLowerCase().endsWith('.html');
+  const html = preview.mimeType === 'text/html' || preview.name.toLowerCase().endsWith('.html');
+  const pdf = preview.mimeType === 'application/pdf';
+  const embeddable = image || pdf || html;
 
   return (
     <section className="file-preview-view">
@@ -34,7 +36,7 @@ export function FilePreviewView({ preview, onOpenExternal, onImportCopy }: FileP
       {preview.sourceFile && onImportCopy ? <p className="file-preview-source-note">Copying keeps a browser-local Library copy. The original file stays in the connected folder.</p> : null}
       <div className="file-preview-canvas">
         {image ? <img src={preview.url} alt={preview.name} /> : null}
-        {!image && embeddable ? <iframe src={preview.url} title={preview.name} /> : null}
+        {!image && embeddable ? <iframe src={preview.url} title={preview.name} {...(html ? { sandbox: '' } : {})} /> : null}
         {!embeddable ? (
           <div className="file-preview-unsupported"><FileText size={38} /><strong>Preview is not available for this file type.</strong><span>The file is still part of the current AURA tab and can be opened with the browser/default handler.</span><button className="primary-soft-button" type="button" onClick={onOpenExternal}>Open file</button></div>
         ) : null}

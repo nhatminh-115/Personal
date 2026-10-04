@@ -178,6 +178,10 @@ at five pages per file. The browser parser enforces a 10 MB file limit, a
 100-page limit, and the existing 20,000-character per-file limit. Imported
 DOCX files can be parsed locally in the browser under a 10 MB input and
 20,000-character extracted-text limit.
+Imported HTML files are parsed locally into body text after that explicit
+action, with script, style, hidden, and embedded content removed; input is
+limited to 80,000 bytes and extracted text to 20,000 characters. HTML previews
+run in a sandboxed frame without script or same-origin permissions.
 Imported XLSX workbooks can also be parsed locally after that explicit action;
 only visible worksheets are included, with limits of 10 sheets, 250 rows per
 sheet, 40 columns per row, and 20,000 extracted characters.
