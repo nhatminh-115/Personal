@@ -642,6 +642,49 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
   });
 
+  it('reports a Context Set as saved when only the Board refresh fails', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [
+        savedGraph.objects[0],
+        { ...savedGraph.objects[0], id: 'turn-2', title: 'Second answer', content: 'Another persisted node.' },
+      ],
+      layout: {
+        ...savedGraph.layout,
+        layout: {
+          positions: { 'turn-1': { x: 80, y: 60 }, 'turn-2': { x: 480, y: 60 } },
+          densities: { 'turn-1': 'compact', 'turn-2': 'compact' },
+        },
+      },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraphPage')
+      .mockResolvedValueOnce(graph)
+      .mockRejectedValueOnce(new Error('offline during refresh'));
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({
+      ...graph.objects[0], id: 'saved-context-set', object_type: 'context_set', title: 'Saved context selection',
+    });
+    const onToast = vi.fn();
+    render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="context-set-refresh-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    await screen.findByText('Second answer');
+    fireEvent.click(screen.getByText('Persistent answer'));
+    fireEvent.keyDown(document.body, { key: 'Control' });
+    fireEvent.click(screen.getByText('Second answer'));
+    fireEvent.keyUp(document.body, { key: 'Control' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Save Context Set' }));
+
+    await waitFor(() => expect(createObject).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith('Context Set saved, but Board could not refresh', expect.anything()));
+    expect(onToast).not.toHaveBeenCalledWith('Context Set was not saved', expect.anything());
+    expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
+  });
+
   it('serializes layout writes from live Board changes and undo/redo against the latest revision', async () => {
     const initialGraph: WorkspaceGraph = {
       ...savedGraph,
