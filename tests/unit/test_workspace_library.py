@@ -25,6 +25,10 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
     assert len(listed.json()) == 1
     assert listed.json()[0]["name"] == "Methods paper"
     assert listed.json()[0]["size"] == 4096
+    project_search = await async_client.get("/v1/workspace/library", params={"q": "methods", "project_name": "transportability"})
+    assert [item["id"] for item in project_search.json()] == [reference_id]
+    unrelated_project_search = await async_client.get("/v1/workspace/library", params={"q": "methods", "project_name": "unknown"})
+    assert unrelated_project_search.json() == []
 
     graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
     reference = next(item for item in graph["objects"] if item["id"] == reference_id)

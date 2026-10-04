@@ -116,7 +116,8 @@ cursor-paged, with older runs loaded on demand.
 Library search runs against persisted reference metadata and keeps the same
 cursor pagination, so matches are not limited to the references already loaded
 in the browser. It searches names, collection, detail, and tags; local file
-contents remain outside the index.
+contents remain outside the index. Project Files applies the same search within
+references linked to the current project and keeps paging within that scope.
 Saved automations can update their name, description, instruction, and interval
 without changing project scope or the stable session used for their history.
 Already queued events keep their original instruction payload; the next

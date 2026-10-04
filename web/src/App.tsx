@@ -299,6 +299,14 @@ export default function App() {
     error: string | null;
   }>({ query: '', items: [], nextCursor: null, loading: false, error: null });
   const librarySearchRequest = useRef(0);
+  const [projectFilesSearch, setProjectFilesSearch] = useState<{
+    query: string;
+    items: LibraryItem[];
+    nextCursor: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ query: '', items: [], nextCursor: null, loading: false, error: null });
+  const projectFilesSearchRequest = useRef(0);
   const libraryLoaded = useRef(false);
   const libraryInitialRequested = useRef(false);
   const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
@@ -1635,6 +1643,57 @@ export default function App() {
     }
   }, [libraryItems, librarySearch, projectCatalog]);
 
+  const handleProjectFilesSearch = useCallback(async (query: string) => {
+    const requestId = ++projectFilesSearchRequest.current;
+    if (!query || !activeProject) {
+      setProjectFilesSearch({ query: '', items: [], nextCursor: null, loading: false, error: null });
+      return;
+    }
+    setProjectFilesSearch({ query, items: [], nextCursor: null, loading: true, error: null });
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(null, 50, query, activeProject.name);
+      if (projectFilesSearchRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      const remoteIds = new Set(remoteItems.map((item) => item.id));
+      const normalizedQuery = query.toLocaleLowerCase();
+      const localMatches = libraryItems.filter((item) => item.projectLinks?.includes(activeProject.id)
+        && !remoteIds.has(item.id)
+        && `${item.name} ${item.collection} ${item.detail} ${item.tags.join(' ')}`.toLocaleLowerCase().includes(normalizedQuery));
+      setProjectFilesSearch({ query, items: [...remoteItems, ...localMatches], nextCursor: page.nextCursor, loading: false, error: null });
+    } catch (error) {
+      if (projectFilesSearchRequest.current !== requestId) return;
+      setProjectFilesSearch({ query, items: [], nextCursor: null, loading: false, error: executionErrorText(error) });
+    }
+  }, [activeProject, libraryItems, projectCatalog]);
+
+  const loadMoreProjectFilesSearch = useCallback(async () => {
+    if (!activeProject || !projectFilesSearch.query || !projectFilesSearch.nextCursor || projectFilesSearch.loading) return;
+    const requestId = ++projectFilesSearchRequest.current;
+    const { query, nextCursor } = projectFilesSearch;
+    setProjectFilesSearch((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(nextCursor, 50, query, activeProject.name);
+      if (projectFilesSearchRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      setProjectFilesSearch((current) => current.query === query
+        ? { ...current, items: [...current.items, ...remoteItems.filter((item) => !current.items.some((existing) => existing.id === item.id))], nextCursor: page.nextCursor, loading: false }
+        : current);
+    } catch (error) {
+      if (projectFilesSearchRequest.current !== requestId) return;
+      setProjectFilesSearch((current) => current.query === query ? { ...current, loading: false, error: executionErrorText(error) } : current);
+    }
+  }, [activeProject, libraryItems, projectCatalog, projectFilesSearch]);
+
   useEffect(() => {
     if (
       surface !== 'library' || !focusedLibraryItemId || libraryItems.some((item) => item.id === focusedLibraryItemId)
@@ -2591,6 +2650,12 @@ export default function App() {
             loadingMoreLibrary={libraryPageLoading}
             libraryLoadError={libraryPageError}
             onLoadMoreLibrary={loadMoreWorkspaceLibrary}
+            searchItems={projectFilesSearch.items}
+            searchHasMore={Boolean(projectFilesSearch.nextCursor)}
+            searchLoading={projectFilesSearch.loading}
+            searchError={projectFilesSearch.error}
+            onSearchLibrary={handleProjectFilesSearch}
+            onLoadMoreSearch={() => void loadMoreProjectFilesSearch()}
             onBack={openProjectOverview}
             onOpenItem={(item) => void handleLibraryItem(item)}
             onImportFiles={(files, projectId) => void importFiles(files, projectId)}

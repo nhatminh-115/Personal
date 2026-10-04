@@ -228,6 +228,46 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(countProjectTabs()).toBe(1);
   });
 
+  it('searches every Library reference linked to the project from Project Files', async () => {
+    const match = {
+      id: 'far-project-file', name: 'A far-page source', kind: 'PDF', collection: 'Research',
+      detail: 'Contains the old unique phrase', tags: ['reference'], project_names: ['Stateful Architecture'],
+      size: 2048, mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    const olderMatch = { ...match, id: 'older-project-file', name: 'An older source' };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/v1/workspace/library?')) {
+        const params = new URL(url, 'http://aura.test').searchParams;
+        if (params.has('q')) return Promise.resolve({
+          ok: true,
+          headers: new Headers(params.has('cursor') ? {} : { 'X-Next-Cursor': 'older-file-page' }),
+          json: () => Promise.resolve(params.has('cursor') ? [olderMatch] : [match]),
+        } as Response);
+        return Promise.resolve({ ok: true, headers: new Headers(), json: () => Promise.resolve([]) } as Response);
+      }
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const filesButton = screen.getAllByRole('button').find((button) => button.textContent?.includes('Project + linked Library'))!;
+    await act(async () => { fireEvent.click(filesButton); });
+
+    fireEvent.change(screen.getByPlaceholderText('Search project files and artifacts'), { target: { value: 'old unique phrase' } });
+    expect(await screen.findByText('A far-page source')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&q=old+unique+phrase&project_name=Stateful+Architecture'));
+    expect(screen.queryByText(/Search covers loaded Library references/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more matches' }));
+    expect(await screen.findByText('An older source')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&cursor=older-file-page&q=old+unique+phrase&project_name=Stateful+Architecture'));
+  });
+
 
   it('file object opens its own dedicated preview tab', async () => {
     await act(async () => {

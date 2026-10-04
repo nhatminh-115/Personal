@@ -451,10 +451,11 @@ export const api = {
     return fetchAllCursorPages<WorkspaceLibraryReferenceRecord>('/v1/workspace/library');
   },
 
-  async fetchWorkspaceLibraryPage(cursor?: string | null, pageSize = 50, query?: string): Promise<{ items: WorkspaceLibraryReferenceRecord[]; nextCursor: string | null }> {
+  async fetchWorkspaceLibraryPage(cursor?: string | null, pageSize = 50, query?: string, projectName?: string): Promise<{ items: WorkspaceLibraryReferenceRecord[]; nextCursor: string | null }> {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
     if (query?.trim()) params.set('q', query.trim());
+    if (projectName?.trim()) params.set('project_name', projectName.trim());
     const response = await fetch(`${BASE_URL}/v1/workspace/library?${params.toString()}`);
     return {
       items: await handleResponse<WorkspaceLibraryReferenceRecord[]>(response),
