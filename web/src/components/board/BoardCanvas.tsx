@@ -213,8 +213,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const workspaceReady = useRef(false);
+  const workspaceSessionAttachments = useRef(new Map<string, Promise<void>>());
   const workspaceGraphRevisionRef = useRef(workspaceGraphRevision);
   const lastRefreshedGraphRevision = useRef(workspaceGraphRevision);
+  const workspaceSessionKeyRef = useRef('');
   const [workspaceLoadVersion, setWorkspaceLoadVersion] = useState(0);
   const layoutRevision = useRef(0);
   const layoutSnapshot = useRef('');
@@ -231,8 +233,27 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   workspaceGraphRevisionRef.current = workspaceGraphRevision;
 
   const workspaceSessionKey = useMemo(() => [...new Set(workspaceSessionIds)].sort().join('\u0000'), [workspaceSessionIds]);
+  workspaceSessionKeyRef.current = workspaceSessionKey;
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
+
+  const attachWorkspaceSessions = useCallback((projectName: string, sessionIds: string[]) => {
+    let scheduledNewAttachment = false;
+    const attachments = sessionIds.map((sessionId) => {
+      const key = `${projectName}\u0000${sessionId}`;
+      const existing = workspaceSessionAttachments.current.get(key);
+      if (existing) return existing;
+      scheduledNewAttachment = true;
+      const attachment = api.attachWorkspaceSession(projectName, sessionId).then(() => undefined).catch((error) => {
+        workspaceSessionAttachments.current.delete(key);
+        if (error instanceof ApiError && error.status === 404) return;
+        throw error;
+      });
+      workspaceSessionAttachments.current.set(key, attachment);
+      return attachment;
+    });
+    return Promise.all(attachments).then(() => scheduledNewAttachment);
+  }, []);
 
   const fitInitialViewWhenReady = useCallback(() => {
     const bounds = canvasRef.current?.getBoundingClientRect();
@@ -426,11 +447,8 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (!workspaceProjectName) return;
     const revisionAtLoadStart = workspaceGraphRevisionRef.current;
     let cancelled = false;
-    const sessionIds = workspaceSessionKey ? workspaceSessionKey.split('\u0000') : [];
-    void Promise.all(sessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
-      if (error instanceof ApiError && error.status === 404) return null;
-      throw error;
-    }))).then(() => api.fetchWorkspaceGraphPage(workspaceProjectName)).then(async (graph) => {
+    const sessionIds = workspaceSessionKeyRef.current ? workspaceSessionKeyRef.current.split('\u0000') : [];
+    void attachWorkspaceSessions(workspaceProjectName, sessionIds).then(() => api.fetchWorkspaceGraphPage(workspaceProjectName)).then(async (graph) => {
       if (cancelled) return;
       let loadedGraph = graph;
       const requestedFocusId = focusNodeIdRef.current;
@@ -493,7 +511,18 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from AURA.');
     });
     return () => { cancelled = true; };
-  }, [workspaceProjectName, workspaceSessionKey, setEdges, setNodes, toast]);
+  }, [attachWorkspaceSessions, workspaceProjectName, setEdges, setNodes, toast]);
+
+  useEffect(() => {
+    if (!workspaceProjectName || !workspaceSessionKey) return;
+    const sessionIds = workspaceSessionKey.split('\u0000');
+    void attachWorkspaceSessions(workspaceProjectName, sessionIds).then((scheduledNewAttachment) => {
+      if (scheduledNewAttachment && workspaceReady.current) return refreshRecentWorkspacePage(false);
+      return undefined;
+    }).catch(() => {
+      toast('Could not connect live chat to Board', 'The project graph could not attach this live session.');
+    });
+  }, [attachWorkspaceSessions, refreshRecentWorkspacePage, toast, workspaceProjectName, workspaceSessionKey]);
 
   const loadOlderGraphPage = useCallback(async () => {
     if (!workspaceProjectName || loadingOlderGraph || (!graphObjectCursor && !graphEdgeCursor)) return;
