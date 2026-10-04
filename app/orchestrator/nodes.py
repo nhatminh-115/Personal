@@ -10,6 +10,7 @@ from app.approvals.policy import PermissionDecision, permission_policy
 from app.approvals.service import ApprovalService
 from app.core.errors import ContextSelectionError, WorkspaceEscapeError
 from app.core.logging import logger
+from app.core.settings import settings
 from app.db.models import RoutingConfirmationModel, RunStatus
 from app.memory.base import MemoryService
 from app.memory.context import ContextAssembler
@@ -378,7 +379,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     # Delegated children resolve their own role policy and confirmation.
     meta["routing_context_dict"] = routing_ctx.model_dump(mode="json")
 
-    reserved_output_tokens = 2048
+    reserved_output_tokens = settings.MODEL_MAX_TOKENS
     estimated_input_tokens = _estimate_prompt_tokens(chat_messages, tool_defs)
     measured_context_requirement = estimated_input_tokens + reserved_output_tokens
     routing_ctx.required_context_window = max(
@@ -510,7 +511,7 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     model_req = ModelRequest(
         messages=chat_messages,
         tools=tool_defs,
-        temperature=0.0,
+        temperature=settings.MODEL_TEMPERATURE,
         max_tokens=reserved_output_tokens,
         routing_context=routing_ctx,
         selected_model=selection.model_name,
