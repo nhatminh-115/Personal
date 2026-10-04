@@ -6249,6 +6249,7 @@ html {
 .automation-webhook-secret p { color: #91a4ac; font-size: 12px; line-height: 1.55; }
 .automation-webhook-secret label code { overflow-wrap: anywhere; padding: 8px; border-radius: 6px; background: #091017; color: #b8d2d9; font-size: 12px; }
 .automation-instruction code { display: block; margin-top: 7px; overflow-wrap: anywhere; color: #9fc4ce; font-size: 11px; }
+.automation-trigger-origin { color: #7295a1; text-transform: capitalize; }
 .automation-form-error { color: #e79b8f; font-size: 12px; }
 .automation-instruction { margin: 8px 0; color: #8198a3; font-size: 11px; }
 .automation-instruction summary { cursor: pointer; }

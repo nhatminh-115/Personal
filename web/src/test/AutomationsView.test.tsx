@@ -79,7 +79,7 @@ describe('AutomationsView', () => {
     }));
   });
 
-  it('creates a signed webhook and reveals its secret only in the one-time setup dialog', async () => {
+  it('creates an authenticated webhook and reveals its secret only in the one-time setup dialog', async () => {
     const onCreate = vi.fn().mockResolvedValue({
       ...liveAutomation, webhookEnabled: true, webhookPath: '/v1/automations/auto-2/webhook/events', webhookSecret: 'one-time-webhook-secret',
     });
@@ -100,7 +100,7 @@ describe('AutomationsView', () => {
   it('shows the configured webhook endpoint without exposing a saved secret', () => {
     const configured = { ...liveAutomation, webhookEnabled: true, webhookPath: '/v1/automations/auto-1/webhook/events' };
     render(<AutomationsView projects={projects} automations={[configured]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
-    fireEvent.click(screen.getByText('Signed webhook endpoint'));
+    fireEvent.click(screen.getByText('Webhook endpoint'));
     expect(screen.getByText('/v1/automations/auto-1/webhook/events')).toBeInTheDocument();
     expect(screen.queryByText(/Bearer/)).not.toBeInTheDocument();
   });
@@ -258,7 +258,7 @@ describe('AutomationsView', () => {
   it('loads safe run history on demand without displaying run contents', async () => {
     vi.clearAllMocks();
     vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [
-      { event_id: 'event-new', run_id: 'run-new', queued_at: '2026-10-02T09:00:00Z', status: 'dead_letter', retry_count: 2 },
+      { event_id: 'event-new', run_id: 'run-new', queued_at: '2026-10-02T09:00:00Z', status: 'dead_letter', retry_count: 2, trigger_type: 'webhook' },
       { event_id: 'event-old', run_id: 'run-old', queued_at: '2026-10-01T09:00:00Z', status: 'completed', retry_count: 0 },
     ], nextCursor: null });
     render(<AutomationsView projects={projects} automations={[liveAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
@@ -267,6 +267,7 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
     expect(await screen.findByText('2026-10-02T09:00:00Z')).toBeInTheDocument();
     expect(screen.getByText('dead letter')).toBeInTheDocument();
+    expect(screen.getByText('via webhook')).toBeInTheDocument();
     expect(screen.getByText('2 retries')).toBeInTheDocument();
     expect(screen.getByText('2026-10-01T09:00:00Z')).toBeInTheDocument();
     expect(api.fetchAutomationRuns).toHaveBeenCalledWith('auto-1', 10);

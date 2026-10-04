@@ -418,6 +418,7 @@ class AutomationExecutionResponse(BaseModel):
     queued_at: datetime
     status: str
     retry_count: int = 0
+    trigger_type: Literal["schedule", "manual", "webhook"] = "manual"
 
 
 class AutomationResponse(BaseModel):
