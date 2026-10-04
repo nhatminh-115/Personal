@@ -191,9 +191,11 @@ remain reference-only. The ZIP reader streams slide XML with a 10 MB input,
 100-slide, 1 MB per-slide XML, 20 MB aggregate expansion, and 20,000-character
 text limit.
 Imported EPUB e-books can also be parsed locally after that explicit action.
-Only text chapters in the EPUB spine are included, in reading order; input is
-limited to 10 MB, 100 chapters, 1 MB per chapter, 20 MB aggregate expansion,
-and 20,000 extracted characters.
+Only text chapters in the EPUB spine are included, in reading order. Scripts,
+styles, embedded content, and resource URLs are removed before parsing so local
+extraction does not load remote chapter resources; input is limited to 10 MB,
+100 chapters, 1 MB per chapter, 20 MB aggregate expansion, and 20,000 extracted
+characters.
 Imported raster images can be OCRed locally after that explicit action. The
 browser sends extracted text only, never the image pixels for vision; input is
 limited to 10 MB and 20 megapixels, downscaled locally, and capped at 20,000

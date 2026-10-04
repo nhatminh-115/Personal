@@ -1,5 +1,6 @@
 import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
 import { MAX_CONTEXT_FILE_CHARS } from './pdfText';
+import { neutralizeHtmlResources } from './htmlText';
 
 export const MAX_LOCAL_EPUB_BYTES = 10 * 1024 * 1024;
 export const MAX_LOCAL_EPUB_CHAPTERS = 100;
@@ -108,7 +109,9 @@ function resolveArchivePath(basePath: string, href: string): string {
 }
 
 function chapterText(markup: string, mediaType: string): string {
-  const document = new DOMParser().parseFromString(markup, mediaType === 'text/html' ? 'text/html' : 'application/xhtml+xml');
+  const htmlChapter = mediaType === 'text/html';
+  const safeMarkup = neutralizeHtmlResources(markup);
+  const document = new DOMParser().parseFromString(safeMarkup, htmlChapter ? 'text/html' : 'application/xhtml+xml');
   if (document.getElementsByTagName('parsererror').length) {
     throw new Error('This e-book contains an invalid XHTML chapter.');
   }
