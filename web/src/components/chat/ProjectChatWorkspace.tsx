@@ -10,6 +10,7 @@ import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { MAX_LOCAL_IMAGE_BYTES } from '../../lib/imageText';
 import { MAX_LOCAL_PPTX_BYTES } from '../../lib/pptxText';
 import { MAX_LOCAL_EPUB_BYTES } from '../../lib/epubText';
+import { MAX_LOCAL_RTF_BYTES } from '../../lib/rtfText';
 import { MAX_HTML_INPUT_BYTES } from '../../lib/htmlText';
 import { MAX_LOCAL_TEXT_FILE_BYTES } from '../../lib/localTextFile';
 import { ChatPane } from './ChatPane';
@@ -18,20 +19,17 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
   return objects.map((object) => {
     const metadataOnlyFile = object.object_type === 'file_reference' && !object.content;
     const localFile = metadataOnlyFile ? libraryItems.find((item) => item.id === object.id) : undefined;
+    const localFileSize = localFile?.size ?? 0;
     const localFileKindSupported = Boolean(localFile && (
-      ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(localFile.kind)
-        ? (localFile.size ?? 0) <= (localFile.kind === 'HTML' ? MAX_HTML_INPUT_BYTES : MAX_LOCAL_TEXT_FILE_BYTES)
-        : localFile.kind === 'PDF'
-          ? (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
-          : localFile.kind === 'DOCX'
-            ? (localFile.size ?? 0) <= MAX_LOCAL_DOCX_BYTES
-            : localFile.kind === 'XLSX'
-              ? (localFile.size ?? 0) <= MAX_LOCAL_XLSX_BYTES
-              : localFile.kind === 'IMAGE'
-                ? (localFile.size ?? 0) <= MAX_LOCAL_IMAGE_BYTES
-              : localFile.kind === 'PPTX'
-                ? (localFile.size ?? 0) <= MAX_LOCAL_PPTX_BYTES
-                : localFile.kind === 'EPUB' && (localFile.size ?? 0) <= MAX_LOCAL_EPUB_BYTES
+      (['TXT', 'MD', 'CSV', 'JSON'].includes(localFile.kind) && localFileSize <= MAX_LOCAL_TEXT_FILE_BYTES)
+      || (localFile.kind === 'HTML' && localFileSize <= MAX_HTML_INPUT_BYTES)
+      || (localFile.kind === 'RTF' && localFileSize <= MAX_LOCAL_RTF_BYTES)
+      || (localFile.kind === 'PDF' && localFileSize <= MAX_LOCAL_PDF_BYTES)
+      || (localFile.kind === 'DOCX' && localFileSize <= MAX_LOCAL_DOCX_BYTES)
+      || (localFile.kind === 'XLSX' && localFileSize <= MAX_LOCAL_XLSX_BYTES)
+      || (localFile.kind === 'IMAGE' && localFileSize <= MAX_LOCAL_IMAGE_BYTES)
+      || (localFile.kind === 'PPTX' && localFileSize <= MAX_LOCAL_PPTX_BYTES)
+      || (localFile.kind === 'EPUB' && localFileSize <= MAX_LOCAL_EPUB_BYTES)
     ));
     const fileContentAvailable = Boolean(localContextFileIds.has(object.id)
       && localFile?.source === 'imported' && localFile.blobKey
@@ -54,10 +52,12 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
               ? 'browser-local image OCR · text only is extracted here only after you explicitly send it with a message; image pixels are not sent for vision'
               : localFile?.kind === 'PPTX'
                 ? 'browser-local presentation · slide text is extracted here only after you explicitly send it with a message'
-                : localFile?.kind === 'EPUB'
+            : localFile?.kind === 'EPUB'
                   ? 'browser-local e-book · chapter text is extracted here only after you explicitly send it with a message'
+            : localFile?.kind === 'RTF'
+              ? 'browser-local rich text · text is extracted here only after you explicitly send it with a message'
             : 'browser-local text · stays here until you explicitly send it with a message'
-        : 'file reference · metadata only · this browser has no supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy available'
+        : 'file reference · metadata only · this browser has no supported local text, rich text, PDF, Word document, spreadsheet, presentation, e-book, or image copy available'
       : object.object_type === 'research_claim' && typeof verification === 'string'
         ? `research claim · ${verification} · saved in this project`
         : `${object.object_type.split('_').join(' ')} · saved in this project`;
@@ -158,7 +158,7 @@ export function ProjectChatWorkspace({
     const candidates = liveWorkspaceContext.flatMap((item) => {
       if (!item.nodeId || item.kind !== 'file') return [];
       const local = libraryItems.find((entry) => entry.id === item.nodeId);
-      const supportedText = Boolean(local && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(local.kind) && (local.size ?? 0) <= 80_000);
+      const supportedText = Boolean(local && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(local.kind) && (local.size ?? 0) <= 80_000);
       const supportedPdf = Boolean(local?.kind === 'PDF' && (local.size ?? 0) <= MAX_LOCAL_PDF_BYTES);
       const supportedDocx = Boolean(local?.kind === 'DOCX' && (local.size ?? 0) <= MAX_LOCAL_DOCX_BYTES);
       const supportedXlsx = Boolean(local?.kind === 'XLSX' && (local.size ?? 0) <= MAX_LOCAL_XLSX_BYTES);

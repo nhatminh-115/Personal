@@ -59,7 +59,7 @@ const collections = ['All', 'Study', 'Books', 'Research', 'Reference'] as const;
 function iconFor(item: LibraryItem) {
   if (item.kind === 'HTML') return FileCode2;
   if (item.kind === 'CSV') return FileSpreadsheet;
-  if (item.kind === 'PDF' || item.kind === 'MD' || item.kind === 'TXT') return FileText;
+  if (item.kind === 'PDF' || item.kind === 'RTF' || item.kind === 'MD' || item.kind === 'TXT') return FileText;
   if (item.kind === 'JSON') return FileJson2;
   if (item.kind === 'IMAGE') return FileImage;
   return File;

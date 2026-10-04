@@ -32,6 +32,7 @@ import { extractPptxText, MAX_LOCAL_PPTX_BYTES } from './lib/pptxText';
 import { extractEpubText, MAX_LOCAL_EPUB_BYTES } from './lib/epubText';
 import { extractHtmlText, MAX_HTML_INPUT_BYTES } from './lib/htmlText';
 import { extractLocalTextFile, MAX_LOCAL_TEXT_FILE_BYTES } from './lib/localTextFile';
+import { extractRtfText, MAX_LOCAL_RTF_BYTES } from './lib/rtfText';
 import { executionErrorText } from './lib/executionError';
 import {
   compiledContextTokenCount,
@@ -247,6 +248,7 @@ function inferLibraryKind(file: File): LibraryKind {
   if (ext === 'xlsx') return 'XLSX';
   if (ext === 'pptx') return 'PPTX';
   if (ext === 'epub') return 'EPUB';
+  if (ext === 'rtf' || file.type === 'application/rtf' || file.type === 'text/rtf') return 'RTF';
   if (ext === 'md' || ext === 'markdown') return 'MD';
   if (ext === 'csv') return 'CSV';
   if (ext === 'json' || file.type === 'application/json') return 'JSON';
@@ -1424,20 +1426,21 @@ export default function App() {
           const isImage = item?.kind === 'IMAGE';
           const isPptx = item?.kind === 'PPTX';
           const isEpub = item?.kind === 'EPUB';
+          const isRtf = item?.kind === 'RTF';
           const isHtml = item?.kind === 'HTML';
           const isPlainText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON'].includes(item.kind));
-          const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(item.kind));
+          const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(item.kind));
           if (!item?.blobKey || (!supportedText && !isPdf && !isDocx && !isXlsx && !isImage && !isPptx && !isEpub)) {
             throw new Error('This browser does not have a supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy of one selected file.');
           }
           const blob = await getLocalFile(item.blobKey);
-          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
+          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : isRtf ? MAX_LOCAL_RTF_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
           if (!blob || blob.size > maxBytes) {
             throw new Error(isPdf || isDocx || isXlsx || isImage || isPptx || isEpub
               ? `A selected local ${isPdf ? 'PDF' : isDocx ? 'Word document' : isXlsx ? 'spreadsheet' : isImage ? 'image' : isPptx ? 'presentation' : 'e-book'} is missing or exceeds the 10 MB browser parsing limit.`
-              : isHtml || isPlainText ? `A selected local ${isHtml ? 'HTML' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
+              : isHtml || isRtf || isPlainText ? `A selected local ${isHtml ? 'HTML' : isRtf ? 'RTF' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
           }
-          const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : await extractLocalTextFile(blob);
+          const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : isRtf ? await extractRtfText(blob) : await extractLocalTextFile(blob);
           const fileCharacterCount = Array.from(fileText).length;
           if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
             throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
