@@ -20,7 +20,7 @@ async def list_memories(
     session_id: Optional[str] = Query(None, description="Optional session ID scope"),
     cursor: Optional[str] = Query(default=None, max_length=512),
     page_size: int = Query(default=25, ge=1, le=100),
-    include_inactive: bool = Query(default=False),
+    include_inactive: bool = Query(default=True),
     db: AsyncSession = Depends(get_db),
 ) -> List[MemoryItemResponse]:
     """Read-only listing of persisted project and semantic memories with provenance."""

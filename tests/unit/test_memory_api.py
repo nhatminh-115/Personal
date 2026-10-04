@@ -26,7 +26,9 @@ async def test_project_memory_can_be_deactivated_and_restored_without_deletion(a
     assert await test_db_session.get(MemoryModel, memory.id) is not None
     assert await SQLMemoryService(test_db_session).get_project_memories("Atlas") == []
 
-    active_listing = await async_client.get("/v1/memory", params={"project_name": "Atlas"})
+    active_listing = await async_client.get(
+        "/v1/memory", params={"project_name": "Atlas", "include_inactive": False}
+    )
     assert active_listing.status_code == 200
     assert active_listing.json() == []
 
