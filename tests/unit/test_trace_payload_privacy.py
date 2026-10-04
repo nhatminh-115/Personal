@@ -85,3 +85,33 @@ async def test_context_manifest_keeps_provenance_and_metrics_without_object_text
     }
     assert "private compiled context marker" not in str(event.payload)
     assert "private note marker" not in str(event.payload)
+
+
+@pytest.mark.asyncio
+async def test_context_loaded_trace_keeps_tiered_memory_ids_without_memory_text(test_db_session):
+    trace = TraceService(test_db_session)
+    test_db_session.add(SessionModel(id="memory-trace-session"))
+    test_db_session.add(RunModel(id="memory-trace-run", session_id="memory-trace-session", user_message="question"))
+    await test_db_session.commit()
+    event = await trace.record_event(
+        run_id="memory-trace-run",
+        session_id="memory-trace-session",
+        event_type="context_loaded",
+        payload={
+            "profile_memory_ids": {"work_style": "profile-memory"},
+            "project_memory_ids": ["project-memory"],
+            "semantic_memory_ids": [["semantic-memory"]],
+            "episode_memory_ids": ["episode-memory"],
+            "memory_privacy_sources": [{"memory_id": "project-memory", "privacy_policy": "confidential"}],
+            "memory_text": "private remembered content must never appear in traces",
+        },
+    )
+
+    assert event.payload == {
+        "profile_memory_ids": ["profile-memory"],
+        "project_memory_ids": ["project-memory"],
+        "semantic_memory_ids": ["semantic-memory"],
+        "episode_memory_ids": ["episode-memory"],
+        "memory_privacy_sources": [{"memory_id": "project-memory", "privacy_policy": "confidential"}],
+    }
+    assert "private remembered content" not in str(event.payload)

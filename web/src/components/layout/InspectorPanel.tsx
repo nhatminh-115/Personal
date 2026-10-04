@@ -63,6 +63,21 @@ const memoryMetadataStringList = (value: unknown): string[] => (
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
 );
 
+type MemoryTier = 'profile' | 'project' | 'semantic' | 'episode';
+
+const memoryIdsForTier = (payload: Record<string, unknown> | undefined, tier: MemoryTier): string[] => {
+  const raw = payload?.[`${tier}_memory_ids`];
+  if (tier === 'profile' && raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    return [...new Set(Object.values(raw).filter((value): value is string => typeof value === 'string' && value.length > 0))];
+  }
+  if (tier === 'semantic' && Array.isArray(raw)) {
+    return [...new Set(raw.flatMap((group) => Array.isArray(group) ? group : [group]).filter((value): value is string => typeof value === 'string' && value.length > 0))];
+  }
+  return Array.isArray(raw)
+    ? [...new Set(raw.filter((value): value is string => typeof value === 'string' && value.length > 0))]
+    : [];
+};
+
 function MemoryProvenance({ memory, onOpenSourceChat, onOpenSourceRun }: { memory: MemoryItem; onOpenSourceChat?: (sessionId: string) => void; onOpenSourceRun?: (runId: string) => void }) {
   const metadata = memory.metadata_json ?? {};
   const claims = memoryMetadataStringList(metadata.claim_ids);
@@ -163,6 +178,16 @@ export function InspectorPanel({
     setExpandedMemoryProvenance((previous) => ({ ...previous, [id]: !previous[id] }));
   };
 
+  const reviewUsedMemory = (id: string, tier: MemoryTier) => {
+    const memory = availableMemoriesById.get(id);
+    if (!memory) return;
+    const targetScope = memory.memory_type === 'profile' || tier === 'profile' ? 'profile' : 'project';
+    setMemoryScope(targetScope);
+    setExpandedMemoryProvenance((previous) => ({ ...previous, [id]: true }));
+    if (targetScope === 'profile' && profileMemories == null) void onLoadProfileMemories?.();
+    setTab('memory');
+  };
+
   const loadCapabilityProviders = async () => {
     setCapabilityState('loading');
     setCapabilityError(null);
@@ -197,6 +222,23 @@ export function InspectorPanel({
 
   const detailContextEvent = runDetail?.events?.filter((event) => event.event_type === 'context_compiled').at(-1);
   const detailContextManifest = detailContextEvent?.payload as CompiledContextManifest | undefined;
+  const detailContextLoadedEvent = runDetail?.events?.filter((event) => event.event_type === 'context_loaded').at(-1);
+  const detailContextLoaded = detailContextLoadedEvent?.payload;
+  const usedMemoryGroups: Array<{ tier: MemoryTier; ids: string[] }> = (['profile', 'project', 'semantic', 'episode'] as const)
+    .map((tier) => ({ tier, ids: memoryIdsForTier(detailContextLoaded, tier) }))
+    .filter((group) => group.ids.length > 0);
+  const availableMemories = [...memories, ...(profileMemories ?? [])];
+  const availableMemoriesById = new Map(availableMemories.map((memory) => [memory.id, memory]));
+  const memoryPrivacyById = new Map<string, string>();
+  const rawMemoryPrivacySources = detailContextLoaded?.memory_privacy_sources;
+  if (Array.isArray(rawMemoryPrivacySources)) {
+    for (const source of rawMemoryPrivacySources) {
+      if (source && typeof source === 'object') {
+        const value = source as Record<string, unknown>;
+        if (typeof value.memory_id === 'string' && typeof value.privacy_policy === 'string') memoryPrivacyById.set(value.memory_id, value.privacy_policy);
+      }
+    }
+  }
   const contextManifestEntries = routingData?.flatMap((decision) => decision.context_manifest ? [{
     runId: decision.run_id,
     role: String(decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'),
@@ -581,6 +623,31 @@ export function InspectorPanel({
               <strong>{contextManifestEntries.length ? `${contextManifestEntries.length} compiled manifest${contextManifestEntries.length === 1 ? '' : 's'}` : 'Not recorded'}</strong>
               <small>{contextObjectCount} compiled object{contextObjectCount === 1 ? '' : 's'} across the run tree</small>
             </div>
+            <section className="inspector-group" data-testid="run-memory-provenance">
+              <h4>Saved memories used</h4>
+              {usedMemoryGroups.length ? usedMemoryGroups.map(({ tier, ids }) => (
+                <div className="context-blocks" key={tier}>
+                  <div className="context-blocks__head"><span>{tier[0].toUpperCase() + tier.slice(1)} memory</span><small>{ids.length}</small></div>
+                  {ids.map((id) => {
+                    const memory = availableMemoriesById.get(id);
+                    const privacy = memoryPrivacyById.get(id);
+                    return <button
+                      className="context-block"
+                      type="button"
+                      key={`${tier}-${id}`}
+                      disabled={!memory}
+                      onClick={() => reviewUsedMemory(id, tier)}
+                      aria-label={`${memory ? 'Review memory' : 'Memory'} ${memory?.key ?? id}`}
+                    >
+                      <span className="context-block__copy">
+                        <strong>{memory?.key ?? id}</strong>
+                        <small>{memory ? `${memory.memory_type.replace(/_/g, ' ')} · ${id}` : id}{privacy ? ` · ${privacy.replace(/_/g, ' ')}` : ''}</small>
+                      </span>
+                    </button>;
+                  })}
+                </div>
+              )) : <div className="inspector-empty">No saved memory IDs were recorded for this run.</div>}
+            </section>
             {contextManifestEntries.length ? contextManifestEntries.map(({ runId, role, manifest }) => {
               const objects = Array.isArray(manifest.objects)
                 ? manifest.objects.filter((item) => typeof item.object_id === 'string' && typeof item.object_type === 'string')

@@ -6,6 +6,10 @@ def test_context_loaded_exposes_only_valid_memory_privacy_provenance():
         "context_count": 3,
         "history_length": 5,
         "compiled_object_count": 1,
+        "profile_memory_ids": {"preferred_editor": "profile-memory-1"},
+        "project_memory_ids": ["project-memory-1", "project-memory-1", None],
+        "semantic_memory_ids": [["semantic-memory-1"], ["semantic-memory-2", "semantic-memory-1"]],
+        "episode_memory_ids": ["episode-memory-1", 42],
         "memory_privacy_requirement": "local_only",
         "memory_privacy_sources": [
             {"memory_id": "profile-memory-1", "privacy_policy": "local_only"},
@@ -21,6 +25,10 @@ def test_context_loaded_exposes_only_valid_memory_privacy_provenance():
         "context_count": 3,
         "history_length": 5,
         "compiled_object_count": 1,
+        "profile_memory_ids": ["profile-memory-1"],
+        "project_memory_ids": ["project-memory-1"],
+        "semantic_memory_ids": ["semantic-memory-1", "semantic-memory-2"],
+        "episode_memory_ids": ["episode-memory-1"],
         "memory_privacy_sources": [
             {"memory_id": "profile-memory-1", "privacy_policy": "local_only"},
             {"memory_id": "project-memory-1", "privacy_policy": "internal"},

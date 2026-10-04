@@ -34,6 +34,21 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
         ))
     if event_type == "context_loaded":
         safe = pick(payload, ("context_count", "history_length", "compiled_object_count"))
+        raw_profile_ids = payload.get("profile_memory_ids")
+        if isinstance(raw_profile_ids, dict):
+            safe["profile_memory_ids"] = list(dict.fromkeys(
+                value for value in raw_profile_ids.values() if isinstance(value, str) and value
+            ))[:128]
+        for field in ("project_memory_ids", "episode_memory_ids"):
+            values = payload.get(field)
+            if isinstance(values, list):
+                safe[field] = list(dict.fromkeys(value for value in values if isinstance(value, str) and value))[:128]
+        raw_semantic_ids = payload.get("semantic_memory_ids")
+        if isinstance(raw_semantic_ids, list):
+            safe["semantic_memory_ids"] = list(dict.fromkeys(
+                value for group in raw_semantic_ids if isinstance(group, list)
+                for value in group if isinstance(value, str) and value
+            ))[:128]
         raw_sources = payload.get("memory_privacy_sources")
         if isinstance(raw_sources, list):
             safe["memory_privacy_sources"] = [
