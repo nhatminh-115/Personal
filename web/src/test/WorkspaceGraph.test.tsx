@@ -75,6 +75,8 @@ describe('Persistent workspace graph Board projection', () => {
         run_id: 'live-run-2', session_id: 'session-1', user_object_id: 'turn-1', response_object_id: 'turn-2',
         events: [{ id: 'live-model-selection', event_type: 'model_selected', created_at: '2026-10-02T00:00:00Z', agent_role: 'root', provider: 'ollama', model: 'live-test-model' }],
       }],
+      execution_history_truncated: true,
+      execution_next_cursor: 'older-execution-page',
       layout: {
         ...savedGraph.layout,
         layout: { positions: { 'turn-1': { x: 900, y: 700 }, 'turn-2': { x: 420, y: 240 } } },
@@ -83,6 +85,7 @@ describe('Persistent workspace graph Board projection', () => {
     const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
       .mockResolvedValueOnce(savedGraph)
       .mockResolvedValueOnce(updatedGraph);
+    const fetchOlderExecution = vi.spyOn(api, 'fetchWorkspaceExecutionHistory').mockResolvedValue({ execution_traces: [], execution_history_truncated: false, execution_next_cursor: null });
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
     vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
 
@@ -101,6 +104,8 @@ describe('Persistent workspace graph Board projection', () => {
     view.rerender(renderBoard(['session-1'], 1));
     expect(await screen.findByText('New live answer')).toBeInTheDocument();
     expect(await screen.findByText('Root · live-test-model')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
+    await waitFor(() => expect(fetchOlderExecution).toHaveBeenCalledWith('AURA Project', 'older-execution-page'));
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(view.container.querySelector('[data-id="turn-1"]')).toHaveStyle({ transform: 'translate(80px,60px)' });
   });

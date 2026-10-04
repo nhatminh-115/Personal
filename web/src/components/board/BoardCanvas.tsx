@@ -187,6 +187,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [executionTraces, setExecutionTraces] = useState<WorkspaceExecutionTrace[]>([]);
   const executionTracesRef = useRef(executionTraces);
   const [executionNextCursor, setExecutionNextCursor] = useState<string | null>(null);
+  const hasLoadedOlderExecutionPage = useRef(false);
   const [loadingOlderExecution, setLoadingOlderExecution] = useState(false);
   const [graphObjectCursor, setGraphObjectCursor] = useState<string | null>(null);
   const [graphEdgeCursor, setGraphEdgeCursor] = useState<string | null>(null);
@@ -322,6 +323,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setExecutionNodes(execution.nodes);
     setExecutionEdges(execution.edges);
     setExecutionHistoryTruncated((current) => current || projected.executionHistoryTruncated);
+    if (!hasLoadedOlderExecutionPage.current) {
+      setExecutionNextCursor((current) => current ?? projected.executionNextCursor);
+    }
     if (fitView) requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
   }, [compact, setEdges, setNodes, toast, workspaceProjectName]);
 
@@ -416,6 +420,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         setExecutionTraces(projected.executionTraces);
         executionTracesRef.current = projected.executionTraces;
         setExecutionNextCursor(projected.executionNextCursor);
+        hasLoadedOlderExecutionPage.current = false;
         layoutRevision.current = graph.layout.revision;
         nodesRef.current = projected.nodes;
         edgesRef.current = projected.edges;
@@ -456,6 +461,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setExecutionTraces([]);
     executionTracesRef.current = [];
     setExecutionNextCursor(null);
+    hasLoadedOlderExecutionPage.current = false;
     setGraphObjectCursor(null);
     setGraphEdgeCursor(null);
     if (!workspaceProjectName) return;
@@ -512,6 +518,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionTraces(nextExecutionTraces);
       executionTracesRef.current = nextExecutionTraces;
       setExecutionNextCursor(nextExecutionNextCursor);
+      hasLoadedOlderExecutionPage.current = false;
       setGraphObjectCursor(loadedGraph.objects_next_cursor ?? null);
       setGraphEdgeCursor(loadedGraph.edges_next_cursor ?? null);
       nodesRef.current = nextNodes;
@@ -944,6 +951,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       setExecutionEdges(projected.edges);
       setExecutionNextCursor(page.execution_next_cursor ?? null);
       setExecutionHistoryTruncated((current) => current || (page.execution_history_truncated ?? false));
+      hasLoadedOlderExecutionPage.current = true;
     } catch {
       toast('Older execution history could not be loaded', 'The current Board trace is still available. Try again.');
     } finally {
