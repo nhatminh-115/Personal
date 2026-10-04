@@ -4,16 +4,21 @@ import { projectArtifacts, type ChatThreadRecord, type LibraryItem, type Project
 import type { AIContextItem, ApprovalDetail, ChatMessage, WorkspaceObject } from '../../types';
 import { api } from '../../services/api';
 import { getLocalFile } from '../../lib/localFiles';
+import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { ChatPane } from './ChatPane';
 
-function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>, libraryItems: LibraryItem[], fileContentIds: Set<string>, localTextFileIds: Set<string>): AIContextItem[] {
+function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>, libraryItems: LibraryItem[], fileContentIds: Set<string>, localContextFileIds: Set<string>): AIContextItem[] {
   return objects.map((object) => {
     const metadataOnlyFile = object.object_type === 'file_reference' && !object.content;
     const localFile = metadataOnlyFile ? libraryItems.find((item) => item.id === object.id) : undefined;
-    const fileContentAvailable = Boolean(localTextFileIds.has(object.id)
+    const localFileKindSupported = Boolean(localFile && (
+      ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(localFile.kind)
+        ? (localFile.size ?? 0) <= 80_000
+        : localFile.kind === 'PDF' && (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
+    ));
+    const fileContentAvailable = Boolean(localContextFileIds.has(object.id)
       && localFile?.source === 'imported' && localFile.blobKey
-      && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(localFile.kind)
-      && (localFile.size ?? 0) <= 80_000);
+      && localFileKindSupported);
     const kind: AIContextItem['kind'] = object.object_type === 'file_reference' ? 'file'
       : object.object_type === 'manual_note' ? 'note'
       : object.object_type === 'research_source' || object.object_type === 'research_evidence' ? 'paper'
@@ -22,8 +27,10 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
     const tokenSource = metadataOnlyFile ? object.title || object.object_type : object.content;
     const detail = metadataOnlyFile
       ? fileContentAvailable
-        ? 'browser-local text · stays here until you explicitly send it with a message'
-        : 'file reference · metadata only · this browser has no supported local text copy available'
+        ? localFile?.kind === 'PDF'
+          ? 'browser-local PDF · text is extracted here only after you explicitly send it with a message'
+          : 'browser-local text · stays here until you explicitly send it with a message'
+        : 'file reference · metadata only · this browser has no supported local text or PDF copy available'
       : object.object_type === 'research_claim' && typeof verification === 'string'
         ? `research claim · ${verification} · saved in this project`
         : `${object.object_type.split('_').join(' ')} · saved in this project`;
@@ -104,7 +111,7 @@ export function ProjectChatWorkspace({
 }: ProjectChatWorkspaceProps) {
   const [query, setQuery] = useState('');
   const [liveWorkspaceContext, setLiveWorkspaceContext] = useState<AIContextItem[]>([]);
-  const [localTextFileIds, setLocalTextFileIds] = useState<Set<string>>(new Set());
+  const [localContextFileIds, setLocalContextFileIds] = useState<Set<string>>(new Set());
   const [contextPanelOpen, setContextPanelOpen] = useState(false);
   const [contextObjectsNextCursor, setContextObjectsNextCursor] = useState<string | null>(null);
   const [contextObjectsLoading, setContextObjectsLoading] = useState(false);
@@ -124,7 +131,9 @@ export function ProjectChatWorkspace({
     const candidates = liveWorkspaceContext.flatMap((item) => {
       if (!item.nodeId || item.kind !== 'file') return [];
       const local = libraryItems.find((entry) => entry.id === item.nodeId);
-      if (!local?.blobKey || !['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(local.kind) || (local.size ?? 0) > 80_000) return [];
+      const supportedText = Boolean(local && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(local.kind) && (local.size ?? 0) <= 80_000);
+      const supportedPdf = Boolean(local?.kind === 'PDF' && (local.size ?? 0) <= MAX_LOCAL_PDF_BYTES);
+      if (!local?.blobKey || (!supportedText && !supportedPdf)) return [];
       return [{ objectId: item.nodeId, blobKey: local.blobKey }];
     });
     void Promise.all(candidates.map(async ({ objectId, blobKey }) => {
@@ -133,7 +142,7 @@ export function ProjectChatWorkspace({
     })).then((available) => {
       if (!active) return;
       const next = new Set(available.filter((id): id is string => Boolean(id)));
-      setLocalTextFileIds((current) => current.size === next.size && [...current].every((id) => next.has(id)) ? current : next);
+      setLocalContextFileIds((current) => current.size === next.size && [...current].every((id) => next.has(id)) ? current : next);
     });
     return () => { active = false; };
   }, [libraryItems, liveWorkspaceContext]);
@@ -163,7 +172,7 @@ export function ProjectChatWorkspace({
           if (!active) return;
           objects = [...objects, ...page.objects];
           nextCursor = page.nextCursor;
-          setLiveWorkspaceContext(mapWorkspaceContextObjects(objects, selectedContextIds, libraryItems, selectedFileContentIds, localTextFileIds));
+          setLiveWorkspaceContext(mapWorkspaceContextObjects(objects, selectedContextIds, libraryItems, selectedFileContentIds, localContextFileIds));
           cursor = nextCursor;
         } while (cursor && [...selectedContextIds].some((id) => !objects.some((object) => object.id === id)));
         if (active && contextObjectsRequest.current === requestId) setContextObjectsNextCursor(nextCursor);
@@ -178,7 +187,7 @@ export function ProjectChatWorkspace({
     return () => { active = false; };
   // Selection is rendered from the active thread below; it must not reload the
   // object page every time a user toggles a context item.
-  }, [activeThread?.id, activeThread?.messages.length, contextObjectsReloadKey, contextPanelOpen, isLiveThread, libraryItems, localTextFileIds, project.name]);
+  }, [activeThread?.id, activeThread?.messages.length, contextObjectsReloadKey, contextPanelOpen, isLiveThread, libraryItems, localContextFileIds, project.name]);
 
   const loadOlderContextObjects = useCallback(async () => {
     if (!contextObjectsNextCursor || contextObjectsLoading || !isLiveThread) return;
@@ -188,7 +197,7 @@ export function ProjectChatWorkspace({
       const page = await api.fetchWorkspaceObjectPage(project.name, contextObjectsNextCursor);
       setLiveWorkspaceContext((current) => {
         const existing = new Set(current.map((item) => item.nodeId));
-        const older = mapWorkspaceContextObjects(page.objects, selectedContextIds, libraryItems, selectedFileContentIds, localTextFileIds).filter((item) => !existing.has(item.nodeId));
+        const older = mapWorkspaceContextObjects(page.objects, selectedContextIds, libraryItems, selectedFileContentIds, localContextFileIds).filter((item) => !existing.has(item.nodeId));
         return [...current, ...older];
       });
       setContextObjectsNextCursor(page.nextCursor);
@@ -197,7 +206,7 @@ export function ProjectChatWorkspace({
     } finally {
       setContextObjectsLoading(false);
     }
-  }, [contextObjectsLoading, contextObjectsNextCursor, isLiveThread, libraryItems, localTextFileIds, project.name, selectedContextIds, selectedFileContentIds]);
+  }, [contextObjectsLoading, contextObjectsNextCursor, isLiveThread, libraryItems, localContextFileIds, project.name, selectedContextIds, selectedFileContentIds]);
 
   const demoContextItems = useMemo<AIContextItem[]>(() => {
     const files = libraryItems.filter((item) => item.projectLinks?.includes(project.id)).slice(0, 4).map((item, index) => ({

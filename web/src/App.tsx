@@ -24,6 +24,7 @@ import {
   type WorkspaceNote,
 } from './data/workspaceData';
 import { deleteLocalFile, getLocalFile, putLocalFile } from './lib/localFiles';
+import { extractPdfText, MAX_CONTEXT_FILE_CHARS, MAX_LOCAL_PDF_BYTES } from './lib/pdfText';
 import { executionErrorText } from './lib/executionError';
 import {
   compiledContextTokenCount,
@@ -1239,21 +1240,26 @@ export default function App() {
       try {
         const uniqueContextFileIds = [...new Set(contextFileContentIds)];
         if (uniqueContextFileIds.length > 5) {
-          throw new Error('Choose up to five local text files for one message.');
+          throw new Error('Choose up to five local files for one message.');
         }
         for (const objectId of uniqueContextFileIds) {
           const item = libraryItems.find((candidate) => candidate.id === objectId);
-          if (!item?.blobKey || !['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(item.kind)) {
-            throw new Error('This browser does not have a supported local text copy of one selected file.');
+          const isPdf = item?.kind === 'PDF';
+          const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(item.kind));
+          if (!item?.blobKey || (!supportedText && !isPdf)) {
+            throw new Error('This browser does not have a supported local text or PDF copy of one selected file.');
           }
           const blob = await getLocalFile(item.blobKey);
-          if (!blob || blob.size > 80_000) {
-            throw new Error('A selected local file is missing or exceeds the 20,000-character text limit.');
+          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : 80_000;
+          if (!blob || blob.size > maxBytes) {
+            throw new Error(isPdf
+              ? 'A selected local PDF is missing or exceeds the 10 MB browser parsing limit.'
+              : 'A selected local file is missing or exceeds the 20,000-character text limit.');
           }
-          const fileText = await blob.text();
+          const fileText = isPdf ? await extractPdfText(blob) : await blob.text();
           const fileCharacterCount = Array.from(fileText).length;
-          if (!fileText.trim() || fileCharacterCount > 20_000) {
-            throw new Error('A selected local file is empty or exceeds the 20,000-character text limit.');
+          if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
+            throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
           }
           totalAttachmentChars += fileCharacterCount;
           if (totalAttachmentChars > 40_000) {
