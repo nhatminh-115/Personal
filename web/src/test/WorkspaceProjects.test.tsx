@@ -65,4 +65,28 @@ describe('Persistent workspace projects', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Restore Archived project' }));
     await waitFor(() => expect(onSetArchived).toHaveBeenCalledWith(projects[1], false));
   });
+
+  it('explains that scheduled automations continue before archiving a project', async () => {
+    const project: ProjectRecord = {
+      id: 'active', name: 'Active project', subtitle: 'Still in use', status: 'active', accent: 'cyan',
+      updated: 'today', meta: '1 chat', thesis: '', next: '', source: 'user',
+    };
+    const onSetArchived = vi.fn().mockResolvedValue(undefined);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(<ProjectsView
+      projects={[project]}
+      createRequest={0}
+      onOpenProject={vi.fn()}
+      onCreateProject={vi.fn().mockResolvedValue(undefined)}
+      onSetArchived={onSetArchived}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Active project' }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Scheduled automations in this project will continue to run'));
+    expect(onSetArchived).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Archive Active project' }));
+    await waitFor(() => expect(onSetArchived).toHaveBeenCalledWith(project, true));
+  });
 });

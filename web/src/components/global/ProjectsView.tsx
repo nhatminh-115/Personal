@@ -44,6 +44,9 @@ export function ProjectsView({ projects, createRequest, onOpenProject, onCreateP
   const archivedCount = projects.filter((project) => project.archived && project.source === 'user').length;
   const setProjectArchived = async (project: ProjectRecord, archived: boolean) => {
     if (archivePendingId) return;
+    if (archived && !window.confirm(
+      `Archive “${project.name}”? Scheduled automations in this project will continue to run. Archive each automation separately to stop its schedule.`,
+    )) return;
     setArchivePendingId(project.id);
     try {
       await onSetArchived(project, archived);
