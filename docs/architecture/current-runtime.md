@@ -171,12 +171,14 @@ and directs the model to use content already present there; tools remain for
 missing information, current-state checks, and requested actions.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
-browser unless a live-chat user explicitly selects **Send text**. Imported PDFs
-can also be parsed locally after that explicit action; selectable text is read
-directly and textless pages use bundled English/Vietnamese OCR models, capped
-at five pages per file. The browser parser enforces a 10 MB file limit, a
-100-page limit, and the existing 20,000-character per-file limit. Imported
-DOCX files can be parsed locally in the browser under a 10 MB input and
+browser unless a live-chat user explicitly selects **Send text**. Plain text
+files decode UTF-8 by default and honor UTF-8, UTF-16LE, and UTF-16BE BOMs.
+Plain text input is limited to 80,000 bytes and 20,000 decoded characters.
+Imported PDFs can also be parsed locally after that explicit action; selectable
+text is read directly and textless pages use bundled English/Vietnamese OCR
+models, capped at five pages per file. The browser parser enforces a 10 MB file
+limit, a 100-page limit, and the existing 20,000-character per-file limit.
+Imported DOCX files can be parsed locally in the browser under a 10 MB input and
 20,000-character extracted-text limit.
 Imported HTML files are parsed locally into body text after that explicit
 action, with script, style, hidden, and embedded content removed; input is
