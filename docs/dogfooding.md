@@ -27,7 +27,15 @@ Run the scripts from the repository root. They use isolated SQLite databases and
 | Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Live model | A fresh session retrieves the expected project memory and does not retrieve a conflicting fact from another project |
 | Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Live model and research providers | A Research Specialist claim and evidence are persisted, selected into a durable Context Bridge, then compiled into a new chat as the sole selected object |
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and hosted model | Exact catalog models preserve local-only and cloud-allowed profile policies through zero-invocation routing preview |
-| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | External CodeGraph setup required for CodeGraph-specific dogfood | **Pending external setup.** Do not run or claim CodeGraph dogfood until CodeGraph is installed and its provider is discovered. The harness never installs or configures it. |
+| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Live model credentials; CodeGraph is optional | Provider smoke test passed in the maintainer's Windows environment: CodeGraph 0.20.1 was installed with telemetry disabled, AURA discovered 9 allowlisted tools, and a read-only `symbol_search` query returned `app/mcp/manager.py:157`. Full Coding Specialist dogfood remains pending a configured live model. |
+
+The provider smoke test verifies MCP health, discovery, and one read-only tool
+call; it is not a complete AURA Coding Specialist run and has no AURA run ID.
+The live dogfood script requires **MODEL_PROVIDER=openai** and **OPENAI_API_KEY**.
+Its preflight currently reports that live OpenAI routing is not configured, so
+no model call was made. This credential-dependent scenario does not block other
+independent AURA milestones. CodeGraph remains optional, external, and absent
+from CI; AURA never installs it automatically.
 
 The routing constraints script calls GET /v1/models, which performs its normal provider-discovery snapshot and may make local model-list HTTP requests. It does not call the explicit refresh or capability-probe endpoints, install providers, or invoke a model. The zero-invocation preview itself does not require model credentials. The catalog must list an available explicitly classified local and hosted model; otherwise the scenario reports that it did not run.
 
@@ -39,4 +47,4 @@ Reports include identifiers, route decisions, tool names, statuses, counts, and 
 
 ## Interpreting results
 
-A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph-specific dogfood remains pending until external setup is complete.
+A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph provider smoke is verified locally; Coding Specialist dogfood remains pending until live model credentials are configured.
