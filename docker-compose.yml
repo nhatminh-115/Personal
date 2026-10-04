@@ -32,6 +32,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL_NAME: ${OPENAI_MODEL_NAME:-gpt-4o-mini}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://127.0.0.1:11434/v1}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://127.0.0.1:1234/v1}
       MODEL_TEMPERATURE: ${MODEL_TEMPERATURE:-0.0}
       MODEL_MAX_TOKENS: ${MODEL_MAX_TOKENS:-2048}
       EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-mock}
@@ -41,6 +43,8 @@ services:
       SEMANTIC_SCHOLAR_API_KEY: ${SEMANTIC_SCHOLAR_API_KEY:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
       LOG_LEVEL: INFO
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command:
       - sh
       - -c

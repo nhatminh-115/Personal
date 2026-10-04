@@ -10,6 +10,7 @@ from app.core.settings import settings
 from app.models.base import RoutingContext
 from app.models.discovery import (
     ModelDiscoveryService,
+    ProviderEntry,
     infer_tool_support,
     model_discovery_service,
 )
@@ -105,6 +106,23 @@ async def test_lmstudio_unavailable():
     assert res.id == "lmstudio"
     assert res.available is False
     assert len(res.models) == 0
+
+
+@pytest.mark.asyncio
+async def test_discovery_uses_configured_local_provider_urls(monkeypatch):
+    svc = ModelDiscoveryService()
+    monkeypatch.setattr(settings, "OLLAMA_BASE_URL", "http://ollama-host:11434/v1")
+    monkeypatch.setattr(settings, "LMSTUDIO_BASE_URL", "http://studio-host:1234/v1")
+    local_provider = ProviderEntry(
+        id="ollama", label="Ollama", kind="local", available=False,
+        base_url="http://ollama-host:11434/v1",
+    )
+    ollama = AsyncMock(return_value=local_provider)
+    lmstudio = AsyncMock(return_value=local_provider.model_copy(update={"id": "lmstudio", "base_url": "http://studio-host:1234/v1"}))
+    with patch.object(svc, "discover_ollama", new=ollama), patch.object(svc, "discover_lmstudio", new=lmstudio):
+        await svc.discover_all()
+    ollama.assert_awaited_once_with("http://ollama-host:11434/v1")
+    lmstudio.assert_awaited_once_with("http://studio-host:1234/v1")
 
 
 def test_openai_compatible_provider_names_do_not_collide():
