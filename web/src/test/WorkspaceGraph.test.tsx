@@ -432,12 +432,14 @@ describe('Persistent workspace graph Board projection', () => {
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
     vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
 
-    let releaseFirstSave!: (layout: WorkspaceGraph['layout']) => void;
+    let releaseFirstSave!: () => void;
     const saveCalls: number[] = [];
     vi.spyOn(api, 'putWorkspaceLayout').mockImplementation(async (_project, layout, expectedRevision) => {
       saveCalls.push(expectedRevision);
       if (saveCalls.length === 1) {
-        return new Promise((resolve) => { releaseFirstSave = resolve; });
+        const savedLayout = { ...graph.layout, layout, revision: expectedRevision + 1 };
+        graph = { ...graph, layout: savedLayout };
+        return new Promise((resolve) => { releaseFirstSave = () => resolve(savedLayout); });
       }
       graph = { ...graph, layout: { ...graph.layout, layout, revision: expectedRevision + 1 } };
       return graph.layout;
@@ -454,27 +456,34 @@ describe('Persistent workspace graph Board projection', () => {
     const deleteObject = vi.spyOn(api, 'deleteWorkspaceObject').mockImplementation(async (_project, id) => {
       graph = { ...graph, objects: graph.objects.filter((item) => item.id !== id) };
     });
+    const onToast = vi.fn();
 
-    const { container } = render(
+    const renderBoard = (revision: number) => (
       <ReactFlowProvider>
-        <BoardCanvas boardKey="serialized-layout-writes" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
-      </ReactFlowProvider>,
+        <BoardCanvas boardKey="serialized-layout-writes" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} workspaceGraphRevision={revision} onToast={onToast} />
+      </ReactFlowProvider>
     );
+    const view = render(renderBoard(0));
+    const { container } = view;
     await screen.findByText('Persistent answer');
     fireEvent.click(screen.getByRole('button', { name: 'Note' }));
     fireEvent.click(container.querySelector('.react-flow__pane')!, { clientX: 500, clientY: 300 });
     await waitFor(() => expect(createObject).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(saveCalls).toHaveLength(1), { timeout: 2500 });
 
+    view.rerender(renderBoard(1));
+    await waitFor(() => expect(fetchGraph).toHaveBeenCalledTimes(2));
+    expect(onToast).not.toHaveBeenCalledWith('Board layout changed elsewhere', expect.anything());
+
     fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
     const noteId = createObject.mock.calls[0][1].id ?? 'restored-note-id';
     await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', noteId));
     expect(saveCalls).toEqual([3]);
 
-    releaseFirstSave({ ...graph.layout, revision: 4 });
+    releaseFirstSave();
     await waitFor(() => expect(saveCalls).toEqual([3, 4]));
     await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
-    expect(fetchGraph).toHaveBeenCalledTimes(1);
+    expect(fetchGraph).toHaveBeenCalledTimes(2);
   });
 
   it('offers a live chat action on saved branches and restores the selected branch context', async () => {

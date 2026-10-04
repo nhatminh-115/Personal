@@ -225,6 +225,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutTimer = useRef<number | null>(null);
   const layoutConflict = useRef(false);
   const layoutSync = useRef<Promise<void>>(Promise.resolve());
+  const layoutWritesPending = useRef(0);
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
@@ -243,10 +244,15 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
 
   const saveWorkspaceLayout = useCallback((layout: Record<string, any>, snapshot: string) => {
     if (!workspaceProjectName) return Promise.resolve();
+    layoutWritesPending.current += 1;
     const save = layoutSync.current.catch(() => undefined).then(async () => {
-      const result = await api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current);
-      layoutRevision.current = result.revision;
-      layoutSnapshot.current = snapshot;
+      try {
+        const result = await api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current);
+        layoutRevision.current = result.revision;
+        layoutSnapshot.current = snapshot;
+      } finally {
+        layoutWritesPending.current -= 1;
+      }
     });
     layoutSync.current = save;
     return save;
@@ -297,7 +303,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const refreshRecentWorkspacePage = useCallback(async (fitView = true) => {
     if (!workspaceProjectName) return;
     const graph = await api.fetchWorkspaceGraphPage(workspaceProjectName);
-    if (graph.layout.revision !== layoutRevision.current) {
+    if (graph.layout.revision !== layoutRevision.current && layoutWritesPending.current === 0) {
       layoutConflict.current = true;
       toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
     }
@@ -564,7 +570,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         object: graphObjectCursor,
         edge: graphEdgeCursor,
       });
-      if (graph.layout.revision !== layoutRevision.current) {
+      if (graph.layout.revision !== layoutRevision.current && layoutWritesPending.current === 0) {
         layoutConflict.current = true;
         toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
       }
