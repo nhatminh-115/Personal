@@ -949,6 +949,14 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     test_db_session.add(RunEventModel(run_id=child_id, event_type="model_selected", payload={"provider": "local", "model": "research-model", "agent_role": "research"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="reasoning_effort_selected", payload={"selected_effort": "high"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="context_compiled", payload={"estimated_tokens": 128, "objects": [{"object_id": "research-bridge", "object_type": "context_bridge", "selected_by_user": True}]}))
+    test_db_session.add(RunEventModel(run_id=child_id, event_type="context_loaded", payload={
+        "profile_memory_ids": {"work_style": "child-profile-memory"},
+        "project_memory_ids": ["child-project-memory"],
+        "semantic_memory_ids": [["child-semantic-memory"]],
+        "episode_memory_ids": ["child-episode-memory"],
+        "memory_privacy_sources": [{"memory_id": "child-project-memory", "privacy_policy": "confidential"}],
+        "memory_text": "private child memory content",
+    }))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="fallback_considered", payload={"fallback_policy": "same_provider_only", "primary_provider": "local", "selected_provider": "local", "candidate_model": "local-fallback", "debug_payload": "private fallback detail"}))
     test_db_session.add(RunEventModel(run_id=child_id, event_type="internal_reasoning", payload={"text": "private hidden reasoning"}))
     await test_db_session.commit()
@@ -963,6 +971,13 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert child["reasoning_selection"]["selected_effort"] == "high"
     assert child["context_manifest"]["estimated_tokens"] == 128
     assert child["context_manifest"]["objects"][0]["object_id"] == "research-bridge"
+    assert child["memory_ids_by_tier"] == {
+        "profile": ["child-profile-memory"],
+        "project": ["child-project-memory"],
+        "semantic": ["child-semantic-memory"],
+        "episode": ["child-episode-memory"],
+    }
+    assert child["memory_privacy_sources"] == [{"memory_id": "child-project-memory", "privacy_policy": "confidential"}]
     assert child["fallback_events"] == [{
         "event_type": "fallback_considered",
         "payload": {
@@ -982,6 +997,7 @@ async def test_run_routing_endpoint_returns_persisted_parent_and_child_decisions
     assert "private note content" not in response.text
     assert "private fallback detail" not in response.text
     assert "private hidden reasoning" not in response.text
+    assert "private child memory content" not in response.text
     pending = next(item for item in decisions if item["run_id"] == pending_child_id)
     assert pending["model_selection"] is None
     assert pending["reasoning_selection"] is None

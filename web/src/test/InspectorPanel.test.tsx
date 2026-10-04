@@ -320,14 +320,26 @@ describe('InspectorPanel Component', () => {
       }],
     };
 
-    render(<InspectorPanel runDetail={runDetail} memories={sampleMemories} profileMemories={[profileMemory]} onClose={vi.fn()} />);
+    render(<InspectorPanel
+      runDetail={runDetail}
+      memories={sampleMemories}
+      profileMemories={[profileMemory]}
+      routingData={[
+        { run_id: runDetail.id, snapshot: { role: 'root' }, memory_ids_by_tier: { profile: ['profile-memory-1'], project: ['mem-1'] }, memory_privacy_sources: [], fallback_events: [] },
+        { run_id: 'child-memory-run', parent_run_id: runDetail.id, snapshot: { role: 'research' }, memory_ids_by_tier: { semantic: ['child-semantic-memory'], episode: ['child-episode-memory'] }, memory_privacy_sources: [{ memory_id: 'child-semantic-memory', privacy_policy: 'local_only' }], fallback_events: [] },
+      ]}
+      onClose={vi.fn()}
+    />);
     fireEvent.click(screen.getByTestId('inspector-tab-context'));
 
     expect(screen.getByText('Saved memories used')).toBeInTheDocument();
     expect(screen.getByText('Profile memory')).toBeInTheDocument();
     expect(screen.getByText('Project memory')).toBeInTheDocument();
-    expect(screen.getByText('Semantic memory')).toBeInTheDocument();
-    expect(screen.getByText('Episode memory')).toBeInTheDocument();
+    expect(screen.getAllByText('Semantic memory')).toHaveLength(2);
+    expect(screen.getAllByText('Episode memory')).toHaveLength(2);
+    expect(screen.getByText(/research · child-memory/)).toBeInTheDocument();
+    expect(screen.getByText('child-semantic-memory')).toBeInTheDocument();
+    expect(screen.getByText(/local only/)).toBeInTheDocument();
     expect(screen.getByText('project_architecture_thesis')).toBeInTheDocument();
     expect(screen.getByText(/confidential/)).toBeInTheDocument();
     expect(screen.queryByText(/Private trace memory content/)).not.toBeInTheDocument();

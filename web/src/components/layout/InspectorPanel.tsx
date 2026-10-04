@@ -224,21 +224,42 @@ export function InspectorPanel({
   const detailContextManifest = detailContextEvent?.payload as CompiledContextManifest | undefined;
   const detailContextLoadedEvent = runDetail?.events?.filter((event) => event.event_type === 'context_loaded').at(-1);
   const detailContextLoaded = detailContextLoadedEvent?.payload;
-  const usedMemoryGroups: Array<{ tier: MemoryTier; ids: string[] }> = (['profile', 'project', 'semantic', 'episode'] as const)
-    .map((tier) => ({ tier, ids: memoryIdsForTier(detailContextLoaded, tier) }))
-    .filter((group) => group.ids.length > 0);
+  const memoryTiers: MemoryTier[] = ['profile', 'project', 'semantic', 'episode'];
+  const usedMemoryRuns = routingData?.length
+    ? routingData.map((decision) => {
+      const tierPayload = Object.fromEntries(memoryTiers.map((tier) => [
+        `${tier}_memory_ids`, decision.memory_ids_by_tier?.[tier] ?? [],
+      ]));
+      const payload = decision.run_id === runDetail?.id && detailContextLoaded
+        ? { ...tierPayload, ...detailContextLoaded }
+        : tierPayload;
+      const groups = memoryTiers
+        .map((tier) => ({ tier, ids: memoryIdsForTier(payload, tier) }))
+        .filter((group) => group.ids.length > 0);
+      const privacyById = new Map<string, string>((decision.memory_privacy_sources ?? []).map((source) => [source.memory_id, source.privacy_policy]));
+      if (decision.run_id === runDetail?.id && Array.isArray(detailContextLoaded?.memory_privacy_sources)) {
+        for (const source of detailContextLoaded.memory_privacy_sources) {
+          if (source && typeof source === 'object') {
+            const value = source as Record<string, unknown>;
+            if (typeof value.memory_id === 'string' && typeof value.privacy_policy === 'string') privacyById.set(value.memory_id, value.privacy_policy);
+          }
+        }
+      }
+      return {
+        runId: decision.run_id,
+        role: String(decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'),
+        groups,
+        privacyById,
+      };
+    }).filter((run) => run.groups.length > 0)
+    : runDetail ? [{
+      runId: runDetail.id,
+      role: 'Run',
+      groups: memoryTiers.map((tier) => ({ tier, ids: memoryIdsForTier(detailContextLoaded, tier) })).filter((group) => group.ids.length > 0),
+      privacyById: new Map<string, string>(),
+    }].filter((run) => run.groups.length > 0) : [];
   const availableMemories = [...memories, ...(profileMemories ?? [])];
   const availableMemoriesById = new Map(availableMemories.map((memory) => [memory.id, memory]));
-  const memoryPrivacyById = new Map<string, string>();
-  const rawMemoryPrivacySources = detailContextLoaded?.memory_privacy_sources;
-  if (Array.isArray(rawMemoryPrivacySources)) {
-    for (const source of rawMemoryPrivacySources) {
-      if (source && typeof source === 'object') {
-        const value = source as Record<string, unknown>;
-        if (typeof value.memory_id === 'string' && typeof value.privacy_policy === 'string') memoryPrivacyById.set(value.memory_id, value.privacy_policy);
-      }
-    }
-  }
   const contextManifestEntries = routingData?.flatMap((decision) => decision.context_manifest ? [{
     runId: decision.run_id,
     role: String(decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'),
@@ -625,28 +646,33 @@ export function InspectorPanel({
             </div>
             <section className="inspector-group" data-testid="run-memory-provenance">
               <h4>Saved memories used</h4>
-              {usedMemoryGroups.length ? usedMemoryGroups.map(({ tier, ids }) => (
-                <div className="context-blocks" key={tier}>
-                  <div className="context-blocks__head"><span>{tier[0].toUpperCase() + tier.slice(1)} memory</span><small>{ids.length}</small></div>
-                  {ids.map((id) => {
-                    const memory = availableMemoriesById.get(id);
-                    const privacy = memoryPrivacyById.get(id);
-                    return <button
-                      className="context-block"
-                      type="button"
-                      key={`${tier}-${id}`}
-                      disabled={!memory}
-                      onClick={() => reviewUsedMemory(id, tier)}
-                      aria-label={`${memory ? 'Review memory' : 'Memory'} ${memory?.key ?? id}`}
-                    >
-                      <span className="context-block__copy">
-                        <strong>{memory?.key ?? id}</strong>
-                        <small>{memory ? `${memory.memory_type.replace(/_/g, ' ')} · ${id}` : id}{privacy ? ` · ${privacy.replace(/_/g, ' ')}` : ''}</small>
-                      </span>
-                    </button>;
-                  })}
+              {usedMemoryRuns.length ? usedMemoryRuns.map(({ runId, role, groups, privacyById }) => (
+                <div className="inspector-group" key={`memories-${runId}`}>
+                  <h4>{role} · {runId.slice(0, 12)}</h4>
+                  {groups.map(({ tier, ids }) => (
+                    <div className="context-blocks" key={`${runId}-${tier}`}>
+                      <div className="context-blocks__head"><span>{tier[0].toUpperCase() + tier.slice(1)} memory</span><small>{ids.length}</small></div>
+                      {ids.map((id) => {
+                        const memory = availableMemoriesById.get(id);
+                        const privacy = privacyById.get(id);
+                        return <button
+                          className="context-block"
+                          type="button"
+                          key={`${tier}-${id}`}
+                          disabled={!memory}
+                          onClick={() => reviewUsedMemory(id, tier)}
+                          aria-label={`${memory ? 'Review memory' : 'Memory'} ${memory?.key ?? id}`}
+                        >
+                          <span className="context-block__copy">
+                            <strong>{memory?.key ?? id}</strong>
+                            <small>{memory ? `${memory.memory_type.replace(/_/g, ' ')} · ${id}` : id}{privacy ? ` · ${privacy.replace(/_/g, ' ')}` : ''}</small>
+                          </span>
+                        </button>;
+                      })}
+                    </div>
+                  ))}
                 </div>
-              )) : <div className="inspector-empty">No saved memory IDs were recorded for this run.</div>}
+              )) : <div className="inspector-empty">No saved memory IDs were recorded for this run tree.</div>}
             </section>
             {contextManifestEntries.length ? contextManifestEntries.map(({ runId, role, manifest }) => {
               const objects = Array.isArray(manifest.objects)
