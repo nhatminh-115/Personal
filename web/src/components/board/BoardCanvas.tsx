@@ -229,6 +229,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
+  const privacySaveVersions = useRef<Map<string, number>>(new Map());
   const historySync = useRef<Promise<void>>(Promise.resolve());
   nodesRef.current = nodes;
   edgesRef.current = edges;
@@ -700,13 +701,27 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (!node || !['manual_note', 'context_bridge'].includes(node.data.workspaceObjectType ?? '')) return;
       recordHistory();
       const metadata = { ...(node.data.workspaceMetadata ?? {}) };
+      const previousPolicy = metadata.privacy_policy;
       if (policy) metadata.privacy_policy = policy;
       else delete metadata.privacy_policy;
+      const saveVersion = (privacySaveVersions.current.get(id) ?? 0) + 1;
+      privacySaveVersions.current.set(id, saveVersion);
       const updatedNode = { ...node, data: { ...node.data, workspaceMetadata: metadata } };
       setNodes((current) => current.map((item) => item.id === id ? updatedNode : item));
       if (workspaceProjectName) {
         void api.updateWorkspaceObject(workspaceProjectName, id, workspaceObjectWrite(updatedNode))
-          .catch(() => toast('Privacy setting was not saved', 'The previous saved classification remains active.'));
+          .catch(() => {
+            if (privacySaveVersions.current.get(id) !== saveVersion) return;
+            setNodes((current) => current.map((item) => {
+              if (item.id !== id) return item;
+              const currentMetadata = { ...(item.data.workspaceMetadata ?? {}) };
+              if (currentMetadata.privacy_policy !== (policy ?? undefined)) return item;
+              if (previousPolicy === undefined) delete currentMetadata.privacy_policy;
+              else currentMetadata.privacy_policy = previousPolicy;
+              return { ...item, data: { ...item.data, workspaceMetadata: currentMetadata } };
+            }));
+            toast('Privacy setting was not saved', 'The previous saved classification remains active.');
+          });
       }
     },
     [recordHistory, setNodes, toast, workspaceProjectName],
