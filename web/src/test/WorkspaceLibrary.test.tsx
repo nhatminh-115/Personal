@@ -78,6 +78,27 @@ describe('Workspace Library references', () => {
     expect(JSON.stringify(payload)).not.toContain('blobKey');
   });
 
+  it('indexes imported XLSX metadata while keeping its bytes browser-local', async () => {
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: /^Library$/i }));
+    await screen.findByRole('heading', { name: 'Your files can stay where they already live.' });
+
+    const file = new File(['private spreadsheet bytes'], 'budget.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library', expect.objectContaining({ method: 'POST' })));
+    const submitted = (global.fetch as ReturnType<typeof vi.fn>).mock.calls
+      .map(([url, init]) => [String(url), init] as const)
+      .find(([url, init]) => url.endsWith('/v1/workspace/library') && init?.method === 'POST');
+    const payload = JSON.parse(String(submitted?.[1]?.body));
+    expect(payload).toMatchObject({ name: 'budget', kind: 'XLSX', mime_type: file.type });
+    expect(JSON.stringify(payload)).not.toContain('private spreadsheet bytes');
+    expect(JSON.stringify(payload)).not.toContain('blobKey');
+  });
+
   it('searches the full Library through paged backend results', async () => {
     const firstMatch = {
       id: 'library-match-1', name: 'Result one', kind: 'PDF', collection: 'cross-page',

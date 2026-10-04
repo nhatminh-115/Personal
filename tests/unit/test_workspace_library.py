@@ -72,6 +72,21 @@ async def test_workspace_library_accepts_docx_reference_metadata(async_client):
 
 
 @pytest.mark.asyncio
+async def test_workspace_library_accepts_xlsx_reference_metadata(async_client):
+    created = await async_client.post("/v1/workspace/library", json={
+        "name": "Budget workbook",
+        "kind": "XLSX",
+        "collection": "Reference",
+        "detail": "Imported local spreadsheet",
+        "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    })
+
+    assert created.status_code == 201
+    assert created.json()["kind"] == "XLSX"
+    assert created.json()["mime_type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@pytest.mark.asyncio
 async def test_library_search_matches_metadata_and_keeps_cursor_pagination(async_client):
     references = [
         {"id": str(uuid4()), "name": "Alpha paper", "detail": "target in imported detail", "collection": "Research", "tags": []},
