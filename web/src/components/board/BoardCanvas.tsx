@@ -1428,7 +1428,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         onEdgesChange={onEdgesChange}
         onNodeDragStart={() => recordHistory()}
         onConnect={async (connection) => {
-          recordHistory();
           if (workspaceProjectName && connection.source && connection.target) {
             try {
               const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
@@ -1437,6 +1436,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                 relation_type: 'related_to',
                 edge_family: 'semantic',
               });
+              recordHistory();
               setEdges((current) => [...current, {
                 id: persisted.id,
                 source: persisted.source_object_id,
@@ -1456,6 +1456,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               return;
             }
           }
+          recordHistory();
           setEdges((current) => addEdge({ ...connection, type: 'smart', data: { edgeKind: 'semantic' } }, current));
         }}
         onEdgeClick={(event, edge) => {
@@ -1493,7 +1494,6 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               if (existing) {
                 await deleteEdges([existing.id]);
               } else {
-                recordHistory();
                 if (workspaceProjectName) {
                   try {
                     const persisted = await api.createWorkspaceEdge(workspaceProjectName, {
@@ -1502,6 +1502,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                       relation_type: 'related_to',
                       edge_family: 'semantic',
                     });
+                    recordHistory();
                     setEdges((current) => [...current, {
                       id: persisted.id,
                       source: persisted.source_object_id,
@@ -1514,6 +1515,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                     toast('Link was not saved', 'AURA could not create that semantic relationship.');
                   }
                 } else {
+                  recordHistory();
                   setEdges((current) => [...current, {
                     id: `semantic-${idRef.current++}`,
                     source: linkSource,
