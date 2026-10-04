@@ -89,5 +89,36 @@ describe('Persistent personal workspace Notes', () => {
     fireEvent.change(screen.getByPlaceholderText('Write anything…'), { target: { value: 'Updated a different note.' } });
     expect(screen.getByDisplayValue('Novelty framing')).toBeInTheDocument();
   });
+
+  it('restores a saved Note privacy classification after an unsuccessful update', async () => {
+    const note = {
+      id: 'note-privacy', title: 'Private note', body: 'Keep this on device.', tags: [], project_names: [],
+      pinned: false, privacy_policy: 'confidential', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
+      if (url === '/v1/workspace/notes/note-privacy' && init?.method === 'PUT') {
+        return Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ detail: 'offline' }) } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
+
+    await screen.findByRole('heading', { name: 'Personal notes' });
+    fireEvent.click(await screen.findByRole('button', { name: /Private note/i }));
+    expect(await screen.findByDisplayValue('Private note')).toBeInTheDocument();
+    const privacy = screen.getByRole('combobox', { name: 'Note privacy classification' });
+    expect(privacy).toHaveValue('confidential');
+    fireEvent.change(privacy, { target: { value: 'local_only' } });
+
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes/note-privacy', expect.objectContaining({ method: 'PUT' })), { timeout: 3000 });
+    await waitFor(() => expect(privacy).toHaveValue('confidential'), { timeout: 3000 });
+    expect(await screen.findByText(/Note was not saved/)).toBeInTheDocument();
+  });
 });
 

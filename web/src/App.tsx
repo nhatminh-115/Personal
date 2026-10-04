@@ -333,6 +333,7 @@ export default function App() {
   const noteCreateInFlight = useRef(new Set<string>());
   const noteUpdateInFlight = useRef(new Set<string>());
   const savedNoteFingerprints = useRef(new Map<string, string>());
+  const savedNotePrivacyPolicies = useRef(new Map<string, WorkspaceNote['privacyPolicy']>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const automationsLoaded = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
@@ -1588,15 +1589,24 @@ export default function App() {
       }
       noteUpdateInFlight.current.add(latest.id);
       const sentFingerprint = workspaceNoteFingerprint(latest);
+      const sentPrivacyPolicy = latest.privacyPolicy;
       void api.updateWorkspaceNote(latest.id, workspaceNotePayload(latest, projectCatalog)).then((record) => {
         const saved = workspaceNoteFromRecord(record, projectCatalog);
         savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
+        savedNotePrivacyPolicies.current.set(saved.id, saved.privacyPolicy);
         const current = notesRef.current.find((item) => item.id === saved.id);
         if (!current) return;
         const refreshed = { ...current, updated: saved.updated, source: 'live' as const };
         replaceWorkspaceNote(current.id, refreshed);
         if (workspaceNoteFingerprint(current) !== sentFingerprint) queueWorkspaceNoteUpdate(refreshed);
       }).catch((error: unknown) => {
+        const current = notesRef.current.find((item) => item.id === latest.id);
+        if (current && current.privacyPolicy === sentPrivacyPolicy) {
+          const restored = { ...current, privacyPolicy: savedNotePrivacyPolicies.current.get(latest.id) };
+          const next = notesRef.current.map((item) => item.id === latest.id ? restored : item);
+          notesRef.current = next;
+          setNotes(next);
+        }
         pushToast('Note was not saved', executionErrorText(error));
       }).finally(() => {
         noteUpdateInFlight.current.delete(latest.id);
@@ -1612,6 +1622,7 @@ export default function App() {
     void api.createWorkspaceNote(workspaceNotePayload(note, projectCatalog)).then((record) => {
       const saved = workspaceNoteFromRecord(record, projectCatalog);
       savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
+      savedNotePrivacyPolicies.current.set(saved.id, saved.privacyPolicy);
       const latest = notesRef.current.find((item) => item.id === note.id);
       if (!latest) return;
       const liveNote: WorkspaceNote = {
@@ -1648,7 +1659,10 @@ export default function App() {
     try {
       const page = await api.fetchWorkspaceNotesPage(cursor, 50);
       const liveNotes = page.items.map((record) => workspaceNoteFromRecord(record, projectCatalog));
-      for (const note of liveNotes) savedNoteFingerprints.current.set(note.id, workspaceNoteFingerprint(note));
+      for (const note of liveNotes) {
+        savedNoteFingerprints.current.set(note.id, workspaceNoteFingerprint(note));
+        savedNotePrivacyPolicies.current.set(note.id, note.privacyPolicy);
+      }
       const currentNotes = append ? notesRef.current : notesRef.current.filter((note) => note.source !== 'live');
       const existingIds = new Set(currentNotes.map((note) => note.id));
       const next = append
