@@ -85,3 +85,53 @@ async def test_project_memory_lifecycle_endpoint_is_scoped_and_hides_non_project
     )
     assert wrong_type.status_code == 404
     assert memory.is_active is True
+
+
+@pytest.mark.asyncio
+async def test_personal_profile_memory_can_be_deactivated_restored_and_filtered(async_client, test_db_session):
+    memory = MemoryModel(
+        memory_type="profile", project_name=None, key="preferred_language",
+        content="Vietnamese", confidence=1.0, is_active=True, metadata_json={},
+    )
+    project_memory = MemoryModel(
+        memory_type="profile", project_name="Atlas", key="project_only",
+        content="This belongs to Atlas.", confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add_all([memory, project_memory])
+    await test_db_session.commit()
+
+    listing = await async_client.get("/v1/memory", params={"memory_type": "profile", "include_inactive": True})
+    assert listing.status_code == 200
+    assert [item["id"] for item in listing.json()] == [memory.id]
+
+    deactivate = await async_client.patch(f"/v1/memory/profile/{memory.id}", json={"is_active": False})
+    assert deactivate.status_code == 200
+    assert await SQLMemoryService(test_db_session).get_profile_fact("preferred_language") is None
+
+    restore = await async_client.patch(f"/v1/memory/profile/{memory.id}", json={"is_active": True})
+    assert restore.status_code == 200
+    assert await SQLMemoryService(test_db_session).get_profile_fact("preferred_language") == "Vietnamese"
+
+
+@pytest.mark.asyncio
+async def test_profile_restore_rejects_superseded_duplicate_and_wrong_scope(async_client, test_db_session):
+    archived = MemoryModel(
+        memory_type="profile", key="preferred_language", content="Vietnamese",
+        confidence=1.0, is_active=False, metadata_json={},
+    )
+    active = MemoryModel(
+        memory_type="profile", key="preferred_language", content="English",
+        confidence=1.0, is_active=True, metadata_json={},
+    )
+    project_scoped = MemoryModel(
+        memory_type="profile", project_name="Atlas", key="editor", content="VS Code",
+        confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add_all([archived, active, project_scoped])
+    await test_db_session.commit()
+
+    conflict = await async_client.patch(f"/v1/memory/profile/{archived.id}", json={"is_active": True})
+    assert conflict.status_code == 409
+    wrong_scope = await async_client.patch(f"/v1/memory/profile/{project_scoped.id}", json={"is_active": False})
+    assert wrong_scope.status_code == 404
+    assert (await test_db_session.get(MemoryModel, active.id)).is_active is True

@@ -314,13 +314,48 @@ describe('InspectorPanel Component', () => {
     );
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
     fireEvent.click(screen.getByRole('button', { name: 'Deactivate memory' }));
-    await waitFor(() => expect(onSetMemoryActive).toHaveBeenCalledWith('mem-1', false));
+    await waitFor(() => expect(onSetMemoryActive).toHaveBeenCalledWith(projectMemory, false));
 
+    const archivedMemory = { ...projectMemory, is_active: false };
     rerender(
-      <InspectorPanel memories={[{ ...projectMemory, is_active: false }]} onSetMemoryActive={onSetMemoryActive} onClose={vi.fn()} />
+      <InspectorPanel memories={[archivedMemory]} onSetMemoryActive={onSetMemoryActive} onClose={vi.fn()} />
     );
     fireEvent.click(screen.getByRole('button', { name: 'Restore memory' }));
-    await waitFor(() => expect(onSetMemoryActive).toHaveBeenLastCalledWith('mem-1', true));
+    await waitFor(() => expect(onSetMemoryActive).toHaveBeenLastCalledWith(archivedMemory, true));
+  });
+
+  it('loads and manages cross-project profile memories separately', async () => {
+    const onLoadProfileMemories = vi.fn().mockResolvedValue(undefined);
+    const onSetMemoryActive = vi.fn().mockResolvedValue(undefined);
+    const profileMemory: MemoryItem = {
+      id: 'profile-1', key: 'preferred_language', memory_type: 'profile',
+      content: 'Vietnamese', confidence: 1, is_active: true, created_at: new Date().toISOString(),
+    };
+    const { rerender } = render(
+      <InspectorPanel
+        memories={sampleMemories}
+        profileMemories={null}
+        onLoadProfileMemories={onLoadProfileMemories}
+        onSetMemoryActive={onSetMemoryActive}
+        onClose={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    fireEvent.click(screen.getByRole('button', { name: 'Personal profile' }));
+    expect(onLoadProfileMemories).toHaveBeenCalled();
+    expect(screen.getByText(/Loading personal memories/)).toBeInTheDocument();
+    rerender(
+      <InspectorPanel
+        memories={sampleMemories}
+        profileMemories={[profileMemory]}
+        onLoadProfileMemories={onLoadProfileMemories}
+        onSetMemoryActive={onSetMemoryActive}
+        onClose={vi.fn()}
+      />
+    );
+    expect(screen.getByText('preferred_language')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate memory' }));
+    await waitFor(() => expect(onSetMemoryActive).toHaveBeenCalledWith(profileMemory, false));
   });
 
   it('refreshes MCP provider health without invoking a provider tool', async () => {

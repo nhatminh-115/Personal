@@ -29,11 +29,17 @@ export interface InspectorPanelProps {
   routingData?: RunRoutingDecision[] | null;
   researchData?: ResearchInspectorData | null;
   memories?: MemoryItem[];
+  profileMemories?: MemoryItem[] | null;
   memoryNextCursor?: string | null;
   memoryPageLoading?: boolean;
   memoryPageError?: string | null;
   onLoadMoreMemories?: () => Promise<void>;
-  onSetMemoryActive?: (memoryId: string, isActive: boolean) => Promise<void>;
+  profileMemoryNextCursor?: string | null;
+  profileMemoryLoading?: boolean;
+  profileMemoryError?: string | null;
+  onLoadProfileMemories?: () => Promise<void>;
+  onLoadMoreProfileMemories?: () => Promise<void>;
+  onSetMemoryActive?: (memory: MemoryItem, isActive: boolean) => Promise<void>;
   onClose: () => void;
   onContextSelect?: (nodeId: string) => void;
 }
@@ -57,15 +63,22 @@ export function InspectorPanel({
   routingData,
   researchData,
   memories = [],
+  profileMemories,
   memoryNextCursor,
   memoryPageLoading = false,
   memoryPageError,
   onLoadMoreMemories,
+  profileMemoryNextCursor,
+  profileMemoryLoading = false,
+  profileMemoryError,
+  onLoadProfileMemories,
+  onLoadMoreProfileMemories,
   onSetMemoryActive,
   onClose,
   onContextSelect,
 }: InspectorPanelProps) {
   const [tab, setTab] = useState<InspectorTab>('execution');
+  const [memoryScope, setMemoryScope] = useState<'project' | 'profile'>('project');
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
   const [capabilityProviders, setCapabilityProviders] = useState<CapabilityProviderMetadata[]>([]);
@@ -81,7 +94,7 @@ export function InspectorPanel({
     setUpdatingMemoryId(memory.id);
     setMemoryActionError(null);
     try {
-      await onSetMemoryActive(memory.id, isActive);
+      await onSetMemoryActive(memory, isActive);
     } catch (error) {
       setMemoryActionError(error instanceof Error ? error.message : 'Could not update this memory.');
     } finally {
@@ -162,6 +175,7 @@ export function InspectorPanel({
             data-testid={`inspector-tab-${id}`}
             onClick={() => {
               setTab(id);
+              if (id === 'memory' && memoryScope === 'profile') void onLoadProfileMemories?.();
               if (id === 'capabilities' && (capabilityState === 'idle' || capabilityState === 'error')) void loadCapabilityProviders();
             }}
           >
@@ -421,13 +435,20 @@ export function InspectorPanel({
         {tab === 'memory' ? (
           <div data-testid="inspector-memory">
             <div className="inspector-kpi">
-              <span>Project Memory</span>
-              <strong>Showing {memories.length} item{memories.length === 1 ? '' : 's'}</strong>
-              <small>Persisted project memory · /v1/memory</small>
+              <span>{memoryScope === 'project' ? 'Project Memory' : 'Personal Profile Memory'}</span>
+              <strong>Showing {(memoryScope === 'project' ? memories : profileMemories ?? []).length} item{(memoryScope === 'project' ? memories : profileMemories ?? []).length === 1 ? '' : 's'}</strong>
+              <small>{memoryScope === 'project' ? 'Used inside this project' : 'Used across projects'} · persisted memory</small>
+            </div>
+            <div className="inspector-tabs" style={{ marginTop: 10 }} role="group" aria-label="Memory scope">
+              <button type="button" className={memoryScope === 'project' ? 'is-active' : ''} onClick={() => setMemoryScope('project')}>Project</button>
+              <button type="button" className={memoryScope === 'profile' ? 'is-active' : ''} onClick={() => {
+                setMemoryScope('profile');
+                void onLoadProfileMemories?.();
+              }}>Personal profile</button>
             </div>
             <div style={{ marginTop: 12 }}>
-              {memories.length > 0 ? (
-                memories.map((m) => (
+              {(memoryScope === 'project' ? memories : profileMemories ?? []).length > 0 ? (
+                (memoryScope === 'project' ? memories : profileMemories ?? []).map((m) => (
                   <div key={m.id} className="inspector-event-item" data-testid="memory-item">
                     <div className="inspector-event-header">
                       <strong style={{ fontSize: 11.5, color: '#b9d4e2' }}>{m.key}</strong>
@@ -444,7 +465,7 @@ export function InspectorPanel({
                         {m.created_at ? new Date(m.created_at).toLocaleDateString() : ''}
                       </small>
                     </div>
-                    {m.memory_type === 'project' && onSetMemoryActive ? (
+                    {(m.memory_type === 'project' || m.memory_type === 'profile') && onSetMemoryActive ? (
                       <button
                         className="secondary-button"
                         type="button"
@@ -459,20 +480,26 @@ export function InspectorPanel({
                 ))
               ) : (
                 <div style={{ color: '#68808e', fontSize: 11.5, padding: 12 }}>
-                  {memoryPageLoading ? 'Loading project memories…' : 'No memories stored for this project yet.'}
+                  {memoryScope === 'project'
+                    ? memoryPageLoading ? 'Loading project memories…' : 'No memories stored for this project yet.'
+                    : profileMemoryError ? 'Could not load personal memories.'
+                      : profileMemories == null || profileMemoryLoading ? 'Loading personal memories…' : 'No personal profile memories saved yet.'}
                 </div>
               )}
-              {memoryPageError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryPageError}</div> : null}
+              {memoryScope === 'project' && memoryPageError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryPageError}</div> : null}
+              {memoryScope === 'profile' && profileMemoryError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{profileMemoryError}</div> : null}
               {memoryActionError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryActionError}</div> : null}
-              {memoryNextCursor || memoryPageError ? (
+              {(memoryScope === 'project' ? memoryNextCursor || memoryPageError : profileMemoryNextCursor || profileMemoryError) ? (
                 <button
                   className="secondary-button"
                   type="button"
-                  disabled={memoryPageLoading}
-                  onClick={() => { void onLoadMoreMemories?.(); }}
+                  disabled={memoryScope === 'project' ? memoryPageLoading : profileMemoryLoading}
+                  onClick={() => { void (memoryScope === 'project' ? onLoadMoreMemories?.() : onLoadMoreProfileMemories?.()); }}
                   style={{ margin: '8px 12px', fontSize: 10 }}
                 >
-                  {memoryPageLoading ? 'Loading…' : memoryPageError ? (memoryNextCursor ? 'Retry loading older memories' : 'Retry loading memories') : 'Load older memories'}
+                  {memoryScope === 'project'
+                    ? memoryPageLoading ? 'Loading…' : memoryPageError ? (memoryNextCursor ? 'Retry loading older memories' : 'Retry loading memories') : 'Load older memories'
+                    : profileMemoryLoading ? 'Loading…' : profileMemoryError ? (profileMemoryNextCursor ? 'Retry loading older memories' : 'Retry loading memories') : 'Load older memories'}
                 </button>
               ) : null}
             </div>
