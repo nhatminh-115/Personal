@@ -65,12 +65,13 @@ jobs:
           set -euo pipefail
           docker compose --env-file /dev/null config --quiet
           env -u MODEL_PROVIDER -u OPENAI_API_KEY -u OPENAI_BASE_URL -u OPENAI_MODEL_NAME \
+            -u OLLAMA_BASE_URL -u LMSTUDIO_BASE_URL \
             -u RESEARCH_PROVIDER_MODE -u CORS_ALLOWED_ORIGINS \
             docker compose --env-file /dev/null config --format json \
-            | python -c "import json, sys; env=json.load(sys.stdin)['services']['aura-app']['environment']; expected={'MODEL_PROVIDER':'mock','OPENAI_API_KEY':'','OPENAI_BASE_URL':'https://api.openai.com/v1','OPENAI_MODEL_NAME':'gpt-4o-mini','RESEARCH_PROVIDER_MODE':'deterministic'}; assert all(env.get(key)==value for key,value in expected.items()), {key:env.get(key) for key in expected}; print('Compose provider defaults verified.')"
-          MODEL_PROVIDER=openai OPENAI_API_KEY=ci-compose-sentinel OPENAI_BASE_URL=http://model.test/v1 OPENAI_MODEL_NAME=ci-model RESEARCH_PROVIDER_MODE=live CORS_ALLOWED_ORIGINS=http://localhost:4173 \
+            | python -c "import json, sys; config=json.load(sys.stdin); env=config['services']['aura-app']['environment']; expected={'MODEL_PROVIDER':'mock','OPENAI_API_KEY':'','OPENAI_BASE_URL':'https://api.openai.com/v1','OPENAI_MODEL_NAME':'gpt-4o-mini','OLLAMA_BASE_URL':'http://127.0.0.1:11434/v1','LMSTUDIO_BASE_URL':'http://127.0.0.1:1234/v1','RESEARCH_PROVIDER_MODE':'deterministic'}; assert all(env.get(key)==value for key,value in expected.items()), {key:env.get(key) for key in expected}; assert 'host.docker.internal=host-gateway' in config['services']['aura-app']['extra_hosts']; print('Compose provider defaults and host gateway verified.')"
+          MODEL_PROVIDER=openai OPENAI_API_KEY=ci-compose-sentinel OPENAI_BASE_URL=http://model.test/v1 OPENAI_MODEL_NAME=ci-model OLLAMA_BASE_URL=http://host.docker.internal:11434/v1 LMSTUDIO_BASE_URL=http://host.docker.internal:1234/v1 RESEARCH_PROVIDER_MODE=live CORS_ALLOWED_ORIGINS=http://localhost:4173 \
             docker compose --env-file /dev/null config --format json \
-            | python -c "import json, sys; env=json.load(sys.stdin)['services']['aura-app']['environment']; expected={'MODEL_PROVIDER':'openai','OPENAI_API_KEY':'ci-compose-sentinel','OPENAI_BASE_URL':'http://model.test/v1','OPENAI_MODEL_NAME':'ci-model','RESEARCH_PROVIDER_MODE':'live','CORS_ALLOWED_ORIGINS':'http://localhost:4173'}; assert all(env.get(key)==value for key,value in expected.items()), {key:env.get(key) for key in expected}; print('Compose provider overrides verified.')"
+            | python -c "import json, sys; env=json.load(sys.stdin)['services']['aura-app']['environment']; expected={'MODEL_PROVIDER':'openai','OPENAI_API_KEY':'ci-compose-sentinel','OPENAI_BASE_URL':'http://model.test/v1','OPENAI_MODEL_NAME':'ci-model','OLLAMA_BASE_URL':'http://host.docker.internal:11434/v1','LMSTUDIO_BASE_URL':'http://host.docker.internal:1234/v1','RESEARCH_PROVIDER_MODE':'live','CORS_ALLOWED_ORIGINS':'http://localhost:4173'}; assert all(env.get(key)==value for key,value in expected.items()), {key:env.get(key) for key in expected}; print('Compose provider overrides verified.')"
 
       - name: Start AURA Compose stack and verify readiness
         run: |

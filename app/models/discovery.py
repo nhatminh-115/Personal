@@ -143,7 +143,7 @@ class ModelDiscoveryService:
         timeout: float = 1.0,
     ) -> ProviderEntry:
         """Probe local Ollama runtime safely."""
-        target_v1 = (base_url or "http://127.0.0.1:11434/v1").rstrip("/")
+        target_v1 = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
         # Derive native base url for /api/tags
         native_base = target_v1[:-3] if target_v1.endswith("/v1") else target_v1
         models: List[ModelEntry] = []
@@ -208,7 +208,7 @@ class ModelDiscoveryService:
         timeout: float = 1.0,
     ) -> ProviderEntry:
         """Probe local LM Studio runtime safely."""
-        target_v1 = (base_url or "http://127.0.0.1:1234/v1").rstrip("/")
+        target_v1 = (base_url or settings.LMSTUDIO_BASE_URL).rstrip("/")
         models: List[ModelEntry] = []
         is_available = False
 
@@ -318,8 +318,8 @@ class ModelDiscoveryService:
         """Run all provider discovery in parallel and return catalog without sensitive keys."""
         import asyncio
 
-        ollama_task = self.discover_ollama(ollama_url)
-        lmstudio_task = self.discover_lmstudio(lmstudio_url)
+        ollama_task = self.discover_ollama(ollama_url or settings.OLLAMA_BASE_URL)
+        lmstudio_task = self.discover_lmstudio(lmstudio_url or settings.LMSTUDIO_BASE_URL)
 
         ollama_entry, lmstudio_entry = await asyncio.gather(ollama_task, lmstudio_task)
         openai_entry = self.get_cloud_openai()
@@ -421,7 +421,7 @@ class ModelDiscoveryService:
 
         target_url = (
             base_url
-            or ("http://127.0.0.1:11434/v1" if provider_id == "ollama" else "http://127.0.0.1:1234/v1")
+            or (settings.OLLAMA_BASE_URL if provider_id == "ollama" else settings.LMSTUDIO_BASE_URL)
         ).rstrip("/")
 
         cache_key = f"{provider_id}:{model_id}"

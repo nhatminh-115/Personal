@@ -104,9 +104,11 @@ step is scoped to the single-service Compose setup; deployments using the image
 directly should run `python -m alembic upgrade head` as a separate release step.
 Compose reads this `.env` file and forwards the model, embedding, research, and
 CORS settings to the API container. The model provider stays `mock` unless you
-set `MODEL_PROVIDER=openai` and configure `OPENAI_API_KEY`. The key is passed
-only to the API container; it is not available to the web app. After changing
-provider settings, recreate the API container with
+configure a live provider. `OPENAI_API_KEY` is passed only to the API container;
+it is not available to the web app. For Ollama or LM Studio running on the host,
+set `OLLAMA_BASE_URL` or `LMSTUDIO_BASE_URL` to a `host.docker.internal` URL;
+Compose maps that hostname to the host so discovery keeps these providers
+classified as local. After changing provider settings, recreate the API container with
 `docker compose up -d --force-recreate aura-app` so it receives the new values.
 Compose persists PostgreSQL data and LangGraph checkpoints in separate named
 volumes (`postgres_data` and `checkpoint_data`); both are required to restore a

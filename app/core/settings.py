@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     OPENAI_BASE_URL: str = "https://api.openai.com/v1"
     OPENAI_MODEL_NAME: str = "gpt-4o-mini"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434/v1"
+    LMSTUDIO_BASE_URL: str = "http://127.0.0.1:1234/v1"
     MODEL_TEMPERATURE: float = 0.0
     MODEL_MAX_TOKENS: int = 2048
 
