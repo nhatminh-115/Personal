@@ -57,6 +57,12 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
+function triggerSourceLabel(triggerType?: 'schedule' | 'manual' | 'webhook'): string {
+  if (triggerType === 'webhook') return 'webhook';
+  if (triggerType === 'schedule') return 'schedule';
+  return 'manual run';
+}
+
 export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onCancelRun, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
@@ -303,7 +309,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         <div>
           <span className="eyebrow">AUTOMATIONS</span>
           <h1>Background routines without turning AURA into Zapier.</h1>
-          <p>Scheduled instructions and signed webhook signals run through AURA, scoped to your workspace or one project.</p>
+          <p>Scheduled instructions and secret-authenticated webhook signals run through AURA, scoped to your workspace or one project.</p>
         </div>
         <div className="automations-view__header-actions">
           {onToggleArchived ? <button className="secondary-button" type="button" onClick={onToggleArchived} disabled={loadingPage}>{includeArchived ? 'Hide archived' : 'Include archived'}</button> : null}
@@ -319,7 +325,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
       {webhookSetup ? (
         <div className="modal-scrim" role="presentation">
           <div className="automation-create-modal automation-webhook-secret" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-title">
-            <div className="modal-head"><div><span className="eyebrow">SIGNED WEBHOOK</span><strong id="automation-webhook-title">Save this secret now</strong></div><button className="icon-button" type="button" onClick={() => setWebhookSetup(null)} aria-label="Close"><X size={15} /></button></div>
+            <div className="modal-head"><div><span className="eyebrow">WEBHOOK SECRET</span><strong id="automation-webhook-title">Save this secret now</strong></div><button className="icon-button" type="button" onClick={() => setWebhookSetup(null)} aria-label="Close"><X size={15} /></button></div>
             <p>This secret is shown once. Send a POST request with <code>Authorization: Bearer &lt;secret&gt;</code> and a unique <code>X-Aura-Event-Id</code>. The request body is ignored; AURA runs only the saved instruction.</p>
             <label><span>Webhook path</span><code>{webhookSetup.path}</code></label>
             <label><span>Secret</span><code>{webhookSetup.secret}</code></label>
@@ -343,8 +349,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
                 <p>{automation.description}</p>
                 {live ? <details className="automation-instruction"><summary>Instruction</summary><p>{automation.instruction}</p></details> : null}
                 <div className="automation-trigger"><Clock3 size={12} /><strong>{automation.trigger}</strong></div>
-                {live && automation.webhookEnabled && automation.webhookPath ? <details className="automation-instruction"><summary>Signed webhook endpoint</summary><code>{automation.webhookPath}</code><p>The signing secret is never shown again. Disable then re-enable this trigger to rotate it.</p></details> : null}
-                {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}{automation.latestExecution.status === 'waiting_for_approval' ? <button type="button" onClick={() => void openApprovalReview(automation)} disabled={approvalLoading}>{approvalLoading ? 'Loading approval…' : 'Review approval'}</button> : null}</div> : null}
+                {live && automation.webhookEnabled && automation.webhookPath ? <details className="automation-instruction"><summary>Webhook endpoint</summary><code>{automation.webhookPath}</code><p>The secret is never shown again. Disable then re-enable this trigger to rotate it.</p></details> : null}
+                {live && automation.latestExecution ? <div className={`automation-execution-status is-${automation.latestExecution.status}`}><span>Latest run</span><small>Started by {triggerSourceLabel(automation.latestExecution.triggerType)}</small><strong>{automation.latestExecution.status.replace(/_/g, ' ')}</strong>{automation.latestExecution.retryCount > 0 ? <small>{automation.latestExecution.retryCount} retries</small> : null}{automation.latestExecution.status === 'waiting_for_approval' ? <button type="button" onClick={() => void openApprovalReview(automation)} disabled={approvalLoading}>{approvalLoading ? 'Loading approval…' : 'Review approval'}</button> : null}</div> : null}
                 {live ? (
                   <div className="automation-history">
                     <button
@@ -368,6 +374,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                             {historyByAutomation[automation.id].map((run) => (
                               <li key={run.event_id} className={`automation-execution-status is-${run.status}`}>
                                 <time dateTime={run.queued_at}>{run.queued_at}</time>
+                                <small className="automation-trigger-origin">via {triggerSourceLabel(run.trigger_type)}</small>
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
                                 {run.status === 'queued' && onCancelRun ? <button type="button" onClick={() => void cancelQueuedRun(automation, run)} disabled={cancellingEventId !== null} title="Cancel only if AURA has not started this run">{cancellingEventId === run.event_id ? 'Cancelling…' : 'Cancel queued run'}</button> : run.status === 'cancelled' ? <span>Cancelled before execution</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
@@ -471,7 +478,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
             <label><span>Name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Weekly literature scan" /></label>
             <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this routine is for" /></label>
             <label><span>Instruction for AURA</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what AURA should do each time it runs" rows={4} /></label>
-            <label className="automation-webhook-option"><input type="checkbox" checked={webhookEnabled} onChange={(event) => setWebhookEnabled(event.target.checked)} /><span><strong>Allow signed webhook triggers</strong><small>External services can queue this saved instruction. Request bodies are ignored.</small></span></label>
+            <label className="automation-webhook-option"><input type="checkbox" checked={webhookEnabled} onChange={(event) => setWebhookEnabled(event.target.checked)} /><span><strong>Allow secret-authenticated webhook triggers</strong><small>External services can queue this saved instruction. Request bodies are ignored.</small></span></label>
             {editingAutomation ? <p className="modal-note">Scope stays {editingAutomation.scope === 'global' ? 'global' : `in ${editingAutomation.projectName ?? 'its current project'}`} so this routine keeps its existing session and history.</p> : <><div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>{scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}</>}
             <label><span>Schedule</span><select aria-label="Schedule" value={scheduleMode} onChange={(event) => setScheduleMode(event.target.value as typeof scheduleMode)}><option value="interval">Repeat after an interval</option><option value="daily">Every day at a local time</option><option value="weekly">Selected weekdays at a local time</option></select></label>
             {scheduleMode === 'interval' ? <label className="automation-interval"><span>Run every</span><input type="number" min={unit === 'seconds' ? 60 : 1} max={31536000 / intervalUnits[unit]} value={interval} onChange={(event) => setInterval(Math.max(unit === 'seconds' ? 60 : 1, Number(event.target.value) || 1))} /><select value={unit} onChange={(event) => { const nextUnit = event.target.value as IntervalUnit; setUnit(nextUnit); setInterval((current) => Math.max(nextUnit === 'seconds' ? 60 : 1, current)); }}><option value="seconds">seconds</option><option value="minutes">minutes</option><option value="hours">hours</option><option value="days">days</option></select></label> : <>

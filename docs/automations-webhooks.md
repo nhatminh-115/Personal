@@ -1,11 +1,11 @@
-# Signed Automation webhooks
+# Bearer-authenticated Automation webhooks
 
 Automations can keep their interval or wall-clock schedule and also accept an
 external webhook signal.
 
 ## Configure
 
-Enable **Allow signed webhook triggers** when creating or editing an
+Enable **Allow secret-authenticated webhook triggers** when creating or editing an
 Automation. AURA returns the relative endpoint and a random bearer secret once.
 Copy the secret into the external service's secret store. AURA stores only its
 SHA-256 digest; the secret cannot be recovered later. To replace a lost or

@@ -29,6 +29,13 @@ router = APIRouter(prefix="/v1/automations", tags=["Automations"])
 WEBHOOK_EVENT_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
+def _automation_trigger_type(event_type: str) -> str:
+    return {
+        EventType.CRON_TICK.value: "schedule",
+        EventType.WEBHOOK_RECEIVED.value: "webhook",
+    }.get(event_type, "manual")
+
+
 class AutomationEnabledWrite(BaseModel):
     enabled: bool
 
@@ -127,6 +134,7 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
             queued_at=event.occurred_at,
             status=execution_status,
             retry_count=event.retry_count,
+            trigger_type=_automation_trigger_type(event.event_type),
         )
     return response
 
@@ -321,7 +329,7 @@ async def trigger_automation_webhook(
     event_id: str | None = Header(default=None, alias="X-Aura-Event-Id"),
     db: AsyncSession = Depends(get_db),
 ) -> WebhookRunResponse:
-    """Queue a signed webhook signal without retaining its caller-supplied body."""
+    """Queue an authenticated webhook signal without retaining its caller-supplied body."""
     result = await db.execute(
         select(ScheduledJobModel)
         .where(ScheduledJobModel.id == automation_id)
@@ -355,7 +363,7 @@ async def trigger_automation_webhook(
     payload = job.payload_json if isinstance(job.payload_json, dict) else {}
     event = AURAEvent(
         event_type=EventType.WEBHOOK_RECEIVED.value,
-        source="signed_webhook",
+        source="authenticated_webhook",
         payload={
             "message": payload.get("message"),
             "session_id": payload.get("session_id"),
@@ -607,6 +615,7 @@ async def list_automation_runs(
                 else runs[run_id].status if run_id in runs else event_status.get(event.status, event.status)
             ),
             retry_count=event.retry_count,
+            trigger_type=_automation_trigger_type(event.event_type),
         )
         for event, run_id in zip(events, run_ids)
     ]
@@ -669,5 +678,6 @@ async def cancel_queued_automation_run(
         queued_at=event.occurred_at,
         status="cancelled",
         retry_count=event.retry_count,
+        trigger_type=_automation_trigger_type(event.event_type),
     )
 

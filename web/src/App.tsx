@@ -2300,7 +2300,7 @@ export default function App() {
       lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
       nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
       lastRunAt: record.last_run_at, nextRunAt: record.next_run_at,
-      latestExecution: latest ? { eventId: latest.event_id, runId: latest.run_id, queuedAt: latest.queued_at, status: latest.status, retryCount: latest.retry_count } : null,
+      latestExecution: latest ? { eventId: latest.event_id, runId: latest.run_id, queuedAt: latest.queued_at, status: latest.status, retryCount: latest.retry_count, triggerType: latest.trigger_type } : null,
       status: record.enabled ? latest?.status as AutomationRecord['status'] ?? 'ready' : 'paused', source: 'live',
     };
   }, []);
