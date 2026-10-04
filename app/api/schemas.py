@@ -330,7 +330,7 @@ class StudySessionResponse(BaseModel):
 class WorkspaceLibraryReferenceWrite(BaseModel):
     id: Optional[UUID] = None
     name: str = Field(min_length=1, max_length=255)
-    kind: Literal["HTML", "PDF", "DOCX", "XLSX", "MD", "CSV", "TXT", "JSON", "IMAGE", "FILE"]
+    kind: Literal["HTML", "PDF", "DOCX", "XLSX", "PPTX", "MD", "CSV", "TXT", "JSON", "IMAGE", "FILE"]
     collection: Literal["Study", "Books", "Research", "Reference"]
     detail: str = Field(default="", max_length=500)
     tags: List[str] = Field(default_factory=list, max_length=32)

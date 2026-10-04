@@ -57,6 +57,29 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
 
 
 @pytest.mark.asyncio
+async def test_powerpoint_reference_metadata_is_accepted_without_content(async_client):
+    reference_id = str(uuid4())
+    created = await async_client.post("/v1/workspace/library", json={
+        "id": reference_id,
+        "name": "Lecture deck",
+        "kind": "PPTX",
+        "collection": "Study",
+        "detail": "Imported local file · lecture.pptx",
+        "tags": ["lecture"],
+        "project_names": ["aura"],
+        "size": 1024,
+        "mime_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    })
+    assert created.status_code == 201
+    assert created.json()["kind"] == "PPTX"
+
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    reference = next(item for item in graph["objects"] if item["id"] == reference_id)
+    assert reference["content"] == ""
+    assert reference["metadata_json"]["kind"] == "PPTX"
+
+
+@pytest.mark.asyncio
 async def test_workspace_library_accepts_docx_reference_metadata(async_client):
     created = await async_client.post("/v1/workspace/library", json={
         "name": "Local report",
