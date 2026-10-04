@@ -174,6 +174,11 @@ Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Plain text
 files decode UTF-8 by default and honor UTF-8, UTF-16LE, and UTF-16BE BOMs.
 Plain text input is limited to 80,000 bytes and 20,000 decoded characters.
+Imported RTF files are reduced to plain text locally, including paragraph,
+Unicode, and Windows-1252 escaped text. Formatting and embedded object data are
+omitted; the parser accepts up to 80,000 bytes and returns at most 20,000
+characters. The original RTF remains browser-local until the user explicitly
+selects **Send text**.
 Imported PDFs can also be parsed locally after that explicit action; selectable
 text is read directly and textless pages use bundled English/Vietnamese OCR
 models, capped at five pages per file. The browser parser enforces a 10 MB file
