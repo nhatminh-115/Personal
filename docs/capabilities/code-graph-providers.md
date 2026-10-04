@@ -25,7 +25,15 @@ closed. Tool risk, permission, and approval policy is still enforced by AURA.
 
 ## Dogfood status
 
-Live CodeGraph dogfood is pending external installation and workspace setup. Do not install or download CodeGraph automatically, and do not describe it as live-verified until the documented run evidence exists. This pending setup blocks only CodeGraph dogfooding; independent AURA milestones continue.
+CodeGraph 0.20.1 has been installed with telemetry disabled in the current
+maintainer's Windows environment. AURA MCP discovery reported the provider
+healthy with nine allowlisted tools, and a read-only `symbol_search` query
+returned `app/mcp/manager.py:157`. This verifies provider discovery and a tool
+call only; the full Coding Specialist dogfood still needs live model
+credentials and a run-addressable report. The optional provider remains
+external, must not be installed automatically, and is not a CI dependency.
+Credential-gated dogfood blocks only that scenario; independent AURA milestones
+continue.
 
 ## Candidate review
 
