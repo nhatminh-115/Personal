@@ -689,6 +689,18 @@ class MemoryActivationUpdate(BaseModel):
     is_active: bool
 
 
+class ProjectMemoryContentUpdate(BaseModel):
+    content: str = Field(min_length=1, max_length=12_000)
+
+    @field_validator("content")
+    @classmethod
+    def validate_content(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Memory content must not be blank.")
+        return cleaned
+
+
 # --- Research Inspector Schema ---
 class ResearchInspectorResponse(BaseModel):
     run_id: str

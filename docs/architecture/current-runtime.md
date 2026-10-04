@@ -197,6 +197,10 @@ declaring a local or air-gapped boundary may embed confidential or local-only
 content. If the configured provider cannot meet that boundary, AURA skips
 semantic lookup or retains the memory without a vector; it does not silently
 send the text to a cloud embedding service or substitute another provider.
+Correcting an active project memory creates a superseding version with the same
+project/key/privacy metadata and preserves the old record and provenance. The
+replacement vector is regenerated only when the configured embedder satisfies
+that memory's privacy requirement.
 
 The Execution Graph is a read-only projection of persisted run events. Run-event
 records and their structured logs keep operational metadata while excluding

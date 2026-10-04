@@ -598,6 +598,17 @@ export default function App() {
     if (updated.memory_type === 'profile') setProfileMemories((current) => current ? updateList(current) : current);
     else setMemories(updateList);
   }, [activeProject?.name]);
+  const editProjectMemory = useCallback(async (memory: MemoryItem, content: string) => {
+    if (!activeProject?.name) throw new Error('Select a project before editing project memory.');
+    const replacement = await api.editProjectMemory(activeProject.name, memory.id, content);
+    setMemories((current) => [
+      replacement,
+      ...current.map((item) => item.id === memory.id
+        ? { ...item, is_active: false, superseded_by_id: replacement.id }
+        : item),
+    ].filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index));
+    return replacement;
+  }, [activeProject?.name]);
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
 
@@ -3061,6 +3072,7 @@ export default function App() {
             onLoadProfileMemories={() => loadProfileMemoryPage()}
             onLoadMoreProfileMemories={() => loadProfileMemoryPage(profileMemoryNextCursor, true)}
             onSetMemoryActive={setMemoryActive}
+            onEditProjectMemory={editProjectMemory}
             onOpenSourceChat={(sessionId) => { void openMemorySourceChat(sessionId); }}
             onOpenSourceRun={(runId) => { void openMemorySourceRun(runId); }}
             onClose={() => setInspectorOpen(false)}

@@ -108,6 +108,76 @@ async def test_project_memory_can_be_deactivated_and_restored_without_deletion(a
 
 
 @pytest.mark.asyncio
+async def test_edit_project_memory_creates_a_scoped_version_and_preserves_provenance(async_client, test_db_session):
+    original = MemoryModel(
+        id="memory-original",
+        memory_type="project",
+        project_name="Atlas",
+        key="release_guard",
+        content="One reviewer is enough.",
+        confidence=0.87,
+        is_active=True,
+        metadata_json={"privacy_policy": "local_only", "source_run_id": "run-source"},
+    )
+    test_db_session.add(original)
+    await test_db_session.commit()
+
+    response = await async_client.put(
+        f"/v1/memory/projects/Atlas/{original.id}",
+        json={"content": "Require two reviewers before release."},
+    )
+
+    assert response.status_code == 200
+    replacement = response.json()
+    assert replacement["id"] != original.id
+    assert replacement["content"] == "Require two reviewers before release."
+    assert replacement["key"] == original.key
+    assert replacement["project_name"] == "Atlas"
+    assert replacement["confidence"] == original.confidence
+    assert replacement["is_active"] is True
+    assert replacement["supersedes_id"] == original.id
+    assert replacement["metadata_json"] == {
+        "privacy_policy": "local_only",
+        "edited_by": "user",
+        "edited_from_memory_id": original.id,
+        "source": "user_edit",
+    }
+
+    old_version = await test_db_session.get(MemoryModel, original.id)
+    assert old_version.is_active is False
+    assert old_version.superseded_by_id == replacement["id"]
+    assert old_version.content == "One reviewer is enough."
+    assert old_version.metadata_json["source_run_id"] == "run-source"
+    active = await SQLMemoryService(test_db_session).get_project_memories("Atlas")
+    assert [(item.id, item.content) for item in active] == [(replacement["id"], "Require two reviewers before release.")]
+
+
+@pytest.mark.asyncio
+async def test_edit_project_memory_rejects_wrong_scope_inactive_and_blank_content(async_client, test_db_session):
+    inactive = MemoryModel(
+        id="inactive-memory", memory_type="project", project_name="Atlas", key="guard",
+        content="Prior version.", confidence=1.0, is_active=False, metadata_json={},
+    )
+    test_db_session.add(inactive)
+    await test_db_session.commit()
+
+    wrong_scope = await async_client.put(
+        f"/v1/memory/projects/Borealis/{inactive.id}", json={"content": "Corrected."}
+    )
+    assert wrong_scope.status_code == 404
+
+    inactive_edit = await async_client.put(
+        f"/v1/memory/projects/Atlas/{inactive.id}", json={"content": "Corrected."}
+    )
+    assert inactive_edit.status_code == 409
+
+    blank = await async_client.put(
+        f"/v1/memory/projects/Atlas/{inactive.id}", json={"content": "   "}
+    )
+    assert blank.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_project_memory_restore_rejects_an_active_replacement(async_client, test_db_session):
     old = MemoryModel(
         id="memory-old",

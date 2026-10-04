@@ -42,6 +42,7 @@ export interface InspectorPanelProps {
   onLoadProfileMemories?: () => Promise<void>;
   onLoadMoreProfileMemories?: () => Promise<void>;
   onSetMemoryActive?: (memory: MemoryItem, isActive: boolean) => Promise<void>;
+  onEditProjectMemory?: (memory: MemoryItem, content: string) => Promise<MemoryItem>;
   onOpenSourceChat?: (sessionId: string) => void;
   onOpenSourceRun?: (runId: string) => void;
   onClose: () => void;
@@ -86,6 +87,8 @@ function MemoryProvenance({ memory, onOpenSourceChat, onOpenSourceRun }: { memor
   const sources = memoryMetadataStringList(metadata.source_references);
   const origin = metadata.created_by === 'research_specialist'
     ? 'Research Specialist finding'
+    : metadata.edited_by === 'user'
+      ? 'User correction'
     : metadata.explicit === true
       ? 'Explicit remember request'
       : metadata.source_run_id || metadata.source_session_id
@@ -137,6 +140,7 @@ export function InspectorPanel({
   onLoadProfileMemories,
   onLoadMoreProfileMemories,
   onSetMemoryActive,
+  onEditProjectMemory,
   onOpenSourceChat,
   onOpenSourceRun,
   onClose,
@@ -153,6 +157,8 @@ export function InspectorPanel({
   const [capabilityRefreshError, setCapabilityRefreshError] = useState<string | null>(null);
   const [refreshingCapabilityId, setRefreshingCapabilityId] = useState<string | null>(null);
   const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
+  const [editingMemoryId, setEditingMemoryId] = useState<string | null>(null);
+  const [memoryDraftContent, setMemoryDraftContent] = useState('');
   const [memoryActionError, setMemoryActionError] = useState<string | null>(null);
   const [memoryReviewError, setMemoryReviewError] = useState<string | null>(null);
   const [loadingReviewMemoryId, setLoadingReviewMemoryId] = useState<string | null>(null);
@@ -170,6 +176,21 @@ export function InspectorPanel({
       await onSetMemoryActive(memory, isActive);
     } catch (error) {
       setMemoryActionError(error instanceof Error ? error.message : 'Could not update this memory.');
+    } finally {
+      setUpdatingMemoryId(null);
+    }
+  };
+
+  const saveProjectMemoryEdit = async (memory: MemoryItem) => {
+    if (!onEditProjectMemory) return;
+    setUpdatingMemoryId(memory.id);
+    setMemoryActionError(null);
+    try {
+      await onEditProjectMemory(memory, memoryDraftContent);
+      setEditingMemoryId(null);
+      setMemoryDraftContent('');
+    } catch (error) {
+      setMemoryActionError(error instanceof Error ? error.message : 'Could not save this memory correction.');
     } finally {
       setUpdatingMemoryId(null);
     }
@@ -602,6 +623,30 @@ export function InspectorPanel({
                       </span>
                     </div>
                     <p style={{ margin: '4px 0 0', fontSize: 11, color: '#cfdce2' }}>{m.content}</p>
+                    {editingMemoryId === m.id ? (
+                      <div style={{ marginTop: 8 }}>
+                        <label htmlFor={`memory-edit-${m.id}`} style={{ display: 'block', fontSize: 10, marginBottom: 4 }}>Correct this project memory</label>
+                        <textarea
+                          id={`memory-edit-${m.id}`}
+                          value={memoryDraftContent}
+                          maxLength={12_000}
+                          onChange={(event) => setMemoryDraftContent(event.target.value)}
+                          rows={4}
+                          style={{ width: '100%', resize: 'vertical' }}
+                        />
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <button
+                            className="secondary-button"
+                            type="button"
+                            disabled={!memoryDraftContent.trim() || memoryDraftContent === m.content || updatingMemoryId === m.id}
+                            onClick={() => { void saveProjectMemoryEdit(m); }}
+                          >
+                            {updatingMemoryId === m.id ? 'Saving…' : 'Save correction'}
+                          </button>
+                          <button className="secondary-button" type="button" onClick={() => { setEditingMemoryId(null); setMemoryDraftContent(''); }}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : null}
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                       <small style={{ color: '#566e7c', fontSize: 10 }}>
                         Confidence: {(m.confidence * 100).toFixed(0)}%
@@ -621,6 +666,17 @@ export function InspectorPanel({
                       {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why AURA remembers this'}
                     </button>
                     {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} onOpenSourceChat={onOpenSourceChat} onOpenSourceRun={onOpenSourceRun} /> : null}
+                    {memoryScope === 'project' && m.memory_type === 'project' && m.is_active && onEditProjectMemory ? (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={updatingMemoryId === m.id}
+                        onClick={() => { setEditingMemoryId(m.id); setMemoryDraftContent(m.content); setMemoryActionError(null); }}
+                        style={{ marginTop: 8, fontSize: 10 }}
+                      >
+                        Edit memory
+                      </button>
+                    ) : null}
                     {(m.memory_type === 'project' || m.memory_type === 'profile') && onSetMemoryActive ? (
                       <button
                         className="secondary-button"
