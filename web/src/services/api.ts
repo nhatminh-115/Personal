@@ -579,6 +579,7 @@ export const api = {
     project_name?: string;
     interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+    webhook_enabled?: boolean;
   }): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
@@ -591,6 +592,7 @@ export const api = {
     instruction: string;
     interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
+    webhook_enabled?: boolean;
   }): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),

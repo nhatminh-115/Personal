@@ -104,7 +104,7 @@ class PersistentScheduler:
         result = await db.execute(query)
         return list(result.scalars().all())
 
-    async def _automation_has_active_execution(self, db: AsyncSession, job: ScheduledJobModel) -> bool:
+    async def has_active_automation_execution(self, db: AsyncSession, job: ScheduledJobModel) -> bool:
         """Avoid overlapping unattended automation runs while a prior trigger is still active."""
         metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
         if metadata.get("kind") != "automation":
@@ -114,7 +114,11 @@ class PersistentScheduler:
             select(EventRecordModel)
             .where(
                 EventRecordModel.correlation_id == job.id,
-                EventRecordModel.event_type.in_({EventType.TIMER_FIRED.value, EventType.CRON_TICK.value}),
+                EventRecordModel.event_type.in_({
+                    EventType.TIMER_FIRED.value,
+                    EventType.CRON_TICK.value,
+                    EventType.WEBHOOK_RECEIVED.value,
+                }),
             )
             .order_by(EventRecordModel.occurred_at.desc(), EventRecordModel.id.desc())
             .limit(1)
@@ -198,7 +202,7 @@ class PersistentScheduler:
             job = await db.get(ScheduledJobModel, candidate.id)
             if not job:
                 continue
-            if job.job_type != JobType.ONE_SHOT.value and await self._automation_has_active_execution(db, job):
+            if job.job_type != JobType.ONE_SHOT.value and await self.has_active_automation_execution(db, job):
                 try:
                     interval = float(job.schedule_expression)
                     metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}

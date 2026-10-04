@@ -305,6 +305,9 @@ export interface AutomationRecord {
   source?: 'demo' | 'live';
   instruction?: string;
   intervalSeconds?: number;
+  webhookEnabled?: boolean;
+  webhookPath?: string | null;
+  webhookSecret?: string | null;
   schedule?: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   lastRunAt?: string | null;
   nextRunAt?: string | null;

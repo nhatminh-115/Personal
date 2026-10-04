@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
         allow_origins=allowed_origins,
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Content-Type", "Authorization"],
+        allow_headers=["Content-Type", "Authorization", "X-Aura-Event-Id"],
         expose_headers=["X-Next-Cursor"],
     )
 

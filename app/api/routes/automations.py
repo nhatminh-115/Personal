@@ -1,9 +1,13 @@
 """Durable user automation definitions backed by the persistent scheduler."""
 
+import hashlib
+import hmac
+import re
+import secrets
 import uuid
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,13 +22,20 @@ from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunS
 from app.db.session import get_db
 from app.events.bus import event_bus
 from app.events.automation_schedule import next_automation_run
+from app.events.scheduler import persistent_scheduler
 from app.events.types import AURAEvent, EventType
 
 router = APIRouter(prefix="/v1/automations", tags=["Automations"])
+WEBHOOK_EVENT_ID = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 
 
 class AutomationEnabledWrite(BaseModel):
     enabled: bool
+
+
+class WebhookRunResponse(BaseModel):
+    event_id: str
+    status: str = "queued"
 
 
 def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
@@ -50,6 +61,8 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
         project_name=metadata.get("project_name") if isinstance(metadata.get("project_name"), str) else None,
         interval_seconds=interval_seconds,
         schedule=schedule,
+        webhook_enabled=bool(metadata.get("webhook_secret_hash")),
+        webhook_path=f"/v1/automations/{job.id}/webhook/events" if metadata.get("webhook_secret_hash") else None,
         last_run_at=job.last_run_at,
         next_run_at=job.next_run_at,
         created_at=job.created_at,
@@ -71,7 +84,7 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
         )
         .where(
             EventRecordModel.correlation_id.in_(job_ids),
-            EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+            EventRecordModel.event_type.in_({"timer.fired", "cron.tick", EventType.WEBHOOK_RECEIVED.value}),
         )
         .subquery()
     )
@@ -192,6 +205,7 @@ async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(ge
 
     now = utc_now()
     schedule = body.schedule
+    webhook_secret = secrets.token_urlsafe(32) if body.webhook_enabled else None
     job = ScheduledJobModel(
         name=name,
         job_type=JobType.RECURRING.value,
@@ -218,10 +232,12 @@ async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(ge
         "project_name": body.project_name.strip() if body.scope == "project" and body.project_name else None,
         "schedule": schedule.model_dump(),
     }
+    if webhook_secret:
+        job.metadata_json["webhook_secret_hash"] = hashlib.sha256(webhook_secret.encode("utf-8")).hexdigest()
     await db.commit()
     await db.refresh(job)
     latest = await _latest_executions(db, [job])
-    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
+    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id), "webhook_secret": webhook_secret})
 
 
 @router.put("/{automation_id}", response_model=AutomationResponse)
@@ -282,6 +298,12 @@ async def update_automation(
     metadata["description"] = body.description.strip()
     metadata["instruction"] = body.instruction.strip()
     metadata["schedule"] = schedule.model_dump()
+    webhook_secret = None
+    if body.webhook_enabled is True and not metadata.get("webhook_secret_hash"):
+        webhook_secret = secrets.token_urlsafe(32)
+        metadata["webhook_secret_hash"] = hashlib.sha256(webhook_secret.encode("utf-8")).hexdigest()
+    elif body.webhook_enabled is False:
+        metadata.pop("webhook_secret_hash", None)
     payload["message"] = body.instruction.strip()
     job.metadata_json = metadata
     job.payload_json = payload
@@ -289,7 +311,62 @@ async def update_automation(
     await db.commit()
     await db.refresh(job)
     latest = await _latest_executions(db, [job])
-    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id)})
+    return _automation_response(job).model_copy(update={"latest_execution": latest.get(job.id), "webhook_secret": webhook_secret})
+
+
+@router.post("/{automation_id}/webhook/events", response_model=WebhookRunResponse, status_code=status.HTTP_202_ACCEPTED)
+async def trigger_automation_webhook(
+    automation_id: str,
+    authorization: str | None = Header(default=None),
+    event_id: str | None = Header(default=None, alias="X-Aura-Event-Id"),
+    db: AsyncSession = Depends(get_db),
+) -> WebhookRunResponse:
+    """Queue a signed webhook signal without retaining its caller-supplied body."""
+    result = await db.execute(
+        select(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    job = result.scalar_one_or_none()
+    if job is None or (job.metadata_json or {}).get("kind") != "automation":
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
+    secret_hash = metadata.get("webhook_secret_hash")
+    if not isinstance(secret_hash, str) or not secret_hash:
+        raise HTTPException(status_code=404, detail="Webhook trigger is not configured.")
+    token = authorization[7:].strip() if isinstance(authorization, str) and authorization.lower().startswith("bearer ") else ""
+    supplied_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    if not token or not hmac.compare_digest(supplied_hash, secret_hash):
+        raise HTTPException(status_code=401, detail="Webhook authentication failed.", headers={"WWW-Authenticate": "Bearer"})
+    if metadata.get("archived") is True:
+        raise HTTPException(status_code=404, detail="Automation not found.")
+    if not job.is_active:
+        raise HTTPException(status_code=409, detail="Paused automations cannot be triggered.")
+    if not isinstance(event_id, str) or not WEBHOOK_EVENT_ID.fullmatch(event_id):
+        raise HTTPException(status_code=422, detail="X-Aura-Event-Id must contain 1–128 letters, digits, dots, underscores, colons, or hyphens.")
+    idempotency_key = f"automation-webhook-{job.id}-{event_id}"
+    duplicate = await db.scalar(select(EventRecordModel).where(EventRecordModel.idempotency_key == idempotency_key))
+    if duplicate is not None:
+        return WebhookRunResponse(event_id=duplicate.id)
+    if await persistent_scheduler.has_active_automation_execution(db, job):
+        raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
+
+    payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+    event = AURAEvent(
+        event_type=EventType.WEBHOOK_RECEIVED.value,
+        source="signed_webhook",
+        payload={
+            "message": payload.get("message"),
+            "session_id": payload.get("session_id"),
+            "project_name": payload.get("project_name"),
+            "automation_id": job.id,
+        },
+        correlation_id=job.id,
+        idempotency_key=idempotency_key,
+    )
+    published = await event_bus.publish(event, db=db, dispatch_immediate=False)
+    return WebhookRunResponse(event_id=published.id)
 
 
 async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSession) -> AutomationResponse:
@@ -485,7 +562,7 @@ async def list_automation_runs(
     page_limit = page_size if page_size is not None else limit if limit is not None else 10
     query = select(EventRecordModel).where(
         EventRecordModel.correlation_id == automation_id,
-        EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+        EventRecordModel.event_type.in_({"timer.fired", "cron.tick", EventType.WEBHOOK_RECEIVED.value}),
     )
     if cursor is not None:
         cursor_timestamp, cursor_id = decode_timestamp_id_cursor(cursor)
@@ -548,7 +625,7 @@ async def cancel_queued_automation_run(
     event_filter = and_(
         EventRecordModel.id == event_id,
         EventRecordModel.correlation_id == automation_id,
-        EventRecordModel.event_type.in_({"timer.fired", "cron.tick"}),
+        EventRecordModel.event_type.in_({"timer.fired", "cron.tick", EventType.WEBHOOK_RECEIVED.value}),
     )
     result = await db.execute(select(EventRecordModel).where(event_filter))
     event = result.scalar_one_or_none()
