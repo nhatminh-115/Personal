@@ -62,6 +62,11 @@ The research dogfood never submits a tool approval. If **/v1/chat** pauses for a
 
 Reports include identifiers, route decisions, tool names, statuses, counts, and safe context manifests. They do not include prompts, source excerpts, memory text, or model responses. Treat the isolated database and checkpoint files as run evidence; a later run will not delete them.
 
+The Coding Specialist dogfood also writes a sanitized report when `/v1/chat`
+returns a non-200 response, provided the failed run was persisted. The report
+uses the run ID recovered from its isolated session and records the HTTP status
+and safe persisted events; it does not copy the response body or exception text.
+
 ## Interpreting results
 
 A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph provider smoke is verified locally; the Coding Specialist dogfood additionally requires hosted credentials or an explicit local Ollama override.
