@@ -105,7 +105,7 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     expect(await view.findByText(/file\|Local budget\.pdf\|file reference · metadata only/)).toHaveTextContent(
-      'file reference · metadata only · this browser has no supported local text, PDF, Word document, or spreadsheet copy available|4',
+      'file reference · metadata only · this browser has no supported local text, PDF, Word document, spreadsheet, or image copy available|4',
     );
   });
 
@@ -189,6 +189,27 @@ describe('live chat context loading', () => {
 
     const contextItem = await view.findByText(/file\|Local budget\.xlsx\|browser-local spreadsheet/);
     expect(contextItem).toHaveTextContent('text is extracted here only after you explicitly send it with a message');
+    fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
+    expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
+  });
+
+  it('offers browser-local image OCR text only for an imported image available in this browser', async () => {
+    vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
+      objects: [{
+        id: 'file-reference-1', project_name: null, object_type: 'file_reference', created_by: 'user',
+        title: 'Receipt.png', content: '', metadata_json: { storage_location: 'browser_local' },
+        created_at: '2026-10-05T00:00:00Z', updated_at: '2026-10-05T00:00:00Z',
+      } as any],
+      nextCursor: null,
+    });
+    const onSendFileContent = vi.fn();
+    const view = renderWorkspace([{
+      id: 'file-reference-1', name: 'Receipt', kind: 'IMAGE', source: 'imported', blobKey: 'local-image-1', size: 1_500,
+    }], onSendFileContent);
+    fireEvent.click(view.getByRole('button', { name: 'Open context' }));
+
+    const contextItem = await view.findByText(/file\|Receipt\.png\|browser-local image OCR/);
+    expect(contextItem).toHaveTextContent('image pixels are not sent for vision');
     fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
     expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
   });
