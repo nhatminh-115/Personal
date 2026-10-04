@@ -164,6 +164,7 @@ describe('InspectorPanel Component', () => {
   });
 
   it('shows memory provenance without exposing the stored evidence snapshot', () => {
+    const onOpenSourceChat = vi.fn();
     const memory: MemoryItem = {
       ...sampleMemories[0],
       metadata_json: {
@@ -178,7 +179,7 @@ describe('InspectorPanel Component', () => {
       },
       superseded_by_id: 'memory-next-version',
     };
-    render(<InspectorPanel memories={[memory]} onClose={vi.fn()} />);
+    render(<InspectorPanel memories={[memory]} onOpenSourceChat={onOpenSourceChat} onClose={vi.fn()} />);
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
     fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
 
@@ -190,6 +191,8 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('arXiv:2401.0001')).toBeInTheDocument();
     expect(screen.getByText('memory-next-version')).toBeInTheDocument();
     expect(screen.queryByText(/Sensitive source excerpt/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Open source chat' }));
+    expect(onOpenSourceChat).toHaveBeenCalledWith('source-session-1');
   });
 
   it('renders routing tab without invented prototype routing data', () => {

@@ -175,6 +175,7 @@ class MessageResponse(BaseModel):
 class SessionDetailResponse(BaseModel):
     id: str
     title: str
+    project_name: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     messages: List[MessageResponse]

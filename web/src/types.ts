@@ -198,6 +198,7 @@ export interface SessionSummary {
 export interface SessionDetail {
   id: string;
   title: string;
+  project_name?: string | null;
   created_at: string;
   updated_at: string;
   messages: SessionMessage[];
