@@ -1,5 +1,5 @@
 import { zipSync, strToU8 } from 'fflate';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   extractEpubText,
   MAX_LOCAL_EPUB_BYTES,
@@ -58,6 +58,27 @@ describe('browser-local EPUB chapter extraction', () => {
   it('rejects malformed archives and empty chapter text clearly', async () => {
     await expect(extractEpubText(new Blob(['not a zip archive']))).rejects.toThrow('not a readable EPUB');
     await expect(extractEpubText(epub(['   ']))).rejects.toThrow('no extractable chapter text');
+  });
+
+  it.each([
+    { mediaType: 'text/html', path: 'ch1.html' },
+    { mediaType: 'application/xhtml+xml', path: 'ch1.xhtml' },
+  ])('removes remote resources before parsing $mediaType spine chapters', async ({ mediaType, path }) => {
+    const packageXml = `<package xmlns="http://www.idpf.org/2007/opf"><manifest><item id="chapter" href="Text/${path}" media-type="${mediaType}"/></manifest><spine><itemref idref="chapter"/></spine></package>`;
+    const html = '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>Visible chapter</p><img src="https://example.test/pixel"/><iframe src="https://example.test/frame"></iframe><script>window.__epubExecuted = true</script></body></html>';
+    const blob = new Blob([zipSync({
+      'META-INF/container.xml': containerXml(),
+      'OPS/package.opf': strToU8(packageXml),
+      [`OPS/Text/${path}`]: strToU8(html),
+    })]);
+    const parser = vi.spyOn(DOMParser.prototype, 'parseFromString');
+
+    await expect(extractEpubText(blob)).resolves.toContain('Visible chapter');
+    const chapterCall = parser.mock.calls.find(([, mimeType]) => mimeType === mediaType);
+    expect(chapterCall).toBeDefined();
+    expect(String(chapterCall?.[0])).not.toMatch(/https:\/\/example\.test|<img\b|<iframe\b|<script\b/i);
+    expect(window).not.toHaveProperty('__epubExecuted');
+    parser.mockRestore();
   });
 
   it('rejects unsafe chapter paths that escape the archive root', async () => {

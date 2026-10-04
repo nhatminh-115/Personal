@@ -15,7 +15,7 @@ function readBlobAsText(blob: Blob): Promise<string> {
   });
 }
 
-function neutralizeHtmlResources(source: string): string {
+export function neutralizeHtmlResources(source: string): string {
   return source
     // DOMParser documents are inert but can still fetch iframe and image URLs.
     .replace(/<(script|style|svg|iframe|img|picture|object|embed|video|audio|source|track|link|base|frame|frameset)\b[^>]*>(?:[\s\S]*?<\/\1\s*>)?/gi, ' ')
