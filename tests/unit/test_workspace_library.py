@@ -100,3 +100,39 @@ async def test_library_search_escapes_sql_wildcards_and_rejects_blank_query(asyn
     assert len((await async_client.get("/v1/workspace/library", params={"q": "%"})).json()) == 1
     assert (await async_client.get("/v1/workspace/library", params={"q": "_"})).json() == []
     assert (await async_client.get("/v1/workspace/library", params={"q": "   "})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_library_link_candidates_exclude_references_already_linked_to_project(async_client):
+    linked_id, candidate_id, other_linked_id = str(uuid4()), str(uuid4()), str(uuid4())
+    for item_id, project_names in (
+        (linked_id, ["aura"]),
+        (candidate_id, []),
+        (other_linked_id, ["another-project"]),
+    ):
+        response = await async_client.post("/v1/workspace/library", json={
+            "id": item_id, "name": "Durable context paper", "kind": "PDF", "collection": "Research",
+            "detail": "candidate search phrase", "tags": [], "project_names": project_names,
+        })
+        assert response.status_code == 201
+
+    candidates = await async_client.get("/v1/workspace/library", params={
+        "q": "candidate search", "unlinked_project_name": "aura", "page_size": 1,
+    })
+    assert len(candidates.json()) == 1
+    assert candidates.json()[0]["id"] in {candidate_id, other_linked_id}
+    cursor = candidates.headers.get("X-Next-Cursor")
+    assert cursor
+    next_page = await async_client.get("/v1/workspace/library", params={
+        "q": "candidate search", "unlinked_project_name": "aura", "page_size": 1, "cursor": cursor,
+    })
+    assert len(next_page.json()) == 1
+    assert next_page.json()[0]["id"] in {candidate_id, other_linked_id}
+    assert next_page.json()[0]["id"] != candidates.json()[0]["id"]
+    assert {candidates.json()[0]["id"], next_page.json()[0]["id"]} == {candidate_id, other_linked_id}
+
+    unfiltered = await async_client.get("/v1/workspace/library", params={"q": "candidate search"})
+    assert {item["id"] for item in unfiltered.json()} == {linked_id, candidate_id, other_linked_id}
+
+    blank_project = await async_client.get("/v1/workspace/library", params={"unlinked_project_name": "  "})
+    assert blank_project.status_code == 422
