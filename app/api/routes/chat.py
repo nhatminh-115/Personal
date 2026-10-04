@@ -3,6 +3,7 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -15,7 +16,7 @@ from app.api.dependencies import (
 from app.api.schemas import ChatRequest, ChatResponse
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus, utc_now
+from app.db.models import RunModel, RunStatus, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel, utc_now
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
@@ -91,6 +92,42 @@ async def chat_endpoint(
         message_override=req.model_override,
         reasoning_override=req.reasoning_override,
     )
+    attachment_titles: dict[str, str] = {}
+    if req.context_attachments:
+        if not req.project_name:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="File content attachments require a project workspace scope.",
+            )
+        attachment_ids = [attachment.object_id for attachment in req.context_attachments]
+        linked_ids = select(WorkspaceObjectProjectLinkModel.object_id).where(
+            WorkspaceObjectProjectLinkModel.project_name == req.project_name
+        )
+        visible_attachment = or_(
+            WorkspaceObjectModel.project_name == req.project_name,
+            and_(
+                WorkspaceObjectModel.project_name.is_(None),
+                WorkspaceObjectModel.id.in_(linked_ids),
+            ),
+        )
+        result = await db.execute(
+            select(WorkspaceObjectModel).where(
+                WorkspaceObjectModel.id.in_(attachment_ids),
+                WorkspaceObjectModel.object_type == "file_reference",
+                WorkspaceObjectModel.created_by == "user",
+                visible_attachment,
+            )
+        )
+        visible_files = {item.id: item for item in result.scalars()}
+        if set(visible_files) != set(attachment_ids):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="A file content attachment is not a visible Library reference in this project.",
+            )
+        attachment_titles = {object_id: item.title for object_id, item in visible_files.items()}
+        # File text is user data. A cloud route must pause at the durable
+        # routing-confirmation boundary before any provider receives it.
+        root_context.require_cloud_confirmation = True
 
     # 2. Persist Run entity in database
     run_record = RunModel(
@@ -106,6 +143,7 @@ async def chat_endpoint(
             "is_lock_all": root_context.is_lock_all,
             "privacy_policy": root_context.privacy_requirement.value,
             "fallback_policy": root_context.fallback_policy.value,
+            "require_cloud_confirmation": root_context.require_cloud_confirmation,
             "explicit_model_override": root_context.explicit_model_override,
             "reasoning_policy": root_context.reasoning_policy.value if root_context.reasoning_policy else None,
             "reasoning_effort": root_context.reasoning_effort.value if root_context.reasoning_effort else None,
@@ -150,6 +188,14 @@ async def chat_endpoint(
         metadata=merged_metadata,
     )
     initial_state["context_object_ids"] = context_object_ids
+    initial_state["context_attachments"] = [
+        {
+            "object_id": attachment.object_id,
+            "title": attachment_titles[attachment.object_id],
+            "text": attachment.text,
+        }
+        for attachment in req.context_attachments
+    ]
 
     config = {
         "configurable": {

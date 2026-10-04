@@ -48,10 +48,11 @@ export interface ChatPaneProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
   /** Called when user clicks "Start live chat" from a demo thread. */
-  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing') => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
   onContextObjectIdsChange?: (objectIds: string[]) => void;
+  onContextFileContentIdsChange?: (objectIds: string[]) => void;
   onContextPanelOpenChange?: (open: boolean) => void;
   currentApproval?: ApprovalDetail | null;
   onApprovalDecision?: (
@@ -138,6 +139,7 @@ export function ChatPane({
   onSendMessage,
   onStartLiveChat,
   onContextObjectIdsChange,
+  onContextFileContentIdsChange,
   onContextPanelOpenChange,
   currentApproval,
   onApprovalDecision,
@@ -206,6 +208,7 @@ export function ChatPane({
           prompt,
           includedContext.map((item) => item.nodeId).filter((id): id is string => Boolean(id)),
           taskTypeForMode(workMode),
+          includedContext.filter((item) => item.fileContentIncluded).map((item) => item.nodeId).filter((id): id is string => Boolean(id)),
         );
       } finally {
         setRunPhase(null);
@@ -409,9 +412,26 @@ export function ChatPane({
               onLoadOlder={onLoadOlderContext}
               onRetry={onRetryContext}
               onToggleItem={(id) => {
-                const next = contextItems.map((item) => item.id === id ? { ...item, included: !item.included } : item);
+                const selected = contextItems.find((item) => item.id === id);
+                const willInclude = selected ? !selected.included : false;
+                const next = contextItems.map((item) => item.id === id
+                  ? { ...item, included: willInclude, fileContentIncluded: willInclude ? item.fileContentIncluded : false }
+                  : item);
                 setContextItems(next);
-                if (contextIsLive) onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                if (contextIsLive) {
+                  onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                  onContextFileContentIdsChange?.(next.filter((item) => item.fileContentIncluded).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                }
+              }}
+              onToggleFileContent={(id, include) => {
+                const next = contextItems.map((item) => item.nodeId === id
+                  ? { ...item, included: include || item.included, fileContentIncluded: include }
+                  : item);
+                setContextItems(next);
+                if (contextIsLive) {
+                  onContextObjectIdsChange?.(next.filter((item) => item.included).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                  onContextFileContentIdsChange?.(next.filter((item) => item.fileContentIncluded).map((item) => item.nodeId).filter((nodeId): nodeId is string => Boolean(nodeId)));
+                }
               }}
               onFocusItem={(nodeId) => {
                 setContextOpen(false);

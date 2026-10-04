@@ -365,6 +365,7 @@ export interface ChatThreadRecord {
   sessionId?: string;
   source?: 'demo' | 'live';
   initialContextObjectIds?: string[];
+  initialContextFileContentIds?: string[];
   messagesNextCursor?: string | null;
   loadingOlderMessages?: boolean;
 }

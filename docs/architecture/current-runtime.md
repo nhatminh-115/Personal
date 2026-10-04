@@ -148,6 +148,15 @@ provenance and strengthen privacy routing without copying full source content
 into the handoff. Context Sets and branches expand their explicitly linked
 sources.
 
+Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
+browser unless a live-chat user explicitly selects **Send text**. That action
+copies bounded text into the durable run checkpoint for resume and requires
+cloud confirmation without changing the profile's fallback policy; the normal
+routing-confirmation workflow must be resolved before a cloud model can receive
+it. The Library graph retains only
+the file reference and provenance manifest, not the file text. PDFs and other
+binary formats remain reference-only until a supported parser is available.
+
 Compiled object metadata can add model requirements (`vision`,
 `structured_output`, and `long_context`) and abstract tool capabilities to the
 turn's `RoutingContext`. Tool capabilities must resolve through an enabled

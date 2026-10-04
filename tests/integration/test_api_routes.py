@@ -1,10 +1,16 @@
 """Integration tests for API routes: direct chat, approvals rejection, health, and error paths."""
 
 from datetime import datetime, timedelta, timezone
+import uuid
 
 import pytest
 from httpx import AsyncClient
-from app.db.models import ApprovalModel, MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel
+from app.db.models import (
+    ApprovalModel, MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel,
+    WorkspaceObjectModel, WorkspaceObjectProjectLinkModel,
+)
+from app.orchestrator.graph import get_compiled_graph
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -129,6 +135,65 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
     assert routing["model"] == "mock-default"
     assert routing["role"] == "root"
     assert isinstance(routing["reasoning_effort"], str)
+
+
+@pytest.mark.asyncio
+async def test_explicit_local_file_text_requires_cloud_confirmation_and_stays_out_of_trace(
+    async_client: AsyncClient,
+    test_db_session,
+):
+    object_id = str(uuid.uuid4())
+    private_file_text = "private selected file text marker"
+    test_db_session.add_all([
+        WorkspaceObjectModel(
+            id=object_id,
+            project_name=None,
+            object_type="file_reference",
+            created_by="user",
+            title="Research notes.md",
+            content="",
+            metadata_json={"storage_location": "browser_local"},
+        ),
+        WorkspaceObjectProjectLinkModel(object_id=object_id, project_name="File Context Project"),
+    ])
+    await test_db_session.commit()
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "file-context-session",
+        "project_name": "File Context Project",
+        "message": "Summarize the selected file.",
+        "context_object_ids": [object_id],
+        "context_attachments": [{"object_id": object_id, "text": private_file_text}],
+    })
+    assert response.status_code == 200
+    run_id = response.json()["run_id"]
+    run = await test_db_session.get(RunModel, run_id)
+    assert run is not None
+    assert run.routing_snapshot_json["require_cloud_confirmation"] is True
+    assert run.routing_snapshot_json["fallback_policy"] == "cloud_allowed"
+
+    graph = await get_compiled_graph()
+    snapshot = await graph.aget_state({"configurable": {"thread_id": run_id}})
+    assert private_file_text in "\n".join(snapshot.values["retrieved_context"])
+
+    event_result = await test_db_session.execute(select(RunEventModel).where(RunEventModel.run_id == run_id))
+    events = list(event_result.scalars())
+    assert any(event.event_type == "context_compiled" for event in events)
+    assert all(private_file_text not in str(event.payload) for event in events)
+
+
+@pytest.mark.asyncio
+async def test_file_text_attachment_requires_visible_project_reference(async_client: AsyncClient):
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "file-context-scope-session",
+        "project_name": "File Context Project",
+        "message": "Use this file.",
+        "context_object_ids": ["not-a-visible-file-reference"],
+        "context_attachments": [{"object_id": "not-a-visible-file-reference", "text": "private"}],
+    })
+
+    assert response.status_code == 422
+    assert "visible Library reference" in response.text
 
 
 @pytest.mark.asyncio

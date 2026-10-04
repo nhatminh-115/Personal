@@ -475,7 +475,10 @@ class DeterministicRoutingPolicy(RoutingPolicy):
         chosen_prov, chosen_model, chosen_meta, chosen_effort = valid_reasoning_candidates[0]
 
         # Enforce ask_before_cloud (Requirement 10)
-        if fallback_policy == FallbackPolicy.ASK_BEFORE_CLOUD and chosen_meta.privacy_status == "cloud":
+        if (
+            fallback_policy == FallbackPolicy.ASK_BEFORE_CLOUD
+            or getattr(context, "require_cloud_confirmation", False)
+        ) and chosen_meta.privacy_status == "cloud":
             default_meta = available_metadata.get(default_provider)
             from_privacy = default_meta.privacy_status if default_meta else "local"
             details = {

@@ -3,6 +3,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { AIContextPanel } from '../components/chat/AIContextPanel';
 
 describe('AI context object pagination', () => {
+  it('requires an explicit action to send browser-local file text', () => {
+    const onToggleFileContent = vi.fn();
+    render(<AIContextPanel
+      items={[{
+        id: 'file-context-1', nodeId: 'file-1', kind: 'file', title: 'Research notes.md',
+        detail: 'browser-local text', tokens: 12, included: false,
+        fileContentAvailable: true, fileContentIncluded: false,
+      }]}
+      contextIsLive
+      onToggleItem={() => {}}
+      onToggleFileContent={onToggleFileContent}
+      onClose={() => {}}
+    />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Send Research notes.md text to AURA' }));
+    expect(onToggleFileContent).toHaveBeenCalledWith('file-1', true);
+    expect(screen.getByText(/copied into the durable AURA run/)).toBeInTheDocument();
+  });
+
   it('loads older saved objects on demand and exposes retry after an error', () => {
     const onLoadOlder = vi.fn(async () => {});
     const onRetry = vi.fn();

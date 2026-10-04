@@ -100,6 +100,7 @@ class RoutingContext(BaseModel):
     profile_version: int | None = None
     winning_scope: Literal["message", "session", "project", "default", "system", "draft"] | None = None
     is_lock_all: bool = False
+    require_cloud_confirmation: bool = False
 
 
 class ModelUsage(BaseModel):

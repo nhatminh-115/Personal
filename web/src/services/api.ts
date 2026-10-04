@@ -4,6 +4,7 @@ import {
   RoutingConfirmationDetail,
   RoutingConfirmationDecisionResponse,
   ChatResponse,
+  ChatContextAttachment,
   MemoryItem,
   ModelCatalog,
   ModelProbeResponse,
@@ -695,6 +696,7 @@ export const api = {
     reasoningOverride?: ReasoningEffort | null,
     contextObjectIds: string[] = [],
     taskType?: 'research' | 'coding' | 'writing' | null,
+    contextAttachments: ChatContextAttachment[] = [],
   ): Promise<ChatResponse> {
     const payload: Record<string, any> = {
       session_id: sessionId,
@@ -709,6 +711,7 @@ export const api = {
     }
     if (reasoningOverride) payload.reasoning_override = reasoningOverride;
     if (contextObjectIds.length > 0) payload.context_object_ids = [...new Set(contextObjectIds)];
+    if (contextAttachments.length > 0) payload.context_attachments = contextAttachments;
     if (taskType) payload.task_type = taskType;
 
     const res = await fetch(`${BASE_URL}/v1/chat`, {

@@ -48,6 +48,7 @@ import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
   AuraFlowNode,
+  ChatContextAttachment,
   ChatMessage,
   ExecutionStep,
   MemoryItem,
@@ -1202,7 +1203,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing') => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -1215,6 +1216,39 @@ export default function App() {
         pushToast('Demo thread', 'Start a live chat to use the AURA backend with this project.');
         return;
       }
+
+      const contextAttachments: ChatContextAttachment[] = [];
+      let totalAttachmentChars = 0;
+      try {
+        const uniqueContextFileIds = [...new Set(contextFileContentIds)];
+        if (uniqueContextFileIds.length > 5) {
+          throw new Error('Choose up to five local text files for one message.');
+        }
+        for (const objectId of uniqueContextFileIds) {
+          const item = libraryItems.find((candidate) => candidate.id === objectId);
+          if (!item?.blobKey || !['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(item.kind)) {
+            throw new Error('This browser does not have a supported local text copy of one selected file.');
+          }
+          const blob = await getLocalFile(item.blobKey);
+          if (!blob || blob.size > 80_000) {
+            throw new Error('A selected local file is missing or exceeds the 20,000-character text limit.');
+          }
+          const fileText = await blob.text();
+          const fileCharacterCount = Array.from(fileText).length;
+          if (!fileText.trim() || fileCharacterCount > 20_000) {
+            throw new Error('A selected local file is empty or exceeds the 20,000-character text limit.');
+          }
+          totalAttachmentChars += fileCharacterCount;
+          if (totalAttachmentChars > 40_000) {
+            throw new Error('Selected file text exceeds the 40,000-character total limit.');
+          }
+          contextAttachments.push({ object_id: objectId, text: fileText });
+        }
+      } catch (error) {
+        pushToast('Could not include file text', executionErrorText(error));
+        return;
+      }
+      const selectedObjectIds = [...new Set([...contextObjectIds, ...contextFileContentIds])];
 
       const sessionId = currentThread?.sessionId || `sess-${activeProjectId}-${activeThreadId}`;
 
@@ -1229,7 +1263,7 @@ export default function App() {
         branch: 'Root',
         nodeId: `live-user-node-${nonce}`,
         content: text,
-        contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
+        contextObjectIds: selectedObjectIds.length > 0 ? selectedObjectIds : undefined,
         timestamp: 'just now',
         created_at: new Date().toISOString(),
         status: 'Sent',
@@ -1245,8 +1279,9 @@ export default function App() {
           activeProject?.name || undefined,
           activeThreadOverrides?.model,
           activeThreadOverrides?.reasoning,
-          contextObjectIds,
+          selectedObjectIds,
           taskType,
+          contextAttachments,
         );
 
         if (resp.user_message_id) {
@@ -1298,7 +1333,7 @@ export default function App() {
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
-              contextObjectIds,
+              contextObjectIds: selectedObjectIds,
               ...routingSummary,
             };
             updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
@@ -1331,6 +1366,7 @@ export default function App() {
       chatThreads,
       activeProject?.name,
       activeThreadOverrides,
+      libraryItems,
       loadProjectSessionPage,
       updateThreadMessages,
       refreshInspectorData,
@@ -1451,6 +1487,12 @@ export default function App() {
   const handleContextObjectIdsChange = useCallback((threadId: string, objectIds: string[]) => {
     setChatThreads((current) => current.map((thread) => thread.id === threadId
       ? { ...thread, initialContextObjectIds: [...new Set(objectIds)] }
+      : thread));
+  }, []);
+
+  const handleContextFileContentIdsChange = useCallback((threadId: string, objectIds: string[]) => {
+    setChatThreads((current) => current.map((thread) => thread.id === threadId
+      ? { ...thread, initialContextFileContentIds: [...new Set(objectIds)] }
       : thread));
   }, []);
 
@@ -2463,6 +2505,7 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onStartLiveChat={handleStartLiveChat}
             onContextObjectIdsChange={handleContextObjectIdsChange}
+            onContextFileContentIdsChange={handleContextFileContentIdsChange}
             currentApproval={activeThreadLive.approval}
             onApprovalDecision={handleApprovalDecision}
           />
@@ -2516,6 +2559,7 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onStartLiveChat={handleStartLiveChat}
                 onContextObjectIdsChange={handleContextObjectIdsChange}
+                onContextFileContentIdsChange={handleContextFileContentIdsChange}
                 currentApproval={activeThreadLive.approval}
                 onApprovalDecision={handleApprovalDecision}
               />

@@ -214,6 +214,10 @@ def inherit_routing_boundaries(
     )
     if inherited_privacy:
         child_context.privacy_requirement = PrivacyPolicy(inherited_privacy)
+    child_context.require_cloud_confirmation = bool(
+        child_context.require_cloud_confirmation
+        or parent_context.get("require_cloud_confirmation", False)
+    )
 
     raw_parent_fallback = policy_value(parent_context.get("fallback_policy"))
     try:

@@ -38,6 +38,7 @@ class AgentState(TypedDict, total=False):
     persisted_user_message_id: Optional[str]
     persisted_assistant_message_id: Optional[str]
     context_object_ids: List[str]
+    context_attachments: List[Dict[str, str]]
 
 
 def create_initial_agent_state(
