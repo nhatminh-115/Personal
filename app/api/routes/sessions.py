@@ -209,6 +209,7 @@ async def get_session_details(
     return SessionDetailResponse(
         id=session.id,
         title=session.title,
+        project_name=session.project_name,
         created_at=session.created_at,
         updated_at=session.updated_at,
         messages_next_cursor=messages_next_cursor,

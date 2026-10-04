@@ -1225,6 +1225,56 @@ export default function App() {
     }
   }, [activeProjectId, chatThreads]);
 
+  const openMemorySourceChat = useCallback(async (sessionId: string) => {
+    try {
+      let sourceThread = chatThreads.find((thread) => thread.sessionId === sessionId && thread.source === 'live');
+      let sourceProject = sourceThread
+        ? projectCatalog.find((project) => project.id === sourceThread!.projectId)
+        : undefined;
+
+      if (!sourceThread || !sourceProject) {
+        const session = await api.fetchSession(sessionId);
+        sourceProject = session.project_name
+          ? projectCatalog.find((project) => project.name === session.project_name)
+          : activeProject ?? undefined;
+        if (!sourceProject) throw new Error('The source project is not available in this workspace.');
+
+        const restoredThread: ChatThreadRecord = {
+          id: `session-${session.id}`,
+          projectId: sourceProject.id,
+          title: session.title && session.title !== 'New Session' ? session.title : 'Restored chat',
+          summary: 'Saved live conversation',
+          updated: new Date(session.updated_at).toLocaleDateString(),
+          messages: [],
+          sessionId: session.id,
+          source: 'live',
+        };
+        sourceThread = restoredThread;
+        setChatThreads((current) => current.some((thread) => thread.sessionId === session.id)
+          ? current.map((thread) => thread.sessionId === session.id ? { ...thread, ...restoredThread } : thread)
+          : [...current, restoredThread]);
+      }
+
+      const resolvedThread = sourceThread;
+      const resolvedProject = sourceProject;
+      if (!resolvedThread || !resolvedProject) throw new Error('The source chat could not be resolved.');
+
+      setActiveThreadByProject((current) => ({ ...current, [resolvedProject.id]: resolvedThread.id }));
+      setFocusedMessageId(null);
+      openOrActivateTab({
+        id: `project-${resolvedProject.id}`,
+        title: resolvedProject.name,
+        subtitle: 'Chat',
+        kind: 'project',
+        surface: 'workspace',
+        projectId: resolvedProject.id,
+        mode: 'chat',
+      });
+    } catch (error) {
+      pushToast('Could not open source chat', executionErrorText(error));
+    }
+  }, [activeProject, chatThreads, openOrActivateTab, projectCatalog, pushToast]);
+
   const loadOlderMessages = useCallback(async (threadId: string) => {
     const thread = chatThreads.find((candidate) => candidate.id === threadId);
     if (!thread?.sessionId || !thread.messagesNextCursor || thread.loadingOlderMessages) return;
@@ -2984,6 +3034,7 @@ export default function App() {
             onLoadProfileMemories={() => loadProfileMemoryPage()}
             onLoadMoreProfileMemories={() => loadProfileMemoryPage(profileMemoryNextCursor, true)}
             onSetMemoryActive={setMemoryActive}
+            onOpenSourceChat={(sessionId) => { void openMemorySourceChat(sessionId); }}
             onClose={() => setInspectorOpen(false)}
             onContextSelect={openBoardNode}
           />

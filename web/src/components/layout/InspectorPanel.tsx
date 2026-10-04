@@ -40,6 +40,7 @@ export interface InspectorPanelProps {
   onLoadProfileMemories?: () => Promise<void>;
   onLoadMoreProfileMemories?: () => Promise<void>;
   onSetMemoryActive?: (memory: MemoryItem, isActive: boolean) => Promise<void>;
+  onOpenSourceChat?: (sessionId: string) => void;
   onClose: () => void;
   onContextSelect?: (nodeId: string) => void;
 }
@@ -60,7 +61,7 @@ const memoryMetadataStringList = (value: unknown): string[] => (
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
 );
 
-function MemoryProvenance({ memory }: { memory: MemoryItem }) {
+function MemoryProvenance({ memory, onOpenSourceChat }: { memory: MemoryItem; onOpenSourceChat?: (sessionId: string) => void }) {
   const metadata = memory.metadata_json ?? {};
   const claims = memoryMetadataStringList(metadata.claim_ids);
   const evidence = memoryMetadataStringList(metadata.evidence_ids);
@@ -78,6 +79,11 @@ function MemoryProvenance({ memory }: { memory: MemoryItem }) {
       <div className="inspector-row"><span>Origin</span><strong>{origin}</strong></div>
       {metadata.privacy_policy ? <div className="inspector-row"><span>Privacy</span><strong>{String(metadata.privacy_policy)}</strong></div> : null}
       {typeof metadata.source_session_id === 'string' ? <div className="inspector-row"><span>Source chat</span><code>{metadata.source_session_id}</code></div> : null}
+      {typeof metadata.source_session_id === 'string' && onOpenSourceChat ? (
+        <button className="secondary-button" type="button" onClick={() => onOpenSourceChat(metadata.source_session_id)} style={{ marginTop: 6, fontSize: 10 }}>
+          Open source chat
+        </button>
+      ) : null}
       {typeof metadata.source_run_id === 'string' ? <div className="inspector-row"><span>Source run</span><code>{metadata.source_run_id}</code></div> : null}
       {claims.length ? <div className="inspector-row"><span>Validated claims</span><strong>{claims.join(', ')}</strong></div> : null}
       {evidence.length ? <div className="inspector-row"><span>Evidence records</span><strong>{evidence.join(', ')}</strong></div> : null}
@@ -106,6 +112,7 @@ export function InspectorPanel({
   onLoadProfileMemories,
   onLoadMoreProfileMemories,
   onSetMemoryActive,
+  onOpenSourceChat,
   onClose,
   onContextSelect,
 }: InspectorPanelProps) {
@@ -512,7 +519,7 @@ export function InspectorPanel({
                     >
                       {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why AURA remembers this'}
                     </button>
-                    {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} /> : null}
+                    {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} onOpenSourceChat={onOpenSourceChat} /> : null}
                     {(m.memory_type === 'project' || m.memory_type === 'profile') && onSetMemoryActive ? (
                       <button
                         className="secondary-button"

@@ -200,7 +200,7 @@ async def test_file_text_attachment_requires_visible_project_reference(async_cli
 async def test_session_history_uses_cursor_pages_without_overlap(async_client: AsyncClient, test_db_session):
     session_id = "session-history-pagination"
     base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    test_db_session.add(SessionModel(id=session_id, title="History pagination"))
+    test_db_session.add(SessionModel(id=session_id, title="History pagination", project_name="Atlas"))
     test_db_session.add_all([
         MessageModel(
             id=f"history-{index:03d}",
@@ -217,6 +217,7 @@ async def test_session_history_uses_cursor_pages_without_overlap(async_client: A
     assert first_response.status_code == 200
     first_page = first_response.json()
     assert [message["content"] for message in first_page["messages"]] == [f"Message {i}" for i in range(5, 105)]
+    assert first_page["project_name"] == "Atlas"
     assert first_page["messages_next_cursor"]
 
     second_response = await async_client.get(
