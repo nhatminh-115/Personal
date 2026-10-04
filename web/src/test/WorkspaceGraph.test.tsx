@@ -417,6 +417,66 @@ describe('Persistent workspace graph Board projection', () => {
     expect(fetchGraph).toHaveBeenCalledTimes(1);
   });
 
+  it('serializes layout writes from live Board changes and undo/redo against the latest revision', async () => {
+    const initialGraph: WorkspaceGraph = {
+      ...savedGraph,
+      layout: {
+        ...savedGraph.layout,
+        layout: {
+          positions: { 'turn-1': { x: 80, y: 60 } },
+          densities: { 'turn-1': 'compact' },
+        },
+      },
+    };
+    let graph = initialGraph;
+    const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+
+    let releaseFirstSave!: (layout: WorkspaceGraph['layout']) => void;
+    const saveCalls: number[] = [];
+    vi.spyOn(api, 'putWorkspaceLayout').mockImplementation(async (_project, layout, expectedRevision) => {
+      saveCalls.push(expectedRevision);
+      if (saveCalls.length === 1) {
+        return new Promise((resolve) => { releaseFirstSave = resolve; });
+      }
+      graph = { ...graph, layout: { ...graph.layout, layout, revision: expectedRevision + 1 } };
+      return graph.layout;
+    });
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
+      const object = {
+        id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
+        metadata_json: input.metadata_json ?? {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      } as WorkspaceObject;
+      graph = { ...graph, objects: [...graph.objects.filter((item) => item.id !== object.id), object] };
+      return object;
+    });
+    const deleteObject = vi.spyOn(api, 'deleteWorkspaceObject').mockImplementation(async (_project, id) => {
+      graph = { ...graph, objects: graph.objects.filter((item) => item.id !== id) };
+    });
+
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="serialized-layout-writes" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+      </ReactFlowProvider>,
+    );
+    await screen.findByText('Persistent answer');
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
+    fireEvent.click(container.querySelector('.react-flow__pane')!, { clientX: 500, clientY: 300 });
+    await waitFor(() => expect(createObject).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveCalls).toHaveLength(1), { timeout: 2500 });
+
+    fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
+    const noteId = createObject.mock.calls[0][1].id ?? 'restored-note-id';
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', noteId));
+    expect(saveCalls).toEqual([3]);
+
+    releaseFirstSave({ ...graph.layout, revision: 4 });
+    await waitFor(() => expect(saveCalls).toEqual([3, 4]));
+    await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
+    expect(fetchGraph).toHaveBeenCalledTimes(1);
+  });
+
   it('offers a live chat action on saved branches and restores the selected branch context', async () => {
     const branchId = 'branch-object-1';
     const graph: WorkspaceGraph = {
