@@ -56,6 +56,38 @@ const tabs: { id: InspectorTab; label: string; icon: any }[] = [
   { id: 'object', label: 'Object', icon: Box },
 ];
 
+const memoryMetadataStringList = (value: unknown): string[] => (
+  Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
+);
+
+function MemoryProvenance({ memory }: { memory: MemoryItem }) {
+  const metadata = memory.metadata_json ?? {};
+  const claims = memoryMetadataStringList(metadata.claim_ids);
+  const evidence = memoryMetadataStringList(metadata.evidence_ids);
+  const sources = memoryMetadataStringList(metadata.source_references);
+  const origin = metadata.created_by === 'research_specialist'
+    ? 'Research Specialist finding'
+    : metadata.explicit === true
+      ? 'Explicit remember request'
+      : metadata.source_run_id || metadata.source_session_id
+        ? 'Saved from a conversation'
+        : 'Stored memory';
+
+  return (
+    <div id={`memory-provenance-${memory.id}`} className="inspector-event-item" style={{ marginTop: 8 }}>
+      <div className="inspector-row"><span>Origin</span><strong>{origin}</strong></div>
+      {metadata.privacy_policy ? <div className="inspector-row"><span>Privacy</span><strong>{String(metadata.privacy_policy)}</strong></div> : null}
+      {typeof metadata.source_session_id === 'string' ? <div className="inspector-row"><span>Source chat</span><code>{metadata.source_session_id}</code></div> : null}
+      {typeof metadata.source_run_id === 'string' ? <div className="inspector-row"><span>Source run</span><code>{metadata.source_run_id}</code></div> : null}
+      {claims.length ? <div className="inspector-row"><span>Validated claims</span><strong>{claims.join(', ')}</strong></div> : null}
+      {evidence.length ? <div className="inspector-row"><span>Evidence records</span><strong>{evidence.join(', ')}</strong></div> : null}
+      {sources.length ? <div className="inspector-row"><span>Sources</span><strong>{sources.join(', ')}</strong></div> : null}
+      {memory.supersedes_id ? <div className="inspector-row"><span>Supersedes</span><code>{memory.supersedes_id}</code></div> : null}
+      {memory.superseded_by_id ? <div className="inspector-row"><span>Replaced by</span><code>{memory.superseded_by_id}</code></div> : null}
+    </div>
+  );
+}
+
 export function InspectorPanel({
   selectedNode,
   runDetail,
@@ -81,6 +113,7 @@ export function InspectorPanel({
   const [memoryScope, setMemoryScope] = useState<'project' | 'profile'>('project');
   const [expandedEvents, setExpandedEvents] = useState<Record<string, boolean>>({});
   const [expandedEvidence, setExpandedEvidence] = useState<Record<string, boolean>>({});
+  const [expandedMemoryProvenance, setExpandedMemoryProvenance] = useState<Record<string, boolean>>({});
   const [capabilityProviders, setCapabilityProviders] = useState<CapabilityProviderMetadata[]>([]);
   const [capabilityState, setCapabilityState] = useState<'idle' | 'loading' | 'loaded' | 'error'>('idle');
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
@@ -104,6 +137,10 @@ export function InspectorPanel({
 
   const toggleEvent = (id: string) => {
     setExpandedEvents((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleMemoryProvenance = (id: string) => {
+    setExpandedMemoryProvenance((previous) => ({ ...previous, [id]: !previous[id] }));
   };
 
   const loadCapabilityProviders = async () => {
@@ -465,6 +502,17 @@ export function InspectorPanel({
                         {m.created_at ? new Date(m.created_at).toLocaleDateString() : ''}
                       </small>
                     </div>
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      aria-expanded={Boolean(expandedMemoryProvenance[m.id])}
+                      aria-controls={`memory-provenance-${m.id}`}
+                      onClick={() => toggleMemoryProvenance(m.id)}
+                      style={{ marginTop: 8, fontSize: 10 }}
+                    >
+                      {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why AURA remembers this'}
+                    </button>
+                    {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} /> : null}
                     {(m.memory_type === 'project' || m.memory_type === 'profile') && onSetMemoryActive ? (
                       <button
                         className="secondary-button"

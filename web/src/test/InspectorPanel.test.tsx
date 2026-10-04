@@ -163,6 +163,35 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText(/Confidence: 98%/i)).toBeInTheDocument();
   });
 
+  it('shows memory provenance without exposing the stored evidence snapshot', () => {
+    const memory: MemoryItem = {
+      ...sampleMemories[0],
+      metadata_json: {
+        explicit: true,
+        source_session_id: 'source-session-1',
+        source_run_id: 'source-run-1',
+        privacy_policy: 'confidential',
+        claim_ids: ['claim-1'],
+        evidence_ids: ['evidence-1'],
+        source_references: ['arXiv:2401.0001'],
+        evidence_snapshot: [{ snippet: 'Sensitive source excerpt is not shown here.' }],
+      },
+      superseded_by_id: 'memory-next-version',
+    };
+    render(<InspectorPanel memories={[memory]} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
+
+    expect(screen.getByText('Explicit remember request')).toBeInTheDocument();
+    expect(screen.getByText('source-session-1')).toBeInTheDocument();
+    expect(screen.getByText('source-run-1')).toBeInTheDocument();
+    expect(screen.getByText('claim-1')).toBeInTheDocument();
+    expect(screen.getByText('evidence-1')).toBeInTheDocument();
+    expect(screen.getByText('arXiv:2401.0001')).toBeInTheDocument();
+    expect(screen.getByText('memory-next-version')).toBeInTheDocument();
+    expect(screen.queryByText(/Sensitive source excerpt/)).not.toBeInTheDocument();
+  });
+
   it('renders routing tab without invented prototype routing data', () => {
     render(
       <InspectorPanel

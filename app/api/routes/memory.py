@@ -64,6 +64,8 @@ async def list_memories(
             content=m.content,
             confidence=m.confidence,
             is_active=m.is_active,
+            supersedes_id=m.supersedes_id,
+            superseded_by_id=m.superseded_by_id,
             metadata_json=m.metadata_json,
             created_at=m.created_at,
         )
@@ -160,6 +162,8 @@ async def _set_memory_active(
         content=memory.content,
         confidence=memory.confidence,
         is_active=memory.is_active,
+        supersedes_id=memory.supersedes_id,
+        superseded_by_id=memory.superseded_by_id,
         metadata_json=memory.metadata_json,
         created_at=memory.created_at,
     )

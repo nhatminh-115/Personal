@@ -50,12 +50,16 @@ async def test_project_memory_can_be_deactivated_and_restored_without_deletion(a
 @pytest.mark.asyncio
 async def test_project_memory_restore_rejects_an_active_replacement(async_client, test_db_session):
     old = MemoryModel(
+        id="memory-old",
         memory_type="project", project_name="Atlas", key="architecture",
-        content="Old thesis.", confidence=0.8, is_active=False, metadata_json={},
+        content="Old thesis.", confidence=0.8, is_active=False,
+        superseded_by_id="memory-current", metadata_json={},
     )
     current = MemoryModel(
+        id="memory-current",
         memory_type="project", project_name="Atlas", key="architecture",
-        content="Current thesis.", confidence=0.95, is_active=True, metadata_json={},
+        content="Current thesis.", confidence=0.95, is_active=True,
+        supersedes_id="memory-old", metadata_json={},
     )
     test_db_session.add_all([old, current])
     await test_db_session.commit()
@@ -65,6 +69,12 @@ async def test_project_memory_restore_rejects_an_active_replacement(async_client
     )
     assert response.status_code == 409
     assert (await test_db_session.get(MemoryModel, old.id)).is_active is False
+    history = await async_client.get(
+        "/v1/memory", params={"project_name": "Atlas", "include_inactive": True}
+    )
+    versions = {item["id"]: item for item in history.json()}
+    assert versions["memory-old"]["superseded_by_id"] == "memory-current"
+    assert versions["memory-current"]["supersedes_id"] == "memory-old"
 
 
 @pytest.mark.asyncio
