@@ -1274,6 +1274,50 @@ async def test_delegation_runtime_lock_all_child_propagation(test_db_session: As
 
 
 @pytest.mark.asyncio
+async def test_delegation_runtime_reasoning_override_propagates_without_model_lock(
+    test_db_session: AsyncSession,
+    monkeypatch,
+):
+    """A temporary root reasoning choice reaches the specialist as fixed reasoning by itself."""
+    from unittest.mock import AsyncMock, MagicMock
+    from app.delegation.runtime import DelegationRuntime
+    from app.delegation.types import DelegationRequest
+
+    session_id = str(uuid.uuid4())
+    parent_run_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(id=parent_run_id, session_id=session_id, user_message="parent root task"))
+    await test_db_session.commit()
+
+    mock_graph = AsyncMock()
+    mock_graph.aget_state.return_value = MagicMock(next=None)
+    mock_graph.ainvoke.return_value = {"messages": [{"role": "assistant", "content": "done"}]}
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=mock_graph))
+
+    request = DelegationRequest(
+        specialist_name="research",
+        task_description="Use the temporary reasoning override",
+        parent_run_id=parent_run_id,
+        session_id=session_id,
+        context={"reasoning_override": "high"},
+    )
+    result = await DelegationRuntime().delegate(request, db=test_db_session)
+
+    child = await test_db_session.get(RunModel, result.child_run_id)
+    assert child is not None
+    assert child.routing_snapshot_json["is_lock_all"] is False
+    assert child.routing_snapshot_json["explicit_model_override"] is None
+    assert child.routing_snapshot_json["reasoning_policy"] == "fixed"
+    assert child.routing_snapshot_json["reasoning_effort"] == "high"
+    child_state = mock_graph.ainvoke.await_args.args[0]
+    child_routing = child_state["metadata"]["routing_context_dict"]
+    assert child_routing["is_lock_all"] is False
+    assert child_routing["explicit_model_override"] is None
+    assert child_routing["reasoning_policy"] == "fixed"
+    assert child_routing["reasoning_effort"] == "high"
+
+
+@pytest.mark.asyncio
 async def test_delegation_model_lock_preserves_child_reasoning_route(test_db_session: AsyncSession, monkeypatch):
     """A temporary model lock propagates the model but leaves specialist reasoning policy intact."""
     from unittest.mock import AsyncMock, MagicMock
