@@ -293,6 +293,51 @@ describe('InspectorPanel Component', () => {
     expect(onContextSelect).toHaveBeenCalledWith('selected-context-set');
   });
 
+  it('shows tiered saved memory provenance and opens a known memory for review', () => {
+    const profileMemory: MemoryItem = {
+      id: 'profile-memory-1',
+      key: 'preferred_work_style',
+      memory_type: 'profile',
+      is_active: true,
+      content: 'Private profile memory content.',
+      confidence: 0.9,
+      created_at: new Date().toISOString(),
+    };
+    const runDetail: RunDetail = {
+      ...sampleRunDetail,
+      events: [...sampleRunDetail.events, {
+        id: 'context-loaded-1',
+        event_type: 'context_loaded',
+        created_at: new Date().toISOString(),
+        payload: {
+          profile_memory_ids: ['profile-memory-1'],
+          project_memory_ids: ['mem-1'],
+          semantic_memory_ids: ['semantic-memory-1'],
+          episode_memory_ids: ['episode-memory-1'],
+          memory_privacy_sources: [{ memory_id: 'mem-1', privacy_policy: 'confidential' }],
+          memory_text: 'Private trace memory content.',
+        },
+      }],
+    };
+
+    render(<InspectorPanel runDetail={runDetail} memories={sampleMemories} profileMemories={[profileMemory]} onClose={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+
+    expect(screen.getByText('Saved memories used')).toBeInTheDocument();
+    expect(screen.getByText('Profile memory')).toBeInTheDocument();
+    expect(screen.getByText('Project memory')).toBeInTheDocument();
+    expect(screen.getByText('Semantic memory')).toBeInTheDocument();
+    expect(screen.getByText('Episode memory')).toBeInTheDocument();
+    expect(screen.getByText('project_architecture_thesis')).toBeInTheDocument();
+    expect(screen.getByText(/confidential/)).toBeInTheDocument();
+    expect(screen.queryByText(/Private trace memory content/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Private profile memory content/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review memory project_architecture_thesis' }));
+    expect(screen.getByText(/AURA workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Hide provenance' })).toBeInTheDocument();
+  });
+
   it('shows context manifests for the root and specialist runs', () => {
     render(<InspectorPanel
       runDetail={sampleRunDetail}
