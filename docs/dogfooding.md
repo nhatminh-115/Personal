@@ -4,10 +4,25 @@ These scripts exercise the real AURA API/runtime outside deterministic CI. CI te
 
 ## Prepare the environment
 
-Use Python 3.12 and the repository's installed dependencies. Live model scenarios require an OpenAI-compatible AURA route configured with:
+Use Python 3.12 and the repository's installed dependencies. Live model scenarios can use an OpenAI-compatible AURA route configured with:
 
 - **MODEL_PROVIDER=openai**
 - **OPENAI_API_KEY** available in the process environment
+
+The Coding Specialist scenario can instead use a local Ollama model without a
+cloud key. Set an exact installed model override and keep the Ollama endpoint
+on loopback:
+
+    $env:MODEL_PROVIDER = "openai"
+    $env:OLLAMA_BASE_URL = "http://127.0.0.1:11434/v1"
+    $env:AURA_DOGFOOD_MODEL_OVERRIDE = "ollama:qwen2.5-coder:3b"
+    python scripts/dogfood_coding_impact_live.py
+
+The override is sent as an exact provider/model lock. Without a cloud key, the
+harness rejects non-Ollama overrides and non-loopback Ollama URLs. It requests
+`instant` reasoning for this local smoke run; when the model reports reasoning
+control as unknown, AURA keeps the decision unknown and does not claim a native
+provider control.
 
 Research scenarios also require **RESEARCH_PROVIDER_MODE=live** and network access to the configured research sources. Keep credentials in environment variables or the local secret manager; do not commit them.
 
@@ -27,15 +42,15 @@ Run the scripts from the repository root. They use isolated SQLite databases and
 | Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Live model | A fresh session retrieves the expected project memory and does not retrieve a conflicting fact from another project |
 | Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Live model and research providers | A Research Specialist claim and evidence are persisted, selected into a durable Context Bridge, then compiled into a new chat as the sole selected object |
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and hosted model | Exact catalog models preserve local-only and cloud-allowed profile policies through zero-invocation routing preview |
-| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Live model credentials; CodeGraph is optional | Provider smoke test passed in the maintainer's Windows environment: CodeGraph 0.20.1 was installed with telemetry disabled, AURA discovered 9 allowlisted tools, and a read-only `symbol_search` query returned `app/mcp/manager.py:157`. Full Coding Specialist dogfood remains pending a configured live model. |
+| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Hosted model credentials or an exact local Ollama override; CodeGraph is optional | Provider smoke test passed in the maintainer's Windows environment: CodeGraph 0.20.1 was installed with telemetry disabled, AURA discovered 9 allowlisted tools, and a read-only `symbol_search` query returned `app/mcp/manager.py:157`. |
 
 The provider smoke test verifies MCP health, discovery, and one read-only tool
 call; it is not a complete AURA Coding Specialist run and has no AURA run ID.
-The live dogfood script requires **MODEL_PROVIDER=openai** and **OPENAI_API_KEY**.
-Its preflight currently reports that live OpenAI routing is not configured, so
-no model call was made. This credential-dependent scenario does not block other
-independent AURA milestones. CodeGraph remains optional, external, and absent
-from CI; AURA never installs it automatically.
+The live dogfood script requires **MODEL_PROVIDER=openai** and either
+**OPENAI_API_KEY** or **AURA_DOGFOOD_MODEL_OVERRIDE=ollama:model** with
+**OLLAMA_BASE_URL** on loopback. This scenario does not block other independent
+AURA milestones. CodeGraph remains optional, external, and absent from CI; AURA
+never installs it automatically.
 
 The routing constraints script calls GET /v1/models, which performs its normal provider-discovery snapshot and may make local model-list HTTP requests. It does not call the explicit refresh or capability-probe endpoints, install providers, or invoke a model. The zero-invocation preview itself does not require model credentials. The catalog must list an available explicitly classified local and hosted model; otherwise the scenario reports that it did not run.
 
@@ -47,4 +62,4 @@ Reports include identifiers, route decisions, tool names, statuses, counts, and 
 
 ## Interpreting results
 
-A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph provider smoke is verified locally; Coding Specialist dogfood remains pending until live model credentials are configured.
+A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph provider smoke is verified locally; the Coding Specialist dogfood additionally requires hosted credentials or an explicit local Ollama override.

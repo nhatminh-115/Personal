@@ -10,12 +10,15 @@ from pathlib import Path
 import time
 import uuid
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 CODING_IMPACT_WORKLOAD = (
-    "Use the Coding Specialist to perform a read-only impact analysis of AURA's optional code-graph capability path. "
-    "Determine how code_graph capabilities become available, how MCP discovery verifies tool bindings, and what the "
-    "Coding Specialist does when no code-graph provider is configured. Read the relevant source and tests before "
-    "concluding. Do not modify files, run write commands, install/download/configure a provider, or approve any action. "
+    "You are the root orchestrator. This request requires the Coding Specialist: call delegate_task now with "
+    "specialist_name='coding'; do not answer this request directly. Ask the specialist for a read-only impact analysis "
+    "of AURA's optional code-graph capability path: determine how code_graph capabilities become available, how MCP "
+    "discovery verifies tool bindings, and what happens when no code-graph provider is configured. It must read the "
+    "relevant source and tests before concluding. Do not modify files, run write commands, install/download/configure a "
+    "provider, or approve any action. "
     "If a code-graph tool is already available in this runtime you may use it; otherwise continue with native workspace "
     "and sandbox read tools. Return a concise impact report naming source files and existing tests, with evidence separated "
     "from recommendations."
@@ -23,14 +26,46 @@ CODING_IMPACT_WORKLOAD = (
 
 
 def live_environment_error(environ: Mapping[str, str] | None = None) -> str | None:
-    """Return a fail-fast explanation unless a real supported model is configured."""
+    """Require cloud credentials or an explicit model on a local Ollama endpoint."""
     values = os.environ if environ is None else environ
     provider = values.get("MODEL_PROVIDER", "").strip().lower()
     if provider != "openai":
         return "Coding live dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
-    if not values.get("OPENAI_API_KEY", "").strip():
-        return "Coding live dogfood requires OPENAI_API_KEY; no model call was made."
+    if values.get("OPENAI_API_KEY", "").strip():
+        return None
+
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if not model_override:
+        return "Coding live dogfood requires OPENAI_API_KEY or an explicit local model override; no model call was made."
+    override_provider, separator, override_model = model_override.partition(":")
+    if not separator or override_provider != "ollama" or not override_model.strip():
+        return "Without OPENAI_API_KEY, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+
+    local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+    try:
+        parsed_url = urlparse(local_url)
+        is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
+            "localhost", "127.0.0.1", "::1",
+        }
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        return "Without OPENAI_API_KEY, OLLAMA_BASE_URL must point to localhost or a loopback IP."
     return None
+
+
+def _chat_request_payload(session_id: str, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+    values = os.environ if environ is None else environ
+    payload = {"session_id": session_id, "message": CODING_IMPACT_WORKLOAD}
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override:
+        payload["model_override"] = model_override
+        if not values.get("OPENAI_API_KEY", "").strip() and model_override.startswith("ollama:"):
+            # A local provider with unknown reasoning controls cannot honor the
+            # seeded profile's fixed-low request. Instant resolves as unknown,
+            # never as a claim that the provider exposes a native control.
+            payload["reasoning_override"] = "instant"
+    return payload
 
 
 def _event_payload(event: Any) -> dict[str, Any]:
@@ -219,10 +254,7 @@ async def run_live_dogfood() -> None:
     async with lifespan(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver", timeout=300.0) as client:
-            response = await client.post("/v1/chat", json={
-                "session_id": session_id,
-                "message": CODING_IMPACT_WORKLOAD,
-            })
+            response = await client.post("/v1/chat", json=_chat_request_payload(session_id))
             if response.status_code != 200:
                 raise SystemExit(f"/v1/chat failed with HTTP {response.status_code}; inspect the server log.")
             payload = response.json()
