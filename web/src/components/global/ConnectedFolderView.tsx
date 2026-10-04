@@ -46,7 +46,7 @@ function iconForName(name: string) {
   if (ext === 'csv' || ext === 'xlsx' || ext === 'xls') return FileSpreadsheet;
   if (ext === 'json') return FileJson2;
   if (['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'].includes(ext ?? '')) return FileImage;
-  if (['pdf', 'md', 'txt', 'doc', 'docx'].includes(ext ?? '')) return FileText;
+  if (['pdf', 'md', 'txt', 'doc', 'docx', 'epub', 'pptx'].includes(ext ?? '')) return FileText;
   return File;
 }
 

@@ -106,7 +106,7 @@ export const genericOrbit: OrbitRecord[] = [
   { id: 'question', label: 'Open question', detail: 'needs review', status: 'idle', angle: 232, radius: 254, ring: 'outer', icon: Lightbulb },
 ];
 
-export type LibraryKind = 'HTML' | 'PDF' | 'DOCX' | 'XLSX' | 'PPTX' | 'MD' | 'CSV' | 'TXT' | 'JSON' | 'IMAGE' | 'FILE';
+export type LibraryKind = 'HTML' | 'PDF' | 'DOCX' | 'XLSX' | 'PPTX' | 'EPUB' | 'MD' | 'CSV' | 'TXT' | 'JSON' | 'IMAGE' | 'FILE';
 
 export interface LibraryItem {
   id: string;
