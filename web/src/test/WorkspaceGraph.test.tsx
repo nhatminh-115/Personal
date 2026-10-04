@@ -371,6 +371,43 @@ describe('Persistent workspace graph Board projection', () => {
     })));
   });
 
+  it('restores the persisted privacy classification when a Board update fails', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: 'privacy-note',
+        object_type: 'manual_note',
+        created_by: 'user',
+        title: 'Privacy note',
+        content: 'Keep this local.',
+        metadata_json: { privacy_policy: 'confidential' },
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockRejectedValue(new Error('offline'));
+    const onToast = vi.fn();
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="privacy-update-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Privacy note');
+    fireEvent.click(container.querySelector('[data-id="privacy-note"] button[title^="Current density"]')!);
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    const privacySelect = container.querySelector<HTMLSelectElement>('select[aria-label="Privacy classification"]')!;
+    expect(privacySelect).toHaveValue('confidential');
+
+    fireEvent.change(privacySelect, { target: { value: 'local_only' } });
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
+      metadata_json: { privacy_policy: 'local_only' },
+    })));
+    await waitFor(() => expect(privacySelect).toHaveValue('confidential'));
+    expect(onToast).toHaveBeenCalledWith('Privacy setting was not saved', 'The previous saved classification remains active.');
+  });
+
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
     let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
