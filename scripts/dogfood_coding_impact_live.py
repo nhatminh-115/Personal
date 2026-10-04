@@ -31,27 +31,29 @@ def live_environment_error(environ: Mapping[str, str] | None = None) -> str | No
     provider = values.get("MODEL_PROVIDER", "").strip().lower()
     if provider != "openai":
         return "Coding live dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
-    if values.get("OPENAI_API_KEY", "").strip():
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override.startswith("ollama:"):
+        _override_provider, separator, override_model = model_override.partition(":")
+        if not separator or not override_model.strip():
+            return "AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+
+        local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+        try:
+            parsed_url = urlparse(local_url)
+            is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
+                "localhost", "127.0.0.1", "::1",
+            }
+        except ValueError:
+            is_loopback = False
+        if not is_loopback:
+            return "OLLAMA_BASE_URL must point to localhost or a loopback IP for an Ollama model override."
         return None
 
-    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if values.get("OPENAI_API_KEY", "").strip():
+        return None
     if not model_override:
         return "Coding live dogfood requires OPENAI_API_KEY or an explicit local model override; no model call was made."
-    override_provider, separator, override_model = model_override.partition(":")
-    if not separator or override_provider != "ollama" or not override_model.strip():
-        return "Without OPENAI_API_KEY, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
-
-    local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
-    try:
-        parsed_url = urlparse(local_url)
-        is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
-            "localhost", "127.0.0.1", "::1",
-        }
-    except ValueError:
-        is_loopback = False
-    if not is_loopback:
-        return "Without OPENAI_API_KEY, OLLAMA_BASE_URL must point to localhost or a loopback IP."
-    return None
+    return "Without OPENAI_API_KEY, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
 
 
 def _chat_request_payload(session_id: str, environ: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -60,7 +62,7 @@ def _chat_request_payload(session_id: str, environ: Mapping[str, str] | None = N
     model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
     if model_override:
         payload["model_override"] = model_override
-        if not values.get("OPENAI_API_KEY", "").strip() and model_override.startswith("ollama:"):
+        if model_override.startswith("ollama:"):
             # A local provider with unknown reasoning controls cannot honor the
             # seeded profile's fixed-low request. Instant resolves as unknown,
             # never as a claim that the provider exposes a native control.
