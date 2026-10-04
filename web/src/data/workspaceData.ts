@@ -24,6 +24,7 @@ export interface ProjectRecord {
   meta: string;
   thesis: string;
   next: string;
+  archived?: boolean;
   source?: 'demo' | 'user';
 }
 

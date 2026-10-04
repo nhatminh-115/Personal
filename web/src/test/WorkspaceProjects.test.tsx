@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
+import { ProjectsView } from '../components/global/ProjectsView';
+import type { ProjectRecord } from '../data/workspaceData';
 
 describe('Persistent workspace projects', () => {
   beforeEach(() => {
@@ -40,5 +42,27 @@ describe('Persistent workspace projects', () => {
     expect(screen.getAllByRole('button').filter((button) => button.closest('.workspace-chrome') && button.textContent?.includes('Field Notes'))).toHaveLength(1);
     expect(screen.getByTitle('Field Notes')).toBeInTheDocument();
     expect(screen.getByText('Your project is ready.')).toBeInTheDocument();
+  });
+
+  it('hides archived projects by default and offers a restore action', async () => {
+    const projects: ProjectRecord[] = [
+      { id: 'active', name: 'Active project', subtitle: 'Still in use', status: 'active', accent: 'cyan', updated: 'today', meta: '1 chat', thesis: '', next: '', source: 'user' },
+      { id: 'archived', name: 'Archived project', subtitle: 'History retained', status: 'quiet', accent: 'purple', updated: 'last week', meta: '4 chats', thesis: '', next: '', archived: true, source: 'user' },
+    ];
+    const onSetArchived = vi.fn().mockResolvedValue(undefined);
+    render(<ProjectsView
+      projects={projects}
+      createRequest={0}
+      onOpenProject={vi.fn()}
+      onCreateProject={vi.fn().mockResolvedValue(undefined)}
+      onSetArchived={onSetArchived}
+    />);
+
+    expect(screen.getByText('Active project')).toBeInTheDocument();
+    expect(screen.queryByText('Archived project')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Show archived (1)' }));
+    expect(screen.getByText('Archived project')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Restore Archived project' }));
+    await waitFor(() => expect(onSetArchived).toHaveBeenCalledWith(projects[1], false));
   });
 });

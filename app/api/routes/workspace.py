@@ -136,9 +136,12 @@ async def list_workspace_projects(
     response: Response,
     cursor: str | None = Query(default=None, max_length=512),
     page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
+    include_archived: bool = Query(default=False),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceProjectResponse]:
     query = select(WorkspaceProjectModel)
+    if not include_archived:
+        query = query.where(WorkspaceProjectModel.archived_at.is_(None))
     if cursor is not None:
         cursor_created_at, cursor_id = decode_timestamp_id_cursor(cursor)
         query = query.where(or_(
@@ -150,6 +153,41 @@ async def list_workspace_projects(
     )
     items = _set_next_cursor(response, list(result.scalars()), page_size)
     return [WorkspaceProjectResponse.model_validate(item, from_attributes=True) for item in items]
+
+
+async def _set_workspace_project_archived(
+    project_id: str,
+    archived: bool,
+    db: AsyncSession,
+) -> WorkspaceProjectResponse:
+    project = await db.get(WorkspaceProjectModel, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Workspace project not found.")
+    if archived and project.archived_at is None:
+        project.archived_at = datetime.now(timezone.utc)
+    elif not archived and project.archived_at is not None:
+        project.archived_at = None
+    else:
+        return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
+    await db.commit()
+    await db.refresh(project)
+    return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
+
+
+@router.post("/projects/{project_id}/archive", response_model=WorkspaceProjectResponse)
+async def archive_workspace_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceProjectResponse:
+    return await _set_workspace_project_archived(project_id, True, db)
+
+
+@router.post("/projects/{project_id}/restore", response_model=WorkspaceProjectResponse)
+async def restore_workspace_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> WorkspaceProjectResponse:
+    return await _set_workspace_project_archived(project_id, False, db)
 
 
 @router.post("/projects", response_model=WorkspaceProjectResponse, status_code=status.HTTP_201_CREATED)

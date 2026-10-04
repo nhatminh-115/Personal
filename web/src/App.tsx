@@ -216,6 +216,7 @@ function projectFromRecord(record: WorkspaceProjectRecord, index: number): Proje
     meta: 'New project · 0 chats',
     thesis: 'No project thesis added yet.',
     next: 'Start a chat or add a file to build project context.',
+    archived: Boolean(record.archived_at),
     source: 'user',
   };
 }
@@ -358,6 +359,7 @@ export default function App() {
   });
 
   const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
+  const activeProjectCatalog = useMemo(() => projectCatalog.filter((project) => !project.archived), [projectCatalog]);
   const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
 
   const workspaceSummaryRefreshKey = JSON.stringify({
@@ -805,6 +807,21 @@ export default function App() {
     setRoutingOpen(false);
     openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId: project.id });
   }, [openOrActivateTab, projectCatalog, userProjects.length]);
+
+  const setWorkspaceProjectArchived = useCallback(async (project: ProjectRecord, archived: boolean) => {
+    if (project.source !== 'user') return;
+    try {
+      const record = await api.setWorkspaceProjectArchived(project.id, archived);
+      setUserProjects((current) => current.map((item, index) => (
+        item.id === record.id ? projectFromRecord(record, index) : item
+      )));
+      pushToast(archived ? 'Project archived' : 'Project restored', archived
+        ? 'Chats, files and history stay available. Scheduled automations continue to run.'
+        : 'It is available in your project navigation again.');
+    } catch (error) {
+      pushToast(archived ? 'Could not archive project' : 'Could not restore project', executionErrorText(error));
+    }
+  }, [pushToast]);
 
   const openProjectChats = useCallback(() => {
     if (!activeProjectId || !activeProject) return;
@@ -1439,7 +1456,7 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    void api.fetchWorkspaceProjects().then((records) => {
+    void api.fetchWorkspaceProjects(true).then((records) => {
       if (!active || !Array.isArray(records)) return;
       setUserProjects(records.map(projectFromRecord));
     }).catch((error: unknown) => {
@@ -2263,7 +2280,7 @@ export default function App() {
   return (
     <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <Sidebar
-        projects={projectCatalog}
+        projects={activeProjectCatalog}
         collapsed={sidebarCollapsed}
         active={activeNav}
         activeProjectId={activeProjectId}
@@ -2338,7 +2355,7 @@ export default function App() {
         <Suspense fallback={<div className="workspace-loading" role="status">Loading workspace…</div>}>
         {surface === 'global-home' ? (
           <GlobalHome
-            projects={projectCatalog}
+            projects={activeProjectCatalog}
             libraryItems={libraryItems}
             libraryCount={workspaceSummary.library_count}
             linkedLibraryCount={workspaceSummary.linked_library_count}
@@ -2390,7 +2407,7 @@ export default function App() {
         {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onCancelRun={cancelAutomationRun} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
-        {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} /> : null}
+        {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} onSetArchived={setWorkspaceProjectArchived} /> : null}
 
         {surface === 'project-overview' && activeProject ? (
           <ProjectHome

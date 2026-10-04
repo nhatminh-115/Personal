@@ -490,8 +490,8 @@ export const api = {
     };
   },
 
-  async fetchWorkspaceProjects(): Promise<WorkspaceProjectRecord[]> {
-    return fetchAllCursorPages<WorkspaceProjectRecord>('/v1/workspace/projects');
+  async fetchWorkspaceProjects(includeArchived = false): Promise<WorkspaceProjectRecord[]> {
+    return fetchAllCursorPages<WorkspaceProjectRecord>(`/v1/workspace/projects${includeArchived ? '?include_archived=true' : ''}`);
   },
 
   async searchWorkspace(query: string, projectName?: string): Promise<WorkspaceSearchResult[]> {
@@ -505,6 +505,11 @@ export const api = {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
+  },
+
+  async setWorkspaceProjectArchived(id: string, archived: boolean): Promise<WorkspaceProjectRecord> {
+    const action = archived ? 'archive' : 'restore';
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
   },
 
   async fetchAutomations(cursor?: string | null, pageSize = 50, includeArchived = false): Promise<{

@@ -44,6 +44,47 @@ async def test_workspace_projects_page_with_a_stable_next_cursor(async_client):
 
 
 @pytest.mark.asyncio
+async def test_workspace_project_archive_hides_without_deleting_and_can_be_restored(async_client):
+    created = await async_client.post("/v1/workspace/projects", json={
+        "name": "Archive me",
+        "subtitle": "Keep all project history",
+    })
+    assert created.status_code == 201
+    project = created.json()
+    assert project["archived_at"] is None
+
+    archived = await async_client.post(f"/v1/workspace/projects/{project['id']}/archive")
+    assert archived.status_code == 200
+    archived_at = archived.json()["archived_at"]
+    assert archived_at is not None
+    assert archived.json()["name"] == "Archive me"
+
+    duplicate_name = await async_client.post("/v1/workspace/projects", json={"name": "Archive me"})
+    assert duplicate_name.status_code == 409
+
+    active_list = await async_client.get("/v1/workspace/projects")
+    assert active_list.status_code == 200
+    assert project["id"] not in {item["id"] for item in active_list.json()}
+
+    all_projects = await async_client.get("/v1/workspace/projects", params={"include_archived": True})
+    assert all_projects.status_code == 200
+    archived_record = next(item for item in all_projects.json() if item["id"] == project["id"])
+    assert archived_record["archived_at"] == archived_at
+
+    repeated_archive = await async_client.post(f"/v1/workspace/projects/{project['id']}/archive")
+    assert repeated_archive.json()["archived_at"] == archived_at
+
+    restored = await async_client.post(f"/v1/workspace/projects/{project['id']}/restore")
+    assert restored.status_code == 200
+    assert restored.json()["archived_at"] is None
+    visible_again = await async_client.get("/v1/workspace/projects")
+    assert project["id"] in {item["id"] for item in visible_again.json()}
+
+    missing = await async_client.post("/v1/workspace/projects/missing/archive")
+    assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("path,items", [
     ("/v1/workspace/notes", [{"title": f"Note {index}", "body": f"Body {index}"} for index in range(3)]),
     ("/v1/workspace/library", [{"name": f"File {index}", "kind": "PDF", "collection": "Books"} for index in range(3)]),

@@ -358,9 +358,11 @@ class WorkspaceProjectModel(Base):
     subtitle: Mapped[str] = mapped_column(String(255), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("ix_workspace_projects_created_id", "created_at", "id"),
+        Index("ix_workspace_projects_archived_created_id", "archived_at", "created_at", "id"),
     )
 
 

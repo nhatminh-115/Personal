@@ -335,6 +335,7 @@ class WorkspaceProjectResponse(BaseModel):
     subtitle: str
     created_at: datetime
     updated_at: datetime
+    archived_at: Optional[datetime] = None
 
 
 class WorkspaceSummaryResponse(BaseModel):
