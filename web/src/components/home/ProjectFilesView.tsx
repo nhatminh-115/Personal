@@ -8,7 +8,7 @@ interface ProjectFilesViewProps {
   onBack: () => void;
   onOpenItem: (item: LibraryItem) => void;
   onImportFiles: (files: File[], projectId: string) => void;
-  onToggleProjectLink: (itemId: string, projectId: string) => void;
+  onToggleProjectLink: (itemId: string, projectId: string, candidate?: LibraryItem) => void;
   hasMoreLibrary?: boolean;
   loadingMoreLibrary?: boolean;
   libraryLoadError?: string | null;
@@ -19,6 +19,12 @@ interface ProjectFilesViewProps {
   searchError?: string | null;
   onSearchLibrary?: (query: string) => void;
   onLoadMoreSearch?: () => void;
+  linkCandidates?: LibraryItem[];
+  linkCandidatesHasMore?: boolean;
+  linkCandidatesLoading?: boolean;
+  linkCandidatesError?: string | null;
+  onSearchLinkCandidates?: (query: string) => void;
+  onLoadMoreLinkCandidates?: () => void;
 }
 
 function iconForKind(kind: string) {
@@ -28,12 +34,13 @@ function iconForKind(kind: string) {
   return File;
 }
 
-export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, searchItems = [], searchHasMore = false, searchLoading = false, searchError, onSearchLibrary, onLoadMoreSearch }: ProjectFilesViewProps) {
+export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, onImportFiles, onToggleProjectLink, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, searchItems = [], searchHasMore = false, searchLoading = false, searchError, onSearchLibrary, onLoadMoreSearch, linkCandidates = [], linkCandidatesHasMore = false, linkCandidatesLoading = false, linkCandidatesError, onSearchLinkCandidates, onLoadMoreLinkCandidates }: ProjectFilesViewProps) {
   const [query, setQuery] = useState('');
   const [linkOpen, setLinkOpen] = useState(false);
+  const [linkQuery, setLinkQuery] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const linked = useMemo(() => (query.trim() ? searchItems : libraryItems).filter((item) => item.projectLinks?.includes(project.id)), [libraryItems, project.id, query, searchItems]);
-  const available = useMemo(() => libraryItems.filter((item) => !item.projectLinks?.includes(project.id)), [libraryItems, project.id]);
+  const available = useMemo(() => linkCandidates.filter((item) => !item.projectLinks?.includes(project.id)), [linkCandidates, project.id]);
   const localArtifacts = useMemo(() => projectArtifacts.filter((item) => item.projectId === project.id), [project.id]);
   const q = query.trim().toLowerCase();
   const filteredLinked = linked.filter((item) => !q || `${item.name} ${item.collection} ${item.detail} ${item.tags.join(' ')}`.toLowerCase().includes(q));
@@ -43,6 +50,12 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
     const timer = window.setTimeout(() => onSearchLibrary?.(query.trim()), 250);
     return () => window.clearTimeout(timer);
   }, [onSearchLibrary, query]);
+
+  useEffect(() => {
+    if (!linkOpen) return;
+    const timer = window.setTimeout(() => onSearchLinkCandidates?.(linkQuery.trim()), 250);
+    return () => window.clearTimeout(timer);
+  }, [linkOpen, linkQuery, onSearchLinkCandidates]);
 
   return (
     <section className="project-files-view">
@@ -76,15 +89,18 @@ export function ProjectFilesView({ project, libraryItems, onBack, onOpenItem, on
       {linkOpen ? (
         <div className="project-link-picker">
           <div className="project-link-picker__head"><span><strong>Link Library files</strong><small>Creates a reference; the original file remains in Personal Library.</small></span><button className="icon-button" type="button" onClick={() => setLinkOpen(false)}><X size={14} /></button></div>
+          <label className="project-files-search project-link-picker__search"><Search size={14} /><input value={linkQuery} onChange={(event) => setLinkQuery(event.target.value)} placeholder="Search all unlinked Library files" /></label>
+          {linkCandidatesError ? <div className="notes-list-pagination" role="status"><span>Could not search unlinked Library files: {linkCandidatesError}</span><button type="button" disabled={linkCandidatesLoading} onClick={() => onSearchLinkCandidates?.(linkQuery.trim())}>Retry</button></div> : null}
           <div className="project-link-picker__list">
             {available.length ? available.map((item) => (
-              <button key={item.id} type="button" onClick={() => onToggleProjectLink(item.id, project.id)}>
+              <button key={item.id} type="button" onClick={() => onToggleProjectLink(item.id, project.id, item)}>
                 <span className={`file-kind file-kind--${item.kind.toLowerCase()}`}>{item.kind}</span>
                 <span><strong>{item.name}</strong><small>{item.collection} · {item.detail}</small></span>
                 <Plus size={13} />
               </button>
-            )) : <span className="empty-inline">Everything in Library is already linked to this project.</span>}
+            )) : linkCandidatesLoading ? <span className="empty-inline" role="status">Searching Library references…</span> : linkCandidatesError ? null : linkQuery.trim() ? <span className="empty-inline">No unlinked Library files match this search.</span> : linkCandidatesHasMore ? <span className="empty-inline">Loading available Library references…</span> : <span className="empty-inline">Everything in Library is already linked to this project.</span>}
           </div>
+          {linkCandidatesHasMore && !linkCandidatesError ? <button className="notes-load-more" type="button" disabled={linkCandidatesLoading} onClick={onLoadMoreLinkCandidates}>{linkCandidatesLoading ? 'Loading references…' : 'Load more Library references'}</button> : null}
         </div>
       ) : null}
 

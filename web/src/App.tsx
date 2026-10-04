@@ -307,6 +307,14 @@ export default function App() {
     error: string | null;
   }>({ query: '', items: [], nextCursor: null, loading: false, error: null });
   const projectFilesSearchRequest = useRef(0);
+  const [projectLibraryCandidates, setProjectLibraryCandidates] = useState<{
+    query: string;
+    items: LibraryItem[];
+    nextCursor: string | null;
+    loading: boolean;
+    error: string | null;
+  }>({ query: '', items: [], nextCursor: null, loading: false, error: null });
+  const projectLibraryCandidatesRequest = useRef(0);
   const libraryLoaded = useRef(false);
   const libraryInitialRequested = useRef(false);
   const [userProjects, setUserProjects] = useState<ProjectRecord[]>([]);
@@ -1057,22 +1065,41 @@ export default function App() {
     }
   }, [projectCatalog, pushToast]);
 
-  const toggleProjectLink = useCallback(async (itemId: string, projectId: string) => {
-    const item = libraryItems.find((entry) => entry.id === itemId);
+  const toggleProjectLink = useCallback(async (itemId: string, projectId: string, candidate?: LibraryItem) => {
+    const item = libraryItems.find((entry) => entry.id === itemId) ?? candidate;
     if (!item) return;
     const links = item.projectLinks ?? [];
     const next = { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
     if (item.source === 'imported' && item.syncState === 'synced') {
       try {
         const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next, projectCatalog));
-        setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...workspaceLibraryFromRecord(saved, projectCatalog), blobKey: item.blobKey } : entry));
+        setLibraryItems((current) => {
+          const updated = { ...workspaceLibraryFromRecord(saved, projectCatalog), blobKey: item.blobKey };
+          return current.some((entry) => entry.id === item.id)
+            ? current.map((entry) => entry.id === item.id ? updated : entry)
+            : [...current, updated];
+        });
+        if (activeProject?.id === projectId) {
+          setProjectLibraryCandidates((current) => ({
+            ...current,
+            items: current.items.filter((entry) => entry.id !== item.id),
+          }));
+        }
       } catch (error) {
         pushToast('Project link was not saved', executionErrorText(error));
       }
       return;
     }
-    setLibraryItems((current) => current.map((entry) => entry.id === item.id ? next : entry));
-  }, [libraryItems, projectCatalog, pushToast]);
+    setLibraryItems((current) => current.some((entry) => entry.id === item.id)
+      ? current.map((entry) => entry.id === item.id ? next : entry)
+      : [...current, next]);
+    if (activeProject?.id === projectId) {
+      setProjectLibraryCandidates((current) => ({
+        ...current,
+        items: current.items.filter((entry) => entry.id !== item.id),
+      }));
+    }
+  }, [activeProject?.id, libraryItems, projectCatalog, pushToast]);
 
   const selectThread = useCallback((threadId: string) => {
     if (!activeProjectId) return;
@@ -1693,6 +1720,57 @@ export default function App() {
       setProjectFilesSearch((current) => current.query === query ? { ...current, loading: false, error: executionErrorText(error) } : current);
     }
   }, [activeProject, libraryItems, projectCatalog, projectFilesSearch]);
+
+  const searchProjectLibraryCandidates = useCallback(async (query: string) => {
+    const requestId = ++projectLibraryCandidatesRequest.current;
+    if (!activeProject) {
+      setProjectLibraryCandidates({ query: '', items: [], nextCursor: null, loading: false, error: null });
+      return;
+    }
+    setProjectLibraryCandidates({ query, items: [], nextCursor: null, loading: true, error: null });
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(null, 50, query, undefined, activeProject.name);
+      if (projectLibraryCandidatesRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      const remoteIds = new Set(remoteItems.map((item) => item.id));
+      const normalizedQuery = query.toLocaleLowerCase();
+      const localMatches = libraryItems.filter((item) => !item.projectLinks?.includes(activeProject.id)
+        && !remoteIds.has(item.id)
+        && (!normalizedQuery || `${item.name} ${item.collection} ${item.detail} ${item.tags.join(' ')}`.toLocaleLowerCase().includes(normalizedQuery)));
+      setProjectLibraryCandidates({ query, items: [...remoteItems, ...localMatches], nextCursor: page.nextCursor, loading: false, error: null });
+    } catch (error) {
+      if (projectLibraryCandidatesRequest.current !== requestId) return;
+      setProjectLibraryCandidates({ query, items: [], nextCursor: null, loading: false, error: executionErrorText(error) });
+    }
+  }, [activeProject, libraryItems, projectCatalog]);
+
+  const loadMoreProjectLibraryCandidates = useCallback(async () => {
+    if (!activeProject || !projectLibraryCandidates.nextCursor || projectLibraryCandidates.loading) return;
+    const requestId = ++projectLibraryCandidatesRequest.current;
+    const { query, nextCursor } = projectLibraryCandidates;
+    setProjectLibraryCandidates((current) => ({ ...current, loading: true, error: null }));
+    try {
+      const page = await api.fetchWorkspaceLibraryPage(nextCursor, 50, query, undefined, activeProject.name);
+      if (projectLibraryCandidatesRequest.current !== requestId) return;
+      const currentById = new Map(libraryItems.map((item) => [item.id, item]));
+      const remoteItems = page.items.map((record) => {
+        const remote = workspaceLibraryFromRecord(record, projectCatalog);
+        const local = currentById.get(remote.id);
+        return local ? { ...remote, blobKey: local.blobKey ?? remote.blobKey } : remote;
+      });
+      setProjectLibraryCandidates((current) => current.query === query
+        ? { ...current, items: [...current.items, ...remoteItems.filter((item) => !current.items.some((existing) => existing.id === item.id))], nextCursor: page.nextCursor, loading: false }
+        : current);
+    } catch (error) {
+      if (projectLibraryCandidatesRequest.current !== requestId) return;
+      setProjectLibraryCandidates((current) => current.query === query ? { ...current, loading: false, error: executionErrorText(error) } : current);
+    }
+  }, [activeProject, libraryItems, projectCatalog, projectLibraryCandidates]);
 
   useEffect(() => {
     if (
@@ -2656,6 +2734,12 @@ export default function App() {
             searchError={projectFilesSearch.error}
             onSearchLibrary={handleProjectFilesSearch}
             onLoadMoreSearch={() => void loadMoreProjectFilesSearch()}
+            linkCandidates={projectLibraryCandidates.items}
+            linkCandidatesHasMore={Boolean(projectLibraryCandidates.nextCursor)}
+            linkCandidatesLoading={projectLibraryCandidates.loading}
+            linkCandidatesError={projectLibraryCandidates.error}
+            onSearchLinkCandidates={searchProjectLibraryCandidates}
+            onLoadMoreLinkCandidates={() => void loadMoreProjectLibraryCandidates()}
             onBack={openProjectOverview}
             onOpenItem={(item) => void handleLibraryItem(item)}
             onImportFiles={(files, projectId) => void importFiles(files, projectId)}

@@ -268,6 +268,53 @@ describe('Navigation and Workspace Shell Invariants', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&cursor=older-file-page&q=old+unique+phrase&project_name=Stateful+Architecture'));
   });
 
+  it('searches all unlinked Library references from the project link picker', async () => {
+    const candidate = {
+      id: 'unloaded-library-candidate', name: 'A far-page source', kind: 'PDF', collection: 'Research',
+      detail: 'Contains an unlinked unique phrase', tags: ['reference'], project_names: [],
+      size: 2048, mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('/v1/workspace/library?')) {
+        const params = new URL(url, 'http://aura.test').searchParams;
+        if (params.has('unlinked_project_name') && params.has('q')) return Promise.resolve({
+          ok: true,
+          headers: new Headers(),
+          json: () => Promise.resolve([candidate]),
+        } as Response);
+        return Promise.resolve({ ok: true, headers: new Headers(), json: () => Promise.resolve([]) } as Response);
+      }
+      if (url.includes(`/v1/workspace/library/${candidate.id}`) && init?.method === 'PUT') {
+        const body = JSON.parse(String(init.body));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...candidate, project_names: body.project_names }) } as Response);
+      }
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const filesButton = screen.getAllByRole('button').find((button) => button.textContent?.includes('Project + linked Library'))!;
+    await act(async () => { fireEvent.click(filesButton); });
+    fireEvent.click(screen.getByRole('button', { name: /Link from Library/i }));
+    fireEvent.change(screen.getByPlaceholderText('Search all unlinked Library files'), { target: { value: 'unlinked unique phrase' } });
+
+    const result = await screen.findByRole('button', { name: /A far-page source/ });
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&q=unlinked+unique+phrase&unlinked_project_name=Stateful+Architecture'));
+    await act(async () => { fireEvent.click(result); });
+
+    await waitFor(() => {
+      const update = vi.mocked(global.fetch).mock.calls.find(([input, init]) => String(input).includes(`/v1/workspace/library/${candidate.id}`) && init?.method === 'PUT');
+      expect(update).toBeDefined();
+      expect(JSON.parse(String(update?.[1]?.body)).project_names).toContain('Stateful Architecture');
+    });
+    expect(screen.queryByRole('button', { name: /A far-page source/ })).not.toBeInTheDocument();
+  });
+
 
   it('file object opens its own dedicated preview tab', async () => {
     await act(async () => {

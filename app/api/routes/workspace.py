@@ -1035,6 +1035,7 @@ async def list_personal_library_references(
     page_size: int = Query(default=100, ge=1, le=MAX_WORKSPACE_COLLECTION_PAGE_SIZE),
     q: str | None = Query(default=None, min_length=1, max_length=200),
     project_name: str | None = Query(default=None, max_length=128),
+    unlinked_project_name: str | None = Query(default=None, max_length=128),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceLibraryReferenceResponse]:
     query = select(WorkspaceObjectModel).where(
@@ -1050,6 +1051,14 @@ async def list_personal_library_references(
             WorkspaceObjectProjectLinkModel.project_name == normalized_project
         )
         query = query.where(WorkspaceObjectModel.id.in_(linked_object_ids))
+    if unlinked_project_name is not None:
+        normalized_project = unlinked_project_name.strip()
+        if not normalized_project:
+            raise HTTPException(status_code=422, detail="Project name must not be blank.")
+        linked_object_ids = select(WorkspaceObjectProjectLinkModel.object_id).where(
+            WorkspaceObjectProjectLinkModel.project_name == normalized_project
+        )
+        query = query.where(WorkspaceObjectModel.id.not_in(linked_object_ids))
     if q is not None:
         normalized = " ".join(q.split())
         if not normalized:
