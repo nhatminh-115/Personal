@@ -24,4 +24,18 @@ describe('connected file preview', () => {
     />);
     expect(screen.queryByRole('button', { name: 'Copy to Library' })).not.toBeInTheDocument();
   });
+
+  it('sandboxes HTML previews while keeping PDF embedding available', () => {
+    const { rerender } = render(<FilePreviewView
+      preview={{ id: 'html-1', name: 'untrusted.html', url: 'blob:html', mimeType: 'text/html', virtualPath: 'Library / untrusted.html' }}
+      onOpenExternal={vi.fn()}
+    />);
+    expect(screen.getByTitle('untrusted.html')).toHaveAttribute('sandbox', '');
+
+    rerender(<FilePreviewView
+      preview={{ id: 'pdf-1', name: 'report.pdf', url: 'blob:pdf', mimeType: 'application/pdf', virtualPath: 'Library / report.pdf' }}
+      onOpenExternal={vi.fn()}
+    />);
+    expect(screen.getByTitle('report.pdf')).not.toHaveAttribute('sandbox');
+  });
 });
