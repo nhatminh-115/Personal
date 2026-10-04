@@ -227,6 +227,7 @@ class WorkspaceObjectResponse(BaseModel):
     title: str
     content: str
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
+    revision: int
     created_at: datetime
     updated_at: datetime
 
@@ -249,6 +250,7 @@ class WorkspaceObjectUpdate(BaseModel):
     title: str = Field(max_length=255)
     content: str = Field(max_length=100_000)
     metadata_json: Dict[str, Any] = Field(default_factory=dict)
+    expected_revision: int = Field(ge=1)
 
     @field_validator("metadata_json")
     @classmethod
@@ -263,6 +265,7 @@ class WorkspaceNoteWrite(BaseModel):
     project_names: List[str] = Field(default_factory=list, max_length=64)
     pinned: bool = False
     privacy_policy: Optional[Literal["public", "internal", "confidential", "local_only"]] = None
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class WorkspaceNoteResponse(BaseModel):
@@ -273,6 +276,7 @@ class WorkspaceNoteResponse(BaseModel):
     project_names: List[str]
     pinned: bool
     privacy_policy: Optional[str] = None
+    revision: int
     created_at: datetime
     updated_at: datetime
 

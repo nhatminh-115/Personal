@@ -15,12 +15,14 @@ describe('Persistent personal workspace Notes', () => {
         const body = JSON.parse(String(init.body));
         return Promise.resolve({ ok: true, json: () => Promise.resolve({
           id: 'personal-note-1', ...body, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+          revision: 1,
         }) } as Response);
       }
       if (url.endsWith('/v1/workspace/notes/personal-note-1') && init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
         return Promise.resolve({ ok: true, json: () => Promise.resolve({
           id: 'personal-note-1', ...body, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:01:00Z',
+          revision: 2,
         }) } as Response);
       }
       if (url.endsWith('/v1/workspace/notes') || url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
@@ -53,6 +55,7 @@ describe('Persistent personal workspace Notes', () => {
       title: 'Rollback plan',
       body: 'Keep the migration reversible.',
       project_names: [],
+      expected_revision: 1,
     });
   });
 
@@ -60,6 +63,7 @@ describe('Persistent personal workspace Notes', () => {
     const note = {
       id: 'searchable-note-1', title: 'Privacy boundary', body: 'Connected files stay on this device.',
       tags: ['privacy'], project_names: [], pinned: false,
+      revision: 1,
       created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     };
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -94,6 +98,7 @@ describe('Persistent personal workspace Notes', () => {
     const note = {
       id: 'note-privacy', title: 'Private note', body: 'Keep this on device.', tags: [], project_names: [],
       pinned: false, privacy_policy: 'confidential', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+      revision: 1,
     };
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
