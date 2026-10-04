@@ -138,7 +138,10 @@ ignored and never enters the run prompt or event record. Webhook signals use
 the same durable outbox, approval flow, and local-only routing policy as other
 Automation runs. Paused or archived automations reject new webhook runs.
 Automation run summaries preserve whether each event came from a schedule, a
-manual run, or a webhook. See the [webhook setup and delivery contract](../automations-webhooks.md).
+manual run, a webhook, or a retry. Failed and dead-lettered executions can be
+retried as a fresh event using the Automation's current saved instruction; the
+new history record links back to the prior event, and webhook request bodies
+are never replayed. See the [webhook setup and delivery contract](../automations-webhooks.md).
 
 The Library's Research collection includes a read-only Research Radar for saved
 project graphs. It requests bounded graph pages filtered to research sources,

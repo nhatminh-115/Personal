@@ -351,6 +351,27 @@ describe('AutomationsView', () => {
     expect(api.fetchRunDetails).toHaveBeenCalledWith('run-history-1');
     expect(api.fetchRunRouting).toHaveBeenCalledWith('run-history-1');
   });
+  it('offers retry for failed runs and identifies the new run as a retry', async () => {
+    const failedRun = {
+      event_id: 'failed-event', run_id: 'failed-run', queued_at: '2026-10-02T00:00:00Z',
+      status: 'dead_letter', retry_count: 3, trigger_type: 'webhook' as const,
+    };
+    const retriedRun = {
+      event_id: 'retry-event', run_id: 'retry-run', queued_at: '2026-10-03T00:00:00Z',
+      status: 'queued', retry_count: 0, trigger_type: 'retry' as const, retry_of_event_id: 'failed-event',
+    };
+    const onRetryRun = vi.fn().mockResolvedValue(retriedRun);
+    vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [failedRun], nextCursor: null });
+    const idleAutomation = { ...liveAutomation, latestExecution: { ...liveAutomation.latestExecution!, status: 'completed' } };
+    render(<AutomationsView projects={projects} automations={[idleAutomation]} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onRetryRun={onRetryRun} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    await screen.findByText('dead letter');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry run' }));
+    await waitFor(() => expect(onRetryRun).toHaveBeenCalledWith('auto-1', 'failed-event'));
+    expect(await screen.findByText('via retry')).toBeInTheDocument();
+    expect(screen.getByText('Retry of failed-e')).toBeInTheDocument();
+  });
+
   it('keeps example automations local and only allows idle live routines to run', () => {
     const idleAutomation: AutomationRecord = {
       ...liveAutomation,

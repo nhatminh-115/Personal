@@ -311,7 +311,7 @@ export interface AutomationRecord {
   schedule?: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   lastRunAt?: string | null;
   nextRunAt?: string | null;
-  latestExecution?: { eventId: string; runId: string; queuedAt: string; status: string; retryCount: number; triggerType?: 'schedule' | 'manual' | 'webhook' } | null;
+  latestExecution?: { eventId: string; runId: string; queuedAt: string; status: string; retryCount: number; triggerType?: 'schedule' | 'manual' | 'webhook' | 'retry' } | null;
 }
 
 export const initialAutomations: AutomationRecord[] = [

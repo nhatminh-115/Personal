@@ -33,6 +33,7 @@ interface AutomationsViewProps {
   onToggle: (automation: AutomationRecord, enabled: boolean) => void;
   onRunNow: (automation: AutomationRecord) => void;
   onCancelRun?: (automationId: string, eventId: string) => Promise<AutomationExecutionRecord>;
+  onRetryRun?: (automationId: string, eventId: string) => Promise<AutomationExecutionRecord>;
   onApprovalResolved: (automationId: string) => void;
 }
 
@@ -57,13 +58,14 @@ function safeRunEventSummary(event: RunEvent): string | null {
   return null;
 }
 
-function triggerSourceLabel(triggerType?: 'schedule' | 'manual' | 'webhook'): string {
+function triggerSourceLabel(triggerType?: 'schedule' | 'manual' | 'webhook' | 'retry'): string {
   if (triggerType === 'webhook') return 'webhook';
   if (triggerType === 'schedule') return 'schedule';
+  if (triggerType === 'retry') return 'retry';
   return 'manual run';
 }
 
-export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onCancelRun, onApprovalResolved }: AutomationsViewProps) {
+export function AutomationsView({ projects, automations, totalCount = automations.filter((item) => item.source === 'live').length, enabledCount = automations.filter((item) => item.source === 'live' && item.enabled).length, hasMore = false, loadingPage = false, pageError = null, onLoadMore = () => {}, onCreate, onUpdate, onDuplicate, onSetArchived, includeArchived = false, onToggleArchived, onToggle, onRunNow, onCancelRun, onRetryRun, onApprovalResolved }: AutomationsViewProps) {
   const [creating, setCreating] = useState(false);
   const [editingAutomation, setEditingAutomation] = useState<AutomationRecord | null>(null);
   const [name, setName] = useState('');
@@ -92,6 +94,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
   const [historyCursorByAutomation, setHistoryCursorByAutomation] = useState<Record<string, string | null>>({});
   const [historyLoadingId, setHistoryLoadingId] = useState<string | null>(null);
   const [cancellingEventId, setCancellingEventId] = useState<string | null>(null);
+  const [retryingEventId, setRetryingEventId] = useState<string | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [runReview, setRunReview] = useState<{ automation: AutomationRecord; detail: RunDetail; routing: RunRoutingDecision[] } | null>(null);
   const [runLoadingId, setRunLoadingId] = useState<string | null>(null);
@@ -164,6 +167,23 @@ export function AutomationsView({ projects, automations, totalCount = automation
       setHistoryError(cause instanceof Error ? cause.message : 'Could not cancel queued run.');
     } finally {
       setCancellingEventId(null);
+    }
+  };
+
+  const retryFailedRun = async (automation: AutomationRecord, run: AutomationExecutionRecord) => {
+    if (!onRetryRun || !['failed', 'dead_letter'].includes(run.status) || retryingEventId) return;
+    setRetryingEventId(run.event_id);
+    setHistoryError('');
+    try {
+      const retry = await onRetryRun(automation.id, run.event_id);
+      setHistoryByAutomation((current) => ({
+        ...current,
+        [automation.id]: [retry, ...(current[automation.id] ?? []).filter((item) => item.event_id !== retry.event_id)],
+      }));
+    } catch (cause) {
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not retry this run.');
+    } finally {
+      setRetryingEventId(null);
     }
   };
 
@@ -377,7 +397,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
                                 <small className="automation-trigger-origin">via {triggerSourceLabel(run.trigger_type)}</small>
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
-                                {run.status === 'queued' && onCancelRun ? <button type="button" onClick={() => void cancelQueuedRun(automation, run)} disabled={cancellingEventId !== null} title="Cancel only if AURA has not started this run">{cancellingEventId === run.event_id ? 'Cancelling…' : 'Cancel queued run'}</button> : run.status === 'cancelled' ? <span>Cancelled before execution</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
+                                {run.retry_of_event_id ? <small>Retry of {run.retry_of_event_id.slice(0, 8)}</small> : null}
+                                {['failed', 'dead_letter'].includes(run.status) && onRetryRun && automation.enabled && !automation.archived ? <button type="button" onClick={() => void retryFailedRun(automation, run)} disabled={retryingEventId !== null || runInProgress} title={runInProgress ? 'Wait for the current Automation run to finish' : "Queue a fresh run using the Automation's saved instruction"}>{retryingEventId === run.event_id ? 'Queueing retry…' : 'Retry run'}</button> : run.status === 'queued' && onCancelRun ? <button type="button" onClick={() => void cancelQueuedRun(automation, run)} disabled={cancellingEventId !== null} title="Cancel only if AURA has not started this run">{cancellingEventId === run.event_id ? 'Cancelling…' : 'Cancel queued run'}</button> : run.status === 'cancelled' ? <span>Cancelled before execution</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
                               </li>
                             ))}
                           </ol>
