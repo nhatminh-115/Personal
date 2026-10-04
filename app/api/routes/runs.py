@@ -206,6 +206,7 @@ async def get_run_routing(
         reasoning = next((e.payload for e in reversed(events) if e.event_type == "reasoning_effort_selected"), None)
         context_manifest = next((e.payload for e in reversed(events) if e.event_type == "context_compiled"), None)
         context_loaded = next((e.payload for e in reversed(events) if e.event_type == "context_loaded"), None)
+        safe_context_loaded = _safe_event_payload("context_loaded", context_loaded) if context_loaded is not None else {}
         decisions.append({
             "run_id": run.id,
             "parent_run_id": run.parent_run_id,
@@ -213,7 +214,11 @@ async def get_run_routing(
             "model_selection": _safe_event_payload("model_selected", selected) if selected is not None else None,
             "reasoning_selection": _safe_event_payload("reasoning_effort_selected", reasoning) if reasoning is not None else None,
             "context_manifest": _safe_event_payload("context_compiled", context_manifest) if context_manifest is not None else None,
-            "memory_privacy_sources": _safe_event_payload("context_loaded", context_loaded).get("memory_privacy_sources", []) if context_loaded is not None else [],
+            "memory_ids_by_tier": {
+                tier: safe_context_loaded.get(f"{tier}_memory_ids", [])
+                for tier in ("profile", "project", "semantic", "episode")
+            },
+            "memory_privacy_sources": safe_context_loaded.get("memory_privacy_sources", []),
             "fallback_events": [
                 {"event_type": e.event_type, "payload": _safe_event_payload(e.event_type, e.payload)}
                 for e in events if e.event_type in {"fallback_considered", "fallback_blocked"}
