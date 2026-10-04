@@ -1168,14 +1168,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           metadata_json: { bridge_options: bridgeOptions, bridge_sections: { conclusions: '', observations: '', failed: '', artifacts: '', constraints: '', decisions: '' } },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
-        recordHistory();
-        await refreshRecentWorkspacePage();
-        toast('Context Bridge saved', 'Selected source objects are linked. The bridge does not copy their full content.');
       } catch (error) {
         toast('Context Bridge was not saved', error instanceof ApiError && error.status === 409
           ? 'This bridge would create a cycle in the context-flow graph.'
           : 'AURA could not link all selected objects in the project graph.');
+        return;
       }
+      recordHistory();
+      try {
+        await refreshRecentWorkspacePage();
+      } catch {
+        resetHistoryRef.current();
+        toast('Context Bridge saved, but Board could not refresh', 'Reopen the Board to load the saved bridge.');
+        return;
+      }
+      toast('Context Bridge saved', 'Selected source objects are linked. The bridge does not copy their full content.');
       return;
     }
     const anchor = getSelectionAnchor();
@@ -1213,14 +1220,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           },
           source_object_ids: selectedNodes.map((node) => node.id),
         });
-        recordHistory();
-        await refreshRecentWorkspacePage();
-        toast('Context Set saved', 'Source objects are linked without changing their content or generating a summary.');
       } catch (error) {
         toast('Context Set was not saved', error instanceof ApiError && error.status === 409
           ? 'This selection would create a cycle in the context-flow graph.'
           : 'AURA could not link all selected objects in the project graph.');
+        return;
       }
+      recordHistory();
+      try {
+        await refreshRecentWorkspacePage();
+      } catch {
+        resetHistoryRef.current();
+        toast('Context Set saved, but Board could not refresh', 'Reopen the Board to load the saved Context Set.');
+        return;
+      }
+      toast('Context Set saved', 'Source objects are linked without changing their content or generating a summary.');
       return;
     }
     recordHistory();
@@ -1268,14 +1282,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (workspaceProjectName) {
       try {
         await api.createWorkspaceObject(workspaceProjectName, mergeInput);
-        recordHistory();
-        await refreshRecentWorkspacePage();
-        toast('Merged continuation created', `A new branch now links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
       } catch (error) {
         toast('Merge was not saved', error instanceof ApiError && error.status === 409
           ? 'This merge would create a cycle in the context-flow graph.'
           : 'AURA could not link the selected objects into a new branch.');
+        return;
       }
+      recordHistory();
+      try {
+        await refreshRecentWorkspacePage();
+      } catch {
+        resetHistoryRef.current();
+        toast('Merged continuation saved, but Board could not refresh', 'Reopen the Board to load the saved continuation.');
+        return;
+      }
+      toast('Merged continuation created', `A new branch now links ${sourceIds.length} context objects. “${target.data.title}” remains unchanged.`);
       return;
     }
     recordHistory();
