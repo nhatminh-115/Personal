@@ -72,6 +72,42 @@ async def test_workspace_search_treats_wildcards_literally_and_caps_results(asyn
 
 
 @pytest.mark.asyncio
+async def test_workspace_search_paginates_ranked_results_without_duplicates(async_client):
+    records = [
+        ("cursor needle", "exact title"),
+        ("Cursor needle alpha", "prefix title"),
+        ("Cursor needle beta", "prefix title"),
+        ("Unrelated title", "cursor needle in the body"),
+    ]
+    ids = []
+    for title, content in records:
+        response = await async_client.post("/v1/workspace/projects/aura/objects", json={
+            "object_type": "manual_note", "title": title, "content": content,
+        })
+        assert response.status_code == 201
+        ids.append(response.json()["id"])
+
+    first = await async_client.get("/v1/workspace/search", params={"query": "cursor needle", "limit": 2})
+    first_ids = [item["object_id"] for item in first.json()]
+    assert first_ids[0] == ids[0]
+    assert first_ids[1] in ids[1:3]
+    cursor = first.headers.get("X-Next-Cursor")
+    assert cursor
+
+    second = await async_client.get("/v1/workspace/search", params={
+        "query": "cursor needle", "limit": 2, "cursor": cursor,
+    })
+    second_ids = [item["object_id"] for item in second.json()]
+    assert set(second_ids) == (set(ids[1:3]) - {first_ids[1]}) | {ids[3]}
+    assert second_ids[-1] == ids[3]
+    assert second.headers.get("X-Next-Cursor") is None
+    assert not ({item["object_id"] for item in first.json()} & {item["object_id"] for item in second.json()})
+
+    invalid_cursor = await async_client.get("/v1/workspace/search", params={"query": "cursor needle", "cursor": "invalid"})
+    assert invalid_cursor.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_workspace_search_indexes_library_reference_metadata_without_reading_files(async_client):
     created = await async_client.post(
         "/v1/workspace/library",

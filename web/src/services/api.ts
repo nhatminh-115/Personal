@@ -498,10 +498,15 @@ export const api = {
     return fetchAllCursorPages<WorkspaceProjectRecord>(`/v1/workspace/projects${includeArchived ? '?include_archived=true' : ''}`);
   },
 
-  async searchWorkspace(query: string, projectName?: string): Promise<WorkspaceSearchResult[]> {
-    const params = new URLSearchParams({ query });
+  async searchWorkspace(query: string, projectName?: string, cursor?: string | null, limit = 25): Promise<{ items: WorkspaceSearchResult[]; nextCursor: string | null }> {
+    const params = new URLSearchParams({ query, limit: String(limit) });
     if (projectName) params.set('project_name', projectName);
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/search?${params.toString()}`));
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch(`${BASE_URL}/v1/workspace/search?${params.toString()}`);
+    return {
+      items: await handleResponse<WorkspaceSearchResult[]>(response),
+      nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
+    };
   },
 
   async createWorkspaceProject(input: { id: string; name: string; subtitle: string }): Promise<WorkspaceProjectRecord> {
