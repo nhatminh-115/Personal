@@ -131,6 +131,30 @@ def _set_next_cursor(response: Response, rows: list, page_size: int, timestamp_f
     )
 
 
+def _decode_workspace_search_cursor(cursor: str) -> tuple[int, datetime, str]:
+    try:
+        encoded = cursor + "=" * (-len(cursor) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+        if not isinstance(payload, list) or len(payload) != 3:
+            raise ValueError("invalid cursor payload")
+        rank, timestamp_text, object_id = payload
+        if isinstance(rank, bool) or not isinstance(rank, int) or rank not in {0, 1, 2, 3}:
+            raise ValueError("invalid search rank")
+        if not isinstance(timestamp_text, str) or not isinstance(object_id, str) or not object_id or len(object_id) > 36:
+            raise ValueError("invalid cursor values")
+        timestamp = datetime.fromisoformat(timestamp_text)
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=timezone.utc)
+        return rank, timestamp, object_id
+    except (ValueError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=422, detail="Invalid workspace search cursor.") from exc
+
+
+def _encode_workspace_search_cursor(rank: int, item: WorkspaceObjectModel) -> str:
+    payload = json.dumps([rank, item.updated_at.isoformat(), item.id], separators=(",", ":"))
+    return base64.urlsafe_b64encode(payload.encode("utf-8")).decode("ascii").rstrip("=")
+
+
 @router.get("/projects", response_model=list[WorkspaceProjectResponse])
 async def list_workspace_projects(
     response: Response,
@@ -216,9 +240,11 @@ async def create_workspace_project(
 
 @router.get("/search", response_model=list[WorkspaceSearchResult])
 async def search_workspace(
+    response: Response,
     query: str = Query(min_length=1, max_length=200),
     project_name: str | None = Query(default=None, max_length=128),
     limit: int = Query(default=25, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=512),
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceSearchResult]:
     """Search persisted workspace object titles and text without exposing metadata blobs."""
@@ -251,14 +277,31 @@ async def search_workspace(
         (func.lower(WorkspaceObjectModel.title).like(pattern.lower(), escape="\\"), 2),
         else_=3,
     )
+    if cursor is not None:
+        cursor_rank, cursor_updated_at, cursor_id = _decode_workspace_search_cursor(cursor)
+        filters.append(or_(
+            rank > cursor_rank,
+            and_(
+                rank == cursor_rank,
+                or_(
+                    WorkspaceObjectModel.updated_at < cursor_updated_at,
+                    and_(WorkspaceObjectModel.updated_at == cursor_updated_at, WorkspaceObjectModel.id > cursor_id),
+                ),
+            ),
+        ))
     result = await db.execute(
-        select(WorkspaceObjectModel)
+        select(WorkspaceObjectModel, rank.label("search_rank"))
         .where(*filters)
         .order_by(rank, WorkspaceObjectModel.updated_at.desc(), WorkspaceObjectModel.id)
-        .limit(limit)
+        .limit(limit + 1)
     )
-    response: list[WorkspaceSearchResult] = []
-    for item in result.scalars():
+    rows = list(result.all())
+    if len(rows) > limit:
+        last_item, last_rank = rows[limit - 1]
+        response.headers["X-Next-Cursor"] = _encode_workspace_search_cursor(int(last_rank), last_item)
+        rows = rows[:limit]
+    items: list[WorkspaceSearchResult] = []
+    for item, _search_rank in rows:
         content = item.content or ""
         metadata = item.metadata_json if isinstance(item.metadata_json, dict) else {}
         searchable_content = content
@@ -275,7 +318,7 @@ async def search_workspace(
                 excerpt += "…"
         else:
             excerpt = searchable_content[:180].strip() + ("…" if len(searchable_content) > 180 else "")
-        response.append(WorkspaceSearchResult(
+        items.append(WorkspaceSearchResult(
             object_id=item.id,
             object_type=item.object_type,
             title=item.title or "(untitled)",
@@ -296,7 +339,7 @@ async def search_workspace(
             ),
             updated_at=item.updated_at,
         ))
-    return response
+    return items
 
 MAX_EXECUTION_GRAPH_RUNS = 100
 MAX_EXECUTION_GRAPH_EVENTS = 3_000

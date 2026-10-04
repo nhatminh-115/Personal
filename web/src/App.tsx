@@ -281,7 +281,7 @@ export default function App() {
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef(new Map<number, number>());
-  const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; results: WorkspaceSearchResult[]; loading: boolean; error: string | null }>({ query: '', results: [], loading: false, error: null });
+  const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; projectName: string | null; results: WorkspaceSearchResult[]; nextCursor: string | null; loading: boolean; loadingMore: boolean; error: string | null }>({ query: '', projectName: null, results: [], nextCursor: null, loading: false, loadingMore: false, error: null });
   const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
   const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
   const [focusedStudySessionId, setFocusedStudySessionId] = useState<string | null>(null);
@@ -2502,14 +2502,15 @@ export default function App() {
     const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
     if (matchingConnection) { openConnection(matchingConnection); return; }
     const requestId = ++workspaceSearchRequest.current;
-    setWorkspaceSearch({ query: trimmed, results: [], loading: true, error: null });
+    const projectName = activeProject?.name ?? null;
+    setWorkspaceSearch({ query: trimmed, projectName, results: [], nextCursor: null, loading: true, loadingMore: false, error: null });
     openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
     void Promise.allSettled([
-      api.searchWorkspace(trimmed, activeProject?.name),
+      api.searchWorkspace(trimmed, projectName ?? undefined),
       activeProject ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(trimmed),
     ]).then(([workspace, folderFiles]) => {
       if (workspaceSearchRequest.current !== requestId) return;
-      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value] : [];
+      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value.items] : [];
       if (folderFiles.status === 'fulfilled') {
         results.push(...folderFiles.value.map((file) => ({
           object_id: `external:${file.connectionId}:${file.relativePath}`,
@@ -2531,8 +2532,34 @@ export default function App() {
         ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
         ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
       ];
-      setWorkspaceSearch({ query: trimmed, results, loading: false, error: errors.length ? errors.join(' ') : null });
+      setWorkspaceSearch({ query: trimmed, projectName, results, nextCursor: workspace.status === 'fulfilled' ? workspace.value.nextCursor : null, loading: false, loadingMore: false, error: errors.length ? errors.join(' ') : null });
     });
+  };
+
+  const loadMoreWorkspaceSearch = async () => {
+    if (!workspaceSearch.query || !workspaceSearch.nextCursor || workspaceSearch.loading || workspaceSearch.loadingMore) return;
+    const requestId = ++workspaceSearchRequest.current;
+    const { query, projectName, nextCursor } = workspaceSearch;
+    setWorkspaceSearch((current) => ({ ...current, loadingMore: true, error: null }));
+    try {
+      const page = await api.searchWorkspace(query, projectName ?? undefined, nextCursor);
+      if (workspaceSearchRequest.current !== requestId) return;
+      setWorkspaceSearch((current) => {
+        if (current.query !== query || current.projectName !== projectName) return current;
+        const seen = new Set(current.results.map((item) => item.object_id));
+        return {
+          ...current,
+          results: [...current.results, ...page.items.filter((item) => !seen.has(item.object_id))],
+          nextCursor: page.nextCursor,
+          loadingMore: false,
+        };
+      });
+    } catch (error) {
+      if (workspaceSearchRequest.current !== requestId) return;
+      setWorkspaceSearch((current) => current.query === query
+        ? { ...current, loadingMore: false, error: executionErrorText(error) }
+        : current);
+    }
   };
 
   const handleOpenWorkspaceSearchResult = (projectName: string, objectId: string) => {
@@ -2845,6 +2872,10 @@ export default function App() {
             results={workspaceSearch.results}
             loading={workspaceSearch.loading}
             error={workspaceSearch.error}
+            hasMore={Boolean(workspaceSearch.nextCursor)}
+            loadingMore={workspaceSearch.loadingMore}
+            onLoadMore={() => void loadMoreWorkspaceSearch()}
+            onRetry={() => handleLocationSubmit(workspaceSearch.query)}
             onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenNote={handleOpenWorkspaceSearchNote}
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}

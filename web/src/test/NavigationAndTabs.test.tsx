@@ -70,6 +70,40 @@ describe('Navigation and Workspace Shell Invariants', () => {
     expect(screen.getByRole('button', { name: /^AURA$/i })).toBeInTheDocument();
   });
 
+  it('loads later pages from the backend workspace search', async () => {
+    const first = {
+      object_id: 'search-page-one', object_type: 'manual_note', title: 'First saved result',
+      excerpt: 'First page matching phrase.', project_name: null, created_by: 'user', updated_at: '2026-10-01T12:00:00Z',
+    };
+    const second = { ...first, object_id: 'search-page-two', title: 'Older saved result', excerpt: 'Later page matching phrase.' };
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.startsWith('/v1/workspace/search?')) {
+        const params = new URL(url, 'http://aura.test').searchParams;
+        return Promise.resolve({
+          ok: true,
+          headers: new Headers(params.has('cursor') ? {} : { 'X-Next-Cursor': 'search-older-page' }),
+          json: () => Promise.resolve(params.has('cursor') ? [second] : [first]),
+        } as Response);
+      }
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      return Promise.resolve({ ok: true, headers: new Headers(), json: () => Promise.resolve([]) } as Response);
+    });
+    await act(async () => { render(<App />); });
+
+    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.change(input, { target: { value: 'matching phrase' } });
+    await act(async () => { fireEvent.submit(input.closest('form')!); });
+    expect(await screen.findByText('First saved result')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/search?query=matching+phrase&limit=25'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more results' }));
+    expect(await screen.findByText('Older saved result')).toBeInTheDocument();
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/search?query=matching+phrase&limit=25&cursor=search-older-page'));
+    expect(screen.getByText('First saved result')).toBeInTheDocument();
+  });
+
   it('merges indexed connected-folder metadata and opens the original file on demand', async () => {
     const indexedFile: folderConn.IndexedFolderFile = {
       connectionId: 'folder-1', connectionName: 'Research', relativePath: 'papers/overview.pdf',

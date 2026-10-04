@@ -6,6 +6,10 @@ interface WorkspaceSearchViewProps {
   results: WorkspaceSearchResult[];
   loading: boolean;
   error: string | null;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?: () => void;
+  onRetry?: () => void;
   onOpenProject: (name: string, objectId: string) => void;
   onOpenNote: (objectId: string) => void;
   onOpenLibraryItem: (objectId: string) => void;
@@ -24,7 +28,7 @@ const TYPE_LABELS: Record<string, string> = {
   study_card: 'Learning card',
 };
 
-export function WorkspaceSearchView({ query, results, loading, error, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onStudyResearchClaim, onOpenFile }: WorkspaceSearchViewProps) {
+export function WorkspaceSearchView({ query, results, loading, error, hasMore = false, loadingMore = false, onLoadMore, onRetry, onOpenProject, onOpenNote, onOpenLibraryItem, onOpenStudySession, onStudyResearchClaim, onOpenFile }: WorkspaceSearchViewProps) {
   return (
     <section className="workspace-search" aria-labelledby="workspace-search-title">
       <header className="workspace-search__header">
@@ -37,7 +41,7 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
         {loading ? <LoaderCircle className="workspace-search__spinner" size={20} aria-label="Searching" /> : null}
       </header>
 
-      {error ? <div className="workspace-search__notice" role="alert">Search failed: {error}</div> : null}
+      {error ? <div className="workspace-search__notice" role="alert"><span>Search failed: {error}</span>{onRetry ? <button type="button" onClick={onRetry}>Retry search</button> : null}</div> : null}
       {!loading && !error && results.length === 0 ? (
         <div className="workspace-search__empty">
           <Search size={22} />
@@ -71,6 +75,7 @@ export function WorkspaceSearchView({ query, results, loading, error, onOpenProj
           </article>
         ))}
       </div>
+      {hasMore ? <button className="notes-load-more" type="button" disabled={loadingMore} onClick={onLoadMore}>{loadingMore ? 'Loading more results…' : error ? 'Retry loading more' : 'Load more results'}</button> : null}
     </section>
   );
 }
