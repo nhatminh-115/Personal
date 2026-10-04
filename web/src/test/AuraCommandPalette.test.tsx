@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AuraCommandPalette } from '../components/chat/AuraCommandPalette';
 import { api } from '../services/api';
@@ -76,5 +76,35 @@ describe('AuraCommandPalette', () => {
     expect(onOpenFile).toHaveBeenCalledWith(expect.objectContaining({
       source: 'connected-folder', connection_id: 'folder-1', relative_path: 'papers/architecture.pdf',
     }));
+  });
+
+  it('clears a stale load-more state when a new search supersedes that page request', async () => {
+    const oldResult = {
+      object_id: 'old-1', object_type: 'manual_note', title: 'Old result', excerpt: 'Old excerpt',
+      project_name: null, created_by: 'user', updated_at: '2026-10-05T10:00:00Z',
+    };
+    let resolveOldPage!: (page: { items: typeof oldResult[]; nextCursor: string | null }) => void;
+    const oldPage = new Promise<{ items: typeof oldResult[]; nextCursor: string | null }>((resolve) => { resolveOldPage = resolve; });
+    const newResult = { ...oldResult, object_id: 'new-1', title: 'New result' };
+    const search = vi.spyOn(api, 'searchWorkspace')
+      .mockResolvedValueOnce({ items: [oldResult], nextCursor: 'old-page' })
+      .mockImplementationOnce(() => oldPage)
+      .mockResolvedValueOnce({ items: [newResult], nextCursor: 'new-page' });
+    render(<AuraCommandPalette onClose={() => {}} onOpenResult={() => {}} onOpenFile={() => {}} />);
+    const input = screen.getByRole('textbox', { name: 'Search saved workspace content' });
+    fireEvent.change(input, { target: { value: 'old query' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('Old result')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load more results' }));
+    await waitFor(() => expect(search).toHaveBeenNthCalledWith(2, 'old query', undefined, 'old-page'));
+
+    fireEvent.change(input, { target: { value: 'new query' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText('New result')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Load more results' })).toBeEnabled();
+
+    await act(async () => resolveOldPage({ items: [{ ...oldResult, object_id: 'stale-1', title: 'Stale result' }], nextCursor: null }));
+    expect(screen.queryByText('Stale result')).not.toBeInTheDocument();
+    expect(screen.getByText('New result')).toBeInTheDocument();
   });
 });
