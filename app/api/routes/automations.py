@@ -5,7 +5,7 @@ import hmac
 import re
 import secrets
 import uuid
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel
@@ -36,6 +36,39 @@ def _automation_trigger_type(event_type: str, source: str | None = None) -> str:
         EventType.CRON_TICK.value: "schedule",
         EventType.WEBHOOK_RECEIVED.value: "webhook",
     }.get(event_type, "manual")
+
+
+async def _claim_automation_dispatch(db: AsyncSession, automation_id: str, claim_prefix: str) -> str | None:
+    """Acquire a DB-atomic short lease shared by manual, webhook, retry, and scheduler dispatches."""
+    now = utc_now()
+    claim_token = f"{claim_prefix}-{uuid.uuid4().hex}"
+    result = await db.execute(
+        update(ScheduledJobModel)
+        .where(
+            and_(
+                ScheduledJobModel.id == automation_id,
+                ScheduledJobModel.is_active.is_(True),
+                or_(
+                    ScheduledJobModel.locked_at.is_(None),
+                    ScheduledJobModel.locked_at < now - timedelta(seconds=60),
+                ),
+            )
+        )
+        .values(locked_at=now, locked_by=claim_token)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return claim_token if result.rowcount == 1 else None
+
+
+async def _release_automation_dispatch(db: AsyncSession, automation_id: str, claim_token: str) -> None:
+    await db.execute(
+        update(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id, ScheduledJobModel.locked_by == claim_token)
+        .values(locked_at=None, locked_by=None)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
 
 
 class AutomationEnabledWrite(BaseModel):
@@ -364,24 +397,47 @@ async def trigger_automation_webhook(
     duplicate = await db.scalar(select(EventRecordModel).where(EventRecordModel.idempotency_key == idempotency_key))
     if duplicate is not None:
         return WebhookRunResponse(event_id=duplicate.id)
-    if await persistent_scheduler.has_active_automation_execution(db, job):
-        raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
+    claim_token = await _claim_automation_dispatch(db, job.id, "webhook")
+    if claim_token is None:
+        duplicate = await db.scalar(select(EventRecordModel).where(EventRecordModel.idempotency_key == idempotency_key))
+        if duplicate is not None:
+            return WebhookRunResponse(event_id=duplicate.id)
+        raise HTTPException(status_code=409, detail="This automation is already dispatching another run.")
+    try:
+        current = await db.execute(
+            select(ScheduledJobModel)
+            .where(ScheduledJobModel.id == automation_id)
+            .execution_options(populate_existing=True)
+        )
+        job = current.scalar_one_or_none()
+        metadata = job.metadata_json if job is not None and isinstance(job.metadata_json, dict) else {}
+        current_secret_hash = metadata.get("webhook_secret_hash")
+        if job is None or metadata.get("kind") != "automation" or metadata.get("archived") is True:
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        if not isinstance(current_secret_hash, str) or not hmac.compare_digest(supplied_hash, current_secret_hash):
+            raise HTTPException(status_code=404, detail="Webhook trigger is not configured.")
+        if not job.is_active:
+            raise HTTPException(status_code=409, detail="Paused automations cannot be triggered.")
+        if await persistent_scheduler.has_active_automation_execution(db, job):
+            raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
 
-    payload = job.payload_json if isinstance(job.payload_json, dict) else {}
-    event = AURAEvent(
-        event_type=EventType.WEBHOOK_RECEIVED.value,
-        source="authenticated_webhook",
-        payload={
-            "message": payload.get("message"),
-            "session_id": payload.get("session_id"),
-            "project_name": payload.get("project_name"),
-            "automation_id": job.id,
-        },
-        correlation_id=job.id,
-        idempotency_key=idempotency_key,
-    )
-    published = await event_bus.publish(event, db=db, dispatch_immediate=False)
-    return WebhookRunResponse(event_id=published.id)
+        payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+        event = AURAEvent(
+            event_type=EventType.WEBHOOK_RECEIVED.value,
+            source="authenticated_webhook",
+            payload={
+                "message": payload.get("message"),
+                "session_id": payload.get("session_id"),
+                "project_name": payload.get("project_name"),
+                "automation_id": job.id,
+            },
+            correlation_id=job.id,
+            idempotency_key=idempotency_key,
+        )
+        published = await event_bus.publish(event, db=db, dispatch_immediate=False)
+        return WebhookRunResponse(event_id=published.id)
+    finally:
+        await _release_automation_dispatch(db, automation_id, claim_token)
 
 
 async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSession) -> AutomationResponse:
@@ -490,26 +546,8 @@ async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be run.")
 
-    now = utc_now()
-    claim_token = f"manual-{uuid.uuid4().hex}"
-    stale_lock_cutoff = now - timedelta(seconds=60)
-    claim = await db.execute(
-        update(ScheduledJobModel)
-        .where(
-            and_(
-                ScheduledJobModel.id == automation_id,
-                ScheduledJobModel.is_active.is_(True),
-                or_(
-                    ScheduledJobModel.locked_at.is_(None),
-                    ScheduledJobModel.locked_at < stale_lock_cutoff,
-                ),
-            )
-        )
-        .values(locked_at=now, locked_by=claim_token)
-        .execution_options(synchronize_session=False)
-    )
-    await db.commit()
-    if claim.rowcount == 0:
+    claim_token = await _claim_automation_dispatch(db, automation_id, "manual")
+    if claim_token is None:
         current = await db.execute(
             select(ScheduledJobModel)
             .where(ScheduledJobModel.id == automation_id)
@@ -550,15 +588,7 @@ async def run_automation_now(automation_id: str, db: AsyncSession = Depends(get_
         queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
         return AutomationRunResponse(event_id=queued.id)
     finally:
-        await db.execute(
-            update(ScheduledJobModel)
-            .where(
-                ScheduledJobModel.id == automation_id,
-                ScheduledJobModel.locked_by == claim_token,
-            )
-            .values(locked_at=None, locked_by=None)
-        )
-        await db.commit()
+        await _release_automation_dispatch(db, automation_id, claim_token)
 
 @router.get("/{automation_id}/runs", response_model=list[AutomationExecutionResponse])
 async def list_automation_runs(
@@ -717,13 +747,6 @@ async def retry_automation_run(
         raise HTTPException(status_code=404, detail="Automation not found.")
     if not job.is_active:
         raise HTTPException(status_code=409, detail="Paused automations cannot be retried.")
-    if job.locked_at is not None:
-        locked_at = job.locked_at
-        if locked_at.tzinfo is None:
-            locked_at = locked_at.replace(tzinfo=timezone.utc)
-        if locked_at >= utc_now() - timedelta(seconds=60):
-            raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
-
     source_event = await db.scalar(
         select(EventRecordModel).where(
             EventRecordModel.id == event_id,
@@ -744,23 +767,41 @@ async def retry_automation_run(
         raise HTTPException(status_code=409, detail="Only failed or dead-lettered runs can be retried.")
     if await persistent_scheduler.has_active_automation_execution(db, job):
         raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
+    claim_token = await _claim_automation_dispatch(db, automation_id, "retry")
+    if claim_token is None:
+        raise HTTPException(status_code=409, detail="The scheduler is already dispatching this automation.")
+    try:
+        current = await db.execute(
+            select(ScheduledJobModel)
+            .where(ScheduledJobModel.id == automation_id)
+            .execution_options(populate_existing=True)
+        )
+        job = current.scalar_one_or_none()
+        if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        if not job.is_active:
+            raise HTTPException(status_code=409, detail="Paused automations cannot be retried.")
+        if await persistent_scheduler.has_active_automation_execution(db, job):
+            raise HTTPException(status_code=409, detail="This automation already has a run awaiting execution or completion.")
 
-    saved_payload = job.payload_json if isinstance(job.payload_json, dict) else {}
-    event = AURAEvent(
-        event_type=EventType.TIMER_FIRED.value,
-        source="automation_retry",
-        payload={**saved_payload, "retry_of_event_id": source_event.id},
-        correlation_id=job.id,
-        idempotency_key=f"automation-retry-{job.id}-{source_event.id}-{uuid.uuid4()}",
-    )
-    queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
-    return AutomationExecutionResponse(
-        event_id=queued.id,
-        run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{queued.id}")),
-        queued_at=queued.occurred_at,
-        status="queued",
-        retry_count=0,
-        trigger_type="retry",
-        retry_of_event_id=source_event.id,
-    )
+        saved_payload = job.payload_json if isinstance(job.payload_json, dict) else {}
+        event = AURAEvent(
+            event_type=EventType.TIMER_FIRED.value,
+            source="automation_retry",
+            payload={**saved_payload, "retry_of_event_id": source_event.id},
+            correlation_id=job.id,
+            idempotency_key=f"automation-retry-{job.id}-{source_event.id}-{uuid.uuid4()}",
+        )
+        queued = await event_bus.publish(event, db=db, dispatch_immediate=False)
+        return AutomationExecutionResponse(
+            event_id=queued.id,
+            run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{queued.id}")),
+            queued_at=queued.occurred_at,
+            status="queued",
+            retry_count=0,
+            trigger_type="retry",
+            retry_of_event_id=source_event.id,
+        )
+    finally:
+        await _release_automation_dispatch(db, automation_id, claim_token)
 

@@ -100,6 +100,74 @@ async def test_failed_automation_run_can_be_retried_from_saved_instruction(async
 
 
 @pytest.mark.asyncio
+async def test_retry_and_webhook_share_an_atomic_single_dispatch_lease(async_client, test_db_session, monkeypatch):
+    from fastapi import HTTPException
+    from app.api.routes.automations import retry_automation_run, trigger_automation_webhook
+    from app.events.scheduler import persistent_scheduler
+
+    created = await async_client.post("/v1/automations", json={
+        "name": "Single dispatch routine",
+        "instruction": "Summarize approved changes.",
+        "interval_seconds": 3600,
+        "webhook_enabled": True,
+    })
+    automation = created.json()
+    failed = EventRecordModel(
+        event_type=EventType.WEBHOOK_RECEIVED.value,
+        source="authenticated_webhook",
+        payload_json={"message": "Summarize approved changes.", "automation_id": automation["id"]},
+        status="dead_letter",
+        correlation_id=automation["id"],
+        idempotency_key=f"automation-webhook-{automation['id']}-previous",
+    )
+    test_db_session.add(failed)
+    await test_db_session.commit()
+    await test_db_session.refresh(failed)
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    original_active_check = persistent_scheduler.has_active_automation_execution
+    active_check_count = 0
+    both_active_checks_started = asyncio.Event()
+
+    async def synchronize_active_checks(db, job):
+        nonlocal active_check_count
+        active_check_count += 1
+        if active_check_count <= 2:
+            if active_check_count == 2:
+                both_active_checks_started.set()
+            await both_active_checks_started.wait()
+        return await original_active_check(db, job)
+
+    monkeypatch.setattr(persistent_scheduler, "has_active_automation_execution", synchronize_active_checks)
+
+    async def retry():
+        async with factory() as session:
+            try:
+                return await retry_automation_run(automation["id"], failed.id, db=session)
+            except HTTPException as error:
+                return error.status_code
+
+    async def webhook():
+        async with factory() as session:
+            try:
+                return await trigger_automation_webhook(
+                    automation["id"],
+                    authorization=f"Bearer {automation['webhook_secret']}",
+                    event_id="next-delivery",
+                    db=session,
+                )
+            except HTTPException as error:
+                return error.status_code
+
+    results = await asyncio.gather(retry(), webhook())
+    assert sum(not isinstance(result, int) for result in results) == 1
+    assert sum(result == 409 for result in results) == 1
+    triggers = list(await test_db_session.scalars(
+        select(EventRecordModel).where(EventRecordModel.correlation_id == automation["id"])
+    ))
+    assert len(triggers) == 2
+
+
+@pytest.mark.asyncio
 async def test_authenticated_webhook_queues_only_saved_instruction_and_is_idempotent(async_client, test_db_session):
     created = await async_client.post("/v1/automations", json={
         "name": "Deploy signal",
