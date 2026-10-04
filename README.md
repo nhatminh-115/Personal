@@ -93,9 +93,13 @@ Create or modify `.env` (the setting is named `DATABASE_URL`):
 ```env
 DATABASE_URL=sqlite+aiosqlite:///./aura.db
 AURA_WORKSPACE_ROOT=./workspace
-MODEL_PROVIDER=mock  # or openai
-OPENAI_API_KEY=your-api-key-here
+MODEL_PROVIDER=mock
+OPENAI_API_KEY=
 ```
+
+For hosted inference, set `MODEL_PROVIDER=openai` and put a real key in
+`OPENAI_API_KEY`. Keep it empty for mock or local-provider use; a placeholder
+string is treated as a configured credential by the model catalog.
 
 For PostgreSQL, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL. The
 included Docker Compose file starts PostgreSQL and the API service, applies

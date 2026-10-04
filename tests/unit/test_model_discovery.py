@@ -125,6 +125,14 @@ async def test_discovery_uses_configured_local_provider_urls(monkeypatch):
     lmstudio.assert_awaited_once_with("http://studio-host:1234/v1")
 
 
+def test_openai_catalog_is_unavailable_without_a_real_configured_value(monkeypatch):
+    svc = ModelDiscoveryService()
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "  ")
+    entry = svc.get_cloud_openai()
+    assert entry.available is False
+    assert entry.models == []
+
+
 def test_openai_compatible_provider_names_do_not_collide():
     """Multiple OpenAICompatibleProvider instances with distinct names co-exist without collision."""
     prov_openai = OpenAICompatibleProvider(provider_name="openai")
