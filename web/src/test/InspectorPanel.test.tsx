@@ -79,6 +79,7 @@ const sampleMemories: MemoryItem[] = [
     id: 'mem-1',
     key: 'project_architecture_thesis',
     memory_type: 'core_thesis',
+    is_active: true,
     content: 'AURA workspace maintains explicit project-level context manifests.',
     confidence: 0.98,
     created_at: new Date().toISOString(),
@@ -303,6 +304,23 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('No tools verified available')).toBeInTheDocument();
     expect(screen.getAllByText('Unknown').length).toBeGreaterThan(1);
     expect(screen.queryByText(/endpoint|credential|secret/i)).not.toBeInTheDocument();
+  });
+
+  it('lets users deactivate and restore project memories', async () => {
+    const onSetMemoryActive = vi.fn().mockResolvedValue(undefined);
+    const projectMemory = { ...sampleMemories[0], memory_type: 'project', is_active: true };
+    const { rerender } = render(
+      <InspectorPanel memories={[projectMemory]} onSetMemoryActive={onSetMemoryActive} onClose={vi.fn()} />
+    );
+    fireEvent.click(screen.getByTestId('inspector-tab-memory'));
+    fireEvent.click(screen.getByRole('button', { name: 'Deactivate memory' }));
+    await waitFor(() => expect(onSetMemoryActive).toHaveBeenCalledWith('mem-1', false));
+
+    rerender(
+      <InspectorPanel memories={[{ ...projectMemory, is_active: false }]} onSetMemoryActive={onSetMemoryActive} onClose={vi.fn()} />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Restore memory' }));
+    await waitFor(() => expect(onSetMemoryActive).toHaveBeenLastCalledWith('mem-1', true));
   });
 
   it('refreshes MCP provider health without invoking a provider tool', async () => {

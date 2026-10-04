@@ -33,6 +33,7 @@ export interface InspectorPanelProps {
   memoryPageLoading?: boolean;
   memoryPageError?: string | null;
   onLoadMoreMemories?: () => Promise<void>;
+  onSetMemoryActive?: (memoryId: string, isActive: boolean) => Promise<void>;
   onClose: () => void;
   onContextSelect?: (nodeId: string) => void;
 }
@@ -60,6 +61,7 @@ export function InspectorPanel({
   memoryPageLoading = false,
   memoryPageError,
   onLoadMoreMemories,
+  onSetMemoryActive,
   onClose,
   onContextSelect,
 }: InspectorPanelProps) {
@@ -71,6 +73,21 @@ export function InspectorPanel({
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [capabilityRefreshError, setCapabilityRefreshError] = useState<string | null>(null);
   const [refreshingCapabilityId, setRefreshingCapabilityId] = useState<string | null>(null);
+  const [updatingMemoryId, setUpdatingMemoryId] = useState<string | null>(null);
+  const [memoryActionError, setMemoryActionError] = useState<string | null>(null);
+
+  const updateMemoryStatus = async (memory: MemoryItem, isActive: boolean) => {
+    if (!onSetMemoryActive) return;
+    setUpdatingMemoryId(memory.id);
+    setMemoryActionError(null);
+    try {
+      await onSetMemoryActive(memory.id, isActive);
+    } catch (error) {
+      setMemoryActionError(error instanceof Error ? error.message : 'Could not update this memory.');
+    } finally {
+      setUpdatingMemoryId(null);
+    }
+  };
 
   const toggleEvent = (id: string) => {
     setExpandedEvents((prev) => ({ ...prev, [id]: !prev[id] }));
@@ -414,8 +431,8 @@ export function InspectorPanel({
                   <div key={m.id} className="inspector-event-item" data-testid="memory-item">
                     <div className="inspector-event-header">
                       <strong style={{ fontSize: 11.5, color: '#b9d4e2' }}>{m.key}</strong>
-                      <span className="risk-badge risk-low" style={{ fontSize: 9 }}>
-                        {m.memory_type}
+                      <span className={`risk-badge ${m.is_active ? 'risk-low' : ''}`} style={{ fontSize: 9 }}>
+                        {m.memory_type}{m.is_active ? '' : ' · archived'}
                       </span>
                     </div>
                     <p style={{ margin: '4px 0 0', fontSize: 11, color: '#cfdce2' }}>{m.content}</p>
@@ -427,6 +444,17 @@ export function InspectorPanel({
                         {m.created_at ? new Date(m.created_at).toLocaleDateString() : ''}
                       </small>
                     </div>
+                    {m.memory_type === 'project' && onSetMemoryActive ? (
+                      <button
+                        className="secondary-button"
+                        type="button"
+                        disabled={updatingMemoryId === m.id}
+                        onClick={() => { void updateMemoryStatus(m, !m.is_active); }}
+                        style={{ marginTop: 8, fontSize: 10 }}
+                      >
+                        {updatingMemoryId === m.id ? 'Saving…' : m.is_active ? 'Deactivate memory' : 'Restore memory'}
+                      </button>
+                    ) : null}
                   </div>
                 ))
               ) : (
@@ -435,6 +463,7 @@ export function InspectorPanel({
                 </div>
               )}
               {memoryPageError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryPageError}</div> : null}
+              {memoryActionError ? <div role="alert" style={{ color: '#c88b7f', fontSize: 10, padding: '4px 12px' }}>{memoryActionError}</div> : null}
               {memoryNextCursor || memoryPageError ? (
                 <button
                   className="secondary-button"

@@ -828,13 +828,14 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
   },
 
-  async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null): Promise<{
+  async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null, includeInactive = false): Promise<{
     items: MemoryItem[];
     nextCursor: string | null;
   }> {
     const params = new URLSearchParams();
     if (projectName) params.append('project_name', projectName);
     if (sessionId) params.append('session_id', sessionId);
+    if (includeInactive) params.set('include_inactive', 'true');
     params.set('page_size', '25');
     if (cursor) params.set('cursor', cursor);
 
@@ -844,5 +845,16 @@ export const api = {
       items: await handleResponse<MemoryItem[]>(res),
       nextCursor: res.headers?.get('X-Next-Cursor') ?? null,
     };
+  },
+
+  async setProjectMemoryActive(projectName: string, memoryId: string, isActive: boolean): Promise<MemoryItem> {
+    return handleResponse(await fetch(
+      `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: isActive }),
+      },
+    ));
   },
 };

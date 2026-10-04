@@ -654,6 +654,7 @@ export interface MemoryItem {
   key: string;
   content: string;
   confidence: number;
+  is_active: boolean;
   metadata_json?: Record<string, any>;
   created_at: string;
 }
