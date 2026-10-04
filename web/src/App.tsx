@@ -350,6 +350,10 @@ export default function App() {
     loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
       .map((thread) => ({ ...thread, loadingOlderMessages: false }))
   );
+  const [workspaceGraphRevisions, setWorkspaceGraphRevisions] = useState<Record<string, number>>({});
+  const notifyWorkspaceGraphChanged = useCallback((projectName: string) => {
+    setWorkspaceGraphRevisions((current) => ({ ...current, [projectName]: (current[projectName] ?? 0) + 1 }));
+  }, []);
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
     projects.forEach((project) => {
@@ -406,6 +410,7 @@ export default function App() {
   const workspaceSessionIds = useMemo(() => projectThreads
     .filter((thread) => thread.source === 'live' && thread.sessionId)
     .map((thread) => thread.sessionId!), [projectThreads]);
+  const workspaceGraphRevision = activeProject ? workspaceGraphRevisions[activeProject.name] ?? 0 : 0;
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
   const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
   const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
@@ -1283,6 +1288,7 @@ export default function App() {
           taskType,
           contextAttachments,
         );
+        if (activeProject?.name) notifyWorkspaceGraphChanged(activeProject.name);
 
         if (resp.user_message_id) {
           updateThreadMessages(originatingThreadId, (prev) => prev.map((message) =>
@@ -1372,6 +1378,7 @@ export default function App() {
       refreshInspectorData,
       loadMemoryPage,
       pushToast,
+      notifyWorkspaceGraphChanged,
     ]
   );
 
@@ -1425,6 +1432,7 @@ export default function App() {
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
           const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType);
+          notifyWorkspaceGraphChanged(activeProject.name);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
           if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
             const confirmation = await api.fetchRoutingConfirmation(resp.routing_confirmation_id);
@@ -1463,7 +1471,7 @@ export default function App() {
       })();
       void count; // suppress lint — count used for UI naming above
     },
-    [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
+    [activeProject, activeProjectId, chatThreads, notifyWorkspaceGraphChanged, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
   );
 
   const handleBoardAskWithContext = useCallback(async (prompt: string, objectIds: string[]) => {
@@ -2520,6 +2528,7 @@ export default function App() {
               seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
               workspaceProjectName={workspaceGraphProjectName}
               workspaceSessionIds={workspaceSessionIds}
+              workspaceGraphRevision={workspaceGraphRevision}
               showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'}
               focusNodeId={focusNodeId}
               onNodeFocus={handleBoardNodeFocus}
@@ -2566,7 +2575,7 @@ export default function App() {
             </div>
             <div className="split-workspace__board">
               <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
-                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
+                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} workspaceGraphRevision={workspaceGraphRevision} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
               </Suspense>
             </div>
           </div>

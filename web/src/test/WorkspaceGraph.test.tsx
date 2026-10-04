@@ -66,6 +66,40 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
 
+  it('does not reload for session array identity changes and merges graph revisions without moving existing nodes', async () => {
+    const nextTurn = { ...savedGraph.objects[0], id: 'turn-2', title: 'New live answer', content: 'Added after the chat send.' };
+    const updatedGraph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [...savedGraph.objects, nextTurn],
+      layout: {
+        ...savedGraph.layout,
+        layout: { positions: { 'turn-1': { x: 900, y: 700 }, 'turn-2': { x: 420, y: 240 } } },
+      },
+    };
+    const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
+      .mockResolvedValueOnce(savedGraph)
+      .mockResolvedValueOnce(updatedGraph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
+
+    const renderBoard = (sessionIds: string[], revision = 0) => (
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="revision-refresh" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={sessionIds} workspaceGraphRevision={revision} />
+      </ReactFlowProvider>
+    );
+    const view = render(renderBoard(['session-1']));
+
+    expect(await screen.findByText('Persistent answer')).toBeInTheDocument();
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledTimes(1));
+    view.rerender(renderBoard(['session-1']));
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+
+    view.rerender(renderBoard(['session-1'], 1));
+    expect(await screen.findByText('New live answer')).toBeInTheDocument();
+    expect(fetchPage).toHaveBeenCalledTimes(2);
+    expect(view.container.querySelector('[data-id="turn-1"]')).toHaveStyle({ transform: 'translate(80px,60px)' });
+  });
+
   it('loads older Board graph objects only when requested', async () => {
     const initial: WorkspaceGraph = { ...savedGraph, objects_next_cursor: 'older-object-cursor' };
     const older: WorkspaceGraph = {

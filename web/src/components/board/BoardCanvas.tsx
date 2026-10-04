@@ -150,6 +150,7 @@ interface BoardCanvasProps {
   branchRequest?: { nodeId: string; nonce: number } | null;
   workspaceProjectName?: string | null;
   workspaceSessionIds?: string[];
+  workspaceGraphRevision?: number;
   onAskWithContext?: (prompt: string, objectIds: string[]) => void | Promise<void>;
   onUseWorkspaceContext?: (objectId: string) => void;
 }
@@ -177,7 +178,7 @@ function workspaceObjectWrite(node: AuraFlowNode) {
   };
 }
 
-export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, onAskWithContext, onUseWorkspaceContext }: BoardCanvasProps) {
+export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes, seedEdges, showBranchLabels = true, focusNodeId, onNodeFocus, onToast, executionExpanded, branchRequest, workspaceProjectName = null, workspaceSessionIds = EMPTY_SESSION_IDS, workspaceGraphRevision = 0, onAskWithContext, onUseWorkspaceContext }: BoardCanvasProps) {
   const [nodes, setNodes, onNodesChange] = useNodesState<AuraFlowNode>(seedNodes ?? initialNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState<AuraFlowEdge>(seedEdges ?? initialEdges);
   const [executionNodes, setExecutionNodes] = useState<AuraFlowNode[]>([]);
@@ -212,6 +213,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const nodesRef = useRef(nodes);
   const edgesRef = useRef(edges);
   const workspaceReady = useRef(false);
+  const workspaceGraphRevisionRef = useRef(workspaceGraphRevision);
+  const lastRefreshedGraphRevision = useRef(workspaceGraphRevision);
+  const [workspaceLoadVersion, setWorkspaceLoadVersion] = useState(0);
   const layoutRevision = useRef(0);
   const layoutSnapshot = useRef('');
   const layoutTimer = useRef<number | null>(null);
@@ -224,6 +228,9 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   edgesRef.current = edges;
   viewportRef.current = viewport;
   focusNodeIdRef.current = focusNodeId;
+  workspaceGraphRevisionRef.current = workspaceGraphRevision;
+
+  const workspaceSessionKey = useMemo(() => [...new Set(workspaceSessionIds)].sort().join('\u0000'), [workspaceSessionIds]);
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
 
@@ -251,7 +258,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     return () => observer.disconnect();
   }, [fitInitialViewWhenReady]);
 
-  const refreshRecentWorkspacePage = useCallback(async () => {
+  const refreshRecentWorkspacePage = useCallback(async (fitView = true) => {
     if (!workspaceProjectName) return;
     const graph = await api.fetchWorkspaceGraphPage(workspaceProjectName);
     if (graph.layout.revision !== layoutRevision.current) {
@@ -262,7 +269,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     const savedPositions = graph.layout.layout?.positions ?? {};
     const maxLoadedY = Math.max(0, ...nodesRef.current.map((node) => node.position.y + 190));
     setNodes((current) => {
-      const byId = new Map(current.map((node) => [node.id, { ...node, selected: false }]));
+      const byId = new Map(current.map((node) => [node.id, node]));
       projected.nodes.forEach((node, index) => {
         if (byId.has(node.id)) return;
         byId.set(node.id, savedPositions[node.id] ? { ...node, selected: false } : {
@@ -282,8 +289,16 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       edgesRef.current = next;
       return next;
     });
-    requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
+    if (fitView) requestAnimationFrame(() => instanceRef.current?.fitView({ padding: compact ? 0.2 : 0.12, duration: 350 }));
   }, [compact, setEdges, setNodes, toast, workspaceProjectName]);
+
+  useEffect(() => {
+    if (!workspaceProjectName || !workspaceReady.current || lastRefreshedGraphRevision.current === workspaceGraphRevision) return;
+    lastRefreshedGraphRevision.current = workspaceGraphRevision;
+    void refreshRecentWorkspacePage(false).catch(() => {
+      toast('Could not refresh saved Board', 'The latest chat turn could not be added to the project graph.');
+    });
+  }, [refreshRecentWorkspacePage, toast, workspaceGraphRevision, workspaceLoadVersion, workspaceProjectName]);
 
   const persistHistoryChange = useCallback((current: BoardSnapshot, target: BoardSnapshot) => {
     if (!workspaceProjectName || !workspaceReady.current) return;
@@ -389,13 +404,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   });
 
   useEffect(() => {
+    if (workspaceProjectName) return;
     const nextNodes = (seedNodes ?? initialNodes).map((node) => ({ ...node, data: { ...node.data }, selected: false }));
     const nextEdges = (seedEdges ?? initialEdges).map((edge) => ({ ...edge, data: edge.data ? { ...edge.data } : edge.data, selected: false }));
     setNodes(nextNodes);
     setEdges(nextEdges);
     nodesRef.current = nextNodes;
     edgesRef.current = nextEdges;
-  }, [boardKey, seedEdges, seedNodes, setEdges, setNodes]);
+  }, [boardKey, seedEdges, seedNodes, setEdges, setNodes, workspaceProjectName]);
 
   useEffect(() => {
     workspaceReady.current = false;
@@ -408,8 +424,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     setGraphObjectCursor(null);
     setGraphEdgeCursor(null);
     if (!workspaceProjectName) return;
+    const revisionAtLoadStart = workspaceGraphRevisionRef.current;
     let cancelled = false;
-    void Promise.all(workspaceSessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
+    const sessionIds = workspaceSessionKey ? workspaceSessionKey.split('\u0000') : [];
+    void Promise.all(sessionIds.map((sessionId) => api.attachWorkspaceSession(workspaceProjectName, sessionId).catch((error) => {
       if (error instanceof ApiError && error.status === 404) return null;
       throw error;
     }))).then(() => api.fetchWorkspaceGraphPage(workspaceProjectName)).then(async (graph) => {
@@ -469,11 +487,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         requestAnimationFrame(() => instanceRef.current?.setViewport(savedViewport, { duration: 0 }));
       }
       workspaceReady.current = true;
+      lastRefreshedGraphRevision.current = revisionAtLoadStart;
+      setWorkspaceLoadVersion((current) => current + 1);
     }).catch(() => {
       if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from AURA.');
     });
     return () => { cancelled = true; };
-  }, [workspaceProjectName, workspaceSessionIds, setEdges, setNodes, toast]);
+  }, [workspaceProjectName, workspaceSessionKey, setEdges, setNodes, toast]);
 
   const loadOlderGraphPage = useCallback(async () => {
     if (!workspaceProjectName || loadingOlderGraph || (!graphObjectCursor && !graphEdgeCursor)) return;
