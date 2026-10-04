@@ -235,6 +235,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
   const privacySaveVersions = useRef<Map<string, number>>(new Map());
   const historySync = useRef<Promise<void>>(Promise.resolve());
+  const resetHistoryRef = useRef<() => void>(() => {});
   nodesRef.current = nodes;
   edgesRef.current = edges;
   viewportRef.current = viewport;
@@ -510,6 +511,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       };
       await saveWorkspaceLayout(targetLayout, JSON.stringify(targetLayout));
     }).catch(async () => {
+      resetHistoryRef.current();
       toast('Undo/redo could not be saved', 'The Board will reload the latest project graph before further edits.');
       try {
         const graph = await api.fetchWorkspaceGraph(workspaceProjectName);
@@ -534,13 +536,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     });
   }, [queueWorkspaceObjectWrite, saveWorkspaceLayout, setEdges, setNodes, toast, workspaceProjectName]);
 
-  const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
+  const { record: recordHistory, undo, redo, clear: clearHistory, canUndo, canRedo } = useBoardHistory({
     nodesRef,
     edgesRef,
     setNodes,
     setEdges,
     onHistoryChange: persistHistoryChange,
   });
+  resetHistoryRef.current = clearHistory;
 
   useEffect(() => {
     if (workspaceProjectName) return;

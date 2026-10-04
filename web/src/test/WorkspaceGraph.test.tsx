@@ -561,6 +561,51 @@ describe('Persistent workspace graph Board projection', () => {
     expect(fetchGraph).toHaveBeenCalledTimes(1);
   });
 
+  it('clears undo and redo history after a failed save restores the persisted Board graph', async () => {
+    let graph: WorkspaceGraph = {
+      ...savedGraph,
+      layout: {
+        ...savedGraph.layout,
+        layout: { positions: { 'turn-1': { x: 80, y: 60 } }, densities: { 'turn-1': 'compact' } },
+      },
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(graph.layout);
+    const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
+      const object = {
+        id: input.id ?? 'failed-undo-note', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
+        metadata_json: input.metadata_json ?? {}, revision: 1,
+        created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+      } as WorkspaceObject;
+      graph = { ...graph, objects: [...graph.objects, object] };
+      return object;
+    });
+    const deleteObject = vi.spyOn(api, 'deleteWorkspaceObject').mockRejectedValue(new Error('offline'));
+    const onToast = vi.fn();
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="failed-undo-history" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Persistent answer');
+    fireEvent.click(screen.getByRole('button', { name: 'Note' }));
+    fireEvent.click(container.querySelector('.react-flow__pane')!, { clientX: 500, clientY: 300 });
+    await waitFor(() => expect(createObject).toHaveBeenCalledTimes(1));
+    const undoButton = screen.getByTitle('Undo · Ctrl Z');
+    await waitFor(() => expect(undoButton).toBeEnabled());
+    fireEvent.click(undoButton);
+
+    const createdId = createObject.mock.calls[0][1].id ?? 'failed-undo-note';
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId));
+    await waitFor(() => expect(onToast).toHaveBeenCalledWith('Undo/redo could not be saved', expect.anything()));
+    expect(await screen.findByText('Untitled note')).toBeInTheDocument();
+    expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
+    expect(screen.getByTitle('Redo · Ctrl ⇧ Z')).toBeDisabled();
+  });
+
   it('serializes layout writes from live Board changes and undo/redo against the latest revision', async () => {
     const initialGraph: WorkspaceGraph = {
       ...savedGraph,

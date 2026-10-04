@@ -234,6 +234,25 @@ describe('Board Prototype Interactions', () => {
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
   });
+
+  it('clears both undo and redo stacks after Board history recovery', () => {
+    const nodesRef = { current: [
+      { id: 'node-1', position: { x: 0, y: 0 }, data: { kind: 'user', title: 'Start', body: '', density: 'compact', layer: 'conversation' } },
+    ] as AuraFlowNode[] };
+    const edgesRef = { current: [] as AuraFlowEdge[] };
+    const setNodes = (updater: any) => { nodesRef.current = typeof updater === 'function' ? updater(nodesRef.current) : updater; };
+    const setEdges = (updater: any) => { edgesRef.current = typeof updater === 'function' ? updater(edgesRef.current) : updater; };
+    const { result } = renderHook(() => useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges }));
+
+    act(() => result.current.record());
+    act(() => { nodesRef.current = [...nodesRef.current, { ...nodesRef.current[0], id: 'node-2' }]; });
+    act(() => result.current.undo());
+    expect(result.current.canRedo).toBe(true);
+
+    act(() => result.current.clear());
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(false);
+  });
 });
 
 
