@@ -10,6 +10,8 @@ import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { MAX_LOCAL_IMAGE_BYTES } from '../../lib/imageText';
 import { MAX_LOCAL_PPTX_BYTES } from '../../lib/pptxText';
 import { MAX_LOCAL_EPUB_BYTES } from '../../lib/epubText';
+import { MAX_HTML_INPUT_BYTES } from '../../lib/htmlText';
+import { MAX_LOCAL_TEXT_FILE_BYTES } from '../../lib/localTextFile';
 import { ChatPane } from './ChatPane';
 
 function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>, libraryItems: LibraryItem[], fileContentIds: Set<string>, localContextFileIds: Set<string>): AIContextItem[] {
@@ -18,7 +20,7 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
     const localFile = metadataOnlyFile ? libraryItems.find((item) => item.id === object.id) : undefined;
     const localFileKindSupported = Boolean(localFile && (
       ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(localFile.kind)
-        ? (localFile.size ?? 0) <= 80_000
+        ? (localFile.size ?? 0) <= (localFile.kind === 'HTML' ? MAX_HTML_INPUT_BYTES : MAX_LOCAL_TEXT_FILE_BYTES)
         : localFile.kind === 'PDF'
           ? (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
           : localFile.kind === 'DOCX'
