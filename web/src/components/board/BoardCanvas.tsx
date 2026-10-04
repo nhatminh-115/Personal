@@ -224,6 +224,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const layoutSnapshot = useRef('');
   const layoutTimer = useRef<number | null>(null);
   const layoutConflict = useRef(false);
+  const layoutSync = useRef<Promise<void>>(Promise.resolve());
   const viewportRef = useRef(viewport);
   const noteSaveTimers = useRef<Map<string, number>>(new Map());
   const bridgeSectionSaveTimers = useRef<Map<string, number>>(new Map());
@@ -239,6 +240,17 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   workspaceSessionKeyRef.current = workspaceSessionKey;
 
   const toast = useCallback((title: string, detail?: string) => onToast?.(title, detail), [onToast]);
+
+  const saveWorkspaceLayout = useCallback((layout: Record<string, any>, snapshot: string) => {
+    if (!workspaceProjectName) return Promise.resolve();
+    const save = layoutSync.current.catch(() => undefined).then(async () => {
+      const result = await api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current);
+      layoutRevision.current = result.revision;
+      layoutSnapshot.current = snapshot;
+    });
+    layoutSync.current = save;
+    return save;
+  }, [workspaceProjectName]);
 
   const attachWorkspaceSessions = useCallback((projectName: string, sessionIds: string[]) => {
     let scheduledNewAttachment = false;
@@ -406,9 +418,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         densities: Object.fromEntries(target.nodes.map((node) => [node.id, node.data.density])),
         viewport: viewportRef.current,
       };
-      const savedLayout = await api.putWorkspaceLayout(workspaceProjectName, targetLayout, layoutRevision.current);
-      layoutRevision.current = savedLayout.revision;
-      layoutSnapshot.current = JSON.stringify(targetLayout);
+      await saveWorkspaceLayout(targetLayout, JSON.stringify(targetLayout));
     }).catch(async () => {
       toast('Undo/redo could not be saved', 'The Board will reload the latest project graph before further edits.');
       try {
@@ -432,7 +442,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         toast('Board reload failed', 'Reopen the Board to reconcile it with the saved project graph.');
       }
     });
-  }, [setEdges, setNodes, toast, workspaceProjectName]);
+  }, [saveWorkspaceLayout, setEdges, setNodes, toast, workspaceProjectName]);
 
   const { record: recordHistory, undo, redo, canUndo, canRedo } = useBoardHistory({
     nodesRef,
@@ -611,10 +621,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (snapshot === layoutSnapshot.current) return;
     if (layoutTimer.current !== null) window.clearTimeout(layoutTimer.current);
     layoutTimer.current = window.setTimeout(() => {
-      void api.putWorkspaceLayout(workspaceProjectName, layout, layoutRevision.current).then((result) => {
-        layoutRevision.current = result.revision;
-        layoutSnapshot.current = snapshot;
-      }).catch((error) => {
+      void saveWorkspaceLayout(layout, snapshot).catch((error) => {
         if (error instanceof ApiError && error.status === 409) {
           layoutConflict.current = true;
           toast('Board layout changed elsewhere', 'Reload the project Board before saving more layout changes.');
@@ -623,7 +630,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         }
       });
     }, 450);
-  }, [nodes, viewport, workspaceProjectName, toast]);
+  }, [nodes, viewport, saveWorkspaceLayout, workspaceProjectName, toast]);
 
   useEffect(() => {
     if (typeof executionExpanded === 'boolean') {
