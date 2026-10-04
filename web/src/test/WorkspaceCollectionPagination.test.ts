@@ -209,6 +209,7 @@ describe('workspace collection pagination', () => {
 
     await api.updateAutomation('automation/one', {
       name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+      schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     });
 
     const [url, init] = fetch.mock.calls[0] as [string, RequestInit];
@@ -216,6 +217,7 @@ describe('workspace collection pagination', () => {
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(String(init.body))).toEqual({
       name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+      schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     });
   });
 

@@ -2281,14 +2281,18 @@ export default function App() {
       ? catalog.find((item) => item.name.toLowerCase() === record.project_name!.toLowerCase())
       : undefined;
     const seconds = record.interval_seconds;
-    const intervalLabel = seconds % 86400 === 0 ? `Every ${seconds / 86400} day${seconds / 86400 === 1 ? '' : 's'}`
+    const schedule = record.schedule ?? { mode: 'interval' as const, local_time: null, weekdays: [], timezone: 'UTC' };
+    const weekdayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const intervalLabel = schedule.mode === 'daily' ? `Daily · ${schedule.local_time} (${schedule.timezone})`
+      : schedule.mode === 'weekly' ? `${schedule.weekdays.map((day) => weekdayNames[day]).join(', ')} · ${schedule.local_time} (${schedule.timezone})`
+      : seconds % 86400 === 0 ? `Every ${seconds / 86400} day${seconds / 86400 === 1 ? '' : 's'}`
       : seconds % 3600 === 0 ? `Every ${seconds / 3600} hour${seconds / 3600 === 1 ? '' : 's'}`
       : seconds % 60 === 0 ? `Every ${seconds / 60} minute${seconds / 60 === 1 ? '' : 's'}`
       : `Every ${seconds} second${seconds === 1 ? '' : 's'}`;
     const latest = record.latest_execution;
     const lastAt = latest?.queued_at ?? record.last_run_at;
     return {
-      id: record.id, name: record.name, description: record.description, instruction: record.instruction,
+      id: record.id, name: record.name, description: record.description, instruction: record.instruction, schedule,
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
       archived: record.archived,
       trigger: intervalLabel, actions: ['Run through AURA'],
@@ -2303,6 +2307,7 @@ export default function App() {
   const createAutomation = useCallback(async (input: {
     name: string; description: string; instruction: string; scope: 'global' | 'project';
     project_name?: string; interval_seconds: number;
+    schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   }) => {
     const record = await api.createAutomation(input);
     const item = automationFromRecord(record, projectCatalog);
@@ -2313,6 +2318,7 @@ export default function App() {
 
   const updateAutomation = useCallback(async (automationId: string, input: {
     name: string; description: string; instruction: string; interval_seconds: number;
+    schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   }) => {
     const record = await api.updateAutomation(automationId, input);
     const updated = automationFromRecord(record, projectCatalog);

@@ -578,6 +578,7 @@ export const api = {
     scope: 'global' | 'project';
     project_name?: string;
     interval_seconds: number;
+    schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   }): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
@@ -589,6 +590,7 @@ export const api = {
     description: string;
     instruction: string;
     interval_seconds: number;
+    schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
   }): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),

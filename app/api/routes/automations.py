@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AutomationDuplicateWrite, AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationWrite
+from app.api.schemas import AutomationDuplicateWrite, AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationSchedule, AutomationWrite
 from app.api.pagination import (
     MAX_COLLECTION_PAGE_SIZE,
     decode_timestamp_id_cursor,
@@ -17,6 +17,7 @@ from app.api.pagination import (
 from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.db.session import get_db
 from app.events.bus import event_bus
+from app.events.automation_schedule import next_automation_run
 from app.events.types import AURAEvent, EventType
 
 router = APIRouter(prefix="/v1/automations", tags=["Automations"])
@@ -32,6 +33,11 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
         interval_seconds = int(float(job.schedule_expression))
     except (TypeError, ValueError):
         interval_seconds = 0
+    try:
+        schedule = AutomationSchedule.model_validate(metadata.get("schedule", {}))
+    except (TypeError, ValueError):
+        # Older scheduled jobs have only interval_seconds in schedule_expression.
+        schedule = AutomationSchedule()
     scope = metadata.get("scope")
     return AutomationResponse(
         id=job.id,
@@ -43,6 +49,7 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
         scope=scope if scope in {"global", "project"} else "global",
         project_name=metadata.get("project_name") if isinstance(metadata.get("project_name"), str) else None,
         interval_seconds=interval_seconds,
+        schedule=schedule,
         last_run_at=job.last_run_at,
         next_run_at=job.next_run_at,
         created_at=job.created_at,
@@ -184,13 +191,14 @@ async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(ge
         raise HTTPException(status_code=422, detail="Project-scoped automations require a project.")
 
     now = utc_now()
+    schedule = body.schedule
     job = ScheduledJobModel(
         name=name,
         job_type=JobType.RECURRING.value,
         schedule_expression=str(body.interval_seconds),
         payload_json={},
         is_active=True,
-        next_run_at=now + timedelta(seconds=body.interval_seconds),
+        next_run_at=next_automation_run(schedule, now, body.interval_seconds),
         metadata_json={},
     )
     db.add(job)
@@ -208,6 +216,7 @@ async def create_automation(body: AutomationWrite, db: AsyncSession = Depends(ge
         "instruction": instruction,
         "scope": body.scope,
         "project_name": body.project_name.strip() if body.scope == "project" and body.project_name else None,
+        "schedule": schedule.model_dump(),
     }
     await db.commit()
     await db.refresh(job)
@@ -231,7 +240,8 @@ async def set_automation_enabled(
             interval = max(60, int(float(job.schedule_expression)))
         except (TypeError, ValueError):
             raise HTTPException(status_code=409, detail="Automation interval is invalid.")
-        job.next_run_at = utc_now() + timedelta(seconds=interval)
+        schedule = AutomationSchedule.model_validate((job.metadata_json or {}).get("schedule", {}))
+        job.next_run_at = next_automation_run(schedule, utc_now(), interval)
     job.updated_at = utc_now()
     await db.commit()
     await db.refresh(job)
@@ -262,12 +272,16 @@ async def update_automation(
         previous_interval = int(float(job.schedule_expression))
     except (TypeError, ValueError):
         previous_interval = 0
+    previous_schedule_data = metadata.get("schedule", {})
+    previous_schedule = AutomationSchedule.model_validate(previous_schedule_data)
+    schedule = body.schedule or previous_schedule
     job.name = body.name.strip()
     job.schedule_expression = str(body.interval_seconds)
-    if previous_interval != body.interval_seconds:
-        job.next_run_at = utc_now() + timedelta(seconds=body.interval_seconds)
+    if previous_interval != body.interval_seconds or schedule != previous_schedule:
+        job.next_run_at = next_automation_run(schedule, utc_now(), body.interval_seconds)
     metadata["description"] = body.description.strip()
     metadata["instruction"] = body.instruction.strip()
+    metadata["schedule"] = schedule.model_dump()
     payload["message"] = body.instruction.strip()
     job.metadata_json = metadata
     job.payload_json = payload
@@ -334,13 +348,14 @@ async def duplicate_automation(
     if scope == "project" and not project_name:
         raise HTTPException(status_code=409, detail="Automation project scope is unavailable.")
     now = utc_now()
+    schedule = AutomationSchedule.model_validate(metadata.get("schedule", {}))
     duplicate = ScheduledJobModel(
         name=name,
         job_type=JobType.RECURRING.value,
         schedule_expression=str(interval_seconds),
         payload_json={},
         is_active=False,
-        next_run_at=now + timedelta(seconds=interval_seconds),
+        next_run_at=next_automation_run(schedule, now, interval_seconds),
         metadata_json={},
     )
     db.add(duplicate)
@@ -358,6 +373,7 @@ async def duplicate_automation(
         "instruction": instruction.strip(),
         "scope": scope,
         "project_name": project_name if scope == "project" else None,
+        "schedule": schedule.model_dump(),
     }
     await db.commit()
     await db.refresh(duplicate)

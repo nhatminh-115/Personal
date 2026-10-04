@@ -52,6 +52,7 @@ describe('AutomationsView', () => {
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({
       name: 'Project digest', description: 'A short summary', instruction: 'Review the latest project activity.',
       scope: 'project', project_name: 'AURA', interval_seconds: 7200,
+      schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
     }));
   });
 
@@ -72,7 +73,24 @@ describe('AutomationsView', () => {
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith('auto-1', {
       name: 'Project review', description: 'Summarize changes', instruction: 'Summarize decisions and owners.', interval_seconds: 7200,
+      schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     }));
+  });
+
+  it('creates a weekly wall-clock schedule in the selected timezone', async () => {
+    const onCreate = vi.fn().mockResolvedValue(liveAutomation);
+    render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Weekly review' } });
+    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Review the week.' } });
+    fireEvent.change(screen.getByLabelText('Schedule'), { target: { value: 'weekly' } });
+    fireEvent.change(screen.getByLabelText('Local time'), { target: { value: '08:30' } });
+    fireEvent.change(screen.getByLabelText('Timezone'), { target: { value: 'Asia/Saigon' } });
+    fireEvent.click(screen.getByLabelText('Saturday'));
+    fireEvent.click(screen.getByRole('button', { name: 'Create automation' }));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+      schedule: { mode: 'weekly', local_time: '08:30', weekdays: [0, 1, 2, 3, 4, 5], timezone: 'Asia/Saigon' },
+    })));
   });
 
   it('keeps archived routines paused, exposes history, and offers restore', () => {

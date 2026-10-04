@@ -1,5 +1,5 @@
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 import pytest
@@ -86,6 +86,48 @@ async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(a
     assert job.payload_json["message"] == "Summarize new decisions and list owners."
     assert job.schedule_expression == "3600"
     assert event.payload_json["message"] == "Summarize project updates."
+
+
+@pytest.mark.asyncio
+async def test_wall_clock_automation_schedule_round_trips_edits_and_duplicates(async_client):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Weekday digest",
+        "instruction": "Summarize new decisions.",
+        "interval_seconds": 86400,
+        "schedule": {"mode": "daily", "local_time": "09:00", "timezone": "Asia/Saigon"},
+    })
+    assert created.status_code == 201, created.text
+    record = created.json()
+    assert record["schedule"] == {
+        "mode": "daily", "local_time": "09:00", "weekdays": [], "timezone": "Asia/Saigon",
+    }
+    assert datetime.fromisoformat(record["next_run_at"]).replace(tzinfo=timezone.utc).hour == 2
+
+    edited = await async_client.patch(f"/v1/automations/{record['id']}", json={
+        "name": "Monday and Wednesday digest",
+        "description": "",
+        "instruction": "Summarize decisions.",
+        "schedule": {"mode": "weekly", "local_time": "08:30", "weekdays": [2, 0], "timezone": "Asia/Saigon"},
+    })
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["schedule"] == {
+        "mode": "weekly", "local_time": "08:30", "weekdays": [0, 2], "timezone": "Asia/Saigon",
+    }
+
+    duplicate = await async_client.post(f"/v1/automations/{record['id']}/duplicate")
+    assert duplicate.status_code == 201, duplicate.text
+    assert duplicate.json()["schedule"] == edited.json()["schedule"]
+    assert duplicate.json()["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_automation_rejects_invalid_weekly_schedule(async_client):
+    response = await async_client.post("/v1/automations", json={
+        "name": "Invalid weekday",
+        "instruction": "Run this.",
+        "schedule": {"mode": "weekly", "local_time": "09:00", "weekdays": [], "timezone": "UTC"},
+    })
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

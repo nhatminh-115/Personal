@@ -11,6 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.logging import logger
 from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.events.bus import EventBus, event_bus
+from app.events.automation_schedule import AutomationSchedule, next_automation_run
 from app.events.types import AURAEvent, EventType
 
 MAX_DUE_JOBS_PER_TICK = 100
@@ -200,7 +201,12 @@ class PersistentScheduler:
             if job.job_type != JobType.ONE_SHOT.value and await self._automation_has_active_execution(db, job):
                 try:
                     interval = float(job.schedule_expression)
-                    job.next_run_at = now + timedelta(seconds=interval)
+                    metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
+                    if metadata.get("kind") == "automation":
+                        schedule = AutomationSchedule.model_validate(metadata.get("schedule", {}))
+                        job.next_run_at = next_automation_run(schedule, now, int(interval))
+                    else:
+                        job.next_run_at = now + timedelta(seconds=interval)
                 except (TypeError, ValueError):
                     job.next_run_at = now + timedelta(seconds=60.0)
                 job.locked_at = None
@@ -238,7 +244,12 @@ class PersistentScheduler:
             else:
                 try:
                     interval = float(job.schedule_expression)
-                    job.next_run_at = now + timedelta(seconds=interval)
+                    metadata = job.metadata_json if isinstance(job.metadata_json, dict) else {}
+                    if metadata.get("kind") == "automation":
+                        schedule = AutomationSchedule.model_validate(metadata.get("schedule", {}))
+                        job.next_run_at = next_automation_run(schedule, now, int(interval))
+                    else:
+                        job.next_run_at = now + timedelta(seconds=interval)
                 except ValueError:
                     job.next_run_at = now + timedelta(seconds=60.0)
 
