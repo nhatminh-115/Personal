@@ -485,7 +485,7 @@ export default function App() {
     setMemoryPageLoading(true);
     setMemoryPageError(null);
     try {
-      const page = await api.fetchMemories(projectName, undefined, cursor);
+      const page = await api.fetchMemories(projectName, undefined, cursor, true);
       if (requestId !== memoryPageRequestId.current) return;
       setMemories((current) => append
         ? [...current, ...page.items.filter((item) => !current.some((loaded) => loaded.id === item.id))]
@@ -563,6 +563,11 @@ export default function App() {
     const append = Boolean(memoryNextCursor && memories.length > 0);
     await loadMemoryPage(activeProject.name, append ? memoryNextCursor : null, append);
   }, [activeProject?.name, loadMemoryPage, memories.length, memoryNextCursor, memoryPageLoading]);
+  const setProjectMemoryActive = useCallback(async (memoryId: string, isActive: boolean) => {
+    if (!activeProject?.name) throw new Error('Select a project before changing its memories.');
+    const updated = await api.setProjectMemoryActive(activeProject.name, memoryId, isActive);
+    setMemories((current) => current.map((memory) => memory.id === updated.id ? updated : memory));
+  }, [activeProject?.name]);
   const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
   const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
 
@@ -2943,6 +2948,7 @@ export default function App() {
             memoryPageLoading={memoryPageLoading}
             memoryPageError={memoryPageError}
             onLoadMoreMemories={loadMoreMemories}
+            onSetMemoryActive={setProjectMemoryActive}
             onClose={() => setInspectorOpen(false)}
             onContextSelect={openBoardNode}
           />

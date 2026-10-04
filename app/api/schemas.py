@@ -677,8 +677,13 @@ class MemoryItemResponse(BaseModel):
     key: str
     content: str
     confidence: float
+    is_active: bool = True
     metadata_json: Optional[Dict[str, Any]] = None
     created_at: datetime
+
+
+class MemoryActivationUpdate(BaseModel):
+    is_active: bool
 
 
 # --- Research Inspector Schema ---
