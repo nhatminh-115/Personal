@@ -1,12 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractPdfText, MAX_CONTEXT_FILE_CHARS, MAX_LOCAL_PDF_BYTES, MAX_LOCAL_PDF_PAGES } from '../lib/pdfText';
+import { createLocalOcrWorker, MAX_OCR_PAGES } from '../lib/localOcr';
 
 const pdfjs = vi.hoisted(() => ({ getDocument: vi.fn() }));
+const ocr = vi.hoisted(() => ({ createLocalOcrWorker: vi.fn() }));
 vi.mock('pdfjs-dist/webpack.mjs', () => pdfjs);
+vi.mock('../lib/localOcr', () => ({ ...ocr, MAX_OCR_PAGES: 5 }));
 
 function mockPdf(pages: string[][]) {
   const getPage = vi.fn(async (pageNumber: number) => ({
     getTextContent: async () => ({ items: pages[pageNumber - 1].map((str) => ({ str })) }),
+    getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 140 * scale }),
+    render: vi.fn(() => ({ promise: Promise.resolve() })),
   }));
   const destroy = vi.fn().mockResolvedValue(undefined);
   pdfjs.getDocument.mockReturnValue({
@@ -26,6 +31,7 @@ function mockPdfItems(items: Array<{ str: string; hasEOL?: boolean }>) {
 describe('browser-local PDF text extraction', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(createLocalOcrWorker).mockReset();
     if (!Blob.prototype.arrayBuffer) {
       Object.defineProperty(Blob.prototype, 'arrayBuffer', {
         configurable: true,
@@ -78,8 +84,42 @@ describe('browser-local PDF text extraction', () => {
 
   it('explains that scanned PDFs need OCR when no selectable text exists', async () => {
     const { destroy } = mockPdf([['  '], []]);
+    const recognize = vi.fn().mockResolvedValue({ data: { text: '  ' } });
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(createLocalOcrWorker).mockResolvedValue({ recognize, terminate } as any);
 
-    await expect(extractPdfText(new Blob(['%PDF fixture']))).rejects.toThrow('Scanned PDFs need OCR');
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+    await expect(extractPdfText(new Blob(['%PDF fixture']))).rejects.toThrow('no extractable text, including after local OCR');
     expect(destroy).toHaveBeenCalledOnce();
+    expect(recognize).toHaveBeenCalledTimes(2);
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('OCRs only textless pages locally while preserving page order', async () => {
+    mockPdf([['Selectable page'], ['  '], ['Another selectable page']]);
+    const recognize = vi.fn().mockResolvedValue({ data: { text: 'Recognized scan' } });
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(createLocalOcrWorker).mockResolvedValue({ recognize, terminate } as any);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+
+    await expect(extractPdfText(new Blob(['%PDF fixture']))).resolves.toBe(
+      'Selectable page\n\n[OCR page 2]\nRecognized scan\n\nAnother selectable page',
+    );
+    expect(createLocalOcrWorker).toHaveBeenCalledOnce();
+    expect(recognize).toHaveBeenCalledOnce();
+    expect(terminate).toHaveBeenCalledOnce();
+  });
+
+  it('caps local OCR work and identifies omitted scanned pages', async () => {
+    mockPdf(Array.from({ length: MAX_OCR_PAGES + 1 }, () => ['  ']));
+    const recognize = vi.fn().mockResolvedValue({ data: { text: 'Scanned page' } });
+    const terminate = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(createLocalOcrWorker).mockResolvedValue({ recognize, terminate } as any);
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({} as CanvasRenderingContext2D);
+
+    const text = await extractPdfText(new Blob(['%PDF fixture']));
+    expect(recognize).toHaveBeenCalledTimes(MAX_OCR_PAGES);
+    expect(text).toContain(`[Local OCR limited to the first ${MAX_OCR_PAGES} scanned pages.]`);
+    expect(terminate).toHaveBeenCalledOnce();
   });
 });

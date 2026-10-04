@@ -34,7 +34,7 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
     const detail = metadataOnlyFile
       ? fileContentAvailable
         ? localFile?.kind === 'PDF'
-          ? 'browser-local PDF · text is extracted here only after you explicitly send it with a message'
+          ? 'browser-local PDF · selectable text and up to five scanned pages are extracted locally only after you explicitly send it with a message'
           : localFile?.kind === 'DOCX'
             ? 'browser-local Word document · text is extracted here only after you explicitly send it with a message'
             : localFile?.kind === 'XLSX'

@@ -130,7 +130,7 @@ describe('live chat context loading', () => {
     expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
   });
 
-  it('offers browser-local PDF text extraction only for an imported PDF available in this browser', async () => {
+  it('offers browser-local PDF text and OCR only for an imported PDF available in this browser', async () => {
     vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
       objects: [{
         id: 'file-reference-1', project_name: null, object_type: 'file_reference', created_by: 'user',
@@ -146,7 +146,7 @@ describe('live chat context loading', () => {
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
 
     const contextItem = await view.findByText(/file\|Local chapters\.pdf\|browser-local PDF/);
-    expect(contextItem).toHaveTextContent('text is extracted here only after you explicitly send it with a message');
+    expect(contextItem).toHaveTextContent('up to five scanned pages are extracted locally only after you explicitly send it with a message');
     fireEvent.click(view.getByRole('button', { name: 'Send file text' }));
     expect(onSendFileContent).toHaveBeenCalledWith('thread-1', ['file-reference-1']);
   });

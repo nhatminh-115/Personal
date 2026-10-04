@@ -172,17 +172,18 @@ missing information, current-state checks, and requested actions.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Imported PDFs
-can also be parsed locally for selectable text after that explicit action; the
-browser parser enforces a 10 MB file limit, a 100-page limit, and the existing
-20,000-character per-file limit. Imported DOCX files can be parsed locally in
-the browser under a 10 MB input and 20,000-character extracted-text limit.
+can also be parsed locally after that explicit action; selectable text is read
+directly and textless pages use bundled English/Vietnamese OCR models, capped
+at five pages per file. The browser parser enforces a 10 MB file limit, a
+100-page limit, and the existing 20,000-character per-file limit. Imported
+DOCX files can be parsed locally in the browser under a 10 MB input and
+20,000-character extracted-text limit.
 Imported XLSX workbooks can also be parsed locally after that explicit action;
 only visible worksheets are included, with limits of 10 sheets, 250 rows per
 sheet, 40 columns per row, and 20,000 extracted characters.
-Scanned PDFs without selectable text still need OCR; legacy DOC and other
-unsupported binary formats remain reference-only. Sending any extracted text
-copies bounded content into the durable run checkpoint for resume and requires
-cloud confirmation without changing the profile's fallback policy; the normal
+Legacy DOC and other unsupported binary formats remain reference-only. Sending
+any extracted text copies bounded content into the durable run checkpoint for
+resume and requires cloud confirmation without changing the profile's fallback policy; the normal
 routing-confirmation workflow must be resolved before a cloud model can receive
 it. The Library graph retains only the file reference and provenance manifest,
 not the file text.
