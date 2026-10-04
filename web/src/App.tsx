@@ -2757,6 +2757,21 @@ export default function App() {
     handleSidebarNavigate('study');
   };
 
+  const handleOpenConnectedSearchResult = (result: WorkspaceSearchResult) => {
+    if (!result.connection_id || !result.relative_path || !result.connection_name) return;
+    const indexedFile: IndexedFolderFile = {
+      connectionId: result.connection_id,
+      connectionName: result.connection_name,
+      relativePath: result.relative_path,
+      name: result.title,
+      size: result.size ?? 0,
+      lastModified: Date.parse(result.updated_at) || 0,
+      mimeType: result.mime_type ?? '',
+    };
+    void openIndexedFolderFile(indexedFile).then((file) => handleConnectedFile(file, `${result.connection_name} / ${result.relative_path}`))
+      .catch((error: unknown) => pushToast('Could not open connected file', executionErrorText(error)));
+  };
+
   const handleOpenQuickAskResult = (result: WorkspaceSearchResult) => {
     setAuraOpen(false);
     if (result.object_type === 'manual_note' && !result.project_name) {
@@ -3070,20 +3085,7 @@ export default function App() {
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
             onOpenStudySession={handleOpenWorkspaceSearchStudySession}
             onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
-            onOpenFile={(result) => {
-              if (!result.connection_id || !result.relative_path || !result.connection_name) return;
-              const indexedFile: IndexedFolderFile = {
-                connectionId: result.connection_id,
-                connectionName: result.connection_name,
-                relativePath: result.relative_path,
-                name: result.title,
-                size: result.size ?? 0,
-                lastModified: Date.parse(result.updated_at) || 0,
-                mimeType: result.mime_type ?? '',
-              };
-              void openIndexedFolderFile(indexedFile).then((file) => handleConnectedFile(file, `${result.connection_name} / ${result.relative_path}`))
-                .catch((error: unknown) => pushToast('Could not open connected file', executionErrorText(error)));
-            }}
+            onOpenFile={handleOpenConnectedSearchResult}
           />
         ) : null}
         </Suspense>
@@ -3122,9 +3124,10 @@ export default function App() {
       {auraOpen ? (
         <AuraCommandPalette
           projectName={activeProject?.name ?? null}
-          onClose={() => setAuraOpen(false)}
-          onOpenResult={handleOpenQuickAskResult}
-        />
+            onClose={() => setAuraOpen(false)}
+            onOpenResult={handleOpenQuickAskResult}
+            onOpenFile={handleOpenConnectedSearchResult}
+          />
       ) : null}
       <ToastStack toasts={toasts} />
     </div>
