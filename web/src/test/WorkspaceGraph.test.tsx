@@ -467,6 +467,54 @@ describe('Persistent workspace graph Board projection', () => {
     }));
   });
 
+  it('keeps a failed Note draft visible and exposes an explicit retry', async () => {
+    const graph: WorkspaceGraph = {
+      ...savedGraph,
+      objects: [{
+        ...savedGraph.objects[0],
+        id: 'retryable-note-save',
+        object_type: 'manual_note',
+        created_by: 'user',
+        title: 'Retryable note',
+        content: 'Saved content.',
+        metadata_json: { privacy_policy: 'internal' },
+      }],
+    };
+    vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const updateObject = vi.spyOn(api, 'updateWorkspaceObject')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ revision: 2 } as never);
+    const onToast = vi.fn();
+    const { container } = render(
+      <ReactFlowProvider>
+        <BoardCanvas boardKey="retryable-note-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+      </ReactFlowProvider>,
+    );
+
+    await screen.findByText('Retryable note');
+    fireEvent.click(container.querySelector('[data-id="retryable-note-save"] button[title^="Current density"]')!);
+    await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
+    const editor = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit manual note"]')!;
+    fireEvent.change(editor, { target: { value: 'Unsaved but recoverable content.' } });
+
+    await waitFor(() => expect(updateObject).toHaveBeenCalledTimes(1), { timeout: 2000 });
+    expect(editor).toHaveValue('Unsaved but recoverable content.');
+    const retryButton = container.querySelector<HTMLButtonElement>(
+      '[data-id="retryable-note-save"] button[aria-label="Retry save"]',
+    );
+    expect(retryButton).toBeInTheDocument();
+
+    fireEvent.click(retryButton!);
+    await waitFor(() => expect(updateObject).toHaveBeenCalledTimes(2));
+    expect(updateObject.mock.calls[1][2]).toEqual(expect.objectContaining({
+      content: 'Unsaved but recoverable content.',
+      metadata_json: { privacy_policy: 'internal' },
+      expected_revision: 1,
+    }));
+    await waitFor(() => expect(container.querySelector('[data-id="retryable-note-save"] button[aria-label="Retry save"]')).not.toBeInTheDocument());
+  });
+
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
     let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);

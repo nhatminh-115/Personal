@@ -276,10 +276,10 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       });
       workspaceObjectRevisions.current.set(id, saved.revision);
       nodesRef.current = nodesRef.current.map((item) => item.id === id
-        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision } }
+        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision, workspaceSaveFailed: false } }
         : item);
       setNodes((current) => current.map((item) => item.id === id
-        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision } }
+        ? { ...item, data: { ...item.data, workspaceRevision: saved.revision, workspaceSaveFailed: false } }
         : item));
     });
     workspaceObjectWriteSync.current.set(id, save);
@@ -289,6 +289,30 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     );
     return save;
   }, [setNodes, workspaceProjectName]);
+
+  const setWorkspaceObjectSaveFailed = useCallback((id: string, failed: boolean) => {
+    nodesRef.current = nodesRef.current.map((item) => item.id === id
+      ? { ...item, data: { ...item.data, workspaceSaveFailed: failed } }
+      : item);
+    setNodes((current) => current.map((item) => item.id === id
+      ? { ...item, data: { ...item.data, workspaceSaveFailed: failed } }
+      : item));
+  }, [setNodes]);
+
+  const retryWorkspaceObjectSave = useCallback((id: string) => {
+    void queueWorkspaceObjectWrite(id).then(
+      () => toast('Workspace object saved', 'Your latest Board changes are saved.'),
+      (error) => {
+        if (error instanceof ApiError && error.status === 409) {
+          setWorkspaceObjectSaveFailed(id, false);
+          toast('Workspace object changed elsewhere', 'Copy your visible draft, then reload the Board before editing again.');
+          return;
+        }
+        setWorkspaceObjectSaveFailed(id, true);
+        toast('Save retry failed', 'Your text is still visible in this Board. Check the connection and retry again.');
+      },
+    );
+  }, [queueWorkspaceObjectWrite, setWorkspaceObjectSaveFailed, toast]);
 
   const attachWorkspaceSessions = useCallback((projectName: string, sessionIds: string[]) => {
     let scheduledNewAttachment = false;
@@ -709,16 +733,22 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           const timer = window.setTimeout(() => {
             const latestNode = nodesRef.current.find((item) => item.id === id);
             if (!latestNode) return;
-            void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
-              ? toast('Workspace object changed elsewhere', 'Reload the Board before editing again so newer saved content is not replaced.')
-              : toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+            void queueWorkspaceObjectWrite(id).catch((error) => {
+              if (error instanceof ApiError && error.status === 409) {
+                setWorkspaceObjectSaveFailed(id, false);
+                toast('Workspace object changed elsewhere', 'Copy your visible draft, then reload the Board before editing again.');
+                return;
+              }
+              setWorkspaceObjectSaveFailed(id, true);
+              toast(latestNode.data.kind === 'bridge' ? 'Context Bridge was not saved' : 'Manual note was not saved', 'Your text remains in this Board. Click Retry save to try again.');
+            });
             timers.delete(id);
           }, 500);
           timers.set(id, timer);
         }
       }
     },
-    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, setWorkspaceObjectSaveFailed, toast, workspaceProjectName],
   );
 
   const setPrivacyPolicy = useCallback(
@@ -738,6 +768,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         void queueWorkspaceObjectWrite(id, updatedNode)
           .catch((error) => {
             if (privacySaveVersions.current.get(id) !== saveVersion) return;
+            setWorkspaceObjectSaveFailed(id, false);
             setNodes((current) => current.map((item) => {
               if (item.id !== id) return item;
               const currentMetadata = { ...(item.data.workspaceMetadata ?? {}) };
@@ -752,7 +783,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           });
       }
     },
-    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, setWorkspaceObjectSaveFailed, toast, workspaceProjectName],
   );
 
   const updateBridgeOption = useCallback(
@@ -778,15 +809,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const latestNode = nodesRef.current.find((item) => item.id === id);
           if (!latestNode || latestNode.data.kind !== 'bridge') return;
-          void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
-            ? toast('Workspace object changed elsewhere', 'Reload the Board before changing this Context Bridge again.')
-            : toast('Bridge options were not saved', 'The selection remains visible until you reload the Board.'));
+          void queueWorkspaceObjectWrite(id).catch((error) => {
+            if (error instanceof ApiError && error.status === 409) {
+              setWorkspaceObjectSaveFailed(id, false);
+              toast('Workspace object changed elsewhere', 'Copy your visible draft, then reload the Board before editing again.');
+              return;
+            }
+            setWorkspaceObjectSaveFailed(id, true);
+            toast('Bridge options were not saved', 'Your selection remains in this Board. Click Retry save to try again.');
+          });
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
-    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, setWorkspaceObjectSaveFailed, toast, workspaceProjectName],
   );
 
   const updateBridgeSection = useCallback(
@@ -802,15 +839,21 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         const timer = window.setTimeout(() => {
           const node = nodesRef.current.find((item) => item.id === id);
           if (!node || node.data.kind !== 'bridge') return;
-          void queueWorkspaceObjectWrite(id).catch((error) => error instanceof ApiError && error.status === 409
-            ? toast('Workspace object changed elsewhere', 'Reload the Board before changing this Context Bridge again.')
-            : toast('Context Bridge section was not saved', 'Your text is still visible here. Reopen the Board to retry.'));
+          void queueWorkspaceObjectWrite(id).catch((error) => {
+            if (error instanceof ApiError && error.status === 409) {
+              setWorkspaceObjectSaveFailed(id, false);
+              toast('Workspace object changed elsewhere', 'Copy your visible draft, then reload the Board before editing again.');
+              return;
+            }
+            setWorkspaceObjectSaveFailed(id, true);
+            toast('Context Bridge section was not saved', 'Your text remains in this Board. Click Retry save to try again.');
+          });
           bridgeSectionSaveTimers.current.delete(id);
         }, 500);
         bridgeSectionSaveTimers.current.set(id, timer);
       }
     },
-    [queueWorkspaceObjectWrite, recordHistory, setNodes, toast, workspaceProjectName],
+    [queueWorkspaceObjectWrite, recordHistory, setNodes, setWorkspaceObjectSaveFailed, toast, workspaceProjectName],
   );
 
   const addBranch = useCallback(
@@ -901,6 +944,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           onCycleDensity: cycleDensity,
           onBranch: addBranch,
           onChangeBody: changeBody,
+          onRetryWorkspaceSave: retryWorkspaceObjectSave,
           onSetPrivacyPolicy: setPrivacyPolicy,
           onBridgeApply: workspaceProjectName ? undefined : applyBridge,
           onBridgeOption: updateBridgeOption,

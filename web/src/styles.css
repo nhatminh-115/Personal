@@ -1526,6 +1526,10 @@ input:focus-visible {
 .workspace-privacy-control { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 7px; border: 1px solid rgba(149,179,197,.07); border-radius: 7px; color: #637986; font-size: 8px; }
 .workspace-privacy-control select { min-width: 0; border: 1px solid rgba(149,179,197,.1); border-radius: 6px; padding: 4px 6px; background: #101923; color: #9aadb5; font: inherit; }
 .workspace-privacy-control select:focus-visible { outline: 1px solid rgba(104,181,194,.5); outline-offset: 1px; }
+.workspace-save-warning { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; padding: 6px 7px; border: 1px solid rgba(238, 173, 100, .18); border-radius: 7px; color: #d9a86f; font-size: 8px; }
+.workspace-save-warning button { border: 1px solid rgba(238, 173, 100, .2); border-radius: 5px; padding: 3px 6px; background: rgba(238, 173, 100, .08); color: #e6bd8f; font: inherit; cursor: pointer; }
+.workspace-save-warning button:hover { background: rgba(238, 173, 100, .15); color: #f1d2ac; }
+.workspace-save-warning button:focus-visible { outline: 1px solid rgba(238, 173, 100, .65); outline-offset: 1px; }
 
 .note-editor {
   width: 100%;

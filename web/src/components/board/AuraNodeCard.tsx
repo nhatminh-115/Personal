@@ -172,6 +172,15 @@ export function AuraNodeCard({ id, data, selected }: NodeProps<AuraFlowNode>) {
         </label>
       ) : null}
 
+      {data.workspaceSaveFailed && data.onRetryWorkspaceSave ? (
+        <div className="workspace-save-warning nodrag nopan" aria-live="polite">
+          <span>Unsaved changes</span>
+          <button type="button" aria-label="Retry save" onClick={() => data.onRetryWorkspaceSave?.(id)}>
+            Retry save
+          </button>
+        </div>
+      ) : null}
+
       {researchDetails.length ? (
         <small className="research-node-meta">{researchDetails.join(' · ')}</small>
       ) : null}
