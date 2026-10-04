@@ -5,6 +5,7 @@ import type { AIContextItem, ApprovalDetail, ChatMessage, WorkspaceObject } from
 import { api } from '../../services/api';
 import { getLocalFile } from '../../lib/localFiles';
 import { MAX_LOCAL_DOCX_BYTES } from '../../lib/docxText';
+import { MAX_LOCAL_XLSX_BYTES } from '../../lib/xlsxText';
 import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { ChatPane } from './ChatPane';
 
@@ -17,7 +18,9 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
         ? (localFile.size ?? 0) <= 80_000
         : localFile.kind === 'PDF'
           ? (localFile.size ?? 0) <= MAX_LOCAL_PDF_BYTES
-          : localFile.kind === 'DOCX' && (localFile.size ?? 0) <= MAX_LOCAL_DOCX_BYTES
+          : localFile.kind === 'DOCX'
+            ? (localFile.size ?? 0) <= MAX_LOCAL_DOCX_BYTES
+            : localFile.kind === 'XLSX' && (localFile.size ?? 0) <= MAX_LOCAL_XLSX_BYTES
     ));
     const fileContentAvailable = Boolean(localContextFileIds.has(object.id)
       && localFile?.source === 'imported' && localFile.blobKey
@@ -34,8 +37,10 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
           ? 'browser-local PDF · text is extracted here only after you explicitly send it with a message'
           : localFile?.kind === 'DOCX'
             ? 'browser-local Word document · text is extracted here only after you explicitly send it with a message'
+            : localFile?.kind === 'XLSX'
+              ? 'browser-local spreadsheet · visible sheet text is extracted here only after you explicitly send it with a message'
             : 'browser-local text · stays here until you explicitly send it with a message'
-        : 'file reference · metadata only · this browser has no supported local text, PDF, or Word document copy available'
+        : 'file reference · metadata only · this browser has no supported local text, PDF, Word document, or spreadsheet copy available'
       : object.object_type === 'research_claim' && typeof verification === 'string'
         ? `research claim · ${verification} · saved in this project`
         : `${object.object_type.split('_').join(' ')} · saved in this project`;
@@ -139,7 +144,8 @@ export function ProjectChatWorkspace({
       const supportedText = Boolean(local && ['TXT', 'MD', 'CSV', 'JSON', 'HTML'].includes(local.kind) && (local.size ?? 0) <= 80_000);
       const supportedPdf = Boolean(local?.kind === 'PDF' && (local.size ?? 0) <= MAX_LOCAL_PDF_BYTES);
       const supportedDocx = Boolean(local?.kind === 'DOCX' && (local.size ?? 0) <= MAX_LOCAL_DOCX_BYTES);
-      if (!local?.blobKey || (!supportedText && !supportedPdf && !supportedDocx)) return [];
+      const supportedXlsx = Boolean(local?.kind === 'XLSX' && (local.size ?? 0) <= MAX_LOCAL_XLSX_BYTES);
+      if (!local?.blobKey || (!supportedText && !supportedPdf && !supportedDocx && !supportedXlsx)) return [];
       return [{ objectId: item.nodeId, blobKey: local.blobKey }];
     });
     void Promise.all(candidates.map(async ({ objectId, blobKey }) => {
