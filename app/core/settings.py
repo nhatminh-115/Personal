@@ -54,6 +54,12 @@ class Settings(BaseSettings):
     LMSTUDIO_BASE_URL: str = "http://127.0.0.1:1234/v1"
     MODEL_TEMPERATURE: float = 0.0
     MODEL_MAX_TOKENS: int = 2048
+    MODEL_REQUEST_TIMEOUT_SECONDS: float = Field(
+        default=60.0,
+        gt=0,
+        le=600,
+        description="HTTP timeout for OpenAI-compatible chat completions, in seconds",
+    )
 
     # Embedding Provider Settings
     EMBEDDING_PROVIDER: Literal["mock", "openai"] = "mock"

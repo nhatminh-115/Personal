@@ -27,6 +27,7 @@ class OpenAICompatibleProvider(ModelProvider):
         base_url: str | None = None,
         model_name: str | None = None,
         provider_name: str = "openai",
+        request_timeout_seconds: float | None = None,
     ) -> None:
         self._name = provider_name
         default_key = (
@@ -40,6 +41,11 @@ class OpenAICompatibleProvider(ModelProvider):
         )
         self._base_url = (base_url or default_base_url).rstrip("/")
         self._model_name = model_name or settings.OPENAI_MODEL_NAME
+        self._request_timeout_seconds = (
+            request_timeout_seconds
+            if request_timeout_seconds is not None
+            else settings.MODEL_REQUEST_TIMEOUT_SECONDS
+        )
 
     @property
     def name(self) -> str:
@@ -104,7 +110,7 @@ class OpenAICompatibleProvider(ModelProvider):
             payload["tool_choice"] = "auto"
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=self._request_timeout_seconds) as client:
                 response = await client.post(url, headers=headers, json=payload)
                 if response.status_code >= 400:
                     raise ProviderError(
