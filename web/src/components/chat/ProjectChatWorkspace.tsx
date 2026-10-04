@@ -8,6 +8,7 @@ import { MAX_LOCAL_DOCX_BYTES } from '../../lib/docxText';
 import { MAX_LOCAL_XLSX_BYTES } from '../../lib/xlsxText';
 import { MAX_LOCAL_PDF_BYTES } from '../../lib/pdfText';
 import { MAX_LOCAL_IMAGE_BYTES } from '../../lib/imageText';
+import { MAX_LOCAL_PPTX_BYTES } from '../../lib/pptxText';
 import { ChatPane } from './ChatPane';
 
 function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set<string>, libraryItems: LibraryItem[], fileContentIds: Set<string>, localContextFileIds: Set<string>): AIContextItem[] {
@@ -23,7 +24,9 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
             ? (localFile.size ?? 0) <= MAX_LOCAL_DOCX_BYTES
             : localFile.kind === 'XLSX'
               ? (localFile.size ?? 0) <= MAX_LOCAL_XLSX_BYTES
-              : localFile.kind === 'IMAGE' && (localFile.size ?? 0) <= MAX_LOCAL_IMAGE_BYTES
+              : localFile.kind === 'IMAGE'
+                ? (localFile.size ?? 0) <= MAX_LOCAL_IMAGE_BYTES
+                : localFile.kind === 'PPTX' && (localFile.size ?? 0) <= MAX_LOCAL_PPTX_BYTES
     ));
     const fileContentAvailable = Boolean(localContextFileIds.has(object.id)
       && localFile?.source === 'imported' && localFile.blobKey
@@ -44,8 +47,10 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
               ? 'browser-local spreadsheet · visible sheet text is extracted here only after you explicitly send it with a message'
             : localFile?.kind === 'IMAGE'
               ? 'browser-local image OCR · text only is extracted here only after you explicitly send it with a message; image pixels are not sent for vision'
+              : localFile?.kind === 'PPTX'
+                ? 'browser-local presentation · slide text is extracted here only after you explicitly send it with a message'
             : 'browser-local text · stays here until you explicitly send it with a message'
-        : 'file reference · metadata only · this browser has no supported local text, PDF, Word document, spreadsheet, or image copy available'
+        : 'file reference · metadata only · this browser has no supported local text, PDF, Word document, spreadsheet, presentation, or image copy available'
       : object.object_type === 'research_claim' && typeof verification === 'string'
         ? `research claim · ${verification} · saved in this project`
         : `${object.object_type.split('_').join(' ')} · saved in this project`;
@@ -151,7 +156,8 @@ export function ProjectChatWorkspace({
       const supportedDocx = Boolean(local?.kind === 'DOCX' && (local.size ?? 0) <= MAX_LOCAL_DOCX_BYTES);
       const supportedXlsx = Boolean(local?.kind === 'XLSX' && (local.size ?? 0) <= MAX_LOCAL_XLSX_BYTES);
       const supportedImage = Boolean(local?.kind === 'IMAGE' && (local.size ?? 0) <= MAX_LOCAL_IMAGE_BYTES);
-      if (!local?.blobKey || (!supportedText && !supportedPdf && !supportedDocx && !supportedXlsx && !supportedImage)) return [];
+      const supportedPptx = Boolean(local?.kind === 'PPTX' && (local.size ?? 0) <= MAX_LOCAL_PPTX_BYTES);
+      if (!local?.blobKey || (!supportedText && !supportedPdf && !supportedDocx && !supportedXlsx && !supportedImage && !supportedPptx)) return [];
       return [{ objectId: item.nodeId, blobKey: local.blobKey }];
     });
     void Promise.all(candidates.map(async ({ objectId, blobKey }) => {

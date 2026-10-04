@@ -181,6 +181,11 @@ DOCX files can be parsed locally in the browser under a 10 MB input and
 Imported XLSX workbooks can also be parsed locally after that explicit action;
 only visible worksheets are included, with limits of 10 sheets, 250 rows per
 sheet, 40 columns per row, and 20,000 extracted characters.
+Imported PPTX presentations can also be parsed locally after that explicit
+action. Only slide text is included; macro-enabled and legacy presentations
+remain reference-only. The ZIP reader streams slide XML with a 10 MB input,
+100-slide, 1 MB per-slide XML, 20 MB aggregate expansion, and 20,000-character
+text limit.
 Imported raster images can be OCRed locally after that explicit action. The
 browser sends extracted text only, never the image pixels for vision; input is
 limited to 10 MB and 20 megapixels, downscaled locally, and capped at 20,000
