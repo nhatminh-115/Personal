@@ -13,11 +13,11 @@ describe('local HTML text extraction', () => {
       <script>window.__executed = true</script><style>.x { display:none }</style><noscript>fallback</noscript>
       <template>template secret</template><svg><text>svg secret</text></svg><iframe>frame secret</iframe>
       <object>object secret</object><embed><img src="https://example.test/pixel" onerror="window.__executed = true">
-    </body></html>`));
+      <style>@import url("https://example.test/unclosed.css");`));
 
     expect(extracted).toBe('Résumé 世界\nHello there.');
     const parsedSource = String(parser.mock.calls[0]?.[0]);
-    expect(parsedSource).not.toMatch(/<img\b|<iframe\b|https:\/\/example\.test|onerror/i);
+    expect(parsedSource).not.toMatch(/<img\b|<iframe\b|<style\b|https:\/\/example\.test|onerror/i);
     expect(window).not.toHaveProperty('__executed');
     expect(extracted).not.toContain('<');
     parser.mockRestore();

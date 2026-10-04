@@ -18,7 +18,9 @@ function readBlobAsText(blob: Blob): Promise<string> {
 export function neutralizeHtmlResources(source: string): string {
   return source
     // DOMParser documents are inert but can still fetch iframe and image URLs.
-    .replace(/<(script|style|svg|iframe|img|picture|object|embed|video|audio|source|track|link|base|frame|frameset)\b[^>]*>(?:[\s\S]*?<\/\1\s*>)?/gi, ' ')
+    // For malformed unclosed containers, discard through EOF rather than letting their raw contents reach a parser.
+    .replace(/<(script|style|svg|iframe|picture|object|video|audio|noscript|template|applet|portal|frameset)\b[^>]*>(?:[\s\S]*?<\/\1\s*>|[\s\S]*$)/gi, ' ')
+    .replace(/<(img|embed|source|track|link|base|frame)\b[^>]*>/gi, ' ')
     .replace(/\sstyle\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, (attribute) => {
       const style = attribute.slice(attribute.indexOf('=') + 1).trim().replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, '$1$2');
       return /(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden|content-visibility\s*:\s*hidden)(?:\s*!important)?\s*(?:;|$)/i.test(style)
