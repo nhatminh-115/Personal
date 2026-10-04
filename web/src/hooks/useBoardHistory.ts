@@ -89,10 +89,17 @@ export function useBoardHistory({ nodesRef, edgesRef, setNodes, setEdges, onHist
     return true;
   }, [edgesRef, nodesRef, onHistoryChange, setEdges, setNodes, syncAvailability]);
 
+  const clear = useCallback(() => {
+    undoRef.current = [];
+    redoRef.current = [];
+    syncAvailability();
+  }, [syncAvailability]);
+
   return {
     record,
     undo,
     redo,
+    clear,
     canUndo: availability.canUndo,
     canRedo: availability.canRedo,
   };
