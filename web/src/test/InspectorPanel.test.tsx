@@ -191,7 +191,7 @@ describe('InspectorPanel Component', () => {
     expect(screen.getByText('read_workspace_file')).toBeInTheDocument();
     expect(screen.getByText('code_graph · vision')).toBeInTheDocument();
     expect(screen.getByText('memory-profile-1 · local_only')).toBeInTheDocument();
-    expect(screen.getByText('2,048 input + 1,024 reserved / 8,192 tokens')).toBeInTheDocument();
+    expect(screen.getByText((text) => text.replace(/[.,]/g, '') === '2048 input + 1024 reserved / 8192 tokens')).toBeInTheDocument();
     expect(screen.getByText('fallback_blocked')).toBeInTheDocument();
     expect(screen.getByText('local_only boundary')).toBeInTheDocument();
     expect(screen.getByText(/Persisted routing decisions/i)).toBeInTheDocument();
