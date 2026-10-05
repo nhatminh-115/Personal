@@ -162,6 +162,24 @@ async def submit_approval_decision(
     async with lock_run_resume(db, approval.run_id):
         # Re-fetch approval inside lock in case a concurrent request already updated its status
         approval = await approval_service.get_approval(approval_id)
+        await db.refresh(run_record)
+        if run_record.status in {
+            RunStatus.COMPLETED.value,
+            RunStatus.FAILED.value,
+            RunStatus.CANCELLED.value,
+        }:
+            if approval.status == req.decision:
+                return ApprovalDecisionResponse(
+                    approval_id=approval_id,
+                    status=approval.status,
+                    run_id=run_record.id,
+                    execution_status=run_record.status,
+                    final_response=run_record.final_response,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Run has already reached terminal status '{run_record.status}'.",
+            )
 
         graph = await get_compiled_graph()
         config = {

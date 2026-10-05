@@ -150,6 +150,25 @@ async def decide_routing_confirmation(
         if item is None or root_run is None:
             raise HTTPException(status_code=404, detail="Routing confirmation run not found.")
 
+        await db.refresh(root_run)
+        if root_run.status in {
+            RunStatus.COMPLETED.value,
+            RunStatus.FAILED.value,
+            RunStatus.CANCELLED.value,
+        }:
+            if item.status == request.decision:
+                return RoutingConfirmationDecisionResponse(
+                    confirmation_id=item.id,
+                    status=item.status,
+                    run_id=item.root_run_id,
+                    execution_status=root_run.status,
+                    final_response=root_run.final_response,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Run has already reached terminal status '{root_run.status}'.",
+            )
+
         if item.status != "pending" and item.status != request.decision:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

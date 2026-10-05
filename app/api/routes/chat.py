@@ -22,6 +22,7 @@ from app.approvals.service import ApprovalService
 from app.core.logging import logger
 from app.db.models import (
     ApprovalModel,
+    DelegationModel,
     MessageModel,
     RoutingConfirmationModel,
     RunModel,
@@ -175,6 +176,39 @@ async def _persist_cancelled_chat_turn(
 ) -> ChatResponse:
     already_cancelled = result_state.get("execution_status") == RunStatus.CANCELLED.value
     await _close_pending_decisions_for_cancelled_run(db, run.id)
+    active_children = list((await db.scalars(
+        select(RunModel).where(
+            RunModel.parent_run_id == run.id,
+            RunModel.status.in_([
+                RunStatus.CREATED.value,
+                RunStatus.RUNNING.value,
+                RunStatus.WAITING_FOR_APPROVAL.value,
+                RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
+            ]),
+        )
+    )).all())
+    cancellation_response = "Run cancelled with its parent chat turn."
+    for child in active_children:
+        child.status = RunStatus.CANCELLED.value
+        child.final_response = cancellation_response
+        child.error_message = None
+        await trace_service.record_event(
+            run_id=child.id,
+            session_id=session_id,
+            event_type="run_cancelled",
+            payload={"status": RunStatus.CANCELLED.value, "source": "parent_run_cancellation"},
+        )
+    if active_children:
+        child_ids = [child.id for child in active_children]
+        await db.execute(
+            update(DelegationModel)
+            .where(DelegationModel.child_run_id.in_(child_ids))
+            .values(
+                status=RunStatus.CANCELLED.value,
+                result_summary=cancellation_response,
+                pending_approval_id=None,
+            )
+        )
     run.status = RunStatus.CANCELLED.value
     run.final_response = (
         "Run cancelled. An operation already in progress may have completed "
