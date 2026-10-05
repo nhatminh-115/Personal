@@ -12,10 +12,11 @@ interface ProjectHomeProps {
   onOpenNode: (nodeId: string) => void;
   onOpenChats: () => void;
   onOpenFiles: () => void;
+  onOpenNotes: () => void;
   onMockObject: (label: string) => void;
 }
 
-export function ProjectHome({ projects, projectId, chatCount, fileCount, noteCount, onBack, onOpenNode, onOpenChats, onOpenFiles, onMockObject }: ProjectHomeProps) {
+export function ProjectHome({ projects, projectId, chatCount, fileCount, noteCount, onBack, onOpenNode, onOpenChats, onOpenFiles, onOpenNotes, onMockObject }: ProjectHomeProps) {
   const project = projects.find((item) => item.id === projectId) ?? demoProjects[0];
   const items = project.source === 'user' ? [] : project.id === 'stateful' ? statefulOrbit : genericOrbit;
   const inner = items.filter((item) => item.ring === 'inner');
@@ -74,7 +75,7 @@ export function ProjectHome({ projects, projectId, chatCount, fileCount, noteCou
           <span className="project-summary-bar__icon"><Files size={14} /></span>
           <span className="project-summary-bar__copy"><span>Files</span><strong>{fileCount}</strong><small>Linked + project-local</small></span>
         </button>
-        <button type="button" onClick={() => onMockObject('Linked notes')}>
+        <button type="button" onClick={onOpenNotes}>
           <span className="project-summary-bar__icon"><StickyNote size={14} /></span>
           <span className="project-summary-bar__copy"><span>Notes</span><strong>{noteCount}</strong><small>Linked workspace notes</small></span>
         </button>
