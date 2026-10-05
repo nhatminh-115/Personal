@@ -13,11 +13,11 @@ import uuid
 from typing import Any, Mapping
 
 if __package__:
-    from ._bootstrap import ensure_project_root
+    from ._bootstrap import ensure_project_root, resolve_project_path
 else:
-    from _bootstrap import ensure_project_root
+    from _bootstrap import ensure_project_root, resolve_project_path
 
-ensure_project_root(__file__)
+PROJECT_ROOT = ensure_project_root(__file__)
 
 
 def live_environment_error(_environ: Mapping[str, str] | None = None) -> str | None:
@@ -75,7 +75,7 @@ async def run_live_dogfood() -> None:
         raise SystemExit(2)
 
     run_key = uuid.uuid4().hex[:12]
-    data_dir = Path(".aura_dogfood").resolve()
+    data_dir = resolve_project_path(PROJECT_ROOT, ".aura_dogfood")
     data_dir.mkdir(parents=True, exist_ok=True)
     from sqlalchemy.engine import URL
     database_url = URL.create("sqlite+aiosqlite", database=str(data_dir / f"routing-{run_key}.db")).render_as_string(hide_password=False)
@@ -170,7 +170,7 @@ async def run_live_dogfood() -> None:
         and local_result.get("winning_scope") == "draft"
         and cloud_result.get("winning_scope") == "draft"
     )
-    output_dir = Path("artifacts/dogfood").resolve()
+    output_dir = resolve_project_path(PROJECT_ROOT, "artifacts/dogfood")
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"routing-constraints-{run_key}.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
