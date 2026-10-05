@@ -66,6 +66,13 @@ that ID to one run per session; matching retries return the saved run state and
 never invoke the graph again, while reusing the ID for a different request is
 rejected. Clients that omit the ID retain the legacy non-idempotent request
 behavior.
+The live-chat Stop action persists a cancellation request against that same
+session/turn key. The root and specialist runtimes check it before model calls,
+before each tool, and after an already-started tool returns. This is
+cooperative cancellation: it cannot interrupt an in-flight provider/tool call
+or undo a side effect that already completed. The run then persists a cancelled
+terminal status and trace. Session execution-state hydration returns the active
+turn key so the Stop action remains available after the UI reloads.
 Approval and routing-confirmation decisions serialize graph resumes by run. On
 PostgreSQL, a session advisory lock stays held across graph commits and prevents
 another API worker from resuming the same run concurrently. SQLite uses a

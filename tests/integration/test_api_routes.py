@@ -314,6 +314,7 @@ async def test_session_execution_state_omits_approval_after_run_is_resolved(asyn
         "session_id": session_id,
         "run_id": run_id,
         "run_status": "completed",
+        "client_turn_id": None,
         "approval": None,
     }
 
@@ -410,6 +411,57 @@ async def test_non_existent_approval_returns_404(async_client: AsyncClient):
 async def test_non_existent_run_returns_404(async_client: AsyncClient):
     resp = await async_client.get("/v1/runs/non-existent-run-id")
     assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_cancellation_is_durable_and_idempotent(async_client: AsyncClient, test_db_session):
+    session_id, turn_id, run_id = "cancel-turn-session", "cancel-turn-key", "cancel-turn-run"
+    test_db_session.add_all([
+        SessionModel(id=session_id),
+        RunModel(
+            id=run_id,
+            session_id=session_id,
+            client_turn_id=turn_id,
+            status="running",
+            user_message="A long running task",
+        ),
+    ])
+    await test_db_session.commit()
+
+    payload = {"session_id": session_id, "client_turn_id": turn_id}
+    response = await async_client.post("/v1/runs/cancel-turn", json=payload)
+    assert response.status_code == 202, response.text
+    assert response.json() == {
+        "run_id": run_id,
+        "status": "cancellation_requested",
+        "already_requested": False,
+    }
+
+    run = await test_db_session.get(RunModel, run_id)
+    await test_db_session.refresh(run)
+    assert run.cancel_requested_at is not None
+    events = list((await test_db_session.scalars(
+        select(RunEventModel).where(RunEventModel.run_id == run_id)
+    )).all())
+    assert [event.event_type for event in events] == ["run_cancellation_requested"]
+
+    repeated = await async_client.post("/v1/runs/cancel-turn", json=payload)
+    assert repeated.status_code == 202
+    assert repeated.json()["already_requested"] is True
+
+    run.status = "completed"
+    await test_db_session.commit()
+    completed = await async_client.post("/v1/runs/cancel-turn", json=payload)
+    assert completed.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_cancellation_rejects_unknown_turn(async_client: AsyncClient):
+    response = await async_client.post(
+        "/v1/runs/cancel-turn",
+        json={"session_id": "missing-session", "client_turn_id": "missing-turn"},
+    )
+    assert response.status_code == 404
 
 
 @pytest.mark.asyncio

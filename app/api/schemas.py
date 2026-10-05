@@ -97,6 +97,17 @@ class ChatResponse(BaseModel):
     tool_results: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class CancelChatTurnRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=36)
+    client_turn_id: str = Field(min_length=1, max_length=64)
+
+
+class CancelChatTurnResponse(BaseModel):
+    run_id: str
+    status: Literal["cancellation_requested"]
+    already_requested: bool = False
+
+
 # --- Routing Confirmation Schemas ---
 class RoutingConfirmationResponse(BaseModel):
     id: str
@@ -187,6 +198,7 @@ class SessionExecutionStateResponse(BaseModel):
     session_id: str
     run_id: Optional[str] = None
     run_status: Optional[str] = None
+    client_turn_id: Optional[str] = None
     approval: Optional[ApprovalResponse] = None
 
 

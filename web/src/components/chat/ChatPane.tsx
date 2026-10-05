@@ -49,12 +49,14 @@ export interface ChatPaneProps {
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onCancelRun?: () => Promise<boolean>;
   /** Called when user clicks "Start live chat" from a demo thread. */
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
   onContextObjectIdsChange?: (objectIds: string[]) => void;
   onContextFileContentIdsChange?: (objectIds: string[]) => void;
   onContextPanelOpenChange?: (open: boolean) => void;
   currentApproval?: ApprovalDetail | null;
+  runInProgress?: boolean;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
     notes?: string,
@@ -137,11 +139,13 @@ export function ChatPane({
   onContextObjectFocus,
   onAttachRequest,
   onSendMessage,
+  onCancelRun,
   onStartLiveChat,
   onContextObjectIdsChange,
   onContextFileContentIdsChange,
   onContextPanelOpenChange,
   currentApproval,
+  runInProgress = false,
   onApprovalDecision,
   isLiveThread = true,
 }: ChatPaneProps) {
@@ -151,12 +155,17 @@ export function ChatPane({
   const [contextItems, setContextItems] = useState<AIContextItem[]>(() => (suppliedContext ?? []).map((item) => ({ ...item })));
   const [contextOpen, setContextOpen] = useState(false);
   const [runPhase, setRunPhase] = useState<RunPhase | null>(null);
+  const [stoppingRun, setStoppingRun] = useState(false);
   const timersRef = useRef<number[]>([]);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     setContextItems((suppliedContext ?? []).map((item) => ({ ...item })));
   }, [suppliedContext]);
+
+  useEffect(() => {
+    if (!runPhase && !runInProgress && stoppingRun) setStoppingRun(false);
+  }, [runInProgress, runPhase, stoppingRun]);
 
   useEffect(() => {
     setContextOpen(false);
@@ -173,9 +182,17 @@ export function ChatPane({
   }, []);
 
   const stopRun = useCallback(() => {
+    if (isLiveThread) {
+      if (!onCancelRun || stoppingRun) return;
+      setStoppingRun(true);
+      void onCancelRun().then((requested) => {
+        if (!requested) setStoppingRun(false);
+      }).catch(() => setStoppingRun(false));
+      return;
+    }
     clearRunTimers();
     setRunPhase(null);
-  }, [clearRunTimers]);
+  }, [clearRunTimers, isLiveThread, onCancelRun, stoppingRun]);
 
   useEffect(() => () => clearRunTimers(), [clearRunTimers]);
 
@@ -196,7 +213,7 @@ export function ChatPane({
 
   const submit = useCallback(async () => {
     const prompt = draft.trim();
-    if (!prompt || runPhase) return;
+    if (!prompt || runPhase || runInProgress) return;
 
     if (onSendMessage && isLiveThread) {
       setDraft('');
@@ -212,6 +229,7 @@ export function ChatPane({
         );
       } finally {
         setRunPhase(null);
+        setStoppingRun(false);
       }
       return;
     }
@@ -268,7 +286,7 @@ export function ChatPane({
         timersRef.current = [];
       }, 1550),
     ];
-  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runPhase, workMode]);
+  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runInProgress, runPhase, workMode]);
 
 
   return (
@@ -399,7 +417,7 @@ export function ChatPane({
       </div>
 
       <div className="chat-composer-wrap">
-        {runPhase ? <AIRunStrip phase={runPhase} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? undefined : stopRun} /> : null}
+        {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'routing'} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} /> : null}
         <div className="chat-composer chat-composer--ai">
           {contextOpen ? (
             <AIContextPanel
@@ -484,7 +502,7 @@ export function ChatPane({
                 <ChevronDown className="composer-context__chevron" size={11} />
               </button>
             </div>
-            <button className="send-button" type="button" onClick={submit} aria-label="Send" disabled={!draft.trim() || Boolean(runPhase)}>
+            <button className="send-button" type="button" onClick={submit} aria-label="Send" disabled={!draft.trim() || Boolean(runPhase || runInProgress)}>
               <ArrowUp size={17} />
             </button>
           </div>

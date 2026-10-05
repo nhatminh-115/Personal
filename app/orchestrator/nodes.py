@@ -11,7 +11,7 @@ from app.approvals.service import ApprovalService
 from app.core.errors import ContextSelectionError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
-from app.db.models import RoutingConfirmationModel, RunStatus
+from app.db.models import RoutingConfirmationModel, RunModel, RunStatus
 from app.memory.base import MemoryService
 from app.memory.context import ContextAssembler
 from app.memory.context_compiler import MAX_COMPILED_CONTEXT_CHARS, WorkspaceContextCompiler, split_context_capabilities, stricter_privacy_requirement
@@ -39,6 +39,34 @@ def _get_services(config: Optional[RunnableConfig]) -> Dict[str, Any]:
         "model_router": configurable.get("model_router", model_router),
         "research_provider": configurable.get("research_provider"),
     }
+
+
+async def _cancellation_result(state: AgentState, services: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Return a terminal state when this run or any root ancestor requested cancellation."""
+    db = services.get("db")
+    current_run_id = state.get("run_id")
+    visited: set[str] = set()
+    while db is not None and isinstance(current_run_id, str) and current_run_id not in visited:
+        visited.add(current_run_id)
+        row = (await db.execute(
+            select(RunModel.cancel_requested_at, RunModel.parent_run_id)
+            .where(RunModel.id == current_run_id)
+        )).one_or_none()
+        if row is None:
+            return None
+        cancel_requested_at, parent_run_id = row
+        if cancel_requested_at is not None:
+            return {
+                "execution_status": RunStatus.CANCELLED.value,
+                "termination_reason": "user_cancelled",
+                "final_response": (
+                    "Run cancelled. An operation already in progress may have completed "
+                    "before AURA observed the request."
+                ),
+                "tool_requests": [],
+            }
+        current_run_id = parent_run_id
+    return None
 
 
 def _root_system_instruction(retrieved_context: list[str]) -> str:
@@ -304,6 +332,10 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
     router: ModelRouter = services["model_router"]
     registry: ToolRegistry = services["tool_registry"]
     trace_service: Optional[TraceService] = services["trace_service"]
+
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        return cancellation
 
     # If resuming after approval, bypass reason and proceed directly
     if state.get("approval_state") in {"approved", "edited"} and state.get("tool_requests"):
@@ -615,6 +647,10 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
 
     response = await router.route(model_req, provider_name=selection.provider_name)
 
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        return cancellation
+
     messages = list(state.get("messages", []))
 
     if response.tool_calls:
@@ -671,6 +707,9 @@ async def route_decision_node(state: AgentState, config: Optional[RunnableConfig
         return {}
 
     services = _get_services(config)
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        return cancellation
     registry: ToolRegistry = services["tool_registry"]
     approval_service: Optional[ApprovalService] = services["approval_service"]
     trace_service: Optional[TraceService] = services["trace_service"]
@@ -868,6 +907,14 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
     messages = list(state.get("messages", []))
 
     for tc in tool_requests:
+        cancellation = await _cancellation_result(state, services)
+        if cancellation:
+            return {
+                **cancellation,
+                "messages": messages,
+                "tool_results": tool_results,
+                "errors": errors,
+            }
         tool_name = tc["name"]
         tool_call_id = tc.get("id", "")
         approval_info = tool_approvals.get(tool_call_id, {})
@@ -1004,6 +1051,15 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 payload={"tool": tool_name, "tool_call_id": tool_call_id, "result": result_payload, "step": state.get("step_number", 1)},
             )
 
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        return {
+            **cancellation,
+            "messages": messages,
+            "tool_results": tool_results,
+            "errors": errors,
+        }
+
     total_tool_calls = state.get("total_tool_calls", 0) + len(tool_requests)
     has_failed = bool(tool_results) and all(not tr.get("result", {}).get("success", False) for tr in tool_results)
     consecutive_failures = (state.get("consecutive_failures", 0) + 1) if has_failed else 0
@@ -1026,6 +1082,10 @@ async def observe_node(state: AgentState, config: Optional[RunnableConfig] = Non
     import time
     services = _get_services(config)
     trace_service: Optional[TraceService] = services["trace_service"]
+
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        return cancellation
 
     step_num = state.get("step_number", 1)
     run_id = state["run_id"]
@@ -1138,6 +1198,10 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
     mem_service: Optional[MemoryService] = services["memory_service"]
     trace_service: Optional[TraceService] = services["trace_service"]
 
+    cancellation = await _cancellation_result(state, services)
+    if cancellation:
+        state = {**state, **cancellation}
+
     final_resp = state.get("final_response") or "Run completed."
     privacy_policy = _state_privacy_policy(state)
     persisted_user_message_id: Optional[str] = None
@@ -1167,10 +1231,9 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
             )
             persisted_assistant_message_id = assistant_message.id
 
-            # Record episodic memory if tools were used. Keep the turn's effective
-            # privacy boundary attached so retrieval cannot route private content to a
-            # less restrictive model later.
-            if state.get("tool_results"):
+            # A cancelled turn may include partial tool effects, but it is not a
+            # completed result and must not become reusable semantic memory.
+            if state.get("execution_status") == RunStatus.COMPLETED.value and state.get("tool_results"):
                 # Explicitly unknown classifications fail closed and cannot be
                 # retained as episodic context.
                 if isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
@@ -1181,25 +1244,27 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
                         metadata={"run_id": state["run_id"], "privacy_policy": privacy_policy},
                     )
 
-            # Extract and commit conservative memory candidates
-            pipeline = MemoryCandidatePipeline()
-            project_name = state.get("project_name")
-            if not project_name and state.get("metadata") and isinstance(state["metadata"], dict):
-                project_name = state["metadata"].get("project_name")
+            if state.get("execution_status") == RunStatus.COMPLETED.value:
+                # Extract and commit conservative memory candidates only from a
+                # completed answer, never from a cancellation message.
+                pipeline = MemoryCandidatePipeline()
+                project_name = state.get("project_name")
+                if not project_name and state.get("metadata") and isinstance(state["metadata"], dict):
+                    project_name = state["metadata"].get("project_name")
 
-            candidates = pipeline.extract_candidates(
-                user_message=state["user_message"],
-                assistant_response=final_resp,
-                active_project=project_name,
-            )
-            if candidates and isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
-                await pipeline.process_and_commit(
-                    candidates=candidates,
-                    session_id=state["session_id"],
-                    run_id=state["run_id"],
-                    memory_service=mem_service,
-                    privacy_policy=privacy_policy,
+                candidates = pipeline.extract_candidates(
+                    user_message=state["user_message"],
+                    assistant_response=final_resp,
+                    active_project=project_name,
                 )
+                if candidates and isinstance(privacy_policy, str) and privacy_policy in PRIVACY_REQUIREMENT_ORDER:
+                    await pipeline.process_and_commit(
+                        candidates=candidates,
+                        session_id=state["session_id"],
+                        run_id=state["run_id"],
+                        memory_service=mem_service,
+                        privacy_policy=privacy_policy,
+                    )
 
         if trace_service:
             await trace_service.record_event(

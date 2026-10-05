@@ -91,6 +91,7 @@ export interface ProjectChatWorkspaceProps {
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
   onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onCancelRun?: () => Promise<boolean>;
   onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
   onContextObjectIdsChange?: (threadId: string, objectIds: string[]) => void;
   onContextFileContentIdsChange?: (threadId: string, objectIds: string[]) => void;
@@ -101,6 +102,7 @@ export interface ProjectChatWorkspaceProps {
   loadingOlderSessions?: boolean;
   sessionLoadError?: string | null;
   currentApproval?: ApprovalDetail | null;
+  runInProgress?: boolean;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
     notes?: string,
@@ -124,6 +126,7 @@ export function ProjectChatWorkspace({
   onContextObjectFocus,
   onAttachRequest,
   onSendMessage,
+  onCancelRun,
   onStartLiveChat,
   onContextObjectIdsChange,
   onContextFileContentIdsChange,
@@ -134,6 +137,7 @@ export function ProjectChatWorkspace({
   loadingOlderSessions = false,
   sessionLoadError,
   currentApproval,
+  runInProgress = false,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
   const [query, setQuery] = useState('');
@@ -354,11 +358,13 @@ export function ProjectChatWorkspace({
             onContextObjectFocus={onContextObjectFocus}
             onAttachRequest={onAttachRequest}
             onSendMessage={onSendMessage}
+            onCancelRun={onCancelRun}
             onStartLiveChat={onStartLiveChat}
             onContextObjectIdsChange={onContextObjectIdsChange ? (ids) => onContextObjectIdsChange(activeThread.id, ids) : undefined}
             onContextFileContentIdsChange={onContextFileContentIdsChange ? (ids) => onContextFileContentIdsChange(activeThread.id, ids) : undefined}
             onContextPanelOpenChange={setContextPanelOpen}
             currentApproval={currentApproval}
+            runInProgress={runInProgress}
             onApprovalDecision={onApprovalDecision}
             isLiveThread={activeThread.source === 'live' || Boolean(activeThread.sessionId)}
           />

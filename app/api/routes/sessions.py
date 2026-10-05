@@ -59,7 +59,12 @@ async def get_session_execution_state(
     return SessionExecutionStateResponse(
         session_id=session_id,
         run_id=run.id,
-        run_status=run.status,
+        run_status=(
+            "cancellation_requested"
+            if run.cancel_requested_at is not None and run.status == "running"
+            else run.status
+        ),
+        client_turn_id=run.client_turn_id if run.status == "running" else None,
         approval=approval_response,
     )
 
