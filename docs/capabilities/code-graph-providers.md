@@ -106,8 +106,8 @@ The telemetry opt-out follows the [upstream MCP package configuration](https://g
 ## Verification boundary
 
 CI verifies registry and specialist scoping with deterministic local fixtures.
-It does not install CodeGraph or assert live provider health. The 2026-10-05
-MCP provider smoke confirms discovery, health, and one read-only tool call in
-this environment; a complete Coding Specialist dogfood must additionally
-record successful delegation, selected code graph tools, and its result
-artifact before the full workflow can be described as verified.
+It does not install CodeGraph or assert live provider health. No CodeGraph
+provider smoke has run in this environment. A complete Coding Specialist
+dogfood remains pending external setup and must record successful delegation,
+selected code graph tools, and its result artifact before the full workflow can
+be described as verified.
