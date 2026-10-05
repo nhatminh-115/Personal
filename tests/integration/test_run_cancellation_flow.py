@@ -241,7 +241,11 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
 
     async def pause_before_root_finalization(session, instance, *args, **kwargs):
         result = await original_refresh(session, instance, *args, **kwargs)
-        if isinstance(instance, RunModel) and instance.client_turn_id == client_turn_id:
+        if (
+            isinstance(instance, RunModel)
+            and instance.client_turn_id == client_turn_id
+            and not finalization_started.is_set()
+        ):
             finalization_started.set()
             await release_finalization.wait()
         return result
