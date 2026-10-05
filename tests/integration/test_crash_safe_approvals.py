@@ -190,3 +190,16 @@ async def test_provider_failure_resuming_parent_after_specialist_is_redacted(cap
         event_type="run_failed",
         payload={"error_category": "provider_failure"},
     )
+
+
+@pytest.mark.asyncio
+async def test_non_provider_parent_failure_does_not_persist_raw_error():
+    parent = RunModel(id="parent-run", session_id="session-parent", user_message="Run specialist task")
+    trace_service = AsyncMock()
+
+    await _record_parent_resume_failure(parent, RuntimeError("internal graph detail"), trace_service)
+
+    assert parent.status == RunStatus.FAILED.value
+    assert parent.error_message is None
+    assert parent.final_response is None
+    trace_service.record_event.assert_not_awaited()
