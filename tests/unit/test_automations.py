@@ -224,7 +224,7 @@ async def test_webhook_requires_valid_secret_and_event_id(async_client):
     assert (await async_client.post(path, headers={**event_headers, "Authorization": "Bearer wrong"})).status_code == 401
     assert (await async_client.post(path, headers={"Authorization": f"Bearer {record['webhook_secret']}", "X-Aura-Event-Id": "bad event id"})).status_code == 422
 
-    paused = await async_client.put(f"/v1/automations/{record['id']}", json={"enabled": False})
+    paused = await async_client.put(f"/v1/automations/{record['id']}", json={"enabled": False, "expected_revision": record["revision"]})
     assert paused.status_code == 200
     rejected = await async_client.post(path, headers={"Authorization": f"Bearer {record['webhook_secret']}", "X-Aura-Event-Id": "event-2"})
     assert rejected.status_code == 409
@@ -238,7 +238,7 @@ async def test_webhook_secret_rotation_and_disable_are_one_time(async_client, te
     record = created.json()
     enabled = await async_client.patch(f"/v1/automations/{record['id']}", json={
         "name": record["name"], "description": record["description"], "instruction": record["instruction"],
-        "interval_seconds": record["interval_seconds"], "webhook_enabled": True,
+        "interval_seconds": record["interval_seconds"], "webhook_enabled": True, "expected_revision": record["revision"],
     })
     assert enabled.status_code == 200
     first_secret = enabled.json()["webhook_secret"]
@@ -247,7 +247,7 @@ async def test_webhook_secret_rotation_and_disable_are_one_time(async_client, te
 
     disabled = await async_client.patch(f"/v1/automations/{record['id']}", json={
         "name": record["name"], "description": record["description"], "instruction": record["instruction"],
-        "interval_seconds": record["interval_seconds"], "webhook_enabled": False,
+        "interval_seconds": record["interval_seconds"], "webhook_enabled": False, "expected_revision": enabled.json()["revision"],
     })
     assert disabled.status_code == 200
     assert disabled.json()["webhook_enabled"] is False
@@ -275,6 +275,7 @@ async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(a
         "description": "Review decisions and follow-ups",
         "instruction": "Summarize new decisions and list owners.",
         "interval_seconds": 3600,
+        "expected_revision": created.json()["revision"],
     })
 
     assert updated.status_code == 200, updated.text
@@ -291,6 +292,42 @@ async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(a
     assert job.payload_json["message"] == "Summarize new decisions and list owners."
     assert job.schedule_expression == "3600"
     assert event.payload_json["message"] == "Summarize project updates."
+
+
+@pytest.mark.asyncio
+async def test_automation_configuration_writes_reject_stale_revisions(async_client):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Concurrent edit",
+        "instruction": "Keep the first saved instruction.",
+        "interval_seconds": 3600,
+    })
+    original = created.json()
+    first = await async_client.patch(f"/v1/automations/{original['id']}", json={
+        "name": original["name"], "description": original["description"],
+        "instruction": "The newer saved instruction.", "interval_seconds": original["interval_seconds"],
+        "expected_revision": original["revision"],
+    })
+    assert first.status_code == 200
+    assert first.json()["revision"] == original["revision"] + 1
+
+    stale_edit = await async_client.patch(f"/v1/automations/{original['id']}", json={
+        "name": original["name"], "description": original["description"],
+        "instruction": "A stale editor must not overwrite this.", "interval_seconds": original["interval_seconds"],
+        "expected_revision": original["revision"],
+    })
+    stale_toggle = await async_client.put(f"/v1/automations/{original['id']}", json={
+        "enabled": False, "expected_revision": original["revision"],
+    })
+    stale_archive = await async_client.post(f"/v1/automations/{original['id']}/archive", json={
+        "expected_revision": original["revision"],
+    })
+    assert stale_edit.status_code == stale_toggle.status_code == stale_archive.status_code == 409
+    assert stale_edit.json()["detail"]["current_revision"] == first.json()["revision"]
+
+    current = (await async_client.get("/v1/automations")).json()[0]
+    assert current["instruction"] == "The newer saved instruction."
+    assert current["enabled"] is True
+    assert current["archived"] is False
 
 
 @pytest.mark.asyncio
@@ -313,6 +350,7 @@ async def test_wall_clock_automation_schedule_round_trips_edits_and_duplicates(a
         "description": "",
         "instruction": "Summarize decisions.",
         "schedule": {"mode": "weekly", "local_time": "08:30", "weekdays": [2, 0], "timezone": "Asia/Saigon"},
+        "expected_revision": record["revision"],
     })
     assert edited.status_code == 200, edited.text
     assert edited.json()["schedule"] == {
@@ -346,6 +384,7 @@ async def test_automation_edit_rejects_blank_instruction(async_client):
         "name": "Keep this routine",
         "instruction": "   ",
         "interval_seconds": 3600,
+        "expected_revision": created.json()["revision"],
     })
     assert response.status_code == 422
     assert response.json()["detail"] == "Automation name and instruction must not be blank."
@@ -362,12 +401,12 @@ async def test_archived_automation_stops_scheduling_but_keeps_history_and_can_be
     queued = await async_client.post(f"/v1/automations/{automation_id}/run")
     assert queued.status_code == 202
 
-    archived = await async_client.post(f"/v1/automations/{automation_id}/archive")
+    archived = await async_client.post(f"/v1/automations/{automation_id}/archive", json={"expected_revision": created.json()["revision"]})
     assert archived.status_code == 200
     assert archived.json()["archived"] is True
     assert archived.json()["enabled"] is False
     assert (await async_client.post(f"/v1/automations/{automation_id}/run")).status_code == 404
-    assert (await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True})).status_code == 404
+    assert (await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True, "expected_revision": archived.json()["revision"]})).status_code == 404
 
     visible = await async_client.get("/v1/automations")
     including_archived = await async_client.get("/v1/automations", params={"include_archived": "true"})
@@ -377,7 +416,7 @@ async def test_archived_automation_stops_scheduling_but_keeps_history_and_can_be
     assert archived_record["latest_execution"]["event_id"] == queued.json()["event_id"]
     assert (await async_client.get("/v1/automations/summary")).json() == {"total": 0, "enabled": 0}
 
-    restored = await async_client.post(f"/v1/automations/{automation_id}/restore")
+    restored = await async_client.post(f"/v1/automations/{automation_id}/restore", json={"expected_revision": archived.json()["revision"]})
     assert restored.status_code == 200
     assert restored.json()["archived"] is False
     assert restored.json()["enabled"] is False
@@ -393,7 +432,7 @@ async def test_restoring_an_unarchived_automation_does_not_pause_it(async_client
     })
     automation_id = created.json()["id"]
 
-    restored = await async_client.post(f"/v1/automations/{automation_id}/restore")
+    restored = await async_client.post(f"/v1/automations/{automation_id}/restore", json={"expected_revision": created.json()["revision"]})
 
     assert restored.status_code == 200
     assert restored.json()["archived"] is False
@@ -497,7 +536,7 @@ async def test_automation_status_refresh_is_batched_and_scoped(async_client):
 
     summary = await async_client.get("/v1/automations/summary")
     assert summary.json() == {"total": 3, "enabled": 3}
-    await async_client.put(f"/v1/automations/{created[1]['id']}", json={"enabled": False})
+    await async_client.put(f"/v1/automations/{created[1]['id']}", json={"enabled": False, "expected_revision": created[1]["revision"]})
     summary = await async_client.get("/v1/automations/summary")
     assert summary.json() == {"total": 3, "enabled": 2}
 
@@ -581,13 +620,13 @@ async def test_pausing_automation_moves_next_run_and_blocks_manual_run(async_cli
     })
     automation_id = created.json()["id"]
 
-    paused = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": False})
+    paused = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": False, "expected_revision": created.json()["revision"]})
     assert paused.status_code == 200
     assert paused.json()["enabled"] is False
     run = await async_client.post(f"/v1/automations/{automation_id}/run")
     assert run.status_code == 409
 
-    resumed = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True})
+    resumed = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True, "expected_revision": paused.json()["revision"]})
     assert resumed.status_code == 200
     assert resumed.json()["enabled"] is True
     assert resumed.json()["next_run_at"]
@@ -608,13 +647,13 @@ async def test_pause_and_resume_preserve_an_active_dispatch_lease(async_client, 
     job.locked_by = "sched-active-worker"
     await test_db_session.commit()
 
-    paused = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": False})
+    paused = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": False, "expected_revision": created.json()["revision"]})
     assert paused.status_code == 200
     await test_db_session.refresh(job)
     assert job.locked_by == "sched-active-worker"
     assert job.locked_at is not None
 
-    resumed = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True})
+    resumed = await async_client.put(f"/v1/automations/{automation_id}", json={"enabled": True, "expected_revision": paused.json()["revision"]})
     assert resumed.status_code == 200
     await test_db_session.refresh(job)
     assert job.locked_by == "sched-active-worker"

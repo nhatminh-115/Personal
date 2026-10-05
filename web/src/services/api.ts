@@ -60,10 +60,11 @@ async function handleResponse<T>(res: Response): Promise<T> {
     const text = await res.text();
     try {
       const errJson = JSON.parse(text);
+      const detail = errJson.detail;
       throw new ApiError(
         res.status,
-        errJson.message || errJson.detail || `Request failed with status ${res.status}`,
-        errJson.error || errJson.code,
+        errJson.message || (typeof detail === 'string' ? detail : detail?.message) || `Request failed with status ${res.status}`,
+        errJson.error || errJson.code || detail?.code,
         errJson.details || errJson
       );
     } catch (e: any) {
@@ -602,24 +603,27 @@ export const api = {
     interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
     webhook_enabled?: boolean;
+    expected_revision: number;
   }): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
 
-  async setAutomationArchived(id: string, archived: boolean): Promise<AutomationRecordResponse> {
+  async setAutomationArchived(id: string, archived: boolean, expectedRevision: number): Promise<AutomationRecordResponse> {
     const action = archived ? 'archive' : 'restore';
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
+    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: expectedRevision }),
+    }));
   },
 
   async duplicateAutomation(id: string): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
   },
 
-  async setAutomationEnabled(id: string, enabled: boolean): Promise<AutomationRecordResponse> {
+  async setAutomationEnabled(id: string, enabled: boolean, expectedRevision: number): Promise<AutomationRecordResponse> {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, expected_revision: expectedRevision }),
     }));
   },
 

@@ -262,6 +262,7 @@ class ScheduledJobModel(Base):
     __tablename__ = "scheduled_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     name: Mapped[str] = mapped_column(String(128))
     job_type: Mapped[str] = mapped_column(String(32), default=JobType.ONE_SHOT.value)
     schedule_expression: Mapped[str] = mapped_column(String(128))
