@@ -53,8 +53,9 @@ async def test_workspace_project_archive_hides_without_deleting_and_can_be_resto
     project = created.json()
     assert project["archived_at"] is None
 
-    archived = await async_client.post(f"/v1/workspace/projects/{project['id']}/archive")
+    archived = await async_client.post(f"/v1/workspace/projects/{project['id']}/archive", json={"expected_revision": project["revision"]})
     assert archived.status_code == 200
+    assert archived.json()["revision"] == project["revision"] + 1
     archived_at = archived.json()["archived_at"]
     assert archived_at is not None
     assert archived.json()["name"] == "Archive me"
@@ -71,17 +72,47 @@ async def test_workspace_project_archive_hides_without_deleting_and_can_be_resto
     archived_record = next(item for item in all_projects.json() if item["id"] == project["id"])
     assert archived_record["archived_at"] == archived_at
 
-    repeated_archive = await async_client.post(f"/v1/workspace/projects/{project['id']}/archive")
+    repeated_archive = await async_client.post(
+        f"/v1/workspace/projects/{project['id']}/archive", json={"expected_revision": archived.json()["revision"]}
+    )
     assert repeated_archive.json()["archived_at"] == archived_at
+    assert repeated_archive.json()["revision"] == archived.json()["revision"]
 
-    restored = await async_client.post(f"/v1/workspace/projects/{project['id']}/restore")
+    restored = await async_client.post(
+        f"/v1/workspace/projects/{project['id']}/restore", json={"expected_revision": archived.json()["revision"]}
+    )
     assert restored.status_code == 200
     assert restored.json()["archived_at"] is None
+    assert restored.json()["revision"] == archived.json()["revision"] + 1
     visible_again = await async_client.get("/v1/workspace/projects")
     assert project["id"] in {item["id"] for item in visible_again.json()}
 
-    missing = await async_client.post("/v1/workspace/projects/missing/archive")
+    missing = await async_client.post("/v1/workspace/projects/missing/archive", json={"expected_revision": 1})
     assert missing.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_stale_workspace_project_archive_cannot_restore_or_rearchive(async_client):
+    created = await async_client.post("/v1/workspace/projects", json={"name": "Concurrent archive"})
+    assert created.status_code == 201
+    project = created.json()
+
+    archived = await async_client.post(
+        f"/v1/workspace/projects/{project['id']}/archive", json={"expected_revision": project["revision"]}
+    )
+    assert archived.status_code == 200
+
+    stale_restore = await async_client.post(
+        f"/v1/workspace/projects/{project['id']}/restore", json={"expected_revision": project["revision"]}
+    )
+    assert stale_restore.status_code == 409
+    assert stale_restore.json()["detail"]["code"] == "WorkspaceProjectRevisionConflict"
+    assert stale_restore.json()["detail"]["current_revision"] == archived.json()["revision"]
+
+    current = await async_client.get("/v1/workspace/projects", params={"include_archived": True})
+    stored = next(item for item in current.json() if item["id"] == project["id"])
+    assert stored["archived_at"] == archived.json()["archived_at"]
+    assert stored["revision"] == archived.json()["revision"]
 
 
 @pytest.mark.asyncio

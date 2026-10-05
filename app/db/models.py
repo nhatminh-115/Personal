@@ -359,6 +359,7 @@ class WorkspaceProjectModel(Base):
     name: Mapped[str] = mapped_column(String(128), unique=True)
     name_key: Mapped[str] = mapped_column(String(128), unique=True)
     subtitle: Mapped[str] = mapped_column(String(255), default="")
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

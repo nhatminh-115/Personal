@@ -30,5 +30,7 @@ describe('structured routing error guidance', () => {
       .toContain('Close and reopen Routing Studio');
     expect(executionErrorText(new ApiError(409, 'Library reference changed.', 'WorkspaceLibraryRevisionConflict')))
       .toContain('Refresh the AURA workspace');
+    expect(executionErrorText(new ApiError(409, 'Project archive state changed.', 'WorkspaceProjectRevisionConflict')))
+      .toContain('Reload AURA');
   });
 });

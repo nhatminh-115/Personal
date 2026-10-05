@@ -228,6 +228,7 @@ function projectFromRecord(record: WorkspaceProjectRecord, index: number): Proje
     thesis: 'No project thesis added yet.',
     next: 'Start a chat or add a file to build project context.',
     archived: Boolean(record.archived_at),
+    revision: record.revision,
     source: 'user',
   };
 }
@@ -923,7 +924,7 @@ export default function App() {
   const setWorkspaceProjectArchived = useCallback(async (project: ProjectRecord, archived: boolean) => {
     if (project.source !== 'user') return;
     try {
-      const record = await api.setWorkspaceProjectArchived(project.id, archived);
+      const record = await api.setWorkspaceProjectArchived(project.id, archived, project.revision ?? 1);
       setUserProjects((current) => current.map((item, index) => (
         item.id === record.id ? projectFromRecord(record, index) : item
       )));
@@ -931,6 +932,14 @@ export default function App() {
         ? 'Chats, files and history stay available. Scheduled automations continue to run.'
         : 'It is available in your project navigation again.');
     } catch (error) {
+      if (error instanceof ApiError && error.code === 'WorkspaceProjectRevisionConflict') {
+        try {
+          const records = await api.fetchWorkspaceProjects(true);
+          setUserProjects(records.map(projectFromRecord));
+        } catch {
+          // Keep the current project list if the conflict refresh also fails.
+        }
+      }
       pushToast(archived ? 'Could not archive project' : 'Could not restore project', executionErrorText(error));
     }
   }, [pushToast]);

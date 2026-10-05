@@ -25,6 +25,7 @@ from app.api.schemas import (
     WorkspaceLibraryReferenceResponse,
     WorkspaceLibraryReferenceWrite,
     WorkspaceProjectResponse,
+    WorkspaceProjectArchiveWrite,
     WorkspaceProjectWrite,
     WorkspaceSummaryResponse,
     WorkspaceSearchResult,
@@ -183,17 +184,41 @@ async def list_workspace_projects(
 async def _set_workspace_project_archived(
     project_id: str,
     archived: bool,
+    expected_revision: int,
     db: AsyncSession,
 ) -> WorkspaceProjectResponse:
     project = await db.get(WorkspaceProjectModel, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Workspace project not found.")
+    if project.revision != expected_revision:
+        raise HTTPException(status_code=409, detail={
+            "code": "WorkspaceProjectRevisionConflict",
+            "message": "Workspace project archive state changed since it was loaded.",
+            "current_revision": project.revision,
+        })
     if archived and project.archived_at is None:
-        project.archived_at = datetime.now(timezone.utc)
+        archived_at = datetime.now(timezone.utc)
     elif not archived and project.archived_at is not None:
-        project.archived_at = None
+        archived_at = None
     else:
         return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
+    updated = await db.execute(
+        sa_update(WorkspaceProjectModel)
+        .where(WorkspaceProjectModel.id == project_id, WorkspaceProjectModel.revision == expected_revision)
+        .values(archived_at=archived_at, revision=WorkspaceProjectModel.revision + 1)
+        .returning(WorkspaceProjectModel.revision)
+    )
+    revision = updated.scalar_one_or_none()
+    if revision is None:
+        await db.rollback()
+        current_revision = await db.scalar(select(WorkspaceProjectModel.revision).where(WorkspaceProjectModel.id == project_id))
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Workspace project not found.")
+        raise HTTPException(status_code=409, detail={
+            "code": "WorkspaceProjectRevisionConflict",
+            "message": "Workspace project archive state changed since it was loaded.",
+            "current_revision": current_revision,
+        })
     await db.commit()
     await db.refresh(project)
     return WorkspaceProjectResponse.model_validate(project, from_attributes=True)
@@ -202,17 +227,19 @@ async def _set_workspace_project_archived(
 @router.post("/projects/{project_id}/archive", response_model=WorkspaceProjectResponse)
 async def archive_workspace_project(
     project_id: str,
+    body: WorkspaceProjectArchiveWrite,
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceProjectResponse:
-    return await _set_workspace_project_archived(project_id, True, db)
+    return await _set_workspace_project_archived(project_id, True, body.expected_revision, db)
 
 
 @router.post("/projects/{project_id}/restore", response_model=WorkspaceProjectResponse)
 async def restore_workspace_project(
     project_id: str,
+    body: WorkspaceProjectArchiveWrite,
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceProjectResponse:
-    return await _set_workspace_project_archived(project_id, False, db)
+    return await _set_workspace_project_archived(project_id, False, body.expected_revision, db)
 
 
 @router.post("/projects", response_model=WorkspaceProjectResponse, status_code=status.HTTP_201_CREATED)

@@ -480,6 +480,7 @@ export interface WorkspaceProjectRecord {
   id: string;
   name: string;
   subtitle: string;
+  revision: number;
   created_at: string;
   updated_at: string;
   archived_at?: string | null;

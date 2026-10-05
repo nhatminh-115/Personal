@@ -370,9 +370,14 @@ class WorkspaceProjectResponse(BaseModel):
     id: str
     name: str
     subtitle: str
+    revision: int = 1
     created_at: datetime
     updated_at: datetime
     archived_at: Optional[datetime] = None
+
+
+class WorkspaceProjectArchiveWrite(BaseModel):
+    expected_revision: int = Field(ge=1)
 
 
 class WorkspaceSummaryResponse(BaseModel):
