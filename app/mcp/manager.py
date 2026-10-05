@@ -273,12 +273,11 @@ class MCPClientManager:
             )
             return adapters
 
-        except Exception as e:
+        except Exception:
             self._discovery_degraded.discard(server_id)
             self._sync_provider_metadata(config, CapabilityProviderHealth.UNAVAILABLE)
             logger.error(
-                f"Server-level failure during tool discovery on MCP server '{server_id}': {e}",
-                exc_info=True,
+                "MCP tool discovery failed.",
                 extra={"server_id": server_id},
             )
             # Crash isolation: do not raise, return empty list to protect the agent runtime
@@ -403,9 +402,13 @@ class MCPClientManager:
             if is_error:
                 return ToolResult(
                     success=False,
-                    output=output_text,
-                    error=output_text or "MCP tool returned error status.",
-                    metadata={"server_id": server_id, "tool_name": tool_name},
+                    output="",
+                    error="MCP tool returned an error response.",
+                    metadata={
+                        "error_category": "mcp_tool_error",
+                        "server_id": server_id,
+                        "tool_name": tool_name,
+                    },
                 )
 
             return ToolResult(
@@ -424,9 +427,12 @@ class MCPClientManager:
                 error=err_msg,
                 metadata={"error_category": "timeout", "server_id": server_id},
             )
-        except Exception as e:
-            err_msg = f"Server failure on MCP server '{server_id}': {str(e)}"
-            logger.error(err_msg, exc_info=True, extra={"server_id": server_id, "tool_name": tool_name})
+        except Exception:
+            err_msg = "MCP server operation failed."
+            logger.error(
+                "MCP server operation failed.",
+                extra={"server_id": server_id, "tool_name": tool_name, "error_category": "mcp_server_error"},
+            )
             return ToolResult(
                 success=False,
                 output="",

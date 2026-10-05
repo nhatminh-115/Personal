@@ -76,7 +76,7 @@ class MCPToolAdapter(Tool):
                 arguments=input_data,
             )
         except MCPValidationError as val_err:
-            logger.warning(f"MCP tool '{self._name}' rejected: {val_err}")
+            logger.warning("MCP tool arguments failed local schema validation.", extra={"server_id": self._server_id})
             return ToolResult(
                 success=False,
                 output="",
@@ -92,11 +92,11 @@ class MCPToolAdapter(Tool):
                 arguments=input_data,
             )
             return result
-        except Exception as e:
-            logger.error(f"Error executing MCP tool '{self._name}': {e}", exc_info=True)
+        except Exception:
+            logger.error("MCP tool invocation failed.", extra={"server_id": self._server_id})
             return ToolResult(
                 success=False,
                 output="",
-                error=f"MCP invocation failure on server '{self._server_id}': {str(e)}",
+                error="MCP tool invocation failed.",
                 metadata={"error_category": "mcp_execution_failure", "server_id": self._server_id},
             )

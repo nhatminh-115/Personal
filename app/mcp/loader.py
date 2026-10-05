@@ -47,7 +47,7 @@ def load_mcp_servers_from_file(config_path: Union[str, Path]) -> List[MCPServerC
     """
     path = Path(config_path)
     if not path.exists():
-        logger.debug(f"MCP configuration file not found at '{path}'; skipping MCP startup registration.")
+        logger.debug("MCP configuration file was not found; skipping startup registration.")
         return []
 
     try:
@@ -79,9 +79,9 @@ def load_mcp_servers_from_file(config_path: Union[str, Path]) -> List[MCPServerC
                 continue
             validated_configs.append(MCPServerConfig(**item))
 
-        logger.info(f"Loaded {len(validated_configs)} MCP server definition(s) from '{path}'.")
+        logger.info("Loaded %s MCP server definition(s) from configuration.", len(validated_configs))
         return validated_configs
 
-    except Exception as e:
-        logger.error(f"Failed to load MCP server configuration from '{path}': {e}", exc_info=True)
+    except Exception:
+        logger.error("Failed to load MCP server configuration.")
         raise

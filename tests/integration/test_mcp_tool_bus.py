@@ -122,7 +122,13 @@ async def test_mcp_server_level_failure_isolation(mcp_fixture_manager):
     # Call the crashing tool
     result = await fail_tool.execute({})
     assert result.success is False
-    assert "Internal simulated MCP failure" in result.error or "error" in result.error.lower()
+    assert result.error in {
+        "MCP tool returned an error response.",
+        "MCP server operation failed.",
+    }
+    assert result.output == ""
+    assert "Internal simulated MCP failure" not in result.error
+    assert result.metadata["error_category"] in {"mcp_tool_error", "mcp_server_error"}
 
     # Prove runtime is still healthy and subsequent tool calls succeed
     read_tool = mcp_fixture_manager.registry.get("mcp_fixture_srv_read_metric")
@@ -152,4 +158,4 @@ async def test_mcp_nonexistent_or_broken_server_isolation():
     # Direct tool call should return clean failure
     call_res = await broken_manager.call_tool("broken_srv", "dummy_tool", {})
     assert call_res.success is False
-    assert "Server failure" in call_res.error or "not found" in call_res.error.lower()
+    assert "MCP server operation failed" in call_res.error or "not found" in call_res.error.lower()
