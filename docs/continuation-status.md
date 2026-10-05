@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `930864a44bc75aac246890a18963d18855cf0107`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), and [#342](https://github.com/nhatminh-115/Personal/pull/342) are merged.
+- Canonical `main`: `36ae0198e73f651eba8fcbefa5f573f8bd8177ec`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), and [#343](https://github.com/nhatminh-115/Personal/pull/343) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -18,10 +18,12 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR #340 CI run #887 (`37329744878`) passed: backend 669 tests in 77.60s, Phases 1/2.1/3/4, frontend 47 test files, Vite build 11.80s.
 - PR #341 merged as `c8de2ba644bd99b1d880900f8e8fae6a9b3caa46`. Final CI run #893 (`37333526794`) passed: backend 671 tests in 80.59s, Phases 1/2.1/3/4, frontend 47 test files / 318 tests, Vite build 12.34s.
 - PR #342 merged as `930864a44bc75aac246890a18963d18855cf0107`. Final CI run #896 (`37336141268`) passed: backend 676 tests in 81.54s, Phases 1/2.1/3/4, frontend 47 test files / 318 tests, Vite build 12.10s.
-- Active branch: `codex/aura-next-milestone-20261005-100`, created from the canonical SHA above.
+- PR #343 fixed Research delegation synthesis overwriting terminal child status when partial research state exists. It merged as `36ae0198e73f651eba8fcbefa5f573f8bd8177ec`. CI run #898 (`37337627934`), job `111856307701`, passed: backend 678 tests in 81.32s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.15s.
+- Active branch: `codex/aura-next-milestone-20261005-101`, created from the canonical SHA above.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
-- Current audit: Research delegation synthesis can overwrite a failed or cancelled child run as `completed` whenever partial `research_state` exists. Preserve terminal execution status and partial artifacts independently; expand lifecycle checks for adjacent root/child state transitions.
+- Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
+- Current milestone (branch 101): an approved delegated child failing during graph resume left its delegation and root interrupt unresolved. The approval failure path now persists the failed child/delegation, clears the pending approval, and resumes the matching root interrupt with the terminal specialist result. A regression test verifies child/delegation/root state and provider-error redaction; CI verification is pending.
 
 ## Recent verified milestones
 
@@ -36,12 +38,13 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #340: redact embedding provider HTTP and transport errors | Merged; CI #887, backend 669 passed in 77.60s, Phases 1/2.1/3/4 passed, frontend 47 files / all tests passed, Vite build 11.80s |
 | PR #341: redact Research provider, cache, and PDF diagnostics | Merged as `c8de2ba`; CI #893 (`37333526794`), backend 671 passed in 80.59s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.34s |
 | PR #342: redact MCP operational diagnostics | Merged as `930864a`; CI #896 (`37336141268`), backend 676 passed in 81.54s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.10s |
+| PR #343: preserve terminal Research child run status when partial state exists | Merged as `36ae019`; CI #898 (`37337627934`), backend 678 passed in 81.32s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.15s |
 
 ## Immediate next steps
 
-1. Preserve failed/cancelled Research child status when a partial research state is present, with deterministic persistence coverage.
-2. Continue auditing root/child run persistence across approval, cancellation, restart, and resume failure paths.
-3. Open a PR, wait for GitHub Actions, and merge only after all required checks are green.
+1. Verify the delegated-child approval failure propagation regression in CI.
+2. Open a PR, wait for GitHub Actions, and merge only after all required checks are green.
+3. Continue auditing root/child persistence and resume paths for the next independently verifiable reliability gap.
 4. Repeat the audit and implementation cycle while quota allows; do not start a blocked external dogfood task as if it were a code milestone.
 
 ## Dogfood and external setup

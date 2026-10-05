@@ -12,7 +12,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 
+from app.core.errors import MODEL_PROVIDER_FAILURE_MESSAGE, MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
 from app.db.models import DelegationModel, RunEventModel, RunModel, RunStatus
+from app.models.router import model_router
 from app.orchestrator.graph import close_checkpointer, init_checkpointer
 
 
@@ -233,3 +235,71 @@ async def test_delegated_specialist_rejection_after_restart(
     assert len(runs) >= 1
     for r in runs:
         assert r.status in ("cancelled", "failed", "completed")
+
+
+@pytest.mark.asyncio
+async def test_delegated_child_resume_failure_is_propagated_to_parent(
+    async_client: AsyncClient,
+    test_db_session,
+    setup_test_workspace: Path,
+    monkeypatch,
+):
+    """A child failure after approval must not leave its delegation or parent waiting."""
+    code_file = setup_test_workspace / "calculator.py"
+    code_file.write_text("def add(a, b):\n    return a + b + 1\n", encoding="utf-8")
+    test_file = setup_test_workspace / "test_calculator.py"
+    test_file.write_text(
+        "from calculator import add\n\ndef test_add():\n    assert add(1, 2) == 3\n",
+        encoding="utf-8",
+    )
+
+    start = await async_client.post(
+        "/v1/chat",
+        json={
+            "session_id": "sess-child-resume-failure",
+            "message": "Fix the failing test in project Atlas",
+            "project_name": "Atlas",
+        },
+    )
+    assert start.status_code == 200
+    start_data = start.json()
+    assert start_data["status"] == RunStatus.WAITING_FOR_APPROVAL.value
+    parent_run_id = start_data["run_id"]
+    approval_id = start_data["approval_id"]
+
+    delegation = await test_db_session.scalar(
+        select(DelegationModel).where(DelegationModel.parent_run_id == parent_run_id)
+    )
+    assert delegation is not None
+    child_run_id = delegation.child_run_id
+
+    original_route = model_router.route
+    calls = 0
+
+    async def fail_child_once(request, provider_name=None, routing_context=None):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ProviderError("private provider diagnostic")
+        return await original_route(request, provider_name=provider_name, routing_context=routing_context)
+
+    monkeypatch.setattr(model_router, "route", fail_child_once)
+
+    decision = await async_client.post(
+        f"/v1/approvals/{approval_id}/decision",
+        json={"decision": "approved", "decision_notes": "Authorize initial test run"},
+    )
+    assert decision.status_code == 200
+    assert decision.json()["execution_status"] == RunStatus.FAILED.value
+    assert "private provider diagnostic" not in decision.text
+
+    child = await test_db_session.get(RunModel, child_run_id)
+    parent = await test_db_session.get(RunModel, parent_run_id)
+    await test_db_session.refresh(delegation)
+    assert child is not None and child.status == RunStatus.FAILED.value
+    assert child.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    assert child.final_response == MODEL_PROVIDER_FAILURE_MESSAGE
+    assert parent is not None and parent.status != RunStatus.WAITING_FOR_APPROVAL.value
+    assert delegation.status == RunStatus.FAILED.value
+    assert delegation.pending_approval_id is None
+    assert delegation.result_summary == MODEL_PROVIDER_FAILURE_MESSAGE
