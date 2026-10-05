@@ -7,6 +7,7 @@ from app.core.settings import settings
 from app.research.corpus import DeterministicResearchProvider, corpus_engine
 from app.research.provider import ResearchSourceProvider
 from app.research.providers.composite import CompositeResearchProvider
+from app.research.providers.crossref import CrossrefResearchProvider
 
 
 def create_research_provider(mode: Optional[str] = None) -> ResearchSourceProvider:
@@ -14,12 +15,12 @@ def create_research_provider(mode: Optional[str] = None) -> ResearchSourceProvid
     
     Modes:
     - 'deterministic': Offline indexed fixture corpus for deterministic testing & CI.
-    - 'live': Real scholarly network provider combining Semantic Scholar and arXiv.
+    - 'live': Real scholarly network provider combining Semantic Scholar, arXiv, and Crossref metadata.
     """
     effective_mode = mode or getattr(settings, "RESEARCH_PROVIDER_MODE", "deterministic")
     if effective_mode == "live":
-        logger.info("Initializing Live CompositeResearchProvider (Semantic Scholar + arXiv)")
-        return CompositeResearchProvider()
+        logger.info("Initializing Live CompositeResearchProvider (Semantic Scholar + arXiv + Crossref metadata)")
+        return CompositeResearchProvider(crossref_provider=CrossrefResearchProvider())
 
     logger.debug("Using DeterministicResearchProvider (Offline Fixtures)")
     return corpus_engine

@@ -10,6 +10,7 @@ from app.research.document import FullTextStatus, document_fetcher
 from app.research.models import ResearchSource
 from app.research.provider import ResearchProviderUnavailable, ResearchSearchUnavailable, ResearchSourceProvider
 from app.research.providers.arxiv import ArxivResearchProvider
+from app.research.providers.crossref import CrossrefResearchProvider
 from app.research.providers.semantic_scholar import SemanticScholarResearchProvider
 
 
@@ -22,9 +23,11 @@ class CompositeResearchProvider(ResearchSourceProvider):
         arxiv_provider: Optional[ArxivResearchProvider] = None,
         fetcher: Optional[Any] = None,
         cache: Optional[Any] = None,
+        crossref_provider: Optional[CrossrefResearchProvider] = None,
     ) -> None:
         self.s2_provider = s2_provider or SemanticScholarResearchProvider()
         self.arxiv_provider = arxiv_provider or ArxivResearchProvider()
+        self.crossref_provider = crossref_provider
         self.fetcher = fetcher or document_fetcher
         self.cache = cache or research_cache
 
@@ -70,8 +73,23 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 failed_providers.append("arXiv")
                 logger.warning(f"Direct arXiv search failed: {e}")
 
-        # 3. Deduplicate and merge identities through SourceDeduplicator
+        # Crossref is a metadata-only final fallback when the existing sources return too few items.
         combined = s2_sources + supplementary_arxiv
+        if self.crossref_provider is not None and len(combined) < max_results:
+            try:
+                supplementary_crossref = await self.crossref_provider.search(
+                    query, search_type=search_type, max_results=max_results
+                )
+                combined.extend(supplementary_crossref)
+                provider_completed = True
+            except ResearchProviderUnavailable as e:
+                failed_providers.append(e.provider)
+                logger.warning(f"Crossref search failed: {e}")
+            except Exception as e:
+                failed_providers.append("Crossref")
+                logger.warning(f"Crossref search failed: {e}")
+
+        # 3. Deduplicate and merge identities through SourceDeduplicator
         if not combined and failed_providers and not provider_completed:
             raise ResearchSearchUnavailable(failed_providers)
         merged_sources_dict: Dict[str, ResearchSource] = {}
@@ -129,6 +147,11 @@ class CompositeResearchProvider(ResearchSourceProvider):
 
         if "arxiv" in source_id.lower():
             src = await self.arxiv_provider.fetch_source(source_id)
+            if src:
+                return src
+
+        if self.crossref_provider is not None:
+            src = await self.crossref_provider.fetch_source(source_id)
             if src:
                 return src
 

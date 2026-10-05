@@ -3,7 +3,7 @@
 from typing import Any
 
 SAFE_OPERATIONAL_ERROR_CODES = frozenset({"research_providers_unavailable"})
-SAFE_RESEARCH_PROVIDER_NAMES = frozenset({"Semantic Scholar", "arXiv"})
+SAFE_RESEARCH_PROVIDER_NAMES = frozenset({"Semantic Scholar", "arXiv", "Crossref"})
 
 
 def safe_operational_error_metadata(metadata: object) -> dict[str, Any]:

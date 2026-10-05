@@ -77,11 +77,14 @@ identity or feature support from its name. `MODEL_PROVIDER=mock` is the local
 default. The Research Specialist uses deterministic sources by default unless
 `RESEARCH_PROVIDER_MODE` is explicitly changed.
 
-Live research search combines Semantic Scholar and arXiv. A failure from one
-provider does not discard sources returned by the other. When no provider
-completes the search, the tool reports a structured provider error instead of
-claiming that the query returned no matches; a successful search with zero
-matches remains a normal empty result.
+Live research search combines Semantic Scholar and arXiv, then uses Crossref as
+a final metadata-only fallback when fewer than the requested number of sources
+were returned. Live search queries are sent to these providers. Crossref results
+include bibliographic metadata only; AURA does not request Crossref abstracts or
+full text. A failure from one provider does not discard sources returned by the
+others. When no provider completes the search, the tool reports a structured
+provider error instead of claiming that the query returned no matches; a
+successful search with zero matches remains a normal empty result.
 
 ## Capability and execution boundaries
 

@@ -101,6 +101,59 @@ async def test_composite_provider_s2_failure_fallback_to_arxiv(mock_cache):
 
 
 @pytest.mark.asyncio
+async def test_composite_provider_uses_crossref_metadata_as_last_resort(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    crossref_provider = MagicMock()
+    s2_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("Semantic Scholar"))
+    arxiv_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("arXiv"))
+    crossref_source = ResearchSource(
+        source_id="crossref_10_5555_aura",
+        canonical_id="doi:10.5555/aura",
+        title="A Crossref Metadata Result",
+        url="https://doi.org/10.5555/aura",
+        metadata={"provider": "crossref"},
+    )
+    crossref_provider.search = AsyncMock(return_value=[crossref_source])
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        crossref_provider=crossref_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    results = await composite.search("metadata result", max_results=3)
+
+    assert [source.canonical_id for source in results] == ["doi:10.5555/aura"]
+    crossref_provider.search.assert_awaited_once_with("metadata result", search_type="broad", max_results=3)
+
+
+@pytest.mark.asyncio
+async def test_composite_provider_skips_crossref_when_existing_results_fill_request(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    crossref_provider = MagicMock()
+    s2_provider.search = AsyncMock(return_value=[
+        ResearchSource(source_id=f"s2_{index}", canonical_id=f"doi:10.5555/{index}", title=f"Paper {index}")
+        for index in range(2)
+    ])
+    arxiv_provider.search = AsyncMock()
+    crossref_provider.search = AsyncMock()
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        crossref_provider=crossref_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    await composite.search("enough results", max_results=2)
+
+    crossref_provider.search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_composite_provider_reports_outage_when_no_source_provider_completed(mock_cache):
     s2_provider = MagicMock()
     arxiv_provider = MagicMock()
