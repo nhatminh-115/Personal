@@ -2,6 +2,25 @@
 
 from typing import Any
 
+SAFE_OPERATIONAL_ERROR_CODES = frozenset({"research_providers_unavailable"})
+SAFE_RESEARCH_PROVIDER_NAMES = frozenset({"Semantic Scholar", "arXiv"})
+
+
+def safe_operational_error_metadata(metadata: object) -> dict[str, Any]:
+    """Project only explicitly approved, non-content tool failure metadata."""
+    if not isinstance(metadata, dict) or metadata.get("error_code") not in SAFE_OPERATIONAL_ERROR_CODES:
+        return {}
+    safe: dict[str, Any] = {"error_code": metadata["error_code"]}
+    failed_providers = metadata.get("failed_providers")
+    if isinstance(failed_providers, list):
+        providers = list(dict.fromkeys(
+            name for name in failed_providers
+            if isinstance(name, str) and name in SAFE_RESEARCH_PROVIDER_NAMES
+        ))
+        if providers:
+            safe["failed_providers"] = providers
+    return safe
+
 
 def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
     """Keep operational provenance while excluding prompts, arguments, and content."""
@@ -122,6 +141,7 @@ def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
             metadata = result.get("metadata")
             if isinstance(metadata, dict):
                 safe_metadata = pick(metadata, ("artifact_id", "object_id", "bytes", "line_count", "exit_code"))
+                safe_metadata.update(safe_operational_error_metadata(metadata))
                 if safe_metadata:
                     safe_result["metadata"] = safe_metadata
             safe["result"] = safe_result

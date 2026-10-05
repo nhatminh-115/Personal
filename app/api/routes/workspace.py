@@ -54,6 +54,7 @@ from app.db.models import (
 )
 from app.db.session import get_db
 from app.memory.base import MemoryService
+from app.observability.payloads import safe_operational_error_metadata
 from app.memory.context_compiler import WorkspaceContextCompiler, split_context_capabilities
 from app.capabilities.registry import UnresolvedCapabilitiesError
 from app.tools.registry import ToolRegistry
@@ -359,6 +360,7 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
     payload = event.payload if isinstance(event.payload, dict) else {}
     event_type = event.event_type
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    error_metadata = safe_operational_error_metadata(result.get("metadata"))
     raw_tool_name = payload.get("tool") or payload.get("tool_name")
     tool_name = raw_tool_name if isinstance(raw_tool_name, str) else None
     step = payload.get("step")
@@ -428,6 +430,8 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
         or ("completed" if result.get("success") is True else "failed" if result.get("success") is False else None),
         success=result.get("success") if isinstance(result.get("success"), bool) else None,
         error_category=safe_text("error_category"),
+        error_code=error_metadata.get("error_code"),
+        failed_providers=error_metadata.get("failed_providers", []),
         risk_level=safe_text("risk_level"),
         step=step if isinstance(step, int) and not isinstance(step, bool) else None,
         task_type=safe_text("task_type") if event_type == "model_selected" else None,

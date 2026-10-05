@@ -56,6 +56,14 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
     case 'tool_requested':
       return { title: `Tool · ${event.tool_name ?? 'requested'}`, body: 'Tool call requested', chip: 'TOOL' };
     case 'tool_executed':
+      if (event.error_code === 'research_providers_unavailable') {
+        const providers = event.failed_providers?.join(', ');
+        return {
+          title: `Result · ${event.tool_name ?? 'research_search'}`,
+          body: providers ? `Research providers unavailable · ${providers}` : 'Research providers unavailable',
+          chip: 'RESULT',
+        };
+      }
       return {
         title: `Result · ${event.tool_name ?? 'tool'}`,
         body: event.success === false ? `Failed${event.error_category ? ` · ${event.error_category}` : ''}` : 'Completed',

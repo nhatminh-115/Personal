@@ -50,6 +50,44 @@ async def test_trace_service_persists_and_logs_operational_metadata_only(test_db
 
 
 @pytest.mark.asyncio
+async def test_trace_keeps_allowlisted_research_provider_failure_metadata_only(test_db_session):
+    trace = TraceService(test_db_session)
+    test_db_session.add(SessionModel(id="research-error-trace-session"))
+    test_db_session.add(RunModel(
+        id="research-error-trace-run",
+        session_id="research-error-trace-session",
+        user_message="private search request",
+    ))
+    await test_db_session.commit()
+
+    event = await trace.record_event(
+        run_id="research-error-trace-run",
+        session_id="research-error-trace-session",
+        event_type="tool_executed",
+        payload={
+            "tool": "research_search",
+            "result": {
+                "success": False,
+                "error": "private query and provider response",
+                "metadata": {
+                    "error_code": "research_providers_unavailable",
+                    "failed_providers": ["Semantic Scholar", "arXiv", "attacker supplied provider"],
+                    "query": "private query text",
+                    "response_body": "private response body",
+                },
+            },
+        },
+    )
+
+    assert event.payload["result"]["metadata"] == {
+        "error_code": "research_providers_unavailable",
+        "failed_providers": ["Semantic Scholar", "arXiv"],
+    }
+    assert "private query" not in str(event.payload)
+    assert "private response body" not in str(event.payload)
+
+
+@pytest.mark.asyncio
 async def test_context_manifest_keeps_provenance_and_metrics_without_object_text(test_db_session):
     trace = TraceService(test_db_session)
     test_db_session.add(SessionModel(id="context-trace-session"))

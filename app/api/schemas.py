@@ -563,6 +563,8 @@ class WorkspaceExecutionEventResponse(BaseModel):
     status: Optional[str] = None
     success: Optional[bool] = None
     error_category: Optional[str] = None
+    error_code: Optional[str] = None
+    failed_providers: List[str] = Field(default_factory=list)
     risk_level: Optional[str] = None
     step: Optional[int] = None
     task_type: Optional[str] = None
