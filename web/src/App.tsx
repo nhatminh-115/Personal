@@ -2947,6 +2947,7 @@ export default function App() {
             onOpenNode={openBoardNode}
             onOpenChats={openProjectChats}
             onOpenFiles={openProjectFiles}
+            onOpenNotes={() => handleSidebarNavigate('notes')}
             onMockObject={(label) => pushToast(label, 'Open Chats, Files or Board to continue working with this object.')}
           />
         ) : null}
