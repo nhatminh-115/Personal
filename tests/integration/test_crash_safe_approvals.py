@@ -135,7 +135,11 @@ async def test_provider_failure_during_resume_marks_run_failed_cleanly(async_cli
     # 2. Mock provider to raise runtime exception when verify_result synthesizes response
     call_count = [0]
 
-    async def failing_route(request: ModelRequest):
+    async def failing_route(
+        request: ModelRequest,
+        provider_name: str | None = None,
+        routing_context=None,
+    ):
         call_count[0] += 1
         raise ProviderError("Provider returned 500: private runner diagnostic")
 
