@@ -6,33 +6,37 @@ import type { RoutingPrivacy } from '../../types';
 interface NotesViewProps {
   projects: ProjectRecord[];
   notes: WorkspaceNote[];
+  projectId?: string | null;
   focusNoteId?: string | null;
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
+  onShowAllNotes?: () => void;
   hasMoreNotes?: boolean;
   loadingMoreNotes?: boolean;
   notesLoadError?: string | null;
   onLoadMoreNotes?: () => void;
 }
 
-export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenProject, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
+export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChange, onOpenProject, onShowAllNotes, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
   const appliedFocusNoteId = useRef<string | null>(null);
+  const selectedProject = projects.find((project) => project.id === projectId) ?? null;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return notes.filter((note) => (!projectId || note.projectIds.includes(projectId))
+      && (!q || `${note.title} ${note.body} ${note.tags.join(' ')}`.toLowerCase().includes(q)));
+  }, [notes, projectId, query]);
   useEffect(() => {
-    if (activeId && notes.some((note) => note.id === activeId)) return;
-    setActiveId(notes[0]?.id ?? null);
-  }, [activeId, notes]);
+    if (activeId && filtered.some((note) => note.id === activeId)) return;
+    setActiveId(filtered[0]?.id ?? null);
+  }, [activeId, filtered]);
   useEffect(() => {
     if (!focusNoteId || focusNoteId === appliedFocusNoteId.current || !notes.some((note) => note.id === focusNoteId)) return;
     appliedFocusNoteId.current = focusNoteId;
     setActiveId(focusNoteId);
   }, [focusNoteId, notes]);
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return notes.filter((note) => !q || `${note.title} ${note.body} ${note.tags.join(' ')}`.toLowerCase().includes(q));
-  }, [notes, query]);
   const active = notes.find((note) => note.id === activeId) ?? null;
 
   const updateActive = (patch: Partial<WorkspaceNote>) => {
@@ -42,8 +46,8 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
 
   const createNote = () => {
     const id = `note-${Date.now()}`;
-    const next: WorkspaceNote = { id, title: 'Untitled note', body: '', updated: 'just now', tags: [], projectIds: [], source: 'local' };
-    onNotesChange([next, ...notes]);
+    const next: WorkspaceNote = { id, title: 'Untitled note', body: '', updated: 'just now', tags: [], projectIds: projectId ? [projectId] : [], source: 'local' };
+    onNotesChange([next, ...notes.filter((note) => note.id !== id)]);
     setActiveId(id);
     setCreating(false);
   };
@@ -52,12 +56,13 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
     <section className="notes-view">
       <aside className="notes-list-panel">
         <div className="notes-list-panel__head">
-          <div><span className="eyebrow">NOTES</span><h2>Personal notes</h2></div>
+          <div><span className="eyebrow">NOTES</span><h2>{selectedProject ? `${selectedProject.name} notes` : 'Personal notes'}</h2></div>
+          {selectedProject && onShowAllNotes ? <button className="notes-show-all" type="button" onClick={onShowAllNotes}>All notes</button> : null}
           <button className="icon-button" type="button" title="New note" onClick={() => setCreating(true)}><Plus size={15} /></button>
         </div>
         <label className="notes-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search notes" /></label>
         {creating ? (
-          <button className="note-create-card" type="button" onClick={createNote}><NotebookPen size={15} /><span><strong>Create blank note</strong><small>Global by default · link to projects later</small></span></button>
+          <button className="note-create-card" type="button" onClick={createNote}><NotebookPen size={15} /><span><strong>Create blank note</strong><small>{selectedProject ? `Linked to ${selectedProject.name}` : 'Global by default · link to projects later'}</small></span></button>
         ) : null}
         <div className="notes-list">
           {filtered.map((note) => (
@@ -66,6 +71,7 @@ export function NotesView({ projects, notes, focusNoteId, onNotesChange, onOpenP
               <span className="note-list-item__copy"><strong>{note.title}</strong><small>{note.body || 'Empty note'}</small><em>{note.updated}</em></span>
             </button>
           ))}
+          {!filtered.length && !notesLoadError ? <div className="notes-list-empty">{query.trim() ? 'No notes match this search.' : selectedProject ? `No notes linked to ${selectedProject.name} yet.` : 'No notes yet.'}</div> : null}
         </div>
         {notesLoadError ? <div className="notes-list-pagination" role="status"><span>Could not load notes: {notesLoadError}</span><button type="button" disabled={loadingMoreNotes} onClick={onLoadMoreNotes}>Retry</button></div> : null}
         {loadingMoreNotes && !hasMoreNotes && !notesLoadError ? <div className="notes-list-pagination" role="status">Loading saved notes…</div> : null}

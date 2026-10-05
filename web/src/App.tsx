@@ -340,6 +340,7 @@ export default function App() {
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [notesProjectScopeId, setNotesProjectScopeId] = useState<string | null>(null);
   const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof api.fetchWorkspaceSummary>>>(() => ({
     note_count: 0,
     library_count: 0,
@@ -881,6 +882,12 @@ export default function App() {
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
   }, [openOrActivateTab, projectCatalog]);
 
+  const openProjectNotes = useCallback((projectId: string) => {
+    setNotesProjectScopeId(projectId);
+    setFocusedWorkspaceNoteId(null);
+    openOrActivateTab({ ...AURA_TAB, subtitle: 'Notes', surface: 'notes' });
+  }, [openOrActivateTab]);
+
   const openResearchProjectObject = useCallback((objectId: string, projectName: string) => {
     const project = projectCatalog.find((item) => item.name === projectName && item.source === 'user');
     if (!project) return;
@@ -990,6 +997,7 @@ export default function App() {
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
     setRoutingOpen(false);
+    if (destination === 'notes') setNotesProjectScopeId(null);
     const map: Record<SidebarDestination, AppTab> = {
       home: { ...AURA_TAB, subtitle: 'Home', surface: 'global-home' },
       library: { ...AURA_TAB, subtitle: 'Library', surface: 'library' },
@@ -2931,7 +2939,7 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} onImportCopy={activeFilePreview.sourceFile ? (file, sourcePath) => void importFiles([file], undefined, sourcePath) : undefined} />
         ) : null}
-        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} projectId={notesProjectScopeId} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} onShowAllNotes={() => handleSidebarNavigate('notes')} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onCancelRun={cancelAutomationRun} onRetryRun={retryAutomationRun} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} onSetArchived={setWorkspaceProjectArchived} /> : null}
@@ -2947,7 +2955,7 @@ export default function App() {
             onOpenNode={openBoardNode}
             onOpenChats={openProjectChats}
             onOpenFiles={openProjectFiles}
-            onOpenNotes={() => handleSidebarNavigate('notes')}
+            onOpenNotes={() => openProjectNotes(activeProject.id)}
             onMockObject={(label) => pushToast(label, 'Open Chats, Files or Board to continue working with this object.')}
           />
         ) : null}
