@@ -2,11 +2,12 @@
 
 import uuid
 from typing import Any, Dict, Optional
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus, ScheduledJobModel, SessionModel
+from app.db.models import ApprovalModel, MessageModel, RoutingConfirmationModel, RunEventModel, RunModel, RunStatus, ScheduledJobModel, SessionModel, utc_now
 from app.db.session import async_session_factory
 from app.models.base import FallbackPolicy, PrivacyPolicy, RoutingContext
 from app.models.routing_resolver import apply_routing_profile_to_context, resolve_routing_profile
@@ -189,6 +190,7 @@ class EventToAgentBridge:
             config = {
                 "configurable": {
                     "thread_id": run_id,
+                    "db": db,
                     "memory_service": mem_service,
                     "approval_service": approval_service,
                     "trace_service": trace_service,
@@ -213,7 +215,51 @@ class EventToAgentBridge:
             # Update run record in DB
             db_run = await db.get(RunModel, run_id)
             if db_run:
-                if "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
+                await db.refresh(db_run)
+                if db_run.cancel_requested_at is not None:
+                    cancelled_run_ids = select(RunModel.id).where(
+                        or_(RunModel.id == run_id, RunModel.parent_run_id == run_id)
+                    )
+                    decided_at = utc_now()
+                    await db.execute(
+                        update(ApprovalModel)
+                        .where(ApprovalModel.run_id.in_(cancelled_run_ids), ApprovalModel.status == "pending")
+                        .values(status="rejected", decision_notes="Run cancelled before approval.", decided_at=decided_at)
+                    )
+                    await db.execute(
+                        update(RoutingConfirmationModel)
+                        .where(
+                            or_(
+                                RoutingConfirmationModel.root_run_id == run_id,
+                                RoutingConfirmationModel.execution_run_id.in_(cancelled_run_ids),
+                            ),
+                            RoutingConfirmationModel.status == "pending",
+                        )
+                        .values(status="rejected", decision_notes="Run cancelled before routing confirmation.", decided_at=decided_at)
+                    )
+                    db_run.status = RunStatus.CANCELLED.value
+                    db_run.final_response = (
+                        "Run cancelled. An operation already in progress may have completed "
+                        "before AURA observed the request."
+                    )
+                    db_run.error_message = None
+                    await db.execute(
+                        update(MessageModel)
+                        .where(
+                            MessageModel.session_id == session_id,
+                            MessageModel.role == "assistant",
+                            MessageModel.metadata_json["run_id"].as_string() == run_id,
+                        )
+                        .values(content=db_run.final_response)
+                    )
+                    if final_state.get("execution_status") != RunStatus.CANCELLED.value:
+                        await trace_service.record_event(
+                            run_id=run_id,
+                            session_id=session_id,
+                            event_type="run_cancelled",
+                            payload={"status": RunStatus.CANCELLED.value},
+                        )
+                elif "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
                     interrupt_val = final_state["__interrupt__"][0].value
                     approval_id = interrupt_val.get("approval_id")
                     tool_name = interrupt_val.get("tool_name")

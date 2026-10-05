@@ -153,7 +153,24 @@ describe('AutomationsView', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel queued run' }));
 
     await waitFor(() => expect(onCancelRun).toHaveBeenCalledWith(liveAutomation.id, queuedRun.event_id));
-    expect(await screen.findByText('Cancelled before execution')).toBeInTheDocument();
+    expect(await screen.findByText('Run cancelled')).toBeInTheDocument();
+    historySpy.mockRestore();
+  });
+
+  it('requests cooperative cancellation for an active run and describes the safe-boundary behavior', async () => {
+    const activeRun = { event_id: 'active-event', run_id: 'active-run', queued_at: '2026-10-02T00:00:00Z', status: 'running', retry_count: 0 };
+    const historySpy = vi.spyOn(api, 'fetchAutomationRuns').mockResolvedValue({ runs: [activeRun], nextCursor: null });
+    const onCancelRun = vi.fn().mockResolvedValue({ ...activeRun, status: 'cancellation_requested' });
+    render(<AutomationsView projects={projects} automations={[liveAutomation]} onCancelRun={onCancelRun} onCreate={vi.fn()} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run history' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Stop active run' }));
+
+    await waitFor(() => expect(onCancelRun).toHaveBeenCalledWith(liveAutomation.id, activeRun.event_id));
+    expect(await screen.findByText('Stop requested · waiting for a safe boundary')).toHaveAttribute(
+      'title',
+      'An operation already in progress may finish before AURA observes the request.',
+    );
     historySpy.mockRestore();
   });
 
