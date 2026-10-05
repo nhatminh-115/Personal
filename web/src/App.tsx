@@ -341,6 +341,7 @@ export default function App() {
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
   const [notesProjectScopeId, setNotesProjectScopeId] = useState<string | null>(null);
+  const [noteConflicts, setNoteConflicts] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof api.fetchWorkspaceSummary>>>(() => ({
     note_count: 0,
     library_count: 0,
@@ -1965,6 +1966,12 @@ export default function App() {
         savedNoteRevisions.current.set(record.id, record.revision);
         savedNoteFingerprints.current.set(saved.id, workspaceNoteFingerprint(saved));
         savedNotePrivacyPolicies.current.set(saved.id, saved.privacyPolicy);
+        setNoteConflicts((currentConflicts) => {
+          if (!currentConflicts[saved.id]) return currentConflicts;
+          const nextConflicts = { ...currentConflicts };
+          delete nextConflicts[saved.id];
+          return nextConflicts;
+        });
         const current = notesRef.current.find((item) => item.id === saved.id);
         if (!current) return;
         const refreshed = { ...current, updated: saved.updated, source: 'live' as const };
@@ -1979,10 +1986,11 @@ export default function App() {
           notesRef.current = next;
           setNotes(next);
         }
-        pushToast(error instanceof ApiError && error.status === 409 ? 'Note changed elsewhere' : 'Note was not saved',
-          error instanceof ApiError && error.status === 409
-            ? 'Reload saved Notes before continuing so newer content is not replaced.'
-            : executionErrorText(error));
+        if (error instanceof ApiError && error.status === 409) {
+          setNoteConflicts((currentConflicts) => ({ ...currentConflicts, [latest.id]: { loading: false } }));
+        } else {
+          pushToast('Note was not saved', executionErrorText(error));
+        }
       }).finally(() => {
         noteUpdateInFlight.current.delete(latest.id);
       });
@@ -2063,13 +2071,38 @@ export default function App() {
       return true;
     } catch (error) {
       deletedWorkspaceNoteIds.current.delete(note.id);
-      pushToast(error instanceof ApiError && error.status === 409 ? 'Note changed elsewhere' : 'Note could not be deleted',
-        error instanceof ApiError && error.status === 409
-          ? 'The saved note changed after it was loaded. Reload Notes before trying again.'
-          : executionErrorText(error));
+      if (error instanceof ApiError && error.status === 409) {
+        setNoteConflicts((currentConflicts) => ({ ...currentConflicts, [note.id]: { loading: false } }));
+      } else {
+        pushToast('Note could not be deleted', executionErrorText(error));
+      }
       return false;
     }
   }, [pushToast]);
+
+  const reloadWorkspaceNote = useCallback(async (noteId: string) => {
+    setNoteConflicts((currentConflicts) => ({ ...currentConflicts, [noteId]: { loading: true } }));
+    const timer = noteSyncTimers.current.get(noteId);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      noteSyncTimers.current.delete(noteId);
+    }
+    try {
+      const record = await api.fetchWorkspaceNote(noteId);
+      const note = { ...workspaceNoteFromRecord(record, projectCatalog), source: 'live' as const };
+      savedNoteRevisions.current.set(record.id, record.revision);
+      savedNoteFingerprints.current.set(note.id, workspaceNoteFingerprint(note));
+      savedNotePrivacyPolicies.current.set(note.id, note.privacyPolicy);
+      replaceWorkspaceNote(noteId, note);
+      setNoteConflicts((currentConflicts) => {
+        const nextConflicts = { ...currentConflicts };
+        delete nextConflicts[noteId];
+        return nextConflicts;
+      });
+    } catch (error) {
+      setNoteConflicts((currentConflicts) => ({ ...currentConflicts, [noteId]: { loading: false, error: executionErrorText(error) } }));
+    }
+  }, [projectCatalog, replaceWorkspaceNote]);
 
   const loadWorkspaceNotesPage = useCallback(async (cursor: string | null, append: boolean) => {
     if (notesPageLoading) return;
@@ -2984,7 +3017,7 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} onImportCopy={activeFilePreview.sourceFile ? (file, sourcePath) => void importFiles([file], undefined, sourcePath) : undefined} />
         ) : null}
-        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} projectId={notesProjectScopeId} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} onDeleteNote={handleDeleteWorkspaceNote} onShowAllNotes={() => handleSidebarNavigate('notes')} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} projectId={notesProjectScopeId} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} onDeleteNote={handleDeleteWorkspaceNote} onReloadNote={(id) => void reloadWorkspaceNote(id)} noteConflicts={noteConflicts} onShowAllNotes={() => handleSidebarNavigate('notes')} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onCancelRun={cancelAutomationRun} onRetryRun={retryAutomationRun} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} onSetArchived={setWorkspaceProjectArchived} /> : null}

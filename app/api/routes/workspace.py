@@ -1018,6 +1018,19 @@ async def list_personal_workspace_notes(
     return await _workspace_note_responses(db, items)
 
 
+@router.get("/notes/{note_id}", response_model=WorkspaceNoteResponse)
+async def get_personal_workspace_note(note_id: str, db: AsyncSession = Depends(get_db)) -> WorkspaceNoteResponse:
+    item = await db.get(WorkspaceObjectModel, note_id)
+    if (
+        item is None
+        or item.project_name is not None
+        or item.object_type != "manual_note"
+        or item.created_by != "user"
+    ):
+        raise HTTPException(status_code=404, detail="Personal workspace note not found.")
+    return await _workspace_note_response(db, item)
+
+
 @router.post("/notes", response_model=WorkspaceNoteResponse, status_code=status.HTTP_201_CREATED)
 async def create_personal_workspace_note(
     body: WorkspaceNoteWrite,
