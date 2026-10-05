@@ -367,6 +367,11 @@ export const api = {
     }));
   },
 
+  async deleteWorkspaceNote(id: string, expectedRevision: number): Promise<void> {
+    const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
+  },
+
   async fetchStudySessions(): Promise<StudySessionRecord[]> {
     return fetchAllCursorPages<StudySessionRecord>('/v1/study/sessions');
   },
