@@ -125,6 +125,10 @@ durable run; include all three volumes to recover the full workspace.
 Create and verify a point-in-time archive of all three stores with
 [`scripts/backup_compose.py`](scripts/backup_compose.py). See
 [`docs/compose-backup.md`](docs/compose-backup.md) for the restore procedure.
+When running directly against the default local SQLite configuration, use
+[`scripts/backup_local.py`](scripts/backup_local.py) instead; see
+[`docs/local-backup.md`](docs/local-backup.md) for its offline backup and
+restore procedure.
 
 ---
 
