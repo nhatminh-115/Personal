@@ -675,8 +675,9 @@ export const api = {
     }));
   },
 
-  async deleteWorkspaceObject(projectName: string, objectId: string): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, { method: 'DELETE' }));
+  async deleteWorkspaceObject(projectName: string, objectId: string, expectedRevision: number): Promise<void> {
+    const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}?${params}`, { method: 'DELETE' }));
   },
 
   async updateWorkspaceObject(projectName: string, objectId: string, input: {

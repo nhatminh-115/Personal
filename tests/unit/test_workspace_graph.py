@@ -543,6 +543,56 @@ async def test_workspace_object_revisions_reject_stale_board_and_notes_updates(a
 
 
 @pytest.mark.asyncio
+async def test_workspace_object_delete_rejects_stale_revision_and_preserves_latest_content(async_client):
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Shared Board note",
+        "content": "Original content",
+    })
+    assert created.status_code == 201
+    note = created.json()
+
+    updated = await async_client.put(f"/v1/workspace/projects/aura/objects/{note['id']}", json={
+        "title": "Shared Board note",
+        "content": "Edited in another tab",
+        "metadata_json": {},
+        "expected_revision": note["revision"],
+    })
+    assert updated.status_code == 200
+    assert updated.json()["revision"] == 2
+
+    stale_delete = await async_client.delete(
+        f"/v1/workspace/projects/aura/objects/{note['id']}?expected_revision={note['revision']}"
+    )
+    assert stale_delete.status_code == 409
+    assert stale_delete.json()["detail"] == {
+        "code": "WorkspaceObjectRevisionConflict",
+        "message": "Workspace object changed since it was loaded.",
+        "current_revision": 2,
+    }
+    latest = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    saved = next(item for item in latest["objects"] if item["id"] == note["id"])
+    assert saved["content"] == "Edited in another tab"
+    assert saved["revision"] == 2
+
+    current_delete = await async_client.delete(
+        f"/v1/workspace/projects/aura/objects/{note['id']}?expected_revision={updated.json()['revision']}"
+    )
+    assert current_delete.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_workspace_object_delete_requires_an_expected_revision(async_client):
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Revision-required note",
+        "content": "Body",
+    })
+    response = await async_client.delete(f"/v1/workspace/projects/aura/objects/{created.json()['id']}")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
 async def test_workspace_object_update_requires_an_expected_revision(async_client):
     created = await async_client.post("/v1/workspace/projects/aura/objects", json={
         "object_type": "manual_note",
@@ -658,8 +708,10 @@ async def test_project_context_can_select_a_personal_note_and_board_delete_only_
     })
     assert relation.status_code == 201
 
-    deleted_from_project = await async_client.delete(f"/v1/workspace/projects/aura/objects/{note_id}")
-    assert deleted_from_project.status_code == 204
+    deleted_from_project = await async_client.delete(
+        f"/v1/workspace/projects/aura/objects/{note_id}?expected_revision={board_edit.json()['revision']}"
+    )
+    assert deleted_from_project.status_code == 204, deleted_from_project.text
     graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
     assert note_id not in {item["id"] for item in graph["objects"]}
     assert note_id not in {object_id for edge in graph["edges"] for object_id in (edge["source_object_id"], edge["target_object_id"])}
@@ -1047,7 +1099,9 @@ async def test_user_workspace_object_can_be_restored_with_its_stable_id(async_cl
     assert created.status_code == 201
     assert created.json()["id"] == object_id
 
-    deleted = await async_client.delete(f"/v1/workspace/projects/aura/objects/{object_id}")
+    deleted = await async_client.delete(
+        f"/v1/workspace/projects/aura/objects/{object_id}?expected_revision={created.json()['revision']}"
+    )
     assert deleted.status_code == 204
 
     restored = await async_client.post("/v1/workspace/projects/aura/objects", json={

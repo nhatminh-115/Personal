@@ -528,7 +528,7 @@ describe('Persistent workspace graph Board projection', () => {
       const object = {
         id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
         object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
-        metadata_json: input.metadata_json ?? {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+        metadata_json: input.metadata_json ?? {}, revision: 1, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       } as WorkspaceObject;
       graph = { ...graph, objects: [...graph.objects.filter((item) => item.id !== object.id), object] };
       return object;
@@ -551,7 +551,7 @@ describe('Persistent workspace graph Board projection', () => {
     const undoButton = screen.getByTitle('Undo · Ctrl Z');
     await waitFor(() => expect(undoButton).toBeEnabled());
     fireEvent.click(undoButton);
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId!));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId!, 1));
     await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByTitle('Redo · Ctrl ⇧ Z'));
@@ -599,7 +599,7 @@ describe('Persistent workspace graph Board projection', () => {
     fireEvent.click(undoButton);
 
     const createdId = createObject.mock.calls[0][1].id ?? 'failed-undo-note';
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId, 1));
     await waitFor(() => expect(onToast).toHaveBeenCalledWith('Undo/redo could not be saved', expect.anything()));
     expect(await screen.findByText('Untitled note')).toBeInTheDocument();
     expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
@@ -741,7 +741,7 @@ describe('Persistent workspace graph Board projection', () => {
       const object = {
         id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
         object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
-        metadata_json: input.metadata_json ?? {}, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+        metadata_json: input.metadata_json ?? {}, revision: 1, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       } as WorkspaceObject;
       graph = { ...graph, objects: [...graph.objects.filter((item) => item.id !== object.id), object] };
       return object;
@@ -770,7 +770,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
     const noteId = createObject.mock.calls[0][1].id ?? 'restored-note-id';
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', noteId));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', noteId, 1));
     expect(saveCalls).toEqual([3]);
 
     releaseFirstSave();

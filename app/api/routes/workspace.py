@@ -1389,11 +1389,54 @@ async def update_workspace_object(
 
 
 @router.delete("/projects/{project_name}/objects/{object_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_workspace_object(project_name: str, object_id: str, db: AsyncSession = Depends(get_db)) -> None:
-    item = await db.get(WorkspaceObjectModel, object_id)
+async def delete_workspace_object(
+    project_name: str,
+    object_id: str,
+    expected_revision: int = Query(ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    result = await db.execute(
+        select(WorkspaceObjectModel)
+        .where(WorkspaceObjectModel.id == object_id)
+        .with_for_update()
+    )
+    item = result.scalar_one_or_none()
     if item is None or object_id not in await _project_objects_by_ids(db, project_name, [object_id]):
         raise HTTPException(status_code=404, detail="Workspace object not found.")
+    if item.revision != expected_revision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WorkspaceObjectRevisionConflict",
+                "message": "Workspace object changed since it was loaded.",
+                "current_revision": item.revision,
+            },
+        )
     if item.project_name is None and item.object_type in {"manual_note", "file_reference"}:
+        # Claim the current revision atomically on SQLite as well as databases
+        # that honor SELECT FOR UPDATE before removing this project's link.
+        claimed = await db.execute(
+            sa_update(WorkspaceObjectModel)
+            .where(
+                WorkspaceObjectModel.id == object_id,
+                WorkspaceObjectModel.revision == expected_revision,
+            )
+            .values(revision=WorkspaceObjectModel.revision)
+            .returning(WorkspaceObjectModel.id)
+        )
+        if claimed.scalar_one_or_none() is None:
+            await db.rollback()
+            current_revision = await db.scalar(
+                select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == object_id)
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "WorkspaceObjectRevisionConflict",
+                    "message": "Workspace object changed since it was loaded.",
+                    "current_revision": current_revision,
+                },
+            )
         await db.execute(
             sa_delete(WorkspaceEdgeModel).where(
                 WorkspaceEdgeModel.project_name == project_name,
@@ -1407,7 +1450,25 @@ async def delete_workspace_object(project_name: str, object_id: str, db: AsyncSe
         return
     if item.created_by != "user" or item.object_type not in {"manual_note", "file_reference", "context_bridge", "context_set", "conversation_branch"}:
         raise HTTPException(status_code=409, detail="Only user-authored workspace objects can be deleted.")
-    await db.delete(item)
+    deleted = await db.execute(
+        sa_delete(WorkspaceObjectModel).where(
+            WorkspaceObjectModel.id == object_id,
+            WorkspaceObjectModel.revision == expected_revision,
+        )
+    )
+    if deleted.rowcount != 1:
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == object_id)
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WorkspaceObjectRevisionConflict",
+                "message": "Workspace object changed since it was loaded.",
+                "current_revision": current_revision,
+            },
+        )
     await db.commit()
 
 

@@ -462,7 +462,13 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (removedUserEdges.length > 0) {
         await api.deleteWorkspaceEdges(workspaceProjectName, removedUserEdges.map((edge) => edge.id));
       }
-      for (const id of deletedObjectIds) await api.deleteWorkspaceObject(workspaceProjectName, id);
+      for (const id of deletedObjectIds) {
+        const node = currentObjects.get(id);
+        const revision = workspaceObjectRevisions.current.get(id) ?? node?.data.workspaceRevision;
+        if (typeof revision !== 'number') throw new Error('Workspace object revision is unavailable. Reload the Board before deleting it.');
+        await api.deleteWorkspaceObject(workspaceProjectName, id, revision);
+        workspaceObjectRevisions.current.delete(id);
+      }
 
       for (const [id, node] of targetObjects) {
         const before = currentObjects.get(id);
