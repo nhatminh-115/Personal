@@ -12,7 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel, SessionModel
 from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchQuery, ResearchSource, ResearchState, ResearchStatus, SourceStatus
-from scripts.dogfood_research_live import audit_dogfood_run, write_audit_report
+from scripts.dogfood_research_live import (
+    audit_dogfood_run,
+    failed_run_report,
+    latest_run_id_for_session,
+    write_audit_report,
+)
 
 
 @pytest.mark.asyncio
@@ -199,3 +204,76 @@ def test_research_dogfood_audit_artifact_is_sanitized_and_persistent(tmp_path):
     path = write_audit_report("run-safe", report, output_dir=tmp_path)
     assert path.name == "research-run-safe.json"
     assert json.loads(path.read_text(encoding="utf-8")) == report
+
+
+def test_research_dogfood_failure_report_is_sanitized():
+    report = failed_run_report(
+        "session-safe",
+        parent_run_id="run-safe",
+        http_status=503,
+        elapsed_seconds=1.234,
+        failure="persisted Research Specialist lineage could not be audited",
+    )
+
+    assert report == {
+        "scenario": "research_live_dogfood",
+        "session_id": "session-safe",
+        "parent_run_id": "run-safe",
+        "accepted": False,
+        "acceptance_failures": ["persisted Research Specialist lineage could not be audited"],
+        "http_status": 503,
+        "elapsed_seconds": 1.23,
+    }
+    assert "response" not in report
+    assert "prompt" not in report
+    assert "source" not in report
+
+
+@pytest.mark.asyncio
+async def test_research_dogfood_recovers_run_id_after_http_failure(test_db_session: AsyncSession):
+    session = SessionModel(id="sess-research-http-failure", title="Failed research dogfood")
+    test_db_session.add(session)
+    await test_db_session.flush()
+    run = RunModel(
+        id="run-research-http-failure",
+        session_id=session.id,
+        status="failed",
+        user_message="private prompt must not be copied to failure report",
+    )
+    test_db_session.add(run)
+    child_run = RunModel(
+        id="run-research-http-failure-child",
+        session_id=session.id,
+        parent_run_id=run.id,
+        status="failed",
+        user_message="private specialist prompt",
+    )
+    test_db_session.add(child_run)
+    await test_db_session.commit()
+
+    recovered = await latest_run_id_for_session(session.id, db=test_db_session)
+
+    assert recovered == run.id
+
+
+@pytest.mark.asyncio
+async def test_research_dogfood_audits_root_run_without_delegation_as_failure(test_db_session: AsyncSession):
+    session = SessionModel(id="sess-research-no-delegation", title="No delegation")
+    test_db_session.add(session)
+    await test_db_session.flush()
+    run = RunModel(
+        id="run-research-no-delegation",
+        session_id=session.id,
+        status="failed",
+        user_message="private prompt",
+    )
+    test_db_session.add(run)
+    await test_db_session.commit()
+
+    report = await audit_dogfood_run(run.id, db=test_db_session)
+
+    assert report["accepted"] is False
+    assert report["parent_run_id"] == run.id
+    assert report["acceptance_failures"] == [
+        "root did not persist a delegation to the Research Specialist"
+    ]
