@@ -92,8 +92,11 @@ async def test_mcp_streamable_http_discovery_and_execution(mcp_http_server: str)
         arguments={},
     )
     assert fail_result.success is False
-    assert fail_result.error is not None
-    assert "Error executing tool" in fail_result.error or "Simulated" in fail_result.error
+    assert fail_result.error == "MCP tool returned an error response."
+    assert fail_result.output == ""
+    assert "Error executing tool" not in fail_result.error
+    assert "Simulated HTTP tool failure" not in fail_result.error
+    assert fail_result.metadata["error_category"] == "mcp_tool_error"
 
     # Clean up
     await manager.disconnect_all()

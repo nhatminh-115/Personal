@@ -46,8 +46,9 @@ class MCPSecurityPolicy:
             jsonschema.validate(instance=arguments, schema=input_schema)
         except ValidationError as e:
             raise MCPValidationError(
-                f"Schema validation failed for MCP tool '{tool_name}': {e.message} (path: {list(e.path)})"
-            )
+                f"Schema validation failed for MCP tool '{tool_name}': arguments do not match the advertised schema "
+                f"(path: {list(e.path)})."
+            ) from None
 
     def evaluate_tool_security(
         self,
