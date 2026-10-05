@@ -279,6 +279,20 @@ async def submit_approval_decision(
                 logger.error(f"Graph execution failed during resume: {exc}", exc_info=True)
             run_record.status = RunStatus.FAILED.value
             run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
+
+            failure_response = (
+                MODEL_PROVIDER_FAILURE_MESSAGE
+                if provider_failure
+                else f"Run failed during execution: {exc}"
+            )
+            run_record.final_response = failure_response
+            delegation = await db.scalar(
+                select(DelegationModel).where(DelegationModel.child_run_id == run_record.id)
+            )
+            if delegation is not None:
+                delegation.status = RunStatus.FAILED.value
+                delegation.result_summary = failure_response
+                delegation.pending_approval_id = None
             await db.commit()
             if trace_service:
                 await trace_service.record_event(
@@ -287,16 +301,57 @@ async def submit_approval_decision(
                     event_type="run_failed",
                     payload={"error_category": "provider_failure" if provider_failure else "graph_failure"},
                 )
+
+            # A delegated child has its own durable graph thread. Once that thread
+            # has failed it cannot resume the root's delegated tool call itself, so
+            # deliver the terminal specialist result through the root's interrupt.
+            if delegation is not None and getattr(run_record, "parent_run_id", None):
+                parent = await trace_service.get_run(run_record.parent_run_id) if trace_service else None
+                if parent is not None:
+                    parent_config = {
+                        "configurable": {
+                            "thread_id": parent.id,
+                            "db": db,
+                            "memory_service": mem_service,
+                            "approval_service": approval_service,
+                            "trace_service": trace_service,
+                            "tool_registry": tool_registry,
+                            "model_router": model_router,
+                        }
+                    }
+                    parent_snapshot = await graph.aget_state(parent_config)
+                    parent_interrupt = _get_active_interrupt(parent_snapshot)
+                    if (
+                        parent_snapshot.next
+                        and parent_interrupt is not None
+                        and parent_interrupt.get("approval_id") == approval_id
+                    ):
+                        try:
+                            parent_final = await graph.ainvoke(
+                                Command(resume={
+                                    "decision": effective_decision,
+                                    "specialist_status": RunStatus.FAILED.value,
+                                    "summary": failure_response,
+                                }),
+                                config=parent_config,
+                            )
+                            post_parent_snapshot = await graph.aget_state(parent_config)
+                            if post_parent_snapshot.next:
+                                parent.status = RunStatus.WAITING_FOR_APPROVAL.value
+                            else:
+                                parent.status = parent_final.get("execution_status", RunStatus.FAILED.value)
+                                parent.final_response = parent_final.get("final_response")
+                                parent.error_message = parent_final.get("error_message")
+                        except Exception as parent_exc:
+                            await _record_parent_resume_failure(parent, parent_exc, trace_service)
+                    await db.commit()
+
             return ApprovalDecisionResponse(
                 approval_id=approval_id,
                 status=current_status,
                 run_id=run_record.id,
                 execution_status=RunStatus.FAILED.value,
-                final_response=(
-                    MODEL_PROVIDER_FAILURE_MESSAGE
-                    if provider_failure
-                    else f"Run failed during execution: {exc}"
-                ),
+                final_response=failure_response,
             )
 
         # Check if graph suspended at the NEXT interrupt (e.g. multi-tool approval)
