@@ -11,7 +11,7 @@ import json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DelegationModel, MemoryModel, RunEventModel, RunModel, SessionModel
-from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchQuery, ResearchSource, ResearchState, SourceStatus
+from app.research.models import ClaimType, EvidenceItem, ResearchClaim, ResearchQuery, ResearchSource, ResearchState, ResearchStatus, SourceStatus
 from scripts.dogfood_research_live import audit_dogfood_run, write_audit_report
 
 
@@ -113,6 +113,7 @@ async def test_dogfood_audit_preflight(test_db_session: AsyncSession):
 
     # 6. Mock LangGraph checkpointed ResearchState
     r_state = ResearchState()
+    r_state.status = ResearchStatus.COMPLETED
     r_state.queries.append(
         ResearchQuery(
             query_id="q1",
@@ -179,6 +180,10 @@ async def test_dogfood_audit_preflight(test_db_session: AsyncSession):
     assert report["evidence_count"] == 1
     assert report["claims_count"] == 1
     assert report["memory_count"] == 1
+    assert report["source_supported_claim_count"] == 1
+    assert report["provenance_memory_count"] == 1
+    assert report["accepted"] is True
+    assert report["acceptance_failures"] == []
 
 
 def test_research_dogfood_audit_artifact_is_sanitized_and_persistent(tmp_path):

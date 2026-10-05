@@ -40,15 +40,15 @@ Run the scripts from the repository root. They use isolated SQLite databases and
 
 | Scenario | Command | Required setup | What the report proves |
 | --- | --- | --- | --- |
-| Research prior-art investigation | **python scripts/dogfood_research_live.py** | Live model and research providers | Root-to-Research Specialist lineage, real model selection, research tools, checkpointed state, evidence and memory counts |
-| Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Hosted model credentials or an exact local Ollama override | A fresh session retrieves the expected project memory and does not retrieve a conflicting fact from another project |
-| Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Live model and research providers | A Research Specialist claim and evidence are persisted, selected into a durable Context Bridge, then compiled into a new chat as the sole selected object |
+| Research prior-art investigation | **python scripts/dogfood_research_live.py** | Hosted model credentials or an exact local Ollama override; `RESEARCH_PROVIDER_MODE=live` and network access | Root-to-Research Specialist lineage, real model selection, research tools, checkpointed state, evidence and memory counts |
+| Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Hosted model credentials or an exact local Ollama override | Live run `140a579e-2e21-4709-8237-5621ebc54ec5` retrieved the target project's two-person-review/rollback rule, excluded the foreign-project decoy, printed its acceptance result, and exited 0 using the installed local Ollama model. |
+| Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Hosted model credentials or an exact local Ollama override; `RESEARCH_PROVIDER_MODE=live` and network access | Live run `62c9e83c-4e54-48a5-bf3a-fb2c49712d76` delegated to the Research Specialist, persisted a verified claim from extracted evidence, created a durable Context Bridge, and compiled a fresh chat with that Bridge as its only selected object. It printed acceptance and exited 0 using local Ollama. |
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and hosted model | Exact catalog models preserve local-only and cloud-allowed profile policies through zero-invocation routing preview |
 | Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Hosted model credentials or an exact local Ollama override; CodeGraph is optional | Live run `98637894-40c8-4df0-b040-11eaadc24e00` delegated to the Coding Specialist, used the discovered `mcp_codegraph_codegraph_symbol_search` tool, selected the installed local `ollama:aura-qwen3-coding:4b-8k` model, and completed with parent and child checkpoints present and no pending approvals or tool failures. The script printed its acceptance result and exited 0. |
 
 The provider smoke test verifies MCP health, discovery, and one read-only tool
-call; it is not a complete AURA Coding Specialist run. The Coding Specialist
-and project-memory live dogfood scripts require **MODEL_PROVIDER=openai** and either
+call; it is not a complete AURA Coding Specialist run. The Coding Specialist,
+project-memory, and Context Bridge live dogfood scripts require **MODEL_PROVIDER=openai** and either
 **OPENAI_API_KEY** or **AURA_DOGFOOD_MODEL_OVERRIDE=ollama:model** with
 **OLLAMA_BASE_URL** on loopback. This scenario does not block other independent
 AURA milestones. CodeGraph remains optional, external, and absent from CI; AURA
@@ -69,4 +69,4 @@ and safe persisted events; it does not copy the response body or exception text.
 
 ## Interpreting results
 
-A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph provider smoke and the read-only Coding Specialist dogfood have both been verified locally; the dogfood used an explicit loopback Ollama override and did not require hosted credentials.
+A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. CodeGraph Coding Specialist and cross-session project-memory dogfood have both been verified locally with explicit loopback Ollama overrides; neither required hosted credentials.

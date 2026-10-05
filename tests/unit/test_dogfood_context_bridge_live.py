@@ -5,17 +5,19 @@ import subprocess
 import sys
 
 from scripts.dogfood_context_bridge_live import (
+    RESEARCH_PROMPT,
+    _chat_request_payload,
     _safe_context_manifest,
     _safe_run_trace,
     live_environment_error,
 )
 
 
-def test_preflight_requires_openai_and_live_research_credentials():
+def test_preflight_requires_live_research_and_a_real_model():
     assert "MODEL_PROVIDER=openai" in live_environment_error({
         "MODEL_PROVIDER": "mock", "OPENAI_API_KEY": "secret", "RESEARCH_PROVIDER_MODE": "live"
     })
-    assert "OPENAI_API_KEY" in live_environment_error({
+    assert "OPENAI_API_KEY or an explicit loopback Ollama override" in live_environment_error({
         "MODEL_PROVIDER": "openai", "OPENAI_API_KEY": " ", "RESEARCH_PROVIDER_MODE": "live"
     })
     assert "RESEARCH_PROVIDER_MODE=live" in live_environment_error({
@@ -24,6 +26,42 @@ def test_preflight_requires_openai_and_live_research_credentials():
     assert live_environment_error({
         "MODEL_PROVIDER": "openai", "OPENAI_API_KEY": "configured", "RESEARCH_PROVIDER_MODE": "live"
     }) is None
+
+
+def test_preflight_allows_only_exact_loopback_ollama_without_cloud_key():
+    local = {
+        "MODEL_PROVIDER": "openai",
+        "RESEARCH_PROVIDER_MODE": "live",
+        "AURA_DOGFOOD_MODEL_OVERRIDE": "ollama:aura-qwen3-coding:4b-8k",
+        "OLLAMA_BASE_URL": "http://127.0.0.1:11434/v1",
+    }
+    assert live_environment_error(local) is None
+    assert "exact ollama:model" in live_environment_error({
+        **local, "AURA_DOGFOOD_MODEL_OVERRIDE": "ollama: "
+    })
+    assert "loopback" in live_environment_error({
+        **local, "OLLAMA_BASE_URL": "https://models.example.com"
+    })
+
+
+def test_chat_request_propagates_exact_local_lock_to_research_and_merge():
+    environ = {"AURA_DOGFOOD_MODEL_OVERRIDE": "ollama:aura-qwen3-coding:4b-8k"}
+    research = _chat_request_payload("research-session", "project", task_type="research", environ=environ)
+    merge = _chat_request_payload(
+        "merge-session", "project", context_object_ids=["bridge-1"], environ=environ
+    )
+    assert research["task_type"] == "research"
+    assert merge["context_object_ids"] == ["bridge-1"]
+    for payload in (research, merge):
+        assert payload["model_override"] == "ollama:aura-qwen3-coding:4b-8k"
+        assert payload["reasoning_override"] == "instant"
+
+
+def test_live_prompt_requires_root_to_delegate_to_research_specialist():
+    assert "Delegate this request now to the Research Specialist" in RESEARCH_PROMPT
+    assert "delegate_task with specialist_name='research'" in RESEARCH_PROMPT
+    assert "record_research_claim" in RESEARCH_PROMPT
+    assert "exact evidence_id returned by extract_evidence" in RESEARCH_PROMPT
 
 
 def test_import_has_no_environment_or_filesystem_side_effects(tmp_path):

@@ -11,12 +11,18 @@ from pathlib import Path
 import time
 import uuid
 from typing import Any, Mapping
+from urllib.parse import urlparse
 
 RESEARCH_PROMPT = (
-    "Research reliable prior work on retrieval-augmented generation evaluation and identify one "
-    "narrow, source-supported finding about how retrieval quality is measured. Inspect at least one "
-    "source and record evidence with a locator. Separate verified claims from uncertainty. Do not "
-    "write files or use code-graph capabilities."
+    "You are the AURA root orchestrator. Delegate this request now to the Research Specialist using "
+    "delegate_task with specialist_name='research'; do not research or answer directly. Ask the "
+    "specialist to investigate reliable prior work on retrieval-augmented generation evaluation and "
+    "identify one narrow, source-supported finding about how retrieval quality is measured. It must "
+    "inspect at least one source and record evidence with a locator, and separate verified claims "
+    "from uncertainty. After extract_evidence succeeds, it must call record_research_claim with "
+    "claim_type='source_supported_fact' and the exact evidence_id returned by extract_evidence; "
+    "do not finish until the claim-recording tool succeeds. Do not write files or use code-graph "
+    "capabilities."
 )
 MERGE_PROMPT = (
     "Use only the selected Context Bridge. Summarize its verified research conclusion, name the "
@@ -29,11 +35,54 @@ def live_environment_error(environ: Mapping[str, str] | None = None) -> str | No
     values = os.environ if environ is None else environ
     if values.get("MODEL_PROVIDER", "").strip().lower() != "openai":
         return "Context-Bridge live dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
-    if not values.get("OPENAI_API_KEY", "").strip():
-        return "Context-Bridge live dogfood requires OPENAI_API_KEY; no model call was made."
     if values.get("RESEARCH_PROVIDER_MODE", "").strip().lower() != "live":
         return "Context-Bridge live dogfood requires RESEARCH_PROVIDER_MODE=live."
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override.startswith("ollama:"):
+        _provider, separator, model = model_override.partition(":")
+        if not separator or not model.strip():
+            return "AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+        local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+        try:
+            parsed_url = urlparse(local_url)
+            is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
+                "localhost", "127.0.0.1", "::1",
+            }
+        except ValueError:
+            is_loopback = False
+        if not is_loopback:
+            return "OLLAMA_BASE_URL must point to localhost or a loopback IP for an Ollama model override."
+        return None
+    if model_override:
+        return "Without an OpenAI key, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+    if not values.get("OPENAI_API_KEY", "").strip():
+        return "Context-Bridge live dogfood requires OPENAI_API_KEY or an explicit loopback Ollama override; no model call was made."
     return None
+
+
+def _chat_request_payload(
+    session_id: str,
+    project_name: str,
+    *,
+    task_type: str | None = None,
+    context_object_ids: list[str] | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    values = os.environ if environ is None else environ
+    payload: dict[str, Any] = {
+        "session_id": session_id,
+        "project_name": project_name,
+    }
+    if task_type:
+        payload["task_type"] = task_type
+    if context_object_ids is not None:
+        payload["context_object_ids"] = context_object_ids
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override:
+        payload["model_override"] = model_override
+        if model_override.startswith("ollama:"):
+            payload["reasoning_override"] = "instant"
+    return payload
 
 
 def _payload(event: Any) -> dict[str, Any]:
@@ -192,12 +241,11 @@ async def run_live_dogfood() -> None:
             project_response = await client.post("/v1/workspace/projects", json={"name": project_name})
             if project_response.status_code != 201:
                 raise SystemExit(f"Workspace project creation failed with HTTP {project_response.status_code}.")
-            research_response = await client.post("/v1/chat", json={
-                "session_id": research_session,
-                "project_name": project_name,
-                "task_type": "research",
-                "message": RESEARCH_PROMPT,
-            })
+            research_request = _chat_request_payload(
+                research_session, project_name, task_type="research"
+            )
+            research_request["message"] = RESEARCH_PROMPT
+            research_response = await client.post("/v1/chat", json=research_request)
             if research_response.status_code != 200:
                 raise SystemExit(f"Research /v1/chat failed with HTTP {research_response.status_code}.")
             research_payload = research_response.json()
@@ -243,12 +291,11 @@ async def run_live_dogfood() -> None:
             bridge_id = bridge_response.json().get("id")
             if not isinstance(bridge_id, str):
                 raise SystemExit("Context Bridge endpoint returned no durable object ID.")
-            merge_response = await client.post("/v1/chat", json={
-                "session_id": merge_session,
-                "project_name": project_name,
-                "message": MERGE_PROMPT,
-                "context_object_ids": [bridge_id],
-            })
+            merge_request = _chat_request_payload(
+                merge_session, project_name, context_object_ids=[bridge_id]
+            )
+            merge_request["message"] = MERGE_PROMPT
+            merge_response = await client.post("/v1/chat", json=merge_request)
             if merge_response.status_code != 200:
                 raise SystemExit(f"Bridge merge /v1/chat failed with HTTP {merge_response.status_code}.")
             merge_payload = merge_response.json()
