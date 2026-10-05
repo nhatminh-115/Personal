@@ -324,16 +324,17 @@ async def test_rejected_specialist_routing_confirmation_cancels_child_without_cl
 
 
 @pytest.mark.parametrize(
-    ("specialist_name", "overrides", "expected_model", "expected_reasoning_policy", "expected_reasoning_effort", "expected_lock"),
+    ("specialist_name", "overrides", "expected_model", "expected_reasoning_policy", "expected_reasoning_effort", "expected_reasoning_bounds", "expected_lock"),
     [
-        ("research", {"reasoning_override": "high"}, None, "fixed", "high", False),
-        ("coding", {"model_override": "mock:mock-default"}, "mock:mock-default", "adaptive", "medium", True),
+        ("research", {"reasoning_override": "high"}, None, "fixed", "high", None, False),
+        ("coding", {"model_override": "mock:mock-default"}, "mock:mock-default", "adaptive", None, {"min": "medium", "max": "high"}, True),
         (
             "coding",
             {"model_override": "mock:mock-default", "reasoning_override": "high"},
             "mock:mock-default",
             "fixed",
             "high",
+            None,
             True,
         ),
     ],
@@ -348,6 +349,7 @@ async def test_temporary_routing_overrides_propagate_to_specialist_snapshot(
     expected_model,
     expected_reasoning_policy,
     expected_reasoning_effort,
+    expected_reasoning_bounds,
     expected_lock,
 ):
     """Temporary root controls reach a child without replacing its route policy."""
@@ -401,6 +403,7 @@ async def test_temporary_routing_overrides_propagate_to_specialist_snapshot(
     assert snapshot["explicit_model_override"] == expected_model
     assert snapshot["reasoning_policy"] == expected_reasoning_policy
     assert snapshot["reasoning_effort"] == expected_reasoning_effort
+    assert snapshot.get("reasoning_bounds") == expected_reasoning_bounds
     assert any(context.run_id == child.id for context in selected_contexts)
 
 

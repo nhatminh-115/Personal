@@ -192,6 +192,10 @@ class DelegationRuntime:
                             "explicit_model_override": child_rc.explicit_model_override,
                             "reasoning_policy": child_rc.reasoning_policy.value if child_rc.reasoning_policy else None,
                             "reasoning_effort": child_rc.reasoning_effort.value if child_rc.reasoning_effort else None,
+                            "reasoning_bounds": {
+                                "min": child_rc.reasoning_effort_min.value if child_rc.reasoning_effort_min else None,
+                                "max": child_rc.reasoning_effort_max.value if child_rc.reasoning_effort_max else None,
+                            } if child_rc.reasoning_policy and child_rc.reasoning_policy.value == "adaptive" else None,
                         }
                     )
                     db.add(child_run)

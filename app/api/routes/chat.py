@@ -147,6 +147,10 @@ async def chat_endpoint(
             "explicit_model_override": root_context.explicit_model_override,
             "reasoning_policy": root_context.reasoning_policy.value if root_context.reasoning_policy else None,
             "reasoning_effort": root_context.reasoning_effort.value if root_context.reasoning_effort else None,
+            "reasoning_bounds": {
+                "min": root_context.reasoning_effort_min.value if root_context.reasoning_effort_min else None,
+                "max": root_context.reasoning_effort_max.value if root_context.reasoning_effort_max else None,
+            } if root_context.reasoning_policy and root_context.reasoning_policy.value == "adaptive" else None,
         }
     )
     db.add(run_record)

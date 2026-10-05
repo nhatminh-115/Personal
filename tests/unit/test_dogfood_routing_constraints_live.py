@@ -4,7 +4,7 @@ import os
 import subprocess
 import sys
 
-from scripts.dogfood_routing_constraints_live import configured_model, live_environment_error
+from scripts.dogfood_routing_constraints_live import _draft, configured_model, live_environment_error
 
 
 def test_zero_invocation_preview_does_not_require_model_credentials():
@@ -27,6 +27,19 @@ def test_configured_model_uses_explicit_provider_kind_and_exact_catalog_id():
 def test_unknown_or_unavailable_catalog_rows_are_not_guessed():
     assert configured_model([{"id": "local", "kind": "unknown", "available": True, "models": [{"id": "model"}]}], local=True) is None
     assert configured_model([{"id": "cloud", "kind": "cloud", "available": False, "models": [{"id": "model"}]}], local=False) is None
+
+
+def test_routing_profile_draft_preserves_exact_provider_model_identity():
+    draft = _draft("Local", "ollama:qwen:latest", "local_only", "none")
+    route = draft["routes"]["root"]
+    assert route["model_override"] == "ollama:qwen:latest"
+    assert route.get("provider_override") is None
+    assert route["reasoning"] == {
+        "policy": "adaptive",
+        "effort": "medium",
+        "min_effort": "instant",
+        "max_effort": "max",
+    }
 
 
 def test_import_does_not_create_runtime_state_or_change_environment(tmp_path):

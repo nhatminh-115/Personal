@@ -1346,12 +1346,14 @@ async def test_delegation_model_lock_preserves_child_reasoning_route(test_db_ses
     assert child is not None
     assert child.routing_snapshot_json["explicit_model_override"] == "mock:locked"
     assert child.routing_snapshot_json["reasoning_policy"] == "adaptive"
-    assert child.routing_snapshot_json["reasoning_effort"] == "medium"
+    assert child.routing_snapshot_json["reasoning_effort"] is None
     child_state = mock_graph.ainvoke.await_args.args[0]
     child_routing = child_state["metadata"]["routing_context_dict"]
     assert child_routing["explicit_model_override"] == "mock:locked"
     assert child_routing["reasoning_policy"] == "adaptive"
-    assert child_routing["reasoning_effort"] == "medium"
+    assert child_routing["reasoning_effort"] is None
+    assert child_routing["reasoning_effort_min"] == "medium"
+    assert child_routing["reasoning_effort_max"] == "high"
 
 
 @pytest.mark.asyncio
@@ -1648,6 +1650,48 @@ def test_explicit_override_adaptive_returns_fixed_by_model_and_unknown_truthfull
     )
     sel3 = policy.select(context=ctx3, available_metadata=meta, default_provider="p_mock")
     assert sel3.reasoning_effort_selected == "medium"
+
+
+@pytest.mark.parametrize(
+    ("model", "support", "expected"),
+    [("m_fixed", "fixed_by_model", "fixed_by_model"), ("m_unknown", "unknown", "unknown")],
+)
+def test_profile_adaptive_exact_model_preserves_uncontrolled_reasoning_truthfully(model, support, expected):
+    """Profile application must not turn adaptive reasoning into a fixed-effort request."""
+    router = ModelRouter()
+    router.register_provider(
+        MockModelProvider(),
+        ProviderMetadata(
+            name="mock",
+            capabilities=["general", "reasoning"],
+            default_model=model,
+            models=[model],
+            allow_arbitrary_models=True,
+            tool_support={model: "supported"},
+            reasoning_support={model: support},
+        ),
+    )
+    profile = RoutingProfile(
+        id="adaptive-exact-model",
+        name="Adaptive exact model",
+        routes={"root": RouteConfig(
+            model_override=f"mock:{model}",
+            reasoning=ReasoningConfig(
+                policy=ReasoningPolicy.ADAPTIVE,
+                effort=ReasoningEffort.MEDIUM,
+                min_effort=ReasoningEffort.INSTANT,
+                max_effort=ReasoningEffort.MAX,
+            ),
+        )},
+    )
+
+    context = apply_routing_profile_to_context(
+        profile, "root", RoutingContext(requires_tools=False), "default"
+    )
+    assert context.reasoning_policy == ReasoningPolicy.ADAPTIVE
+    assert context.reasoning_effort is None
+    _, selection = router.select_model_for_task(context)
+    assert selection.reasoning_effort_selected == expected
 
 
 def test_explicit_override_adaptive_rejects_model_below_profile_minimum():
