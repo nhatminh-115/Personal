@@ -1,5 +1,7 @@
 """Integration tests for database persistence across re-queries."""
 
+from datetime import datetime, timezone
+
 import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,3 +48,21 @@ async def test_full_run_and_event_persistence(test_db_session: AsyncSession):
     assert len(events) == 2
     assert events[0].event_type == "request_received"
     assert events[1].event_type == "model_called"
+
+
+@pytest.mark.asyncio
+async def test_trace_service_orders_equal_timestamps_deterministically(test_db_session: AsyncSession):
+    session = SessionModel(id="tie-session", title="Tie")
+    run = RunModel(id="tie-run", session_id=session.id, status="completed", user_message="trace")
+    event_time = datetime.now(timezone.utc)
+    test_db_session.add_all([
+        session,
+        run,
+        RunEventModel(id="event-z", run_id=run.id, event_type="later-id", payload={}, created_at=event_time),
+        RunEventModel(id="event-a", run_id=run.id, event_type="earlier-id", payload={}, created_at=event_time),
+    ])
+    await test_db_session.commit()
+
+    events = await TraceService(test_db_session).get_run_events(run.id)
+
+    assert [event.id for event in events] == ["event-a", "event-z"]

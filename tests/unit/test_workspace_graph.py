@@ -1348,16 +1348,17 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
         id="trace-answer-object", project_name="aura", session_id=session.id, object_type="conversation_turn",
         created_by="assistant", title="Answer", content="private assistant response", metadata_json={"role": "assistant", "run_id": run.id},
     )
+    event_time = datetime.now(timezone.utc)
     events = [
         RunEventModel(id="trace-model-event", run_id=run.id, event_type="model_selected", payload={
             "agent_role": "root", "provider": "local", "model": "test-model", "prompt": "private prompt secret",
-        }),
+        }, created_at=event_time),
         RunEventModel(id="trace-tool-request", run_id=run.id, event_type="tool_requested", payload={
             "tool": "workspace.read", "tool_call_id": "call-1", "arguments": {"path": "secret/path.txt"},
-        }),
+        }, created_at=event_time + timedelta(seconds=1)),
         RunEventModel(id="trace-tool-result", run_id=run.id, event_type="tool_executed", payload={
             "tool": "workspace.read", "result": {"success": True, "output": "private tool output secret"},
-        }),
+        }, created_at=event_time + timedelta(seconds=2)),
         RunEventModel(id="trace-research-failure", run_id=run.id, event_type="tool_executed", payload={
             "tool": "research_search", "result": {
                 "success": False,
@@ -1367,7 +1368,7 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
                     "query": "private research query",
                 },
             },
-        }),
+        }, created_at=event_time + timedelta(seconds=3)),
         RunEventModel(id="trace-research-success", run_id=run.id, event_type="tool_executed", payload={
             "tool": "research_search", "result": {
                 "success": True,
@@ -1376,8 +1377,8 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
                     "failed_providers": ["Semantic Scholar"],
                 },
             },
-        }),
-        RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", payload={"text": "never expose"}),
+        }, created_at=event_time + timedelta(seconds=4)),
+        RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", payload={"text": "never expose"}, created_at=event_time + timedelta(seconds=5)),
     ]
     test_db_session.add_all([session, run, user, assistant, *events])
     await test_db_session.commit()
