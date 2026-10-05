@@ -175,7 +175,10 @@ keeps a link back to the source claim's project Board. Learning cards persist
 their review count and next review date with the workspace object. A review
 rating schedules the next review after 1, 3, or 7 days; changing a card's
 question or answer resets that schedule. Study's keyset-paged review queue
-shows unreviewed cards and cards whose next review date has arrived.
+shows unreviewed cards and cards whose next review date has arrived. Study
+reflections and cards use workspace-object revisions: stale edits, reviews, or
+deletions return a conflict instead of replacing newer saved content, and the
+UI lets the user confirm loading the current saved Study state.
 
 Chat requests may select project-scoped workspace object IDs. The Context
 Compiler validates scope, follows only explicitly selected/linked context

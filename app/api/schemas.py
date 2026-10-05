@@ -292,15 +292,18 @@ class StudySessionWrite(BaseModel):
 
 class StudyReflectionWrite(BaseModel):
     reflection: str = Field(default="", max_length=12_000)
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class StudyCardWrite(BaseModel):
     question: str = Field(min_length=1, max_length=2_000)
     answer: str = Field(min_length=1, max_length=8_000)
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class StudyCardReviewWrite(BaseModel):
     rating: Literal["again", "remembered", "easy"]
+    expected_revision: int = Field(ge=1)
 
 
 class StudyCardResponse(BaseModel):
@@ -313,6 +316,7 @@ class StudyCardResponse(BaseModel):
     review_count: int = 0
     reviewed_at: Optional[datetime] = None
     next_review_at: Optional[datetime] = None
+    revision: int = 1
 
 
 class StudySessionResponse(BaseModel):
@@ -325,6 +329,7 @@ class StudySessionResponse(BaseModel):
     reflection: str = ""
     started_at: datetime
     completed_at: Optional[datetime] = None
+    revision: int = 1
 
 
 class WorkspaceLibraryReferenceWrite(BaseModel):

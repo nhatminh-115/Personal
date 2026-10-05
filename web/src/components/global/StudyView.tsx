@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowRight, BookOpenText, Play, Save } from 'lucide-react';
 import type { LibraryItem, WorkspaceNote } from '../../data/workspaceData';
 import type { StudyCardRating, StudyCardRecord, StudySessionRecord } from '../../types';
+import { ApiError } from '../../services/api';
 import './StudyView.css';
 
 const EMPTY_STUDY_NOTES: WorkspaceNote[] = [];
@@ -40,10 +41,11 @@ interface StudyViewProps {
   onRefreshDueCards?: () => Promise<void>;
   onCompleteSession: (sessionId: string) => void;
   onCreateCard: (sessionId: string, question: string, answer: string) => Promise<void>;
-  onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string) => Promise<void>;
-  onReviewCard?: (cardId: string, sessionId: string, rating: StudyCardRating) => Promise<StudyCardRecord>;
-  onDeleteCard: (cardId: string, sessionId: string) => Promise<void>;
-  onSaveReflection: (sessionId: string, reflection: string) => Promise<void>;
+  onUpdateCard: (cardId: string, sessionId: string, question: string, answer: string, revision: number) => Promise<void>;
+  onReviewCard?: (cardId: string, sessionId: string, rating: StudyCardRating, revision: number) => Promise<StudyCardRecord>;
+  onDeleteCard: (cardId: string, sessionId: string, revision: number) => Promise<void>;
+  onSaveReflection: (sessionId: string, reflection: string, revision: number) => Promise<void>;
+  onReloadStudyContent?: () => Promise<void>;
   onOpenResearchFinding?: (objectId: string, projectName: string) => void;
   focusSessionId?: string | null;
 }
@@ -52,21 +54,26 @@ function isStudyMaterial(item: LibraryItem) {
   return item.collection === 'Study' || item.collection === 'Research';
 }
 
-function StudyReflectionEditor({ session, onSave }: { session: StudySessionRecord; onSave: (sessionId: string, reflection: string) => Promise<void> }) {
+function StudyReflectionEditor({ session, onSave, onReload }: { session: StudySessionRecord; onSave: (sessionId: string, reflection: string, revision: number) => Promise<void>; onReload: () => Promise<void> }) {
   const savedReflection = session.reflection ?? '';
   const [draft, setDraft] = useState(savedReflection);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflicted, setConflicted] = useState(false);
 
   useEffect(() => setDraft(savedReflection), [session.id, savedReflection]);
 
   const save = async () => {
     setSaving(true);
     setError(null);
+    setConflicted(false);
     try {
-      await onSave(session.id, draft);
-    } catch {
-      setError('Could not save this reflection. Try again.');
+      await onSave(session.id, draft, session.revision);
+    } catch (cause) {
+      setConflicted(cause instanceof ApiError && cause.status === 409);
+      setError(cause instanceof ApiError && cause.status === 409
+        ? 'This reflection changed elsewhere. Your draft is still here.'
+        : 'Could not save this reflection. Try again.');
     } finally {
       setSaving(false);
     }
@@ -89,16 +96,20 @@ function StudyReflectionEditor({ session, onSave }: { session: StudySessionRecor
           <Save size={13} /> {saving ? 'Saving…' : 'Save reflection'}
         </button>
       </div>
-      {error ? <p role="alert" className="study-reflection__error">{error}</p> : null}
+      {error ? <p role="alert" className="study-reflection__error">{error}{conflicted ? <> <button type="button" onClick={() => {
+        if (!window.confirm('Discard this draft and load the saved reflection?')) return;
+        void onReload().then(() => setError(null)).catch(() => setError('Could not reload the saved reflection. Try again.'));
+      }}>Load saved version</button></> : null}</p> : null}
     </div>
   );
 }
 
-function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
+function StudyCardRow({ card, onUpdate, onReview, onDelete, onReload }: {
   card: StudyCardRecord;
-  onUpdate: (question: string, answer: string) => Promise<void>;
-  onReview?: (rating: StudyCardRating) => Promise<StudyCardRecord>;
-  onDelete: () => Promise<void>;
+  onUpdate: (question: string, answer: string, revision: number) => Promise<void>;
+  onReview?: (rating: StudyCardRating, revision: number) => Promise<StudyCardRecord>;
+  onDelete: (revision: number) => Promise<void>;
+  onReload: () => Promise<void>;
 }) {
   const [revealed, setRevealed] = useState(false);
   const [reviewedCard, setReviewedCard] = useState(card);
@@ -107,6 +118,7 @@ function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
   const [answer, setAnswer] = useState(card.answer);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflicted, setConflicted] = useState(false);
 
   useEffect(() => {
     setQuestion(card.question);
@@ -117,11 +129,15 @@ function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
   const save = async () => {
     setBusy(true);
     setError(null);
+    setConflicted(false);
     try {
-      await onUpdate(question, answer);
+      await onUpdate(question, answer, card.revision);
       setEditing(false);
-    } catch {
-      setError('Could not save this card. Try again.');
+    } catch (cause) {
+      setConflicted(cause instanceof ApiError && cause.status === 409);
+      setError(cause instanceof ApiError && cause.status === 409
+        ? 'This card changed elsewhere. Your draft is still here.'
+        : 'Could not save this card. Try again.');
     } finally {
       setBusy(false);
     }
@@ -130,10 +146,14 @@ function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
   const remove = async () => {
     setBusy(true);
     setError(null);
+    setConflicted(false);
     try {
-      await onDelete();
-    } catch {
-      setError('Could not delete this card. Try again.');
+      await onDelete(card.revision);
+    } catch (cause) {
+      setConflicted(cause instanceof ApiError && cause.status === 409);
+      setError(cause instanceof ApiError && cause.status === 409
+        ? 'This card changed elsewhere and was not deleted.'
+        : 'Could not delete this card. Try again.');
       setBusy(false);
     }
   };
@@ -142,12 +162,16 @@ function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
     if (!onReview) return;
     setBusy(true);
     setError(null);
+    setConflicted(false);
     try {
-      const updated = await onReview(rating);
+      const updated = await onReview(rating, card.revision);
       setReviewedCard(updated);
       setRevealed(false);
-    } catch {
-      setError('Could not save this review. Try again.');
+    } catch (cause) {
+      setConflicted(cause instanceof ApiError && cause.status === 409);
+      setError(cause instanceof ApiError && cause.status === 409
+        ? 'This card changed elsewhere. Reload it before reviewing.'
+        : 'Could not save this review. Try again.');
     } finally {
       setBusy(false);
     }
@@ -189,17 +213,21 @@ function StudyCardRow({ card, onUpdate, onReview, onDelete }: {
           </div>
         </>
       )}
-      {error ? <p role="alert" className="study-reflection__error">{error}</p> : null}
+      {error ? <p role="alert" className="study-reflection__error">{error}{conflicted ? <> <button type="button" onClick={() => {
+        if (!window.confirm('Discard the current draft and load the saved card?')) return;
+        void onReload().then(() => { setEditing(false); setError(null); }).catch(() => setError('Could not reload the saved card. Try again.'));
+      }}>Load saved version</button></> : null}</p> : null}
     </article>
   );
 }
 
-function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete }: {
+function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete, onReload }: {
   cards: StudyCardRecord[];
   onCreate: (question: string, answer: string) => Promise<void>;
-  onUpdate: (cardId: string, question: string, answer: string) => Promise<void>;
-  onReview?: (cardId: string, sessionId: string, rating: StudyCardRating) => Promise<StudyCardRecord>;
-  onDelete: (cardId: string) => Promise<void>;
+  onUpdate: (cardId: string, question: string, answer: string, revision: number) => Promise<void>;
+  onReview?: (cardId: string, sessionId: string, rating: StudyCardRating, revision: number) => Promise<StudyCardRecord>;
+  onDelete: (cardId: string, revision: number) => Promise<void>;
+  onReload: () => Promise<void>;
 }) {
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState('');
@@ -227,9 +255,10 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete }: 
         <StudyCardRow
           key={card.id}
           card={card}
-          onUpdate={(nextQuestion, nextAnswer) => onUpdate(card.id, nextQuestion, nextAnswer)}
-          onReview={onReview ? (rating) => onReview(card.id, card.session_id, rating) : undefined}
-          onDelete={() => onDelete(card.id)}
+          onUpdate={(nextQuestion, nextAnswer, revision) => onUpdate(card.id, nextQuestion, nextAnswer, revision)}
+          onReview={onReview ? (rating, revision) => onReview(card.id, card.session_id, rating, revision) : undefined}
+          onDelete={(revision) => onDelete(card.id, revision)}
+          onReload={onReload}
         />
       ))}
       <div className="study-card__edit">
@@ -242,7 +271,8 @@ function StudyCardCollection({ cards, onCreate, onUpdate, onReview, onDelete }: 
   );
 }
 
-export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, dueCards = [], hasMoreDueCards = false, loadingDueCards = false, loadingMoreDueCards = false, dueCardsLoadError, onLoadMoreDueCards, onRefreshDueCards, onCompleteSession, onCreateCard, onUpdateCard, onReviewCard, onDeleteCard, onSaveReflection, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
+export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes, hasMoreLibrary = false, loadingMoreLibrary = false, libraryLoadError, onLoadMoreLibrary, onOpenItem, onBrowseLibrary, onStartSession, onStartNoteSession, sessions, hasMoreSessions = false, loadingMoreSessions = false, sessionsLoadError, onLoadMoreSessions, cards = [], hasMoreCards = false, loadingMoreCards = false, cardsLoadError, onLoadMoreCards, dueCards = [], hasMoreDueCards = false, loadingDueCards = false, loadingMoreDueCards = false, dueCardsLoadError, onLoadMoreDueCards, onRefreshDueCards, onCompleteSession, onCreateCard, onUpdateCard, onReviewCard, onDeleteCard, onSaveReflection, onReloadStudyContent, onOpenResearchFinding, focusSessionId }: StudyViewProps) {
+  const reloadStudyContent = onReloadStudyContent ?? (async () => undefined);
   const materials = libraryItems.filter(isStudyMaterial);
   const studyNotes = notes.filter((note) => note.source === 'live' || note.source === 'local');
   const materialIds = new Set([...materials.map((item) => item.id), ...studyNotes.map((note) => note.id)]);
@@ -278,9 +308,10 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
             <small>{sessions.find((session) => session.id === card.session_id)?.track_title ?? 'Earlier Study session'}</small>
             <StudyCardRow
               card={card}
-              onUpdate={(question, answer) => onUpdateCard(card.id, card.session_id, question, answer)}
-              onReview={onReviewCard ? (rating) => onReviewCard(card.id, card.session_id, rating) : undefined}
-              onDelete={() => onDeleteCard(card.id, card.session_id)}
+              onUpdate={(question, answer, revision) => onUpdateCard(card.id, card.session_id, question, answer, revision)}
+              onReview={onReviewCard ? (rating, revision) => onReviewCard(card.id, card.session_id, rating, revision) : undefined}
+              onDelete={(revision) => onDeleteCard(card.id, card.session_id, revision)}
+              onReload={reloadStudyContent}
             />
           </article>
         ))}
@@ -321,14 +352,15 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                       >
                         <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
                         {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
-                        <StudyReflectionEditor session={session} onSave={onSaveReflection} />
-                        <StudyCardCollection
-                          cards={cards.filter((card) => card.session_id === session.id)}
-                          onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
-                          onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
-                          onReview={onReviewCard}
-                          onDelete={(cardId) => onDeleteCard(cardId, session.id)}
-                        />
+                          <StudyReflectionEditor session={session} onSave={onSaveReflection} onReload={reloadStudyContent} />
+                          <StudyCardCollection
+                            cards={cards.filter((card) => card.session_id === session.id)}
+                            onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
+                            onUpdate={(cardId, question, answer, revision) => onUpdateCard(cardId, session.id, question, answer, revision)}
+                            onReview={onReviewCard}
+                            onDelete={(cardId, revision) => onDeleteCard(cardId, session.id, revision)}
+                            onReload={reloadStudyContent}
+                          />
                       </article>
                     ))}
                   </div>
@@ -388,13 +420,14 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                         >
                           <span>{session.status === 'completed' ? 'Completed' : 'In progress'} · {new Date(session.started_at).toLocaleDateString()}</span>
                           {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
-                          <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+                        <StudyReflectionEditor session={session} onSave={onSaveReflection} onReload={reloadStudyContent} />
                           <StudyCardCollection
                             cards={cards.filter((card) => card.session_id === session.id)}
                           onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
-                          onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                          onUpdate={(cardId, question, answer, revision) => onUpdateCard(cardId, session.id, question, answer, revision)}
                           onReview={onReviewCard}
-                          onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+                          onDelete={(cardId, revision) => onDeleteCard(cardId, session.id, revision)}
+                          onReload={reloadStudyContent}
                           />
                         </article>
                       ))}
@@ -444,13 +477,14 @@ export function StudyView({ libraryItems, notes = EMPTY_STUDY_NOTES, hasMoreNote
                 </button>
               ) : null}
               {session.status === 'in_progress' ? <button type="button" onClick={() => onCompleteSession(session.id)}>Mark complete</button> : null}
-              <StudyReflectionEditor session={session} onSave={onSaveReflection} />
+              <StudyReflectionEditor session={session} onSave={onSaveReflection} onReload={reloadStudyContent} />
               <StudyCardCollection
                 cards={cards.filter((card) => card.session_id === session.id)}
                 onCreate={(question, answer) => onCreateCard(session.id, question, answer)}
-                onUpdate={(cardId, question, answer) => onUpdateCard(cardId, session.id, question, answer)}
+                onUpdate={(cardId, question, answer, revision) => onUpdateCard(cardId, session.id, question, answer, revision)}
                 onReview={onReviewCard}
-                onDelete={(cardId) => onDeleteCard(cardId, session.id)}
+                onDelete={(cardId, revision) => onDeleteCard(cardId, session.id, revision)}
+                onReload={reloadStudyContent}
               />
             </article>
           ))}

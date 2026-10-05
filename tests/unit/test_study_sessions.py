@@ -27,6 +27,7 @@ async def test_study_session_lifecycle_persists_in_the_shared_workspace_graph(as
     assert completed.status_code == 200
     assert completed.json()["status"] == "completed"
     assert completed.json()["completed_at"] is not None
+    assert completed.json()["revision"] == session["revision"] + 1
 
     repeated = await async_client.post(f"/v1/study/sessions/{session['id']}/complete")
     assert repeated.json() == completed.json()
@@ -97,7 +98,7 @@ async def test_study_review_queue_returns_unreviewed_and_due_cards_with_keyset_p
 
     scheduled = await async_client.post(
         f"/v1/study/sessions/{session_id}/cards/{cards[2]['id']}/review",
-        json={"rating": "remembered"},
+        json={"rating": "remembered", "expected_revision": cards[2]["revision"]},
     )
     assert scheduled.status_code == 200
     scheduled_card = await test_db_session.get(WorkspaceObjectModel, cards[2]["id"])
@@ -268,7 +269,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
 
     saved_reflection = await async_client.put(
         f"/v1/study/sessions/{started.json()['id']}/reflection",
-        json={"reflection": "Separate the verified claim from its supporting evidence."},
+        json={"reflection": "Separate the verified claim from its supporting evidence.", "expected_revision": started.json()["revision"]},
     )
     assert saved_reflection.status_code == 200
     assert saved_reflection.json()["reflection"] == "Separate the verified claim from its supporting evidence."
@@ -312,7 +313,7 @@ async def test_study_session_can_link_only_verified_project_research_claims(asyn
 
     review = await async_client.post(
         f"/v1/study/sessions/{started.json()['id']}/cards/{card['id']}/review",
-        json={"rating": "easy"},
+        json={"rating": "easy", "expected_revision": card["revision"]},
     )
     assert review.status_code == 200, review.text
     assert review.json()["review_count"] == 1
@@ -444,7 +445,7 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
 
     reviewed = await async_client.post(
         f"/v1/study/sessions/{session_id}/cards/{card['id']}/review",
-        json={"rating": "remembered"},
+        json={"rating": "remembered", "expected_revision": card["revision"]},
     )
     assert reviewed.status_code == 200, reviewed.text
     reviewed_card = reviewed.json()
@@ -455,19 +456,19 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
 
     invalid_review = await async_client.post(
         f"/v1/study/sessions/{session_id}/cards/{card['id']}/review",
-        json={"rating": "someday"},
+        json={"rating": "someday", "expected_revision": reviewed_card["revision"]},
     )
     assert invalid_review.status_code == 422
 
     unchanged = await async_client.put(
         f"/v1/study/sessions/{session_id}/cards/{card['id']}",
-        json={"question": card["question"], "answer": card["answer"]},
+        json={"question": card["question"], "answer": card["answer"], "expected_revision": reviewed_card["revision"]},
     )
     assert unchanged.json()["review_count"] == 1
 
     updated = await async_client.put(
         f"/v1/study/sessions/{session_id}/cards/{card['id']}",
-        json={"question": "Define a noun.", "answer": "A person, place, or thing."},
+        json={"question": "Define a noun.", "answer": "A person, place, or thing.", "expected_revision": unchanged.json()["revision"]},
     )
     assert updated.status_code == 200
     assert updated.json()["question"] == "Define a noun."
@@ -483,7 +484,7 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
 
     wrong_review_session = await async_client.post(
         f"/v1/study/sessions/not-a-session/cards/{card['id']}/review",
-        json={"rating": "again"},
+        json={"rating": "again", "expected_revision": updated.json()["revision"]},
     )
     assert wrong_review_session.status_code == 404
 
@@ -493,9 +494,63 @@ async def test_study_cards_are_user_owned_editable_and_deletable(async_client: A
     )
     assert blank.status_code == 422
 
-    deleted = await async_client.delete(f"/v1/study/sessions/{session_id}/cards/{card['id']}")
+    deleted = await async_client.delete(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        params={"expected_revision": updated.json()["revision"]},
+    )
     assert deleted.status_code == 204
     assert (await async_client.get("/v1/study/cards")).json() == []
+
+
+@pytest.mark.asyncio
+async def test_study_reflections_and_cards_reject_stale_writes_and_deletes(async_client: AsyncClient):
+    session = await async_client.post("/v1/study/sessions", json={
+        "track_id": "concurrency", "track_title": "Concurrent Study",
+    })
+    session_id = session.json()["id"]
+
+    first_reflection = await async_client.put(
+        f"/v1/study/sessions/{session_id}/reflection",
+        json={"reflection": "Saved version one", "expected_revision": session.json()["revision"]},
+    )
+    assert first_reflection.status_code == 200
+    assert first_reflection.json()["revision"] == session.json()["revision"] + 1
+    stale_reflection = await async_client.put(
+        f"/v1/study/sessions/{session_id}/reflection",
+        json={"reflection": "Stale overwrite", "expected_revision": session.json()["revision"]},
+    )
+    assert stale_reflection.status_code == 409
+    assert stale_reflection.json()["detail"]["current_revision"] == first_reflection.json()["revision"]
+
+    created = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards",
+        json={"question": "Saved question", "answer": "Saved answer"},
+    )
+    card = created.json()
+    updated = await async_client.put(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        json={"question": "Updated question", "answer": "Updated answer", "expected_revision": card["revision"]},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["revision"] == card["revision"] + 1
+
+    stale_update = await async_client.put(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        json={"question": "Stale question", "answer": "Stale answer", "expected_revision": card["revision"]},
+    )
+    assert stale_update.status_code == 409
+    stale_review = await async_client.post(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}/review",
+        json={"rating": "easy", "expected_revision": card["revision"]},
+    )
+    assert stale_review.status_code == 409
+    stale_delete = await async_client.delete(
+        f"/v1/study/sessions/{session_id}/cards/{card['id']}",
+        params={"expected_revision": card["revision"]},
+    )
+    assert stale_delete.status_code == 409
+    remaining = await async_client.get("/v1/study/cards")
+    assert any(item["id"] == card["id"] and item["question"] == "Updated question" for item in remaining.json())
 
 
 @pytest.mark.asyncio

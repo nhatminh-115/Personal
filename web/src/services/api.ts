@@ -396,11 +396,11 @@ export const api = {
     }));
   },
 
-  async updateStudySessionReflection(sessionId: string, reflection: string): Promise<StudySessionRecord> {
+  async updateStudySessionReflection(sessionId: string, reflection: string, expectedRevision: number): Promise<StudySessionRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/reflection`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ reflection }),
+      body: JSON.stringify({ reflection, expected_revision: expectedRevision }),
     }));
   },
 
@@ -432,24 +432,24 @@ export const api = {
     }));
   },
 
-  async updateStudyCard(cardId: string, sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
+  async updateStudyCard(cardId: string, sessionId: string, question: string, answer: string, expectedRevision: number): Promise<StudyCardRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, answer }),
+      body: JSON.stringify({ question, answer, expected_revision: expectedRevision }),
     }));
   },
 
-  async reviewStudyCard(cardId: string, sessionId: string, rating: StudyCardRating): Promise<StudyCardRecord> {
+  async reviewStudyCard(cardId: string, sessionId: string, rating: StudyCardRating, expectedRevision: number): Promise<StudyCardRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rating }),
+      body: JSON.stringify({ rating, expected_revision: expectedRevision }),
     }));
   },
 
-  async deleteStudyCard(cardId: string, sessionId: string): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
+  async deleteStudyCard(cardId: string, sessionId: string, expectedRevision: number): Promise<void> {
+    await handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}?expected_revision=${expectedRevision}`, {
       method: 'DELETE',
     }));
   },
