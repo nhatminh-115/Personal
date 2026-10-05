@@ -117,11 +117,12 @@ set `OLLAMA_BASE_URL` or `LMSTUDIO_BASE_URL` to a `host.docker.internal` URL;
 Compose maps that hostname to the host so discovery keeps these providers
 classified as local. After changing provider settings, recreate the API container with
 `docker compose up -d --force-recreate aura-app` so it receives the new values.
-Compose persists PostgreSQL data and LangGraph checkpoints in separate named
-volumes (`postgres_data` and `checkpoint_data`); both are required to restore a
-durable run after container recreation.
+Compose persists PostgreSQL data, LangGraph checkpoints, and sandbox workspace
+files in separate named volumes (`postgres_data`, `checkpoint_data`, and
+`workspace_data`). The database and checkpoint are required to restore a
+durable run; include all three volumes to recover the full workspace.
 
-Create and verify a point-in-time archive of both stores with
+Create and verify a point-in-time archive of all three stores with
 [`scripts/backup_compose.py`](scripts/backup_compose.py). See
 [`docs/compose-backup.md`](docs/compose-backup.md) for the restore procedure.
 

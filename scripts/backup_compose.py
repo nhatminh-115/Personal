@@ -1,4 +1,4 @@
-"""Create a consistent backup of the Docker Compose PostgreSQL and checkpoint stores."""
+"""Create a consistent backup of the Docker Compose database, checkpoints, and workspace."""
 
 from __future__ import annotations
 
@@ -13,11 +13,13 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import BinaryIO
 
 
 CHECKPOINT_DIRECTORY = "checkpoint"
 CHECKPOINT_DATABASE = "aura_checkpoints.db"
+WORKSPACE_ARCHIVE = "workspace.tar.gz"
 
 
 def _run_command(command: list[str], **kwargs) -> subprocess.CompletedProcess:
@@ -53,6 +55,56 @@ def _sha256_stream(stream: BinaryIO) -> str:
     return digest.hexdigest()
 
 
+def _validate_workspace_archive(archive_path: Path) -> None:
+    """Reject unsafe or unsupported entries before a workspace archive can be restored."""
+    with tarfile.open(archive_path, "r:gz") as archive:
+        seen: dict[str, bool] = {}
+        for member in archive.getmembers():
+            name = member.name
+            path = PurePosixPath(name)
+            if (
+                not name
+                or path.is_absolute()
+                or path.as_posix() != name
+                or ":" in name
+                or any(part in {"", ".", ".."} for part in path.parts)
+                or "\\" in name
+                or name in seen
+            ):
+                raise ValueError("Workspace backup contains an unsafe or duplicate path")
+            if not (member.isfile() or member.isdir()):
+                raise ValueError("Workspace backup entries must be regular files or directories")
+            seen[name] = member.isdir()
+
+        for name in seen:
+            parent = PurePosixPath(name).parent
+            while parent != PurePosixPath("."):
+                parent_name = parent.as_posix()
+                if parent_name in seen and not seen[parent_name]:
+                    raise ValueError("Workspace backup path is nested beneath a regular file")
+                parent = parent.parent
+
+
+def extract_workspace_archive(archive_path: Path, destination: Path) -> None:
+    """Extract a validated workspace archive without tarfile's path-based extraction."""
+    _validate_workspace_archive(archive_path)
+    destination.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            target = destination.joinpath(*PurePosixPath(member.name).parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                target.chmod((member.mode & 0o777) | 0o700)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise ValueError(f"Workspace backup file cannot be read: {member.name}")
+            with source, target.open("xb") as output:
+                shutil.copyfileobj(source, output)
+            target.chmod((member.mode & 0o777) | 0o600)
+
+
 def verify_backup(archive_path: Path) -> dict:
     """Validate archive structure and every payload checksum without extracting files."""
     with tarfile.open(archive_path, "r:gz") as archive:
@@ -62,10 +114,13 @@ def verify_backup(archive_path: Path) -> dict:
             "postgres.dump",
             f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
             f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}-wal",
+            WORKSPACE_ARCHIVE,
         }
         by_name = {member.name: member for member in members}
         if len(by_name) != len(members) or set(by_name) - allowed:
             raise ValueError("Backup contains duplicate or unexpected archive paths")
+        if "manifest.json" not in by_name:
+            raise ValueError("Backup is missing a manifest")
         if any(not member.isfile() for member in members):
             raise ValueError("Backup entries must be regular files")
         required = {
@@ -73,17 +128,21 @@ def verify_backup(archive_path: Path) -> dict:
             "postgres.dump",
             f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
         }
-        if not required <= set(by_name):
-            raise ValueError("Backup is missing a required data store")
-
         manifest_stream = archive.extractfile(by_name["manifest.json"])
         if manifest_stream is None:
             raise ValueError("Backup manifest cannot be read")
         manifest = json.load(manifest_stream)
         if not isinstance(manifest, dict):
             raise ValueError("Backup manifest must be a JSON object")
-        if manifest.get("format_version") != 1:
+        format_version = manifest.get("format_version")
+        if format_version not in {1, 2}:
             raise ValueError("Unsupported AURA backup format")
+        if format_version == 2:
+            required.add(WORKSPACE_ARCHIVE)
+        elif WORKSPACE_ARCHIVE in by_name:
+            raise ValueError("Workspace backup requires format version 2")
+        if not required <= set(by_name):
+            raise ValueError("Backup is missing a required data store")
         files = manifest.get("files")
         payload_names = set(by_name) - {"manifest.json"}
         if not isinstance(files, dict) or set(files) != payload_names:
@@ -92,6 +151,15 @@ def verify_backup(archive_path: Path) -> dict:
             stream = archive.extractfile(by_name[name])
             if stream is None or _sha256_stream(stream) != files[name]:
                 raise ValueError(f"Backup checksum failed for {name}")
+        if WORKSPACE_ARCHIVE in by_name:
+            workspace_stream = archive.extractfile(by_name[WORKSPACE_ARCHIVE])
+            if workspace_stream is None:
+                raise ValueError("Workspace backup cannot be read")
+            with tempfile.TemporaryDirectory(prefix="aura-workspace-verify-") as temp_name:
+                workspace_path = Path(temp_name) / WORKSPACE_ARCHIVE
+                with workspace_path.open("xb") as workspace_file:
+                    shutil.copyfileobj(workspace_stream, workspace_file)
+                _validate_workspace_archive(workspace_path)
         return manifest
 
 
@@ -160,15 +228,32 @@ def create_backup(destination: Path) -> Path:
             if not checkpoint_db.is_file():
                 raise RuntimeError(f"Compose did not copy the checkpoint database to {checkpoint_db}")
 
+            workspace_dir = staging / "workspace"
+            workspace_dir.mkdir()
+            _compose("cp", "aura-app:/app/workspace/.", str(workspace_dir))
+            workspace_archive = staging / WORKSPACE_ARCHIVE
+            with tarfile.open(workspace_archive, "w:gz") as workspace_tar:
+                for path in sorted(workspace_dir.rglob("*"), key=lambda item: item.relative_to(workspace_dir).as_posix()):
+                    if path.is_symlink():
+                        raise ValueError("Workspace backup does not support symbolic links")
+                    if path.is_dir():
+                        workspace_tar.add(path, arcname=path.relative_to(workspace_dir).as_posix(), recursive=False)
+                    elif path.is_file():
+                        workspace_tar.add(path, arcname=path.relative_to(workspace_dir).as_posix(), recursive=False)
+                    else:
+                        raise ValueError("Workspace backup contains a non-regular filesystem entry")
+            _validate_workspace_archive(workspace_archive)
+
             # SQLite WAL mode keeps committed updates in a sidecar until checkpointed.
             wal = checkpoint_dir / f"{CHECKPOINT_DATABASE}-wal"
-            payloads = [database_dump, checkpoint_db, *([wal] if wal.exists() else [])]
+            payloads = [database_dump, checkpoint_db, *([wal] if wal.exists() else []), workspace_archive]
             manifest = {
-                "format_version": 1,
+                "format_version": 2,
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "stores": {
                     "database": "PostgreSQL custom-format dump",
                     "checkpointer": "SQLite database and optional WAL; API stopped during capture",
+                    "workspace": "Workspace volume files; API stopped during capture",
                 },
                 "files": {
                     str(path.relative_to(staging)).replace(os.sep, "/"): _sha256(path)
@@ -210,7 +295,7 @@ def create_backup(destination: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Back up both durable AURA Compose stores into one checksummed archive."
+        description="Back up AURA Compose database, checkpoints, and workspace into one checksummed archive."
     )
     parser.add_argument(
         "destination",

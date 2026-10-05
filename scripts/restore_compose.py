@@ -1,19 +1,28 @@
-"""Restore both durable AURA Docker Compose stores from a verified archive."""
+"""Restore AURA Docker Compose data, checkpoints, and workspace from an archive."""
 
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import uuid
 from pathlib import Path
 
 if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts.backup_compose import CHECKPOINT_DATABASE, CHECKPOINT_DIRECTORY, _compose, verify_backup
+from scripts.backup_compose import (
+    CHECKPOINT_DATABASE,
+    CHECKPOINT_DIRECTORY,
+    WORKSPACE_ARCHIVE,
+    _compose,
+    extract_workspace_archive,
+    verify_backup,
+)
 
 
 def _extract_verified_backup(archive_path: Path, destination: Path) -> None:
@@ -21,7 +30,12 @@ def _extract_verified_backup(archive_path: Path, destination: Path) -> None:
     verify_backup(archive_path)
     destination.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive_path, "r:gz") as archive:
-        for name in ("postgres.dump", f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}", f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}-wal"):
+        for name in (
+            "postgres.dump",
+            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
+            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}-wal",
+            WORKSPACE_ARCHIVE,
+        ):
             try:
                 member = archive.getmember(name)
             except KeyError:
@@ -38,10 +52,10 @@ def _extract_verified_backup(archive_path: Path, destination: Path) -> None:
 def restore_backup(archive_path: Path, *, replace_current_data: bool = False) -> None:
     """Restore a verified backup, preserving service state on success and failing closed."""
     if not replace_current_data:
-        raise ValueError("Restoring replaces current database and checkpoint data; pass --replace-current-data to continue")
+        raise ValueError("Restoring replaces current database, checkpoint, and workspace data; pass --replace-current-data to continue")
 
     archive_path = archive_path.expanduser().resolve()
-    verify_backup(archive_path)
+    manifest = verify_backup(archive_path)
     running_services = set(_compose("ps", "--status", "running", "--services", text=True).stdout.splitlines())
     api_was_running = "aura-app" in running_services
     postgres_was_running = "postgres" in running_services
@@ -53,6 +67,10 @@ def restore_backup(archive_path: Path, *, replace_current_data: bool = False) ->
         postgres_dump = staging / "postgres.dump"
         checkpoint_db = staging / CHECKPOINT_DIRECTORY / CHECKPOINT_DATABASE
         checkpoint_wal = staging / CHECKPOINT_DIRECTORY / f"{CHECKPOINT_DATABASE}-wal"
+        workspace_archive = staging / WORKSPACE_ARCHIVE
+        workspace_restore = staging / "workspace"
+        if workspace_archive.is_file():
+            extract_workspace_archive(workspace_archive, workspace_restore)
         if api_was_running:
             try:
                 _compose("stop", "--timeout", "30", "aura-app")
@@ -83,6 +101,46 @@ def restore_backup(archive_path: Path, *, replace_current_data: bool = False) ->
                 "run", "--rm", "--no-deps", "--user", "0", "--entrypoint", "sh", "aura-app", "-c",
                 "chown -R aurauser:aurauser /app/checkpoints/aura_checkpoints.db*",
             )
+            if manifest.get("format_version") == 2:
+                restore_id = uuid.uuid4().hex
+                stage_name = f".aura-restore-{restore_id}-stage"
+                previous_name = f".aura-restore-{restore_id}-previous"
+                create_stage = (
+                    "from pathlib import Path; "
+                    f"Path('/app/workspace/{stage_name}').mkdir()"
+                )
+                _compose("run", "--rm", "--no-deps", "--user", "0", "--entrypoint", "python", "aura-app", "-c", create_stage)
+                _compose("cp", f"{workspace_restore}{os.sep}.", f"aura-app:/app/workspace/{stage_name}")
+                workspace_swap = (
+                    "import os, pwd, shutil\n"
+                    "from pathlib import Path\n"
+                    "root=Path('/app/workspace')\n"
+                    f"stage=root/{stage_name!r}\n"
+                    f"previous=root/{previous_name!r}\n"
+                    "if previous.exists(): raise RuntimeError('A workspace recovery directory already exists')\n"
+                    "if not stage.is_dir(): raise RuntimeError('Workspace restore staging directory is missing')\n"
+                    "account=pwd.getpwnam('aurauser')\n"
+                    "for path in [stage, *stage.rglob('*')]: os.chown(path, account.pw_uid, account.pw_gid, follow_symlinks=False)\n"
+                    "previous.mkdir()\n"
+                    "moved_old=[]\n"
+                    "moved_new=[]\n"
+                    "try:\n"
+                    " for path in list(root.iterdir()):\n"
+                    "  if path not in (stage, previous):\n"
+                    "   path.rename(previous/path.name)\n"
+                    "   moved_old.append(path.name)\n"
+                    " for path in list(stage.iterdir()):\n"
+                    "  path.rename(root/path.name)\n"
+                    "  moved_new.append(path.name)\n"
+                    "except BaseException:\n"
+                    " for name in reversed(moved_new): (root/name).rename(stage/name)\n"
+                    " for name in reversed(moved_old): (previous/name).rename(root/name)\n"
+                    " shutil.rmtree(previous)\n"
+                    " raise\n"
+                    "shutil.rmtree(previous)\n"
+                    "shutil.rmtree(stage)"
+                )
+                _compose("run", "--rm", "--no-deps", "--user", "0", "--entrypoint", "python", "aura-app", "-c", workspace_swap)
         except BaseException as exc:
             restore_error = exc
             raise
@@ -99,12 +157,12 @@ def restore_backup(archive_path: Path, *, replace_current_data: bool = False) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Restore both durable AURA Compose stores from a verified backup.")
+    parser = argparse.ArgumentParser(description="Restore AURA Compose database, checkpoints, and workspace files from a verified archive.")
     parser.add_argument("archive", type=Path, help="Verified AURA .tar.gz backup")
     parser.add_argument(
         "--replace-current-data",
         action="store_true",
-        help="Confirm that the existing PostgreSQL database and checkpoint will be replaced",
+        help="Confirm that the existing PostgreSQL database, checkpoint, and workspace files will be replaced",
     )
     args = parser.parse_args()
     try:
