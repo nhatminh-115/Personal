@@ -7,6 +7,7 @@ import pytest
 
 from app.research.cache import ResearchCache
 from app.research.document import FullTextStatus
+from app.research.provider import ResearchProviderUnavailable
 from app.research.providers.semantic_scholar import SemanticScholarResearchProvider
 
 
@@ -124,8 +125,8 @@ async def test_semantic_scholar_server_error_exhausted(mock_cache):
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = resp_500
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            results = await provider.search("failing server")
-            assert results == []
+            with pytest.raises(ResearchProviderUnavailable, match="Semantic Scholar"):
+                await provider.search("failing server")
             assert mock_get.call_count == 3  # initial + 2 retries
 
 
@@ -136,8 +137,8 @@ async def test_semantic_scholar_timeout_handling(mock_cache):
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.side_effect = httpx.TimeoutException("Connection timed out")
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            results = await provider.search("timeout query")
-            assert results == []
+            with pytest.raises(ResearchProviderUnavailable, match="Semantic Scholar"):
+                await provider.search("timeout query")
 
 
 @pytest.mark.asyncio

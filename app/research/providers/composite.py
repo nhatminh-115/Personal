@@ -8,7 +8,7 @@ from app.research.cache import research_cache
 from app.research.dedup import SourceDeduplicator, extract_arxiv_id
 from app.research.document import FullTextStatus, document_fetcher
 from app.research.models import ResearchSource
-from app.research.provider import ResearchSourceProvider
+from app.research.provider import ResearchProviderUnavailable, ResearchSearchUnavailable, ResearchSourceProvider
 from app.research.providers.arxiv import ArxivResearchProvider
 from app.research.providers.semantic_scholar import SemanticScholarResearchProvider
 
@@ -32,9 +32,14 @@ class CompositeResearchProvider(ResearchSourceProvider):
         """Search across scholarly providers, enrich arXiv identifiers, and deduplicate."""
         # 1. Primary discovery via Semantic Scholar
         s2_sources: List[ResearchSource] = []
+        failed_providers: List[str] = []
         try:
             s2_sources = await self.s2_provider.search(query, search_type=search_type, max_results=max_results)
+        except ResearchProviderUnavailable as e:
+            failed_providers.append(e.provider)
+            logger.warning(f"Semantic Scholar search failed: {e}")
         except Exception as e:
+            failed_providers.append("Semantic Scholar")
             logger.warning(f"Semantic Scholar search failed: {e}")
 
         # 2. Enrich arXiv-identified papers concurrently and fetch supplementary arXiv papers if needed
@@ -55,11 +60,17 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 supplementary_arxiv = await self.arxiv_provider.search(
                     query, search_type=search_type, max_results=max_results
                 )
+            except ResearchProviderUnavailable as e:
+                failed_providers.append(e.provider)
+                logger.warning(f"Direct arXiv search failed: {e}")
             except Exception as e:
+                failed_providers.append("arXiv")
                 logger.warning(f"Direct arXiv search failed: {e}")
 
         # 3. Deduplicate and merge identities through SourceDeduplicator
         combined = s2_sources + supplementary_arxiv
+        if not combined and failed_providers:
+            raise ResearchSearchUnavailable(failed_providers)
         merged_sources_dict: Dict[str, ResearchSource] = {}
         SourceDeduplicator.deduplicate(combined, existing_sources=merged_sources_dict)
 

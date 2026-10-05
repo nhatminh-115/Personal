@@ -16,7 +16,7 @@ from app.research.models import (
     ResearchStatus,
     SourceStatus,
 )
-from app.research.provider import ResearchSourceProvider
+from app.research.provider import ResearchProviderUnavailable, ResearchSearchUnavailable, ResearchSourceProvider
 from app.research.provenance import CitationValidationError, CitationValidator
 from app.tools.base import RiskLevel, Tool, ToolResult
 
@@ -35,6 +35,20 @@ def _extract_research_provider(context: Optional[Dict[str, Any]]) -> ResearchSou
 def normalize_snippet(text: str) -> str:
     """Normalize text whitespace and lowercase for substring grounding check."""
     return re.sub(r"\s+", " ", text).strip().lower()
+
+
+def _research_unavailable_result(query: str, failed_providers: List[str]) -> ToolResult:
+    unavailable = ResearchSearchUnavailable(failed_providers)
+    return ToolResult(
+        success=False,
+        output="",
+        error=str(unavailable),
+        metadata={
+            "error_code": "research_providers_unavailable",
+            "failed_providers": list(unavailable.failed_providers),
+            "query": query,
+        },
+    )
 
 
 def _extract_research_state(context: Optional[Dict[str, Any]]) -> Optional[ResearchState]:
@@ -110,7 +124,12 @@ class ResearchSearchTool(Tool):
         max_results = int(input_data.get("max_results", 5))
         search_type = input_data.get("search_type", "broad")
         provider = _extract_research_provider(context)
-        raw_results = await provider.search(query, search_type=search_type, max_results=max_results)
+        try:
+            raw_results = await provider.search(query, search_type=search_type, max_results=max_results)
+        except ResearchSearchUnavailable as exc:
+            return _research_unavailable_result(query, list(exc.failed_providers))
+        except ResearchProviderUnavailable as exc:
+            return _research_unavailable_result(query, [exc.provider])
 
         r_state = _extract_research_state(context)
         existing_sources = dict(r_state.sources) if r_state else {}

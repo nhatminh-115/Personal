@@ -77,6 +77,12 @@ identity or feature support from its name. `MODEL_PROVIDER=mock` is the local
 default. The Research Specialist uses deterministic sources by default unless
 `RESEARCH_PROVIDER_MODE` is explicitly changed.
 
+Live research search combines Semantic Scholar and arXiv. A failure from one
+provider does not discard sources returned by the other. When no provider
+completes the search, the tool reports a structured provider error instead of
+claiming that the query returned no matches; a successful search with zero
+matches remains a normal empty result.
+
 ## Capability and execution boundaries
 
 Specialists request abstract capabilities. The capability registry maps those
