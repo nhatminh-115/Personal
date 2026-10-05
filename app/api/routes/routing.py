@@ -144,22 +144,65 @@ async def update_routing_profile(profile_id: str, profile_update: RoutingProfile
     db_profile = result.scalar_one_or_none()
     if not db_profile:
         raise HTTPException(status_code=404, detail="Routing profile not found")
-        
-    # Requirement 17: Authoritative version update from DB
-    db_profile.version = db_profile.version + 1
-    db_profile.name = profile_update.name
-    db_profile.is_active = profile_update.is_active
-    db_profile.is_default = False
-    
-    # Requirement 18: Update canonical columns
-    db_profile.global_privacy_policy = profile_update.global_privacy_policy.value if hasattr(profile_update.global_privacy_policy, "value") else str(profile_update.global_privacy_policy)
-    db_profile.global_fallback_policy = profile_update.global_fallback_policy.value if hasattr(profile_update.global_fallback_policy, "value") else str(profile_update.global_fallback_policy)
-    db_profile.cost_preference = profile_update.cost_preference
-    db_profile.latency_preference = profile_update.latency_preference
-    db_profile.routes_json = {"routes": {k: v.model_dump(mode="json") for k, v in profile_update.routes.items()}}
-    
+
+    if profile_update.version != db_profile.version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RoutingProfileVersionConflict",
+                "message": "Routing profile changed since it was loaded.",
+                "current_version": db_profile.version,
+            },
+        )
+
+    # Serialize default transitions before the compare-and-swap. The version
+    # predicate below remains the authority for concurrent edits to this row.
     if profile_update.is_default:
         await _set_default_profile(db, profile_id)
+
+    result = await db.execute(
+        update(RoutingProfileModel)
+        .where(
+            RoutingProfileModel.id == profile_id,
+            RoutingProfileModel.version == profile_update.version,
+        )
+        .values(
+            version=RoutingProfileModel.version + 1,
+            name=profile_update.name,
+            is_active=profile_update.is_active,
+            is_default=profile_update.is_default,
+            global_privacy_policy=(
+                profile_update.global_privacy_policy.value
+                if hasattr(profile_update.global_privacy_policy, "value")
+                else str(profile_update.global_privacy_policy)
+            ),
+            global_fallback_policy=(
+                profile_update.global_fallback_policy.value
+                if hasattr(profile_update.global_fallback_policy, "value")
+                else str(profile_update.global_fallback_policy)
+            ),
+            cost_preference=profile_update.cost_preference,
+            latency_preference=profile_update.latency_preference,
+            routes_json={"routes": {key: value.model_dump(mode="json") for key, value in profile_update.routes.items()}},
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        current_version = await db.scalar(
+            select(RoutingProfileModel.version).where(RoutingProfileModel.id == profile_id)
+        )
+        if current_version is None:
+            raise HTTPException(status_code=404, detail="Routing profile not found")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RoutingProfileVersionConflict",
+                "message": "Routing profile changed since it was loaded.",
+                "current_version": current_version,
+            },
+        )
+
     await db.commit()
     await db.refresh(db_profile)
     return model_to_routing_profile(db_profile)

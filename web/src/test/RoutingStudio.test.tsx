@@ -416,6 +416,40 @@ describe('Routing Studio v2', () => {
     expect(await screen.findByLabelText('Profile name')).toHaveValue('Updated profile');
   });
 
+  it('shows an actionable message when a stale profile draft conflicts', async () => {
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+
+    const normalFetch = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith('/v1/routing/profiles/custom-profile') && init?.method === 'PUT') {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          text: () => Promise.resolve(JSON.stringify({
+            detail: {
+              code: 'RoutingProfileVersionConflict',
+              message: 'Routing profile changed since it was loaded.',
+              current_version: 4,
+            },
+          })),
+        } as Response);
+      }
+      return normalFetch(input, init);
+    });
+
+    fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Stale edit' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('This routing profile changed elsewhere.');
+    expect(alert).toHaveTextContent('Reload the profile in Routing Studio');
+    expect(alert).not.toHaveTextContent('current_version');
+    expect(screen.getByLabelText('Profile name')).toHaveValue('Stale edit');
+  });
+
   it('duplicates a saved profile and selects the persisted copy', async () => {
     await openProject();
     fireEvent.click(screen.getByText(/System Balanced · system/i));

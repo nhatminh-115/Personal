@@ -644,18 +644,60 @@ async def test_system_balanced_assignment_integrity_and_reset(test_db_session: A
 
 
 @pytest.mark.asyncio
-async def test_profile_version_increment_authoritative(test_db_session: AsyncSession):
+async def test_profile_update_rejects_stale_version_and_increments_expected_version(test_db_session: AsyncSession):
     prof = RoutingProfileModel(id="prof-v1", name="Profile V1", version=5, routes_json={})
     test_db_session.add(prof)
     await test_db_session.commit()
 
     from app.api.routes.routing import update_routing_profile
-    # Client sends stale version 1
+    # A stale client cannot overwrite a profile that has advanced to version 5.
     stale_update = RoutingProfile(name="Profile V1 Updated", version=1)
-    updated = await update_routing_profile(profile_id="prof-v1", profile_update=stale_update, db=test_db_session)
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException) as conflict:
+        await update_routing_profile(profile_id="prof-v1", profile_update=stale_update, db=test_db_session)
+    assert conflict.value.status_code == 409
+    assert conflict.value.detail == {
+        "code": "RoutingProfileVersionConflict",
+        "message": "Routing profile changed since it was loaded.",
+        "current_version": 5,
+    }
 
-    # Version must increment from stored database version (5 -> 6), ignoring client payload
+    updated = await update_routing_profile(
+        profile_id="prof-v1",
+        profile_update=RoutingProfile(name="Profile V1 Updated", version=5),
+        db=test_db_session,
+    )
+    # Version increments from the version actually edited (5 -> 6).
     assert updated.version == 6
+
+
+@pytest.mark.asyncio
+async def test_routing_profile_api_rejects_stale_version_with_structured_conflict(async_client: AsyncClient):
+    created = await async_client.post("/v1/routing/profiles", json={"name": "Versioned profile"})
+    assert created.status_code == 201
+    profile = created.json()
+
+    current = await async_client.put(f"/v1/routing/profiles/{profile['id']}", json={
+        **profile,
+        "name": "First editor wins",
+    })
+    assert current.status_code == 200
+    assert current.json()["version"] == profile["version"] + 1
+
+    stale = await async_client.put(f"/v1/routing/profiles/{profile['id']}", json={
+        **profile,
+        "name": "Stale editor must not overwrite",
+    })
+    assert stale.status_code == 409
+    assert stale.json()["detail"] == {
+        "code": "RoutingProfileVersionConflict",
+        "message": "Routing profile changed since it was loaded.",
+        "current_version": profile["version"] + 1,
+    }
+    persisted = await async_client.get(f"/v1/routing/profiles/{profile['id']}")
+    assert persisted.status_code == 200
+    assert persisted.json()["name"] == "First editor wins"
+    assert persisted.json()["version"] == profile["version"] + 1
 
 
 @pytest.mark.asyncio

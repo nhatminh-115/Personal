@@ -70,4 +70,4 @@ and safe persisted events; it does not copy the response body or exception text.
 
 ## Interpreting results
 
-A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. Cross-session project-memory dogfood has been verified locally with an explicit loopback Ollama override. CodeGraph remains pending external setup in the current environment.
+A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. Cross-session project-memory dogfood has been verified locally with an explicit loopback Ollama override. CodeGraph's AURA MCP provider smoke passed in the current environment; the full Coding Specialist dogfood remains pending a model that can reliably delegate and use tools.
