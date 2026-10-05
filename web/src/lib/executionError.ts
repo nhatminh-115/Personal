@@ -13,6 +13,9 @@ export function executionErrorText(error: unknown): string {
     if (error.code === 'AutomationRevisionConflict') {
       return 'This automation changed elsewhere. Reload the Automations list, then retry your change.';
     }
+    if (error.code === 'RoutingProfileVersionConflict') {
+      return 'This routing profile changed elsewhere. Reload the profile in Routing Studio, then retry your change.';
+    }
     const nextStep = error.code ? ROUTING_ERROR_GUIDANCE[error.code] : undefined;
     return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;
   }
