@@ -61,6 +61,10 @@ runs are not invoked again by duplicate event delivery. Manual, webhook, and
 retry triggers acquire a shared atomic short lease before enqueueing, so
 single-run admission also holds with the local SQLite database where row-level
 `FOR UPDATE` locks are not available.
+Approval and routing-confirmation decisions serialize graph resumes by run. On
+PostgreSQL, a session advisory lock stays held across graph commits and prevents
+another API worker from resuming the same run concurrently. SQLite uses a
+process lock and therefore assumes one API process for local deployments.
 
 ## Routing and model calls
 

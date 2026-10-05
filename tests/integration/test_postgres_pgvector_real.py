@@ -12,6 +12,7 @@ from app.db.models import MemoryModel
 from app.memory.base import MemoryType
 from app.memory.service import SQLMemoryService
 from app.api.routes.memory import _set_memory_active
+from app.api.run_resume_lock import _postgres_run_resume_lock
 from app.memory.stores.pgvector_store import PgVectorSemanticStore
 
 
@@ -241,3 +242,45 @@ async def test_postgres_concurrent_memory_restores_reject_second_active_version(
         async with session_factory() as session:
             await session.execute(delete(MemoryModel).where(MemoryModel.id.in_(ids)))
             await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_postgres_run_resume_lock_serializes_independent_engines(pg_session):
+    """A second API worker cannot resume the same run while the first is active."""
+    run_id = str(uuid.uuid4())
+    first_engine = pg_session.bind
+    second_engine = create_async_engine(POSTGRES_TEST_URL, future=True)
+    first_acquired = asyncio.Event()
+    second_attempting = asyncio.Event()
+    release_first = asyncio.Event()
+    second_acquired = asyncio.Event()
+
+    async def hold_first_lock():
+        async with _postgres_run_resume_lock(first_engine, run_id):
+            first_acquired.set()
+            await release_first.wait()
+
+    async def acquire_second_lock():
+        second_attempting.set()
+        async with _postgres_run_resume_lock(second_engine, run_id):
+            second_acquired.set()
+
+    first_task = asyncio.create_task(hold_first_lock())
+    second_task = None
+    try:
+        await asyncio.wait_for(first_acquired.wait(), timeout=5)
+        second_task = asyncio.create_task(acquire_second_lock())
+        await asyncio.wait_for(second_attempting.wait(), timeout=5)
+        await asyncio.sleep(0.1)
+        assert not second_acquired.is_set()
+
+        release_first.set()
+        await asyncio.wait_for(asyncio.gather(first_task, second_task), timeout=5)
+        assert second_acquired.is_set()
+    finally:
+        release_first.set()
+        if not first_task.done():
+            await first_task
+        if second_task is not None and not second_task.done():
+            await second_task
+        await second_engine.dispose()

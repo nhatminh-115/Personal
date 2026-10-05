@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from langgraph.types import Command
@@ -18,6 +17,7 @@ from app.api.schemas import (
     ApprovalResponse,
 )
 from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
+from app.api.run_resume_lock import lock_run_resume
 from app.approvals.service import ApprovalService
 from app.core.errors import ApprovalNotFoundError
 from app.core.logging import logger
@@ -30,17 +30,6 @@ from app.orchestrator.graph import get_compiled_graph
 from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1/approvals", tags=["Approvals"])
-
-_run_locks: Dict[str, asyncio.Lock] = {}
-_locks_guard = asyncio.Lock()
-
-
-async def _get_run_lock(run_id: str) -> asyncio.Lock:
-    """Get or create an asyncio.Lock for the given run_id to serialize concurrent approval requests."""
-    async with _locks_guard:
-        if run_id not in _run_locks:
-            _run_locks[run_id] = asyncio.Lock()
-        return _run_locks[run_id]
 
 
 def _get_active_interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
@@ -144,8 +133,7 @@ async def submit_approval_decision(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Associated run not found")
 
     # Serialize approval requests per run to avoid race conditions
-    run_lock = await _get_run_lock(approval.run_id)
-    async with run_lock:
+    async with lock_run_resume(db, approval.run_id):
         # Re-fetch approval inside lock in case a concurrent request already updated its status
         approval = await approval_service.get_approval(approval_id)
 
