@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete as sa_delete, select, text, update
+from sqlalchemy.exc import IntegrityError
 
 from app.api.dependencies import get_db, get_model_router
 from app.db.models import RoutingProfileModel, ProjectRoutingAssignmentModel, SessionModel
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/v1/routing", tags=["Routing"])
 
 class SessionAssignmentRequest(BaseModel):
     profile_id: Optional[str] = None
+    expected_revision: int = Field(ge=1)
 
 
 class DefaultProfileRequest(BaseModel):
@@ -265,6 +267,20 @@ async def delete_routing_profile(
             },
         )
 
+    # Clear matching references and advance their assignment revisions before
+    # deleting the profile. This preserves tombstones even on databases where
+    # the foreign key's ON DELETE action would otherwise remove assignment rows.
+    await db.execute(
+        update(ProjectRoutingAssignmentModel)
+        .where(ProjectRoutingAssignmentModel.routing_profile_id == profile_id)
+        .values(routing_profile_id=None, revision=ProjectRoutingAssignmentModel.revision + 1)
+    )
+    await db.execute(
+        update(SessionModel)
+        .where(SessionModel.routing_profile_id == profile_id)
+        .values(routing_profile_id=None, routing_revision=SessionModel.routing_revision + 1)
+    )
+
     deleted = await db.execute(
         sa_delete(RoutingProfileModel)
         .where(
@@ -289,20 +305,6 @@ async def delete_routing_profile(
             },
         )
 
-    # Assignments intentionally do not use foreign keys so profiles can be
-    # portable across stores. Clear every reference in the same transaction
-    # after the compare-and-swap delete, so callers immediately inherit the
-    # next routing scope and stale delete requests preserve their assignments.
-    await db.execute(
-        sa_delete(ProjectRoutingAssignmentModel).where(
-            ProjectRoutingAssignmentModel.routing_profile_id == profile_id
-        )
-    )
-    await db.execute(
-        update(SessionModel)
-        .where(SessionModel.routing_profile_id == profile_id)
-        .values(routing_profile_id=None)
-    )
     await db.commit()
     return {"status": "success", "deleted_profile_id": profile_id}
 
@@ -440,32 +442,64 @@ async def preview_routing_decision(
 async def assign_profile_to_project(
     project_name: str, 
     profile_id: str,
+    expected_revision: int = Query(ge=0),
     db: AsyncSession = Depends(get_db)
 ):
     """Assign a specific routing profile to a project (Requirement 15: Clean System Balanced reset)."""
     result = await db.execute(select(ProjectRoutingAssignmentModel).where(ProjectRoutingAssignmentModel.project_name == project_name))
     assignment = result.scalar_one_or_none()
 
-    if profile_id == "system-balanced":
-        # Requirement 15: Delete explicit assignment so resolver falls through naturally without DB FK violation
-        if assignment:
-            await db.delete(assignment)
-            await db.commit()
-        return {"status": "success", "project_name": project_name, "routing_profile_id": None}
-
-    # Otherwise ensure target profile exists in DB
-    prof_res = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
-    if not prof_res.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Routing profile not found")
-
-    if assignment:
-        assignment.routing_profile_id = profile_id
-    else:
-        assignment = ProjectRoutingAssignmentModel(project_name=project_name, routing_profile_id=profile_id)
+    if assignment is None:
+        if expected_revision != 0:
+            raise _project_assignment_conflict(0)
+        target_id = None if profile_id == "system-balanced" else profile_id
+        if target_id:
+            prof_res = await db.execute(select(RoutingProfileModel.id).where(RoutingProfileModel.id == target_id))
+            if prof_res.scalar_one_or_none() is None:
+                raise HTTPException(status_code=404, detail="Routing profile not found")
+        assignment = ProjectRoutingAssignmentModel(
+            project_name=project_name, routing_profile_id=target_id, revision=1,
+        )
         db.add(assignment)
-        
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            # A concurrent first assignment won the unique project key.
+            current_revision = await db.scalar(select(ProjectRoutingAssignmentModel.revision).where(ProjectRoutingAssignmentModel.project_name == project_name))
+            if current_revision is not None:
+                raise _project_assignment_conflict(current_revision) from exc
+            raise
+        return {"status": "success", "project_name": project_name, "routing_profile_id": target_id, "revision": 1}
+
+    if assignment.revision != expected_revision:
+        raise _project_assignment_conflict(assignment.revision)
+    target_id = None if profile_id == "system-balanced" else profile_id
+    if target_id:
+        prof_res = await db.execute(select(RoutingProfileModel.id).where(RoutingProfileModel.id == target_id))
+        if prof_res.scalar_one_or_none() is None:
+            raise HTTPException(status_code=404, detail="Routing profile not found")
+    updated = await db.execute(
+        update(ProjectRoutingAssignmentModel)
+        .where(ProjectRoutingAssignmentModel.project_name == project_name, ProjectRoutingAssignmentModel.revision == expected_revision)
+        .values(routing_profile_id=target_id, revision=ProjectRoutingAssignmentModel.revision + 1)
+        .returning(ProjectRoutingAssignmentModel.revision)
+    )
+    revision = updated.scalar_one_or_none()
+    if revision is None:
+        current_revision = await db.scalar(select(ProjectRoutingAssignmentModel.revision).where(ProjectRoutingAssignmentModel.project_name == project_name))
+        await db.rollback()
+        raise _project_assignment_conflict(current_revision or 0)
     await db.commit()
-    return {"status": "success", "project_name": project_name, "routing_profile_id": profile_id}
+    return {"status": "success", "project_name": project_name, "routing_profile_id": target_id, "revision": revision}
+
+
+def _project_assignment_conflict(current_revision: int) -> HTTPException:
+    return HTTPException(status_code=409, detail={
+        "code": "RoutingAssignmentRevisionConflict",
+        "message": "Project routing assignment changed since it was loaded.",
+        "current_revision": current_revision,
+    })
 
 
 @router.get("/assignments/{project_name}")
@@ -475,9 +509,9 @@ async def get_project_assignment(project_name: str, db: AsyncSession = Depends(g
     assignment = result.scalar_one_or_none()
     
     if not assignment:
-        return {"project_name": project_name, "routing_profile_id": None}
+        return {"project_name": project_name, "routing_profile_id": None, "revision": 0}
     
-    return {"project_name": project_name, "routing_profile_id": assignment.routing_profile_id}
+    return {"project_name": project_name, "routing_profile_id": assignment.routing_profile_id, "revision": assignment.revision}
 
 
 @router.put("/sessions/{session_id}")
@@ -492,6 +526,13 @@ async def assign_profile_to_session(
     if not session_obj:
         raise HTTPException(status_code=404, detail="Session not found")
 
+    if session_obj.routing_revision != req.expected_revision:
+        raise HTTPException(status_code=409, detail={
+            "code": "RoutingAssignmentRevisionConflict",
+            "message": "Session routing assignment changed since it was loaded.",
+            "current_revision": session_obj.routing_revision,
+        })
+
     if not req.profile_id or req.profile_id == "system-balanced":
         session_obj.routing_profile_id = None
     else:
@@ -500,8 +541,23 @@ async def assign_profile_to_session(
             raise HTTPException(status_code=404, detail="Routing profile not found")
         session_obj.routing_profile_id = req.profile_id
 
+    updated = await db.execute(
+        update(SessionModel)
+        .where(SessionModel.id == session_id, SessionModel.routing_revision == req.expected_revision)
+        .values(routing_profile_id=session_obj.routing_profile_id, routing_revision=SessionModel.routing_revision + 1)
+        .returning(SessionModel.routing_revision)
+    )
+    revision = updated.scalar_one_or_none()
+    if revision is None:
+        await db.rollback()
+        current_revision = await db.scalar(select(SessionModel.routing_revision).where(SessionModel.id == session_id))
+        raise HTTPException(status_code=409, detail={
+            "code": "RoutingAssignmentRevisionConflict",
+            "message": "Session routing assignment changed since it was loaded.",
+            "current_revision": current_revision,
+        })
     await db.commit()
-    return {"status": "success", "session_id": session_id, "routing_profile_id": session_obj.routing_profile_id}
+    return {"status": "success", "session_id": session_id, "routing_profile_id": session_obj.routing_profile_id, "revision": revision}
 
 
 @router.get("/sessions/{session_id}")
@@ -512,4 +568,4 @@ async def get_session_assignment(session_id: str, db: AsyncSession = Depends(get
     if not session_obj:
         raise HTTPException(status_code=404, detail="Session not found")
         
-    return {"session_id": session_id, "routing_profile_id": session_obj.routing_profile_id}
+    return {"session_id": session_id, "routing_profile_id": session_obj.routing_profile_id, "revision": session_obj.routing_revision}

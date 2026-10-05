@@ -633,14 +633,17 @@ async def test_system_balanced_assignment_integrity_and_reset(test_db_session: A
     test_db_session.add(ProjectRoutingAssignmentModel(project_name="P1", routing_profile_id="prof-custom-1"))
     await test_db_session.commit()
 
-    # Resetting to system-balanced deletes the explicit assignment to prevent FK violation
+    # Resetting to System Balanced stores a revisioned inheritance assignment.
     from app.api.routes.routing import assign_profile_to_project
-    res = await assign_profile_to_project(project_name="P1", profile_id="system-balanced", db=test_db_session)
+    res = await assign_profile_to_project(project_name="P1", profile_id="system-balanced", expected_revision=1, db=test_db_session)
     assert res["routing_profile_id"] is None
 
-    # Check assignment is deleted from DB
+    # Check the cleared assignment remains as a revisioned tombstone.
     chk = await test_db_session.execute(select(ProjectRoutingAssignmentModel).where(ProjectRoutingAssignmentModel.project_name == "P1"))
-    assert chk.scalar_one_or_none() is None
+    reset_assignment = chk.scalar_one_or_none()
+    assert reset_assignment is not None
+    assert reset_assignment.routing_profile_id is None
+    assert reset_assignment.revision == 2
 
 
 @pytest.mark.asyncio
@@ -773,7 +776,7 @@ async def test_routing_api_endpoints_complete(async_client: AsyncClient, test_db
     test_db_session.add(SessionModel(id=sess_id))
     await test_db_session.commit()
 
-    put_sess = await async_client.put(f"/v1/routing/sessions/{sess_id}", json={"profile_id": created_id})
+    put_sess = await async_client.put(f"/v1/routing/sessions/{sess_id}", json={"profile_id": created_id, "expected_revision": 1})
     assert put_sess.status_code == 200
     assert put_sess.json()["routing_profile_id"] == created_id
 
@@ -782,7 +785,7 @@ async def test_routing_api_endpoints_complete(async_client: AsyncClient, test_db
     assert get_sess.json()["routing_profile_id"] == created_id
 
     # Reset session assignment
-    reset_sess = await async_client.put(f"/v1/routing/sessions/{sess_id}", json={"profile_id": "system-balanced"})
+    reset_sess = await async_client.put(f"/v1/routing/sessions/{sess_id}", json={"profile_id": "system-balanced", "expected_revision": put_sess.json()["revision"]})
     assert reset_sess.status_code == 200
     assert reset_sess.json()["routing_profile_id"] is None
 
@@ -1498,10 +1501,10 @@ async def test_deleting_routing_profile_clears_assignments_and_restores_inherita
     await test_db_session.commit()
 
     project_assignment = await async_client.post(
-        "/v1/routing/assignments/Deletion%20Project?profile_id=delete-assigned-profile"
+        "/v1/routing/assignments/Deletion%20Project?profile_id=delete-assigned-profile&expected_revision=0"
     )
     session_assignment = await async_client.put(
-        f"/v1/routing/sessions/{session_id}", json={"profile_id": "delete-assigned-profile"}
+        f"/v1/routing/sessions/{session_id}", json={"profile_id": "delete-assigned-profile", "expected_revision": 1}
     )
     assert project_assignment.status_code == session_assignment.status_code == 200
 
@@ -1535,12 +1538,68 @@ async def test_deleting_routing_profile_clears_assignments_and_restores_inherita
     project = await async_client.get("/v1/routing/assignments/Deletion%20Project")
     session = await async_client.get(f"/v1/routing/sessions/{session_id}")
     assert project.json()["routing_profile_id"] is None
+    assert project.json()["revision"] == 2
     assert session.json()["routing_profile_id"] is None
+    assert session.json()["revision"] == 3
 
     profile, scope = await resolve_routing_profile(
         test_db_session, session_id=session_id, project_name="Deletion Project"
     )
     assert (profile.id, scope) == ("system-balanced", "system")
+
+
+@pytest.mark.asyncio
+async def test_project_assignment_revision_rejects_stale_writes_even_after_reset(async_client: AsyncClient):
+    profile = await async_client.post(
+        "/v1/routing/profiles", json={"id": "assignment-cas-profile", "name": "CAS profile"}
+    )
+    assert profile.status_code == 201
+
+    initial = await async_client.get("/v1/routing/assignments/Assignment CAS")
+    assert initial.json()["revision"] == 0
+    first = await async_client.post(
+        "/v1/routing/assignments/Assignment%20CAS?profile_id=assignment-cas-profile&expected_revision=0"
+    )
+    assert first.status_code == 200
+    assert first.json()["revision"] == 1
+
+    reset = await async_client.post(
+        "/v1/routing/assignments/Assignment%20CAS?profile_id=system-balanced&expected_revision=1"
+    )
+    assert reset.status_code == 200
+    assert reset.json()["revision"] == 2
+
+    stale = await async_client.post(
+        "/v1/routing/assignments/Assignment%20CAS?profile_id=assignment-cas-profile&expected_revision=0"
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "RoutingAssignmentRevisionConflict"
+    current = await async_client.get("/v1/routing/assignments/Assignment%20CAS")
+    assert current.json() == {"project_name": "Assignment CAS", "routing_profile_id": None, "revision": 2}
+
+
+@pytest.mark.asyncio
+async def test_session_assignment_revision_rejects_stale_write(async_client: AsyncClient, test_db_session: AsyncSession):
+    profile = await async_client.post(
+        "/v1/routing/profiles", json={"id": "session-assignment-cas", "name": "Session CAS"}
+    )
+    assert profile.status_code == 201
+    session_id = str(uuid.uuid4())
+    test_db_session.add(SessionModel(id=session_id))
+    await test_db_session.commit()
+
+    first = await async_client.put(
+        f"/v1/routing/sessions/{session_id}", json={"profile_id": "session-assignment-cas", "expected_revision": 1}
+    )
+    assert first.status_code == 200
+    stale = await async_client.put(
+        f"/v1/routing/sessions/{session_id}", json={"profile_id": None, "expected_revision": 1}
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "RoutingAssignmentRevisionConflict"
+    current = await async_client.get(f"/v1/routing/sessions/{session_id}")
+    assert current.json()["routing_profile_id"] == "session-assignment-cas"
+    assert current.json()["revision"] == 2
 
 
 @pytest.mark.asyncio

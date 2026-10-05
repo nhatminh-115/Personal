@@ -29,8 +29,8 @@ describe('Routing Studio v2', () => {
       else if (url.endsWith('/v1/routing/profiles') && init?.method === 'POST') value = { ...profile, ...JSON.parse(String(init.body)), id: 'created-profile' };
       else if (url.includes('/v1/routing/profiles')) value = [profile, customProfile];
       else if (url.includes('/v1/routing/effective')) value = { profile, winning_scope: 'system' };
-      else if (url.includes('/v1/routing/assignments')) value = { project_name: 'Project', routing_profile_id: null };
-      else if (url.includes('/v1/routing/sessions/')) value = { session_id: 'session', routing_profile_id: null };
+      else if (url.includes('/v1/routing/assignments')) value = { project_name: 'Project', routing_profile_id: null, revision: 0 };
+      else if (url.includes('/v1/routing/sessions/')) value = { session_id: 'session', routing_profile_id: null, revision: 1 };
       else if (url.endsWith('/v1/routing/default')) value = { status: 'success', routing_profile_id: null };
       else if (url.endsWith('/v1/routing/preview')) value = { provider: 'local', model: 'installed-model', reason: 'profile_match', reasoning_effort: 'medium', profile_id: 'system-balanced', profile_name: 'System Balanced', profile_version: 1, winning_scope: 'draft', privacy: 'public', fallback: 'cloud_allowed', role: 'root', task_route: 'root', warnings: [] };
       else if (url.includes('/v1/sessions')) value = [];
@@ -220,7 +220,7 @@ describe('Routing Studio v2', () => {
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/sessions/live-session', expect.objectContaining({
       method: 'PUT',
-      body: JSON.stringify({ profile_id: 'custom-profile' }),
+      body: JSON.stringify({ profile_id: 'custom-profile', expected_revision: 1 }),
     })));
     expect(onSaved).toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe('Routing Studio v2', () => {
       const url = String(input);
       calls.push({ url, init });
       if (url === '/v1/routing/assignments/Project') {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ project_name: 'Project', routing_profile_id: 'custom-profile' }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ project_name: 'Project', routing_profile_id: 'custom-profile', revision: 1 }) } as Response);
       }
       return defaultFetch(input, init);
     });
@@ -251,7 +251,7 @@ describe('Routing Studio v2', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save assignment' }));
 
     await waitFor(() => expect(calls.some(({ url, init }) =>
-      url === '/v1/routing/assignments/Project?profile_id=system-balanced' && init?.method === 'POST',
+      url === '/v1/routing/assignments/Project?profile_id=system-balanced&expected_revision=1' && init?.method === 'POST',
     )).toBe(true));
     expect(onSaved).toHaveBeenCalled();
   });
@@ -263,7 +263,7 @@ describe('Routing Studio v2', () => {
       const url = String(input);
       calls.push({ url, init });
       if (url === '/v1/routing/sessions/live-session' && !init?.method) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'live-session', routing_profile_id: 'custom-profile' }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'live-session', routing_profile_id: 'custom-profile', revision: 2 }) } as Response);
       }
       return defaultFetch(input, init);
     });
@@ -285,7 +285,7 @@ describe('Routing Studio v2', () => {
     await waitFor(() => expect(calls.some(({ url, init }) =>
       url === '/v1/routing/sessions/live-session'
       && init?.method === 'PUT'
-      && init.body === JSON.stringify({ profile_id: null }),
+      && init.body === JSON.stringify({ profile_id: null, expected_revision: 2 }),
     )).toBe(true));
     expect(onSaved).toHaveBeenCalled();
   });
@@ -393,7 +393,7 @@ describe('Routing Studio v2', () => {
     fireEvent.change(screen.getByLabelText('Profile name'), { target: { value: 'Project profile' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/profiles', expect.objectContaining({ method: 'POST' })));
-    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/assignments/Stateful%20Architecture?profile_id=created-profile', expect.objectContaining({ method: 'POST' })));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/routing/assignments/Stateful%20Architecture?profile_id=created-profile&expected_revision=0', expect.objectContaining({ method: 'POST' })));
   });
 
   it('updates a saved profile through its backend resource and refreshes the draft', async () => {

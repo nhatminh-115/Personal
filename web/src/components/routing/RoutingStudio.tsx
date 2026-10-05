@@ -37,8 +37,10 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
   const [scope, setScope] = useState<'project' | 'session' | 'default'>('project');
   const [scopeProfileId, setScopeProfileId] = useState<string>('system-balanced');
   const [initialAssignment, setInitialAssignment] = useState('system-balanced');
+  const [assignmentRevision, setAssignmentRevision] = useState(0);
   const [sessionProfileId, setSessionProfileId] = useState('system-balanced');
   const [initialSessionProfileId, setInitialSessionProfileId] = useState('system-balanced');
+  const [sessionAssignmentRevision, setSessionAssignmentRevision] = useState(1);
   const [defaultProfileId, setDefaultProfileId] = useState('system-balanced');
   const [initialDefaultProfileId, setInitialDefaultProfileId] = useState('system-balanced');
   const [busy, setBusy] = useState(false);
@@ -82,8 +84,8 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     let active = true;
     setError('');
     const sessionRequest = sessionAvailable && sessionId
-      ? api.fetchSessionRouting(sessionId).catch(() => ({ session_id: sessionId, routing_profile_id: null }))
-      : Promise.resolve({ session_id: '', routing_profile_id: null });
+      ? api.fetchSessionRouting(sessionId).catch(() => ({ session_id: sessionId, routing_profile_id: null, revision: 1 }))
+      : Promise.resolve({ session_id: '', routing_profile_id: null, revision: 1 });
     void Promise.all([api.fetchRoutingProfiles(), api.fetchProjectRouting(projectName), sessionRequest]).then(([items, assignment, sessionAssignment]) => {
       if (!active) return;
       const validProfiles = Array.isArray(items) ? items : [];
@@ -93,12 +95,14 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
       setDraft(validProfiles.find((profile) => profile.id === currentId) ?? validProfiles[0] ?? null);
       setScopeProfileId(assignment.routing_profile_id ?? 'system-balanced');
       setInitialAssignment(assignment.routing_profile_id ?? 'system-balanced');
+      setAssignmentRevision(assignment.revision ?? 0);
       const selectedDefault = validProfiles.find((profile) => profile.is_default)?.id ?? 'system-balanced';
       setDefaultProfileId(selectedDefault);
       setInitialDefaultProfileId(selectedDefault);
       const selectedSession = sessionAssignment.routing_profile_id ?? 'system-balanced';
       setSessionProfileId(selectedSession);
       setInitialSessionProfileId(selectedSession);
+      setSessionAssignmentRevision(sessionAssignment.revision ?? 1);
     }).catch((err: Error) => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [open, projectName, effective?.profile?.id]);
@@ -157,10 +161,14 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
       }
       setProfiles(updatedProfiles); setSelectedId(saved.id ?? null); setDraft(updatedProfiles.find((item) => item.id === saved.id) ?? saved);
       const assignedId = !selectedId ? saved.id ?? '' : scopeProfileId;
-      if (scope === 'project') await api.assignProjectRouting(projectName, assignedId);
+      if (scope === 'project') {
+        const assignment = await api.assignProjectRouting(projectName, assignedId, assignmentRevision);
+        setAssignmentRevision(assignment.revision);
+      }
       if (scope === 'session' && sessionAvailable && sessionId) {
         const sessionChoice = sessionProfileId === 'draft' ? saved.id ?? null : sessionProfileId;
-        await api.assignSessionRouting(sessionId, sessionChoice === 'system-balanced' ? null : sessionChoice);
+        const assignment = await api.assignSessionRouting(sessionId, sessionChoice === 'system-balanced' ? null : sessionChoice, sessionAssignmentRevision);
+        setSessionAssignmentRevision(assignment.revision);
         setSessionProfileId(sessionChoice ?? 'system-balanced');
         setInitialSessionProfileId(sessionChoice ?? 'system-balanced');
       }
@@ -199,6 +207,12 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     try {
       const deletedId = draft.id;
       await api.deleteRoutingProfile(deletedId, savedProfile.version);
+      const refreshedAssignments = await Promise.all([
+        api.fetchProjectRouting(projectName).catch(() => null),
+        sessionAvailable && sessionId ? api.fetchSessionRouting(sessionId).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (refreshedAssignments[0]) setAssignmentRevision(refreshedAssignments[0].revision ?? 0);
+      if (refreshedAssignments[1]) setSessionAssignmentRevision(refreshedAssignments[1].revision ?? 1);
       const next = profiles.filter((item) => item.id !== deletedId);
       const fallback = next[0] ?? null;
       setProfiles(next);

@@ -169,22 +169,22 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/routing/effective${params.size ? `?${params}` : ''}`));
   },
 
-  async assignProjectRouting(projectName: string, profileId: string): Promise<void> {
-    const params = new URLSearchParams({ profile_id: profileId });
-    await handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}?${params}`, { method: 'POST' }));
+  async assignProjectRouting(projectName: string, profileId: string, expectedRevision: number): Promise<{ revision: number }> {
+    const params = new URLSearchParams({ profile_id: profileId, expected_revision: String(expectedRevision) });
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}?${params}`, { method: 'POST' }));
   },
 
-  async fetchProjectRouting(projectName: string): Promise<{ project_name: string; routing_profile_id: string | null }> {
+  async fetchProjectRouting(projectName: string): Promise<{ project_name: string; routing_profile_id: string | null; revision: number }> {
     return handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}`));
   },
 
-  async assignSessionRouting(sessionId: string, profileId: string | null): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileId }),
+  async assignSessionRouting(sessionId: string, profileId: string | null, expectedRevision: number): Promise<{ revision: number }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileId, expected_revision: expectedRevision }),
     }));
   },
 
-  async fetchSessionRouting(sessionId: string): Promise<{ session_id: string; routing_profile_id: string | null }> {
+  async fetchSessionRouting(sessionId: string): Promise<{ session_id: string; routing_profile_id: string | null; revision: number }> {
     return handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`));
   },
 

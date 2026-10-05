@@ -42,6 +42,7 @@ class SessionModel(Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     project_name: Mapped[Optional[str]] = mapped_column(String(128), nullable=True, index=True)
     routing_profile_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("routing_profiles.id", ondelete="SET NULL"), nullable=True, index=True)
+    routing_revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
 
@@ -344,7 +345,8 @@ class ProjectRoutingAssignmentModel(Base):
     __tablename__ = "project_routing_assignments"
     
     project_name: Mapped[str] = mapped_column(String(128), primary_key=True)
-    routing_profile_id: Mapped[str] = mapped_column(String(36), ForeignKey("routing_profiles.id", ondelete="CASCADE"), index=True)
+    routing_profile_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("routing_profiles.id", ondelete="SET NULL"), nullable=True, index=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
 
 

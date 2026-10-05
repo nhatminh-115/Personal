@@ -16,6 +16,9 @@ export function executionErrorText(error: unknown): string {
     if (error.code === 'RoutingProfileVersionConflict') {
       return 'This routing profile changed elsewhere. Reload the profile in Routing Studio, then retry your change.';
     }
+    if (error.code === 'RoutingAssignmentRevisionConflict') {
+      return 'This routing assignment changed elsewhere. Close and reopen Routing Studio to load the latest assignment, then retry.';
+    }
     if (error.code === 'WorkspaceLibraryRevisionConflict') {
       return 'This Library reference changed elsewhere. Refresh the AURA workspace before changing its project links or removing it.';
     }
