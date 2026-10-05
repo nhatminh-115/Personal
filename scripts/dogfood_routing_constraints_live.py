@@ -12,6 +12,13 @@ from pathlib import Path
 import uuid
 from typing import Any, Mapping
 
+if __package__:
+    from ._bootstrap import ensure_project_root
+else:
+    from _bootstrap import ensure_project_root
+
+ensure_project_root(__file__)
+
 
 def live_environment_error(_environ: Mapping[str, str] | None = None) -> str | None:
     """This scenario only reads the model catalog and invokes zero model calls."""

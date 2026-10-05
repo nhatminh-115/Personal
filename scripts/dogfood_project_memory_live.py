@@ -12,6 +12,13 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+if __package__:
+    from ._bootstrap import ensure_project_root
+else:
+    from _bootstrap import ensure_project_root
+
+ensure_project_root(__file__)
+
 TARGET_FACT = "A blue-lantern release requires a two-person review and an immediate rollback trigger."
 DECOY_FACT = "A blue-lantern release is single-owner and has no rollback trigger."
 

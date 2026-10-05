@@ -12,6 +12,13 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+if __package__:
+    from ._bootstrap import ensure_project_root
+else:
+    from _bootstrap import ensure_project_root
+
+ensure_project_root(__file__)
+
 CODING_IMPACT_WORKLOAD = (
     "You are the root orchestrator. This request requires the Coding Specialist: call delegate_task now with "
     "specialist_name='coding'; do not answer this request directly. Ask the specialist for a read-only impact analysis "
