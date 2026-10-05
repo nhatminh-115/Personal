@@ -1,9 +1,12 @@
 """Chat endpoint: POST /v1/chat."""
 
+import hashlib
+import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import (
@@ -16,7 +19,16 @@ from app.api.dependencies import (
 from app.api.schemas import ChatRequest, ChatResponse
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
-from app.db.models import RunModel, RunStatus, WorkspaceObjectModel, WorkspaceObjectProjectLinkModel, utc_now
+from app.db.models import (
+    ApprovalModel,
+    MessageModel,
+    RoutingConfirmationModel,
+    RunModel,
+    RunStatus,
+    WorkspaceObjectModel,
+    WorkspaceObjectProjectLinkModel,
+    utc_now,
+)
 from app.db.session import get_db
 from app.memory.base import MemoryService
 from app.models.router import ModelRouter
@@ -38,6 +50,79 @@ from app.tools.registry import ToolRegistry
 router = APIRouter(prefix="/v1", tags=["Chat"])
 
 
+def _chat_request_fingerprint(req: ChatRequest) -> str:
+    payload = req.model_dump(mode="json", exclude={"client_turn_id"})
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+async def _existing_chat_response(
+    db: AsyncSession,
+    run: RunModel,
+    *,
+    request_fingerprint: str,
+) -> ChatResponse:
+    if run.request_fingerprint != request_fingerprint:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "code": "ChatTurnIdConflict",
+                "message": "This client turn ID is already bound to a different chat request.",
+            },
+        )
+
+    message_result = await db.execute(
+        select(MessageModel.role, MessageModel.id).where(
+            MessageModel.session_id == run.session_id,
+            MessageModel.metadata_json["run_id"].as_string() == run.id,
+        )
+    )
+    message_ids = {role: message_id for role, message_id in message_result.all()}
+
+    approval_id = None
+    if run.status == RunStatus.WAITING_FOR_APPROVAL.value:
+        child_run_ids = select(RunModel.id).where(
+            or_(RunModel.id == run.id, RunModel.parent_run_id == run.id)
+        )
+        approval_id = await db.scalar(
+            select(ApprovalModel.id)
+            .where(
+                ApprovalModel.run_id.in_(child_run_ids),
+                ApprovalModel.status == "pending",
+            )
+            .order_by(ApprovalModel.created_at.desc(), ApprovalModel.id.desc())
+            .limit(1)
+        )
+
+    confirmation = None
+    if run.status == RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value:
+        confirmation = await db.scalar(
+            select(RoutingConfirmationModel)
+            .where(
+                RoutingConfirmationModel.root_run_id == run.id,
+                RoutingConfirmationModel.status == "pending",
+            )
+            .order_by(RoutingConfirmationModel.created_at.desc(), RoutingConfirmationModel.id.desc())
+            .limit(1)
+        )
+
+    return ChatResponse(
+        run_id=run.id,
+        session_id=run.session_id,
+        status=run.status,
+        response=run.final_response,
+        approval_id=approval_id,
+        routing_confirmation_id=confirmation.id if confirmation else None,
+        proposed_provider=confirmation.proposed_provider if confirmation else None,
+        proposed_model=confirmation.proposed_model if confirmation else None,
+        user_message_id=message_ids.get("user"),
+        assistant_message_id=message_ids.get("assistant"),
+        # Tool results remain available from persisted run details; replays do
+        # not reconstruct or execute tool calls.
+        tool_results=[],
+    )
+
+
 @router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 async def chat_endpoint(
     req: ChatRequest,
@@ -51,6 +136,21 @@ async def chat_endpoint(
     """
     Main entry point for agent interaction turn.
     """
+    request_fingerprint = _chat_request_fingerprint(req) if req.client_turn_id else None
+    if req.client_turn_id:
+        existing = await db.scalar(
+            select(RunModel).where(
+                RunModel.session_id == req.session_id,
+                RunModel.client_turn_id == req.client_turn_id,
+            )
+        )
+        if existing is not None:
+            return await _existing_chat_response(
+                db,
+                existing,
+                request_fingerprint=request_fingerprint or "",
+            )
+
     run_id = str(uuid.uuid4())
 
     context_object_ids = list(dict.fromkeys(req.context_object_ids))
@@ -133,6 +233,8 @@ async def chat_endpoint(
     run_record = RunModel(
         id=run_id,
         session_id=req.session_id,
+        client_turn_id=req.client_turn_id,
+        request_fingerprint=request_fingerprint,
         status=RunStatus.RUNNING.value,
         user_message=req.message,
         routing_snapshot_json={
@@ -154,7 +256,25 @@ async def chat_endpoint(
         }
     )
     db.add(run_record)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        if not req.client_turn_id:
+            raise
+        existing = await db.scalar(
+            select(RunModel).where(
+                RunModel.session_id == req.session_id,
+                RunModel.client_turn_id == req.client_turn_id,
+            )
+        )
+        if existing is None:
+            raise
+        return await _existing_chat_response(
+            db,
+            existing,
+            request_fingerprint=request_fingerprint or "",
+        )
 
     # 3. Emit initial audit trace
     await trace_service.record_event(

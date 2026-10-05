@@ -357,7 +357,7 @@ export interface WorkspaceGraph {
 export interface ChatResponse {
   run_id: string;
   session_id: string;
-  status: 'completed' | 'waiting_for_approval' | 'waiting_for_routing_confirmation' | 'failed' | 'cancelled';
+  status: 'running' | 'completed' | 'waiting_for_approval' | 'waiting_for_routing_confirmation' | 'failed' | 'cancelled';
   response?: string;
   approval_id?: string;
   routing_confirmation_id?: string;

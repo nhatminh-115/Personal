@@ -61,6 +61,11 @@ runs are not invoked again by duplicate event delivery. Manual, webhook, and
 retry triggers acquire a shared atomic short lease before enqueueing, so
 single-run admission also holds with the local SQLite database where row-level
 `FOR UPDATE` locks are not available.
+Live chat clients send a stable `client_turn_id`. A partial unique index binds
+that ID to one run per session; matching retries return the saved run state and
+never invoke the graph again, while reusing the ID for a different request is
+rejected. Clients that omit the ID retain the legacy non-idempotent request
+behavior.
 Approval and routing-confirmation decisions serialize graph resumes by run. On
 PostgreSQL, a session advisory lock stays held across graph commits and prevents
 another API worker from resuming the same run concurrently. SQLite uses a

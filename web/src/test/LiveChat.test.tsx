@@ -167,6 +167,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(chatPayload).not.toBeNull();
     expect(chatPayload.message).toBe('Explain state persistence in AURA');
     expect(chatPayload.session_id).toBeDefined();
+    expect(chatPayload.client_turn_id).toEqual(expect.any(String));
     expect(chatPayload.context_object_ids).toEqual(['workspace-note-1', 'research-claim-1']);
     expect(chatPayload.task_type).toBe('coding');
 

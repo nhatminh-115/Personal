@@ -6,9 +6,10 @@ import uuid
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import delete, func as sa_func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.models import MemoryModel
+from app.db.models import MemoryModel, RunModel, SessionModel
 from app.memory.base import MemoryType
 from app.memory.service import SQLMemoryService
 from app.api.routes.memory import _set_memory_active
@@ -284,3 +285,74 @@ async def test_postgres_run_resume_lock_serializes_independent_engines(pg_sessio
         if second_task is not None and not second_task.done():
             await second_task
         await second_engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_chat_turn_id_is_unique_within_a_session(pg_session):
+    """Concurrent first deliveries for one client turn reserve only one run."""
+    session_id = str(uuid.uuid4())
+    client_turn_id = str(uuid.uuid4())
+    engine = pg_session.bind
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add(SessionModel(id=session_id, title="Idempotency integration"))
+        await session.commit()
+
+    async def reserve_run() -> bool:
+        async with session_factory() as session:
+            session.add(RunModel(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                client_turn_id=client_turn_id,
+                request_fingerprint="a" * 64,
+                status="running",
+                user_message="same turn",
+            ))
+            try:
+                await session.commit()
+                return True
+            except IntegrityError:
+                await session.rollback()
+                return False
+
+    try:
+        assert sorted(await asyncio.gather(reserve_run(), reserve_run())) == [False, True]
+        async with session_factory() as session:
+            rows = await session.scalar(
+                select(sa_func.count()).select_from(RunModel).where(
+                    RunModel.session_id == session_id,
+                    RunModel.client_turn_id == client_turn_id,
+                )
+            )
+            assert rows == 1
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(RunModel).where(RunModel.session_id == session_id))
+            await session.execute(delete(SessionModel).where(SessionModel.id == session_id))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_postgres_concurrent_first_requests_reuse_one_session(pg_session):
+    """Concurrent live-chat starts with one session ID converge on one row."""
+    session_id = str(uuid.uuid4())
+    engine = pg_session.bind
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def get_session():
+        async with session_factory() as session:
+            return await SQLMemoryService(session).get_or_create_session(session_id)
+
+    try:
+        sessions = await asyncio.gather(get_session(), get_session())
+        assert {session.id for session in sessions} == {session_id}
+        async with session_factory() as session:
+            count = await session.scalar(
+                select(sa_func.count()).select_from(SessionModel).where(SessionModel.id == session_id)
+            )
+            assert count == 1
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(SessionModel).where(SessionModel.id == session_id))
+            await session.commit()

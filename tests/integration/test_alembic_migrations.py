@@ -97,6 +97,8 @@ def test_alembic_upgrade_downgrade_cycle():
             col["name"]: col for col in inspector.get_columns("messages")
         }
         assert message_columns["metadata_json"]["nullable"] is False
+        run_columns = {col["name"] for col in inspector.get_columns("runs")}
+        assert {"client_turn_id", "request_fingerprint"}.issubset(run_columns)
 
         workspace_object_columns = {
             col["name"]: col for col in inspector.get_columns("workspace_objects")
@@ -157,6 +159,7 @@ def test_alembic_upgrade_downgrade_cycle():
         }.issubset(keyset_indexes["sessions"])
         assert "ix_messages_session_created_id" in keyset_indexes["messages"]
         assert "ix_runs_session_created_id" in keyset_indexes["runs"]
+        assert "uq_runs_session_client_turn" in keyset_indexes["runs"]
         assert "ix_scheduled_jobs_created_id" in keyset_indexes["scheduled_jobs"]
         assert {
             "ix_routing_confirmations_status_created_id",
