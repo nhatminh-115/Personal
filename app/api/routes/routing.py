@@ -56,7 +56,12 @@ class RoutingPreviewResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
-async def _set_default_profile(db: AsyncSession, profile_id: Optional[str]) -> None:
+async def _set_default_profile(
+    db: AsyncSession,
+    profile_id: Optional[str],
+    *,
+    advance_target_version: bool = True,
+) -> None:
     """Set the sole custom default, or clear custom defaults for System Balanced."""
     # Serialize all API default transitions across workers. The partial unique
     # index below the model is the final guard for writes outside this helper.
@@ -72,12 +77,35 @@ async def _set_default_profile(db: AsyncSession, profile_id: Optional[str]) -> N
             raise HTTPException(status_code=404, detail="Routing profile not found")
         if not profile.is_active:
             raise HTTPException(status_code=400, detail="An inactive routing profile cannot be the default.")
-    await db.execute(update(RoutingProfileModel).values(is_default=False))
-    if profile_id and profile_id != "system-balanced":
+    custom_default_id = (
+        profile_id
+        if profile_id and profile_id != "system-balanced"
+        else None
+    )
+    clear_previous_defaults = update(RoutingProfileModel).where(
+        RoutingProfileModel.is_default.is_(True)
+    )
+    if custom_default_id is not None:
+        clear_previous_defaults = clear_previous_defaults.where(
+            RoutingProfileModel.id != custom_default_id
+        )
+    await db.execute(
+        clear_previous_defaults.values(
+            is_default=False,
+            version=RoutingProfileModel.version + 1,
+        )
+    )
+    if custom_default_id is not None:
+        target_values = {"is_default": True}
+        if advance_target_version:
+            target_values["version"] = RoutingProfileModel.version + 1
         await db.execute(
             update(RoutingProfileModel)
-            .where(RoutingProfileModel.id == profile_id)
-            .values(is_default=True)
+            .where(
+                RoutingProfileModel.id == custom_default_id,
+                RoutingProfileModel.is_default.is_(False),
+            )
+            .values(**target_values)
         )
 
 
@@ -128,7 +156,7 @@ async def create_routing_profile(profile: RoutingProfile, db: AsyncSession = Dep
     db.add(db_profile)
     if profile.is_default:
         await db.flush()
-        await _set_default_profile(db, profile.id)
+        await _set_default_profile(db, profile.id, advance_target_version=False)
     await db.commit()
     await db.refresh(db_profile)
     return model_to_routing_profile(db_profile)
@@ -158,7 +186,7 @@ async def update_routing_profile(profile_id: str, profile_update: RoutingProfile
     # Serialize default transitions before the compare-and-swap. The version
     # predicate below remains the authority for concurrent edits to this row.
     if profile_update.is_default:
-        await _set_default_profile(db, profile_id)
+        await _set_default_profile(db, profile_id, advance_target_version=False)
 
     result = await db.execute(
         update(RoutingProfileModel)

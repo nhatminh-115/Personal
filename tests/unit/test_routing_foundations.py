@@ -812,6 +812,7 @@ async def test_default_profile_transitions_keep_exactly_one_or_fall_back_to_syst
     })
     assert second.status_code == 201
     second_id = second.json()["id"]
+    assert (await async_client.get(f"/v1/routing/profiles/{first_id}")).json()["version"] == first.json()["version"] + 1
 
     profiles = (await test_db_session.execute(
         select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True))
@@ -829,10 +830,35 @@ async def test_default_profile_transitions_keep_exactly_one_or_fall_back_to_syst
         select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True))
     )).scalars().all()
     assert profiles == []
+    assert (await async_client.get(f"/v1/routing/profiles/{second_id}")).json()["version"] == second.json()["version"] + 1
     effective = await async_client.get("/v1/routing/effective")
     assert effective.status_code == 200
     assert effective.json()["profile"]["id"] == "system-balanced"
     assert effective.json()["winning_scope"] == "system"
+
+
+@pytest.mark.asyncio
+async def test_default_transition_advances_profile_version_before_stale_delete(async_client: AsyncClient):
+    initial_default = await async_client.post("/v1/routing/profiles", json={
+        "name": "Initial default",
+        "is_default": True,
+    })
+    candidate = await async_client.post("/v1/routing/profiles", json={"name": "Candidate"})
+    assert initial_default.status_code == candidate.status_code == 201
+    candidate_id = candidate.json()["id"]
+
+    selected = await async_client.put("/v1/routing/default", json={"profile_id": candidate_id})
+    assert selected.status_code == 200
+    current = await async_client.get(f"/v1/routing/profiles/{candidate_id}")
+    assert current.json()["is_default"] is True
+    assert current.json()["version"] == candidate.json()["version"] + 1
+
+    stale_delete = await async_client.delete(
+        f"/v1/routing/profiles/{candidate_id}?expected_version={candidate.json()['version']}"
+    )
+    assert stale_delete.status_code == 409
+    assert stale_delete.json()["detail"]["current_version"] == current.json()["version"]
+    assert (await async_client.get(f"/v1/routing/profiles/{candidate_id}")).json()["is_default"] is True
 
 
 @pytest.mark.asyncio
@@ -1433,7 +1459,16 @@ async def test_profile_create_and_update_enforce_single_custom_default(test_db_s
     rows = (await test_db_session.execute(select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True)))).scalars().all()
     assert [row.id for row in rows] == ["created-default-b"]
 
-    await update_routing_profile("created-default-a", RoutingProfile(id="created-default-a", name="First active default", is_default=True), test_db_session)
+    await update_routing_profile(
+        "created-default-a",
+        RoutingProfile(
+            id="created-default-a",
+            name="First active default",
+            version=first.version + 1,
+            is_default=True,
+        ),
+        test_db_session,
+    )
     rows = (await test_db_session.execute(select(RoutingProfileModel).where(RoutingProfileModel.is_default.is_(True)))).scalars().all()
     assert [row.id for row in rows] == ["created-default-a"]
 
