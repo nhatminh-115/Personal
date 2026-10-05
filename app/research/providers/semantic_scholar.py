@@ -215,8 +215,8 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
         async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
             resp_data = await self._request_with_retry(client, "paper/search", params=params)
 
-        if not resp_data or "data" not in resp_data:
-            return []
+        if not isinstance(resp_data, dict) or not isinstance(resp_data.get("data"), list):
+            raise ResearchProviderUnavailable("Semantic Scholar", "returned an invalid search response")
 
         results: List[ResearchSource] = []
         for raw_item in resp_data.get("data", []):

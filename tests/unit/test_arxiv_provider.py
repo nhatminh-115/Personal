@@ -104,8 +104,19 @@ async def test_arxiv_search_invalid_xml():
 
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = mock_resp
-        results = await provider.search("error query")
-        assert results == []
+        with pytest.raises(ResearchProviderUnavailable, match="unreadable search response"):
+            await provider.search("error query")
+
+
+@pytest.mark.asyncio
+async def test_arxiv_search_valid_empty_feed_returns_no_results():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0), cache=ResearchCache())
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.text = '<feed xmlns="http://www.w3.org/2005/Atom"></feed>'
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+        assert await provider.search("valid no matches") == []
 
 
 @pytest.mark.asyncio

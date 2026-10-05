@@ -168,7 +168,7 @@ async def test_semantic_scholar_requests_verify_tls_for_search_and_fetch(mock_ca
     provider = SemanticScholarResearchProvider(api_key="test-api-key", cache=mock_cache)
     response = MagicMock(spec=httpx.Response)
     response.status_code = 200
-    response.json.return_value = {}
+    response.json.return_value = {"data": []}
     clients = []
 
     def make_client(**kwargs):
@@ -186,6 +186,18 @@ async def test_semantic_scholar_requests_verify_tls_for_search_and_fetch(mock_ca
     assert len(clients) == 2
     assert all(kwargs.get("verify") is True for kwargs, _ in clients)
     assert all(kwargs.get("follow_redirects") is False for kwargs, _ in clients)
+
+
+@pytest.mark.asyncio
+async def test_semantic_scholar_rejects_invalid_success_payload(mock_cache):
+    provider = SemanticScholarResearchProvider(api_key="test-api-key", cache=mock_cache)
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+    response.json.return_value = {}
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=response):
+        with pytest.raises(ResearchProviderUnavailable, match="invalid search response"):
+            await provider.search("malformed successful response")
 
 
 def test_semantic_scholar_headers_with_and_without_api_key():
