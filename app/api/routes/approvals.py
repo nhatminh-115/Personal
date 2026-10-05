@@ -63,8 +63,11 @@ async def _record_parent_resume_failure(parent: RunModel, exc: Exception, trace_
             payload={"error_category": "provider_failure"},
         )
     else:
-        logger.error("Error resuming parent graph: %s", exc, exc_info=True)
-        parent.error_message = str(exc)
+        logger.error(
+            "Error resuming parent graph: %s",
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__) if exc.__traceback__ is not None else False,
+        )
     parent.status = RunStatus.FAILED.value
 
 
