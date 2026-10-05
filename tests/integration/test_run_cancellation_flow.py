@@ -173,6 +173,7 @@ async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_cl
         # Model a worker disappearing after the durable cancellation request
         # commits but before the chat endpoint can finalize the run.
         chat_task.cancel()
+        release_model_call.set()
         with pytest.raises(asyncio.CancelledError):
             await chat_task
 
