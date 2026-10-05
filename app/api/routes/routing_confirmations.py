@@ -1,6 +1,5 @@
 """Durable ask-before-cloud routing confirmation lifecycle."""
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +16,7 @@ from app.api.dependencies import (
     get_trace_service,
 )
 from app.api.pagination import decode_timestamp_id_cursor, encode_timestamp_id_cursor, set_next_cursor_header
+from app.api.run_resume_lock import lock_run_resume
 from app.api.schemas import (
     RoutingConfirmationDecisionRequest,
     RoutingConfirmationDecisionResponse,
@@ -33,14 +33,6 @@ from app.orchestrator.graph import get_compiled_graph
 from app.tools.registry import ToolRegistry
 
 router = APIRouter(prefix="/v1/routing-confirmations", tags=["Routing Confirmations"])
-
-_run_locks: Dict[str, asyncio.Lock] = {}
-_locks_guard = asyncio.Lock()
-
-
-async def _get_run_lock(run_id: str) -> asyncio.Lock:
-    async with _locks_guard:
-        return _run_locks.setdefault(run_id, asyncio.Lock())
 
 
 def _active_interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
@@ -145,8 +137,7 @@ async def decide_routing_confirmation(
     if item is None:
         raise HTTPException(status_code=404, detail="Routing confirmation not found.")
 
-    lock = await _get_run_lock(item.root_run_id)
-    async with lock:
+    async with lock_run_resume(db, item.root_run_id):
         item = await db.get(RoutingConfirmationModel, confirmation_id)
         root_run = await db.get(RunModel, item.root_run_id) if item else None
         if item is None or root_run is None:
