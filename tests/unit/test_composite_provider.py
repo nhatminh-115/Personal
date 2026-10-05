@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.research.cache import ResearchCache
+from app.research.corpus import ResearchCorpusEngine
 from app.research.document import FullTextStatus, ParsedDocument, SectionExtractionResult
 from app.research.models import ResearchSource, SourceStatus
 from app.research.provider import ResearchProviderUnavailable, ResearchSearchUnavailable
@@ -274,6 +275,54 @@ async def test_search_tool_does_not_report_provider_outage_as_empty_results(mock
     assert "could not complete the search" in (result.error or "")
     assert result.metadata["error_code"] == "research_providers_unavailable"
     assert result.metadata["failed_providers"] == ["Semantic Scholar", "arXiv"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("privacy", ["confidential", "local_only"])
+async def test_search_tool_blocks_external_query_for_strict_privacy(privacy, mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    crossref_provider = MagicMock()
+    s2_provider.search = AsyncMock()
+    arxiv_provider.search = AsyncMock()
+    crossref_provider.search = AsyncMock()
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        crossref_provider=crossref_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+    private_query = "private client architecture keyword"
+
+    result = await ResearchSearchTool().execute(
+        {"query": private_query},
+        context={
+            "research_provider": composite,
+            "metadata": {"routing_context_dict": {"privacy_requirement": privacy}},
+        },
+    )
+
+    assert result.success is False
+    assert result.metadata == {"error_code": "privacy_boundary_violation"}
+    assert "not sent to external providers" in (result.error or "")
+    assert private_query not in str(result.metadata)
+    s2_provider.search.assert_not_awaited()
+    arxiv_provider.search.assert_not_awaited()
+    crossref_provider.search.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_local_research_corpus_remains_available_for_strict_privacy():
+    result = await ResearchSearchTool().execute(
+        {"query": "stateful persistent internal state"},
+        context={
+            "research_provider": ResearchCorpusEngine(),
+            "metadata": {"routing_context_dict": {"privacy_requirement": "local_only"}},
+        },
+    )
+
+    assert result.success is True
 
 
 @pytest.mark.asyncio

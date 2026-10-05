@@ -2,7 +2,10 @@
 
 from typing import Any
 
-SAFE_OPERATIONAL_ERROR_CODES = frozenset({"research_providers_unavailable"})
+SAFE_OPERATIONAL_ERROR_CODES = frozenset({
+    "research_providers_unavailable",
+    "privacy_boundary_violation",
+})
 SAFE_RESEARCH_PROVIDER_NAMES = frozenset({"Semantic Scholar", "arXiv", "Crossref"})
 
 

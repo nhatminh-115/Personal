@@ -7,6 +7,8 @@ from app.research.provider import ResearchSourceProvider
 class ResearchCorpusEngine(ResearchSourceProvider):
     """Provides indexed literature search and document section retrieval for deterministic testing."""
 
+    requires_external_egress = False
+
     def __init__(self) -> None:
         self._corpus: Dict[str, ResearchSource] = {}
         self._populate_standard_corpus()
