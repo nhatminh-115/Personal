@@ -639,22 +639,23 @@ export const api = {
     return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/retry`, { method: 'POST' }));
   },
 
-  async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {
+  async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at' | 'revision'>): Promise<WorkspaceLibraryReferenceRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
   },
 
-  async updateWorkspaceLibraryReference(id: string, input: Omit<WorkspaceLibraryReferenceRecord, 'id' | 'created_at' | 'updated_at'>): Promise<WorkspaceLibraryReferenceRecord> {
+  async updateWorkspaceLibraryReference(id: string, input: Omit<WorkspaceLibraryReferenceRecord, 'id' | 'created_at' | 'updated_at' | 'revision'>, expectedRevision: number): Promise<WorkspaceLibraryReferenceRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, expected_revision: expectedRevision }),
     }));
   },
 
-  async deleteWorkspaceLibraryReference(id: string): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  async deleteWorkspaceLibraryReference(id: string, expectedRevision: number): Promise<void> {
+    const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
+    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
   },
 
   async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {

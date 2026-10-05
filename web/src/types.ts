@@ -471,6 +471,7 @@ export interface WorkspaceLibraryReferenceRecord {
   project_names: string[];
   size?: number | null;
   mime_type?: string | null;
+  revision: number;
   created_at: string;
   updated_at: string;
 }

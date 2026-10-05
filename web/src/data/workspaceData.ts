@@ -120,6 +120,7 @@ export interface LibraryItem {
   projectLinks?: string[];
   source?: 'bundled' | 'imported';
   syncState?: 'pending' | 'synced';
+  revision?: number;
   size?: number;
   mimeType?: string;
   blobKey?: string;

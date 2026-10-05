@@ -195,6 +195,7 @@ function workspaceLibraryFromRecord(record: WorkspaceLibraryReferenceRecord, pro
     projectLinks: record.project_names.map((name) => projectCatalog.find((project) => project.name === name)?.id ?? name),
     source: 'imported',
     syncState: 'synced',
+    revision: record.revision,
     size: record.size ?? undefined,
     mimeType: record.mime_type ?? undefined,
     blobKey: `local-${record.id}`,
@@ -1080,7 +1081,10 @@ export default function App() {
 
   const removeLibraryItem = useCallback(async (item: LibraryItem) => {
     try {
-      if (item.source === 'imported' && item.syncState === 'synced') await api.deleteWorkspaceLibraryReference(item.id);
+      if (item.source === 'imported' && item.syncState === 'synced') {
+        if (item.revision === undefined) throw new Error('Reload the Library before removing this reference.');
+        await api.deleteWorkspaceLibraryReference(item.id, item.revision);
+      }
       if (item.source === 'imported' && item.blobKey) {
         try { await deleteLocalFile(item.blobKey); } catch { /* stale local blobs do not prevent reference removal */ }
       }
@@ -1123,9 +1127,9 @@ export default function App() {
       let savedCount = 0;
       for (const item of imported) {
         try {
-          await api.createWorkspaceLibraryReference({ id: item.id, ...workspaceLibraryPayload(item, projectCatalog) });
+          const saved = await api.createWorkspaceLibraryReference({ id: item.id, ...workspaceLibraryPayload(item, projectCatalog) });
           savedCount += 1;
-          setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, syncState: 'synced' } : entry));
+          setLibraryItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, revision: saved.revision, syncState: 'synced' } : entry));
         } catch (error) {
           pushToast('File stays on this browser', `${item.name} could not sync its reference: ${executionErrorText(error)}`);
         }
@@ -1141,7 +1145,8 @@ export default function App() {
     const next = { ...item, projectLinks: links.includes(projectId) ? links.filter((id) => id !== projectId) : [...links, projectId], updated: 'just now' };
     if (item.source === 'imported' && item.syncState === 'synced') {
       try {
-        const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next, projectCatalog));
+        if (item.revision === undefined) throw new Error('Reload the Library before changing this reference.');
+        const saved = await api.updateWorkspaceLibraryReference(item.id, workspaceLibraryPayload(next, projectCatalog), item.revision);
         setLibraryItems((current) => {
           const updated = { ...workspaceLibraryFromRecord(saved, projectCatalog), blobKey: item.blobKey };
           return current.some((entry) => entry.id === item.id)

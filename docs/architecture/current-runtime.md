@@ -147,6 +147,9 @@ Saved automations can update their name, description, instruction, and interval
 without changing project scope or the stable session used for their history.
 Already queued events keep their original instruction payload; the next
 scheduled event uses the updated settings.
+Library reference edits and removals compare the saved workspace-object
+revision, so a stale project-link action cannot overwrite newer metadata or
+remove a reference changed by another view.
 Automations can be archived to stop future schedules while preserving run
 history; restore returns them as paused routines.
 Saved automations can also be duplicated into a paused routine with its own

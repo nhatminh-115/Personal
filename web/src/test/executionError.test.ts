@@ -22,4 +22,11 @@ describe('structured routing error guidance', () => {
     expect(executionErrorText(new Error('Network disconnected'))).toBe('Network disconnected');
     expect(executionErrorText(null)).toBe('Execution failed');
   });
+
+  it('explains revision conflicts for routing profiles and Library references', () => {
+    expect(executionErrorText(new ApiError(409, 'Profile changed.', 'RoutingProfileVersionConflict')))
+      .toContain('Reload the profile in Routing Studio');
+    expect(executionErrorText(new ApiError(409, 'Library reference changed.', 'WorkspaceLibraryRevisionConflict')))
+      .toContain('Refresh the AURA workspace');
+  });
 });

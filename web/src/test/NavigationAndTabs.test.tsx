@@ -266,7 +266,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     const match = {
       id: 'far-project-file', name: 'A far-page source', kind: 'PDF', collection: 'Research',
       detail: 'Contains the old unique phrase', tags: ['reference'], project_names: ['Stateful Architecture'],
-      size: 2048, mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+      size: 2048, mime_type: 'application/pdf', revision: 1, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     };
     const olderMatch = { ...match, id: 'older-project-file', name: 'An older source' };
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -306,7 +306,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     const candidate = {
       id: 'unloaded-library-candidate', name: 'A far-page source', kind: 'PDF', collection: 'Research',
       detail: 'Contains an unlinked unique phrase', tags: ['reference'], project_names: [],
-      size: 2048, mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+      size: 2048, mime_type: 'application/pdf', revision: 1, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     };
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
@@ -321,7 +321,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
       }
       if (url.includes(`/v1/workspace/library/${candidate.id}`) && init?.method === 'PUT') {
         const body = JSON.parse(String(init.body));
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...candidate, project_names: body.project_names }) } as Response);
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ...candidate, project_names: body.project_names, revision: body.expected_revision + 1 }) } as Response);
       }
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
       if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
@@ -345,6 +345,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
       const update = vi.mocked(global.fetch).mock.calls.find(([input, init]) => String(input).includes(`/v1/workspace/library/${candidate.id}`) && init?.method === 'PUT');
       expect(update).toBeDefined();
       expect(JSON.parse(String(update?.[1]?.body)).project_names).toContain('Stateful Architecture');
+      expect(JSON.parse(String(update?.[1]?.body)).expected_revision).toBe(1);
     });
     expect(screen.queryByRole('button', { name: /A far-page source/ })).not.toBeInTheDocument();
   });
