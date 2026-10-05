@@ -25,15 +25,16 @@ closed. Tool risk, permission, and approval policy is still enforced by AURA.
 
 ## Dogfood status
 
-CodeGraph 0.20.1 has been installed with telemetry disabled in the current
-maintainer's Windows environment. AURA MCP discovery reported the provider
-healthy with nine allowlisted tools, and a read-only `symbol_search` query
-returned `app/mcp/manager.py:157`. This verifies provider discovery and a tool
-call only; the full Coding Specialist dogfood still needs live model
-credentials and a run-addressable report. The optional provider remains
-external, must not be installed automatically, and is not a CI dependency.
-Credential-gated dogfood blocks only that scenario; independent AURA milestones
-continue.
+CodeGraph 0.20.1 is installed with telemetry disabled in the maintainer's
+Windows environment. In live run
+`98637894-40c8-4df0-b040-11eaadc24e00`, AURA delegated to the Coding
+Specialist, which called the discovered read-only
+`mcp_codegraph_codegraph_symbol_search` tool. The sanitized report records the
+local `ollama:aura-qwen3-coding:4b-8k` route, completed parent and child runs,
+present checkpoints, and no pending approvals or tool failures. The dogfood
+printed its acceptance result and exited 0. This verifies the optional provider
+through a live AURA run. It remains external and is not a CI dependency; AURA
+does not install it automatically.
 
 ## Candidate review
 
