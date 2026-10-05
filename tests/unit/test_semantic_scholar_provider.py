@@ -200,6 +200,19 @@ async def test_semantic_scholar_rejects_invalid_success_payload(mock_cache):
             await provider.search("malformed successful response")
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("items", [[None], ["not-a-paper"], [{"paperId": "missing-title"}]])
+async def test_semantic_scholar_rejects_unreadable_search_records(mock_cache, items):
+    provider = SemanticScholarResearchProvider(api_key="test-api-key", cache=mock_cache)
+    response = MagicMock(spec=httpx.Response)
+    response.status_code = 200
+    response.json.return_value = {"data": items}
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=response):
+        with pytest.raises(ResearchProviderUnavailable, match="search response"):
+            await provider.search("unreadable search records")
+
+
 def test_semantic_scholar_headers_with_and_without_api_key():
     p_with_key = SemanticScholarResearchProvider(api_key="secret-key-12345")
     headers = p_with_key._get_headers()
