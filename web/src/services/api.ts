@@ -741,8 +741,11 @@ export const api = {
     taskType?: 'research' | 'coding' | 'writing' | null,
     contextAttachments: ChatContextAttachment[] = [],
   ): Promise<ChatResponse> {
+    const clientTurnId = globalThis.crypto?.randomUUID?.()
+      ?? `turn-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
     const payload: Record<string, any> = {
       session_id: sessionId,
+      client_turn_id: clientTurnId,
       message,
     };
     if (projectName) {
@@ -757,11 +760,19 @@ export const api = {
     if (contextAttachments.length > 0) payload.context_attachments = contextAttachments;
     if (taskType) payload.task_type = taskType;
 
-    const res = await fetch(`${BASE_URL}/v1/chat`, {
+    const request = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    };
+    let res: Response;
+    try {
+      res = await fetch(`${BASE_URL}/v1/chat`, request);
+    } catch {
+      // A connection can fail after the server accepted the request. Reuse
+      // the same turn ID so the retry returns that run instead of invoking it twice.
+      res = await fetch(`${BASE_URL}/v1/chat`, request);
+    }
     return handleResponse<ChatResponse>(res);
   },
 

@@ -37,6 +37,7 @@ class ChatContextAttachment(BaseModel):
 
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=36, description="Unique UUID of the conversation session")
+    client_turn_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
     message: str = Field(..., min_length=1, description="User query or instruction")
     project_name: Optional[str] = Field(default=None, max_length=128, description="Optional project context scope")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
@@ -85,7 +86,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     run_id: str
     session_id: str
-    status: Literal["completed", "waiting_for_approval", "waiting_for_routing_confirmation", "failed", "cancelled"]
+    status: Literal["running", "completed", "waiting_for_approval", "waiting_for_routing_confirmation", "failed", "cancelled"]
     response: Optional[str] = None
     approval_id: Optional[str] = None
     routing_confirmation_id: Optional[str] = None

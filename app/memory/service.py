@@ -2,6 +2,7 @@
 
 from typing import Any, Dict, List, Optional
 from sqlalchemy import select, text, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
@@ -44,9 +45,17 @@ class SQLMemoryService(MemoryService):
                 metadata_json={},
             )
             self.db.add(session)
-            await self.db.commit()
-            await self.db.refresh(session)
-            logger.info(f"Initialized new session '{session_id}'", extra={"session_id": session_id})
+            try:
+                await self.db.commit()
+                await self.db.refresh(session)
+                logger.info(f"Initialized new session '{session_id}'", extra={"session_id": session_id})
+            except IntegrityError:
+                # Concurrent first requests may both attempt to create the
+                # same client-provided session ID. Reuse the row that won.
+                await self.db.rollback()
+                session = await self.db.get(SessionModel, session_id)
+                if session is None:
+                    raise
         return session
 
     async def attach_session_to_project(self, session_id: str, project_name: str) -> SessionModel:

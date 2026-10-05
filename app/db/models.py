@@ -84,6 +84,8 @@ class RunModel(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     session_id: Mapped[str] = mapped_column(String(36), ForeignKey("sessions.id", ondelete="CASCADE"), index=True)
+    client_turn_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    request_fingerprint: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     status: Mapped[str] = mapped_column(String(32), default="running")  # "running", "waiting_for_approval", "completed", "failed"
     user_message: Mapped[str] = mapped_column(Text)
     final_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -101,6 +103,14 @@ class RunModel(Base):
 
     __table_args__ = (
         Index("ix_runs_session_created_id", "session_id", "created_at", "id"),
+        Index(
+            "uq_runs_session_client_turn",
+            "session_id",
+            "client_turn_id",
+            unique=True,
+            sqlite_where=text("client_turn_id IS NOT NULL"),
+            postgresql_where=text("client_turn_id IS NOT NULL"),
+        ),
     )
 
 
