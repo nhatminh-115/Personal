@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional
 import uuid
 import httpx
 from sqlalchemy import select
+from urllib.parse import urlparse
 
 # Ensure project root is on PYTHONPATH
 sys.path.insert(0, os.path.abspath("."))
@@ -42,51 +43,112 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 RESEARCH_WORKLOAD = (
-    "Investigate prior work on LLM architectures that maintain or update a compact persistent "
+    "You are the AURA root orchestrator. Delegate this request now to the Research Specialist "
+    "using delegate_task with specialist_name='research'; do not investigate or answer directly. "
+    "Ask the specialist to investigate prior work on LLM architectures that maintain or update a compact persistent "
     "internal state during inference instead of relying only on an ever-growing KV cache. "
     "Focus on mechanisms involving test-time training, learned memory, recurrent/state-space updates, "
     "or compressed latent state. Identify the closest technical overlaps, inspect the actual methods "
     "of the strongest matches when full text is available, and determine which parts of the proposed "
     "direction are already established versus insufficiently verified."
 )
+
+
+def dogfood_acceptance_failures(report: Dict[str, Any]) -> list[str]:
+    """Return unmet end-to-end research invariants for the live dogfood run."""
+    failures: list[str] = []
+    if report.get("specialist_name") != "research":
+        failures.append("root did not delegate to the Research Specialist")
+    if report.get("delegation_status") != "completed" or report.get("child_run_status") != "completed":
+        failures.append("Research Specialist delegation did not complete")
+    if not report.get("actual_model_provider") or report.get("actual_model_provider") == "unknown":
+        failures.append("no actual provider/model selection was recorded")
+    if not report.get("actual_model_name") or report.get("actual_model_name") == "unknown":
+        failures.append("no actual provider/model selection was recorded")
+    if report.get("model_call_count", 0) < 1:
+        failures.append("Research Specialist made no recorded model call")
+
+    tool_sequence = set(report.get("tool_sequence", []))
+    for tool in ("research_search", "extract_evidence", "record_research_claim"):
+        if tool not in tool_sequence:
+            failures.append(f"required research tool was not recorded: {tool}")
+
+    if report.get("research_state_status") != "completed":
+        failures.append(
+            "checkpointed research did not complete "
+            f"(status: {report.get('research_state_status', 'unknown')})"
+        )
+    for key, label in (
+        ("sources_count", "canonical source"),
+        ("inspected_count", "inspected source"),
+        ("evidence_count", "evidence item"),
+        ("source_supported_claim_count", "verified source-supported claim"),
+        ("provenance_memory_count", "claim/evidence-linked project memory"),
+    ):
+        if report.get(key, 0) < 1:
+            failures.append(f"no {label} was persisted")
+    return failures
 PROJECT_NAME = "Stateful_LLM_Architecture"
+
+def live_environment_error(environ: Dict[str, str] | None = None) -> str | None:
+    """Return a fail-fast explanation for unsupported live model/research setup."""
+    values = os.environ if environ is None else environ
+    research_provider_mode = values.get("RESEARCH_PROVIDER_MODE", "").strip().lower()
+    if research_provider_mode != "live":
+        return "scripts/dogfood_research_live.py requires RESEARCH_PROVIDER_MODE=live."
+
+    model_provider = values.get("MODEL_PROVIDER", "").strip().lower()
+    if model_provider != "openai":
+        return "Live agent dogfood requires MODEL_PROVIDER=openai; mock routing is not accepted."
+
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override.startswith("ollama:"):
+        _provider, separator, model = model_override.partition(":")
+        if not separator or not model.strip():
+            return "AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+        local_url = values.get("OLLAMA_BASE_URL", "http://127.0.0.1:11434").strip()
+        try:
+            parsed_url = urlparse(local_url)
+            is_loopback = parsed_url.scheme in {"http", "https"} and parsed_url.hostname in {
+                "localhost", "127.0.0.1", "::1",
+            }
+        except ValueError:
+            is_loopback = False
+        if not is_loopback:
+            return "OLLAMA_BASE_URL must point to localhost or a loopback IP for an Ollama model override."
+        return None
+
+    if not values.get("OPENAI_API_KEY", "").strip():
+        if model_override:
+            return "Without an OpenAI key, AURA_DOGFOOD_MODEL_OVERRIDE must be an exact ollama:model ID."
+        return "Live agent dogfood requires OPENAI_API_KEY or an explicit loopback Ollama override."
+    return None
+
 
 def validate_live_dogfood_environment() -> None:
     """Enforces fail-fast guards for live dogfood execution."""
-    research_provider_mode = os.environ.get("RESEARCH_PROVIDER_MODE", "").lower()
-    if research_provider_mode != "live":
+    error = live_environment_error()
+    if error:
         print("\n" + "=" * 80)
-        print("ERROR: scripts/dogfood_research_live.py requires RESEARCH_PROVIDER_MODE=live")
-        print("Run with: $env:RESEARCH_PROVIDER_MODE='live'; python scripts/dogfood_research_live.py")
+        print(f"ERROR: {error}")
+        print("REAL AGENT DOGFOOD NOT EXECUTED — live model/research requirements were not met")
         print("=" * 80 + "\n")
-        sys.exit(1)
+        sys.exit(2)
 
-    model_provider = os.environ.get("MODEL_PROVIDER", "").lower()
-    if model_provider == "mock":
-        print("\n" + "=" * 80)
-        print("ERROR: Live agent dogfood requires a non-mock model provider.")
-        print("MODEL_PROVIDER is set to 'mock'. Mock provider is strictly prohibited for live agent dogfood.")
-        print("=" * 80 + "\n")
-        sys.exit(1)
 
-    openai_api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    if model_provider == "openai" and not openai_api_key:
-        print("\n" + "=" * 80)
-        print("ERROR: Live agent dogfood requires a non-mock model provider with valid credentials.")
-        print("MODEL_PROVIDER='openai' but OPENAI_API_KEY is missing or empty.")
-        print("=" * 80)
-        print("REAL AGENT DOGFOOD NOT EXECUTED — missing model credentials")
-        print("=" * 80 + "\n")
-        sys.exit(1)
-
-    if not model_provider or model_provider not in {"openai"}:
-        print("\n" + "=" * 80)
-        print(f"ERROR: Live agent dogfood requires a supported non-mock model provider (got: '{model_provider}').")
-        print("Supported path: MODEL_PROVIDER=openai with OPENAI_API_KEY set.")
-        print("=" * 80)
-        print("REAL AGENT DOGFOOD NOT EXECUTED — missing model credentials")
-        print("=" * 80 + "\n")
-        sys.exit(1)
+def _chat_request_payload(session_id: str, project_name: str, environ: Dict[str, str] | None = None) -> Dict[str, str]:
+    values = os.environ if environ is None else environ
+    payload = {
+        "session_id": session_id,
+        "message": RESEARCH_WORKLOAD,
+        "project_name": project_name,
+    }
+    model_override = values.get("AURA_DOGFOOD_MODEL_OVERRIDE", "").strip()
+    if model_override:
+        payload["model_override"] = model_override
+        if model_override.startswith("ollama:"):
+            payload["reasoning_override"] = "instant"
+    return payload
 
 
 def configure_dogfood_runtime(run_key: str, state_dir: Path | None = None) -> tuple[str, Path]:
@@ -106,6 +168,7 @@ def configure_dogfood_runtime(run_key: str, state_dir: Path | None = None) -> tu
     from app.core.settings import settings
     settings.DATABASE_URL = database_url
     settings.CHECKPOINT_DB_PATH = checkpoint_path
+    settings.MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "openai")
 
     from app.db import session as db_session
     db_session.configure_engine(database_url)
@@ -274,13 +337,24 @@ async def audit_dogfood_run(
         meta = m.metadata_json or {}
         print(f"    Lineage: Claims={meta.get('claim_ids')}, Evidence={meta.get('evidence_ids')}, Sources={meta.get('sources_cited')}")
 
+    claim_ids = {claim.claim_id for claim in r_state.claims}
+    evidence_ids = set(r_state.evidence)
+    source_supported_claim_count = sum(
+        claim.claim_type.value == "source_supported_fact"
+        and claim.verification_status == "verified"
+        and bool(set(claim.evidence_ids) & evidence_ids)
+        for claim in r_state.claims
+    )
+    provenance_memory_count = sum(
+        bool(set((memory.metadata_json or {}).get("claim_ids", [])) & claim_ids)
+        and bool(set((memory.metadata_json or {}).get("evidence_ids", [])) & evidence_ids)
+        for memory in mem_records
+    )
+
     if elapsed_seconds is not None:
         print(f"Total Elapsed Time        : {elapsed_seconds:.2f}s")
     print("=" * 80)
-    print("ACCEPTANCE RESULT: Audit completed successfully.")
-    print("=" * 80 + "\n")
-
-    return {
+    report = {
         "parent_run_id": parent_run_id,
         "child_run_id": child_run_id,
         "specialist_name": specialist_name,
@@ -297,8 +371,21 @@ async def audit_dogfood_run(
         "inspected_count": len(r_state.inspected_source_ids),
         "evidence_count": len(r_state.evidence),
         "claims_count": len(r_state.claims),
+        "source_supported_claim_count": source_supported_claim_count,
         "memory_count": len(mem_records),
+        "provenance_memory_count": provenance_memory_count,
     }
+    failures = dogfood_acceptance_failures(report)
+    report["accepted"] = not failures
+    report["acceptance_failures"] = failures
+    if failures:
+        print("ACCEPTANCE RESULT: FAIL")
+        for failure in failures:
+            print(f"  - {failure}")
+    else:
+        print("ACCEPTANCE RESULT: PASS — persisted research evidence, verified claims, and memory provenance.")
+    print("=" * 80 + "\n")
+    return report
 
 
 def write_audit_report(parent_run_id: str, report: Dict[str, Any], output_dir: Path | None = None) -> Path:
@@ -327,7 +414,10 @@ async def run_live_agent_dogfood():
     overall_start_time = time.time()
     print("=" * 80)
     print("AURA SCHOLARLY RESEARCH SPECIALIST: LIVE END-TO-END AGENT DOGFOOD")
-    print(f"Model Provider        : {settings.MODEL_PROVIDER} ({settings.OPENAI_MODEL_NAME})")
+    selected_model = os.environ.get("AURA_DOGFOOD_MODEL_OVERRIDE") or (
+        f"{settings.MODEL_PROVIDER}:{settings.OPENAI_MODEL_NAME}"
+    )
+    print(f"Model Selection       : {selected_model}")
     print(f"Research Provider Mode: {settings.RESEARCH_PROVIDER_MODE} (Live Semantic Scholar + arXiv)")
     print(f"Target Project        : {PROJECT_NAME}")
     print(f"Isolated Database URL : {database_url}")
@@ -352,11 +442,7 @@ async def run_live_agent_dogfood():
             t0 = time.time()
             chat_resp = await client.post(
                 "/v1/chat",
-                json={
-                    "session_id": session_id,
-                    "message": RESEARCH_WORKLOAD,
-                    "project_name": PROJECT_NAME,
-                },
+                json=_chat_request_payload(session_id, PROJECT_NAME),
             )
             chat_duration = time.time() - t0
 
@@ -401,6 +487,8 @@ async def run_live_agent_dogfood():
     report["elapsed_seconds"] = round(elapsed, 2)
     report_path = write_audit_report(parent_run_id, report)
     print(f"Sanitized audit artifact: {report_path}")
+    if not report["accepted"]:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
