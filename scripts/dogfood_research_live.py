@@ -8,7 +8,7 @@ User Request
   -> Research Specialist child run
   -> ModelRouter
   -> REAL non-mock model (OpenAI)
-  -> research_search (live CompositeResearchProvider: Semantic Scholar + arXiv)
+  -> research_search (live CompositeResearchProvider: Semantic Scholar + arXiv + Crossref metadata fallback)
   -> read_document_section (arXiv PDF extraction & section parsing)
   -> extract_evidence
   -> record_research_claim
@@ -461,7 +461,7 @@ async def run_live_agent_dogfood():
         f"{settings.MODEL_PROVIDER}:{settings.OPENAI_MODEL_NAME}"
     )
     print(f"Model Selection       : {selected_model}")
-    print(f"Research Provider Mode: {settings.RESEARCH_PROVIDER_MODE} (Live Semantic Scholar + arXiv)")
+    print(f"Research Provider Mode: {settings.RESEARCH_PROVIDER_MODE} (Live Semantic Scholar + arXiv + Crossref metadata)")
     print(f"Target Project        : {PROJECT_NAME}")
     print(f"Isolated Database URL : {database_url}")
     print(f"Isolated Checkpoints  : {checkpoint_path}")
