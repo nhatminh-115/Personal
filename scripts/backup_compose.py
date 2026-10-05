@@ -94,7 +94,7 @@ def extract_workspace_archive(archive_path: Path, destination: Path) -> None:
             target = destination.joinpath(*PurePosixPath(member.name).parts)
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
-                target.chmod(member.mode & 0o777)
+                target.chmod((member.mode & 0o777) | 0o700)
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             source = archive.extractfile(member)
@@ -102,7 +102,7 @@ def extract_workspace_archive(archive_path: Path, destination: Path) -> None:
                 raise ValueError(f"Workspace backup file cannot be read: {member.name}")
             with source, target.open("xb") as output:
                 shutil.copyfileobj(source, output)
-            target.chmod(member.mode & 0o777)
+            target.chmod((member.mode & 0o777) | 0o600)
 
 
 def verify_backup(archive_path: Path) -> dict:
