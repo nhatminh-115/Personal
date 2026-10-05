@@ -50,7 +50,7 @@ class TraceService:
         query = (
             select(RunEventModel)
             .where(RunEventModel.run_id == run_id)
-            .order_by(RunEventModel.created_at.asc())
+            .order_by(RunEventModel.created_at.asc(), RunEventModel.id.asc())
         )
         result = await self.db.execute(query)
         return list(result.scalars().all())
