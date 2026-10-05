@@ -449,6 +449,51 @@ async def test_personal_notes_persist_once_and_project_links_share_the_same_grap
 
 
 @pytest.mark.asyncio
+async def test_personal_note_delete_checks_revision_and_cascades_project_links(async_client):
+    created = await async_client.post("/v1/workspace/notes", json={
+        "title": "Retired deployment note",
+        "body": "Remove after the migration is complete.",
+        "project_names": ["aura", "transportability"],
+    })
+    assert created.status_code == 201
+    note = created.json()
+
+    stale_delete = await async_client.delete(
+        f"/v1/workspace/notes/{note['id']}?expected_revision={note['revision'] + 1}"
+    )
+    assert stale_delete.status_code == 409
+    assert stale_delete.json()["detail"]["current_revision"] == note["revision"]
+    assert note["id"] in {item["id"] for item in (await async_client.get("/v1/workspace/notes")).json()}
+
+    deleted = await async_client.delete(
+        f"/v1/workspace/notes/{note['id']}?expected_revision={note['revision']}"
+    )
+    assert deleted.status_code == 204
+    assert note["id"] not in {item["id"] for item in (await async_client.get("/v1/workspace/notes")).json()}
+    for project_name in note["project_names"]:
+        graph = (await async_client.get(f"/v1/workspace/projects/{project_name}/graph")).json()
+        assert note["id"] not in {item["id"] for item in graph["objects"]}
+        assert note["id"] not in {object_id for edge in graph["edges"] for object_id in (edge["source_object_id"], edge["target_object_id"])}
+
+
+@pytest.mark.asyncio
+async def test_personal_note_delete_does_not_delete_project_local_objects(async_client):
+    created = await async_client.post("/v1/workspace/projects/aura/objects", json={
+        "object_type": "manual_note",
+        "title": "Project-local note",
+        "content": "Keep project scope.",
+    })
+    assert created.status_code == 201
+    item = created.json()
+
+    response = await async_client.delete(f"/v1/workspace/notes/{item['id']}?expected_revision=1")
+
+    assert response.status_code == 404
+    graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
+    assert item["id"] in {obj["id"] for obj in graph["objects"]}
+
+
+@pytest.mark.asyncio
 async def test_workspace_object_revisions_reject_stale_board_and_notes_updates(async_client):
     created = await async_client.post("/v1/workspace/notes", json={
         "title": "Shared note",

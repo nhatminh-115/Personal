@@ -125,5 +125,37 @@ describe('Persistent personal workspace Notes', () => {
     await waitFor(() => expect(privacy).toHaveValue('confidential'), { timeout: 3000 });
     expect(await screen.findByText(/Note was not saved/)).toBeInTheDocument();
   });
+
+  it('deletes a saved Note only after confirmation and sends its loaded revision', async () => {
+    const note = {
+      id: 'note-delete', title: 'Finished note', body: 'Safe to remove.', tags: [], project_names: [],
+      pinned: false, revision: 7,
+      created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([note]) } as Response);
+      if (url === '/v1/workspace/notes/note-delete?expected_revision=7' && init?.method === 'DELETE') {
+        return Promise.resolve({ ok: true, status: 204, text: () => Promise.resolve('') } as Response);
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
+
+    fireEvent.click(await screen.findByRole('button', { name: /Finished note/i }));
+    expect(await screen.findByDisplayValue('Finished note')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Delete “Finished note” permanently?'));
+    expect(global.fetch).not.toHaveBeenCalledWith('/v1/workspace/notes/note-delete?expected_revision=7', expect.anything());
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes/note-delete?expected_revision=7', { method: 'DELETE' }));
+    await waitFor(() => expect(screen.queryByDisplayValue('Finished note')).not.toBeInTheDocument());
+  });
 });
 

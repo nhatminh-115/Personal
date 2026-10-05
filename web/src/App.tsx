@@ -376,6 +376,7 @@ export default function App() {
   const savedNoteFingerprints = useRef(new Map<string, string>());
   const savedNotePrivacyPolicies = useRef(new Map<string, WorkspaceNote['privacyPolicy']>());
   const savedNoteRevisions = useRef(new Map<string, number>());
+  const deletedWorkspaceNoteIds = useRef(new Set<string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
   const automationsLoaded = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
@@ -1936,7 +1937,7 @@ export default function App() {
   }, []);
 
   const queueWorkspaceNoteUpdate = useCallback((note: WorkspaceNote) => {
-    if (note.source !== 'live') return;
+    if (note.source !== 'live' || deletedWorkspaceNoteIds.current.has(note.id)) return;
     const previousTimer = noteSyncTimers.current.get(note.id);
     if (previousTimer !== undefined) window.clearTimeout(previousTimer);
     const timer = window.setTimeout(() => {
@@ -1970,6 +1971,7 @@ export default function App() {
         replaceWorkspaceNote(current.id, refreshed);
         if (workspaceNoteFingerprint(current) !== sentFingerprint) queueWorkspaceNoteUpdate(refreshed);
       }).catch((error: unknown) => {
+        if (deletedWorkspaceNoteIds.current.has(latest.id)) return;
         const current = notesRef.current.find((item) => item.id === latest.id);
         if (current && current.privacyPolicy === sentPrivacyPolicy) {
           const restored = { ...current, privacyPolicy: savedNotePrivacyPolicies.current.get(latest.id) };
@@ -2025,6 +2027,49 @@ export default function App() {
       else if (note.source === 'live') queueWorkspaceNoteUpdate(note);
     }
   }, [persistLocalWorkspaceNote, queueWorkspaceNoteUpdate]);
+
+  const handleDeleteWorkspaceNote = useCallback(async (note: WorkspaceNote): Promise<boolean> => {
+    if (note.source === 'demo') return false;
+    if (note.source === 'local') {
+      if (noteCreateInFlight.current.has(note.id)) {
+        pushToast('Note is still saving', 'Wait for the workspace copy to finish syncing, then delete it.');
+        return false;
+      }
+      const next = notesRef.current.filter((item) => item.id !== note.id);
+      notesRef.current = next;
+      setNotes(next);
+      return true;
+    }
+
+    const expectedRevision = savedNoteRevisions.current.get(note.id);
+    if (expectedRevision === undefined) {
+      pushToast('Note could not be deleted', 'Reload saved Notes before deleting this item.');
+      return false;
+    }
+    const timer = noteSyncTimers.current.get(note.id);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      noteSyncTimers.current.delete(note.id);
+    }
+    deletedWorkspaceNoteIds.current.add(note.id);
+    try {
+      await api.deleteWorkspaceNote(note.id, expectedRevision);
+      savedNoteRevisions.current.delete(note.id);
+      savedNoteFingerprints.current.delete(note.id);
+      savedNotePrivacyPolicies.current.delete(note.id);
+      const next = notesRef.current.filter((item) => item.id !== note.id);
+      notesRef.current = next;
+      setNotes(next);
+      return true;
+    } catch (error) {
+      deletedWorkspaceNoteIds.current.delete(note.id);
+      pushToast(error instanceof ApiError && error.status === 409 ? 'Note changed elsewhere' : 'Note could not be deleted',
+        error instanceof ApiError && error.status === 409
+          ? 'The saved note changed after it was loaded. Reload Notes before trying again.'
+          : executionErrorText(error));
+      return false;
+    }
+  }, [pushToast]);
 
   const loadWorkspaceNotesPage = useCallback(async (cursor: string | null, append: boolean) => {
     if (notesPageLoading) return;
@@ -2939,7 +2984,7 @@ export default function App() {
         {surface === 'file-viewer' && activeFilePreview ? (
           <FilePreviewView preview={activeFilePreview} onOpenExternal={() => window.open(activeFilePreview.url, '_blank', 'noopener,noreferrer')} onImportCopy={activeFilePreview.sourceFile ? (file, sourcePath) => void importFiles([file], undefined, sourcePath) : undefined} />
         ) : null}
-        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} projectId={notesProjectScopeId} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} onShowAllNotes={() => handleSidebarNavigate('notes')} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
+        {surface === 'notes' ? <NotesView projects={projectCatalog} notes={notes} projectId={notesProjectScopeId} focusNoteId={focusedWorkspaceNoteId} onNotesChange={handleWorkspaceNotesChange} onOpenProject={openProject} onDeleteNote={handleDeleteWorkspaceNote} onShowAllNotes={() => handleSidebarNavigate('notes')} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} /> : null}
         {surface === 'study' ? <StudyView libraryItems={libraryItems} notes={notes} sessions={studySessions} cards={studyCards} dueCards={dueStudyCards} hasMoreDueCards={Boolean(dueStudyCardsNextCursor)} loadingDueCards={loadingDueStudyCards} loadingMoreDueCards={loadingOlderDueStudyCards} dueCardsLoadError={dueStudyCardsLoadError} onLoadMoreDueCards={loadOlderDueStudyCards} onRefreshDueCards={refreshDueStudyCards} focusSessionId={focusedStudySessionId} hasMoreNotes={Boolean(notesNextCursor)} loadingMoreNotes={notesPageLoading} notesLoadError={notesPageError} onLoadMoreNotes={loadMoreWorkspaceNotes} hasMoreLibrary={Boolean(libraryNextCursor)} loadingMoreLibrary={libraryPageLoading} libraryLoadError={libraryPageError} onLoadMoreLibrary={loadMoreWorkspaceLibrary} hasMoreSessions={Boolean(studySessionsNextCursor)} loadingMoreSessions={loadingOlderStudySessions} sessionsLoadError={studySessionsLoadError} onLoadMoreSessions={loadOlderStudySessions} hasMoreCards={Boolean(studyCardsNextCursor)} loadingMoreCards={loadingOlderStudyCards} cardsLoadError={studyCardsLoadError} onLoadMoreCards={loadOlderStudyCards} onOpenItem={(item) => void handleLibraryItem(item)} onBrowseLibrary={() => handleSidebarNavigate('library')} onStartSession={(item) => void startStudySession(item)} onStartNoteSession={(note) => void startStudyFromNote(note)} onCompleteSession={(sessionId) => void completeStudySession(sessionId)} onCreateCard={createStudyCard} onUpdateCard={updateStudyCard} onReviewCard={reviewStudyCard} onDeleteCard={deleteStudyCard} onSaveReflection={(sessionId, reflection) => saveStudyReflection(sessionId, reflection)} onOpenResearchFinding={openResearchProjectObject} /> : null}
         {surface === 'automations' ? <AutomationsView projects={projectCatalog} automations={automations} totalCount={automationSummary.total} enabledCount={automationSummary.enabled} hasMore={Boolean(automationCursor)} loadingPage={automationPageLoading} pageError={automationPageError} includeArchived={includeArchivedAutomations} onToggleArchived={toggleArchivedAutomations} onLoadMore={() => void loadAutomationPage(automationCursor)} onCreate={createAutomation} onUpdate={updateAutomation} onDuplicate={duplicateAutomation} onSetArchived={setAutomationArchived} onToggle={setAutomationEnabled} onRunNow={runAutomation} onCancelRun={cancelAutomationRun} onRetryRun={retryAutomationRun} onApprovalResolved={refreshAutomationAfterApproval} /> : null}
         {surface === 'projects' ? <ProjectsView projects={projectCatalog} createRequest={projectCreateRequest} onOpenProject={openProject} onCreateProject={createProject} onSetArchived={setWorkspaceProjectArchived} /> : null}

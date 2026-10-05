@@ -1079,6 +1079,46 @@ async def update_personal_workspace_note(
     return await _workspace_note_response(db, item)
 
 
+@router.delete("/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_personal_workspace_note(
+    note_id: str,
+    expected_revision: int = Query(ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    item = await db.get(WorkspaceObjectModel, note_id)
+    if (
+        item is None
+        or item.project_name is not None
+        or item.object_type != "manual_note"
+        or item.created_by != "user"
+    ):
+        raise HTTPException(status_code=404, detail="Personal workspace note not found.")
+
+    result = await db.execute(
+        sa_delete(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.id == note_id,
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "manual_note",
+            WorkspaceObjectModel.created_by == "user",
+            WorkspaceObjectModel.revision == expected_revision,
+        )
+        .returning(WorkspaceObjectModel.id)
+    )
+    if result.scalar_one_or_none() is None:
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == note_id)
+        )
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Personal workspace note not found.")
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Workspace note changed since it was loaded.", "current_revision": current_revision},
+        )
+    await db.commit()
+
+
 @router.get("/library", response_model=list[WorkspaceLibraryReferenceResponse])
 async def list_personal_library_references(
     response: Response,

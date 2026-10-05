@@ -1,4 +1,4 @@
-import { Link2, NotebookPen, Pin, Plus, Search, X } from 'lucide-react';
+import { Link2, NotebookPen, Pin, Plus, Search, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectRecord, WorkspaceNote } from '../../data/workspaceData';
 import type { RoutingPrivacy } from '../../types';
@@ -10,6 +10,7 @@ interface NotesViewProps {
   focusNoteId?: string | null;
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
+  onDeleteNote?: (note: WorkspaceNote) => Promise<boolean>;
   onShowAllNotes?: () => void;
   hasMoreNotes?: boolean;
   loadingMoreNotes?: boolean;
@@ -17,10 +18,11 @@ interface NotesViewProps {
   onLoadMoreNotes?: () => void;
 }
 
-export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChange, onOpenProject, onShowAllNotes, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
+export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChange, onOpenProject, onDeleteNote, onShowAllNotes, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const appliedFocusNoteId = useRef<string | null>(null);
   const selectedProject = projects.find((project) => project.id === projectId) ?? null;
   const filtered = useMemo(() => {
@@ -42,6 +44,19 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
   const updateActive = (patch: Partial<WorkspaceNote>) => {
     if (!active) return;
     onNotesChange(notes.map((note) => note.id === active.id ? { ...note, ...patch, updated: 'just now' } : note));
+  };
+
+  const deleteActive = async () => {
+    if (!active || !onDeleteNote || active.source === 'demo') return;
+    const linkedProjects = active.projectIds.map((id) => projects.find((project) => project.id === id)?.name).filter(Boolean);
+    const linkedDescription = linkedProjects.length ? ` It will also be unlinked from ${linkedProjects.join(', ')}.` : '';
+    if (!window.confirm(`Delete “${active.title || 'Untitled note'}” permanently?${linkedDescription}`)) return;
+    setDeleting(true);
+    try {
+      await onDeleteNote(active);
+    } finally {
+      setDeleting(false);
+    }
   };
 
   const createNote = () => {
@@ -106,6 +121,7 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
                 </label>
                 <button className={`pin-note ${active.pinned ? 'is-active' : ''}`} type="button" onClick={() => updateActive({ pinned: !active.pinned })}><Pin size={13} /> {active.pinned ? 'Pinned' : 'Pin'}</button>
               </div>
+              {onDeleteNote && active.source !== 'demo' ? <button className="delete-note" type="button" disabled={deleting} onClick={() => void deleteActive()}><Trash2 size={13} /> {deleting ? 'Deleting…' : 'Delete note'}</button> : null}
             </div>
             <input className="note-title-input" value={active.title} onChange={(event) => updateActive({ title: event.target.value })} />
             <textarea className="note-body-input" value={active.body} onChange={(event) => updateActive({ body: event.target.value })} placeholder="Write anything…" />
