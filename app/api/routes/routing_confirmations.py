@@ -169,6 +169,12 @@ async def decide_routing_confirmation(
                 detail=f"Run has already reached terminal status '{root_run.status}'.",
             )
 
+        if root_run.cancel_requested_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The parent chat turn is being cancelled; this routing confirmation cannot resume the run.",
+            )
+
         if item.status != "pending" and item.status != request.decision:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

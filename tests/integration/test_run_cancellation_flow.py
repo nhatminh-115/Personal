@@ -241,7 +241,11 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
 
     async def pause_before_root_finalization(session, instance, *args, **kwargs):
         result = await original_refresh(session, instance, *args, **kwargs)
-        if isinstance(instance, RunModel) and instance.client_turn_id == client_turn_id:
+        if (
+            isinstance(instance, RunModel)
+            and instance.client_turn_id == client_turn_id
+            and not finalization_started.is_set()
+        ):
             finalization_started.set()
             await release_finalization.wait()
         return result
@@ -268,6 +272,8 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
                 DelegationModel.parent_run_id == root.id,
             ))
             assert delegation is not None
+            approval_id = delegation.pending_approval_id
+            assert approval_id is not None
             child = await session.get(RunModel, delegation.child_run_id)
             assert child is not None and child.status == RunStatus.WAITING_FOR_APPROVAL.value
             assert delegation.status == RunStatus.WAITING_FOR_APPROVAL.value
@@ -277,6 +283,11 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
             "client_turn_id": client_turn_id,
         })
         assert cancel.status_code == 202, cancel.text
+        approval_after_cancel = await async_client.post(
+            f"/v1/approvals/{approval_id}/decision",
+            json={"decision": "approved", "decision_notes": "Attempt resume after cancel request"},
+        )
+        assert approval_after_cancel.status_code == 409
         release_finalization.set()
         chat = await asyncio.wait_for(chat_task, timeout=30)
         assert chat.status_code == 200, chat.text

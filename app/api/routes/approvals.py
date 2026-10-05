@@ -186,6 +186,21 @@ async def submit_approval_decision(
                 detail=f"Run has already reached terminal status '{run_record.status}'.",
             )
 
+        if run_record.cancel_requested_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="The parent chat turn is being cancelled; this approval cannot resume the run.",
+            )
+        if run_record.parent_run_id:
+            parent_run = await db.get(RunModel, run_record.parent_run_id)
+            if parent_run is not None:
+                await db.refresh(parent_run)
+                if parent_run.cancel_requested_at is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="The parent chat turn is being cancelled; this approval cannot resume the run.",
+                    )
+
         graph = await get_compiled_graph()
         config = {
             "configurable": {
