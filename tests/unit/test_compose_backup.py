@@ -26,6 +26,10 @@ def _fake_compose(monkeypatch, *, api_running=True, fail_checkpoint=False):
         if command[2:4] == ["cp", "aura-app:/app/checkpoints/."]:
             Path(command[-1], "aura_checkpoints.db").write_bytes(checkpoint)
             Path(command[-1], "aura_checkpoints.db-wal").write_bytes(wal)
+        elif command[2:4] == ["cp", "aura-app:/app/workspace/."]:
+            workspace = Path(command[-1])
+            (workspace / "reports").mkdir()
+            (workspace / "reports" / "answer.txt").write_text("preserve this workspace file", encoding="utf-8")
         elif "pg_dump" in command:
             kwargs["stdout"].write(b"postgres-dump")
         return subprocess.CompletedProcess(command, 0, stdout="" if kwargs.get("text") else b"")
@@ -34,7 +38,7 @@ def _fake_compose(monkeypatch, *, api_running=True, fail_checkpoint=False):
     return calls, checkpoint, wal
 
 
-def test_backup_contains_both_stores_and_checksums(tmp_path, monkeypatch):
+def test_backup_contains_all_durable_stores_and_checksums(tmp_path, monkeypatch):
     calls, checkpoint, wal = _fake_compose(monkeypatch)
     destination = backup_compose.create_backup(tmp_path / "aura.tar.gz")
 
@@ -45,22 +49,29 @@ def test_backup_contains_both_stores_and_checksums(tmp_path, monkeypatch):
         assert archive.extractfile("postgres.dump").read() == b"postgres-dump"
         assert archive.extractfile("checkpoint/aura_checkpoints.db").read() == checkpoint
         assert archive.extractfile("checkpoint/aura_checkpoints.db-wal").read() == wal
-    assert manifest["format_version"] == 1
+        workspace_bytes = archive.extractfile("workspace.tar.gz").read()
+        workspace_tar_path = tmp_path / "workspace.tar.gz"
+        workspace_tar_path.write_bytes(workspace_bytes)
+        with tarfile.open(workspace_tar_path, "r:gz") as workspace_tar:
+            assert workspace_tar.extractfile("reports/answer.txt").read() == b"preserve this workspace file"
+    assert manifest["format_version"] == 2
     assert manifest["files"] == {
         "postgres.dump": hashlib.sha256(b"postgres-dump").hexdigest(),
         "checkpoint/aura_checkpoints.db": hashlib.sha256(checkpoint).hexdigest(),
         "checkpoint/aura_checkpoints.db-wal": hashlib.sha256(wal).hexdigest(),
+        "workspace.tar.gz": hashlib.sha256(workspace_bytes).hexdigest(),
     }
     assert backup_compose.verify_backup(destination) == manifest
 
 
 def test_backup_verification_rejects_payload_tampering(tmp_path):
     manifest = {
-        "format_version": 1,
+        "format_version": 2,
         "created_at": "2026-10-03T00:00:00+00:00",
         "files": {
             "postgres.dump": hashlib.sha256(b"expected dump").hexdigest(),
             "checkpoint/aura_checkpoints.db": hashlib.sha256(b"checkpoint").hexdigest(),
+            "workspace.tar.gz": hashlib.sha256(b"workspace").hexdigest(),
         },
     }
     archive_path = tmp_path / "tampered.tar.gz"
@@ -69,6 +80,7 @@ def test_backup_verification_rejects_payload_tampering(tmp_path):
             ("manifest.json", json.dumps(manifest).encode()),
             ("postgres.dump", b"modified dump"),
             ("checkpoint/aura_checkpoints.db", b"checkpoint"),
+            ("workspace.tar.gz", b"workspace"),
         ):
             info = tarfile.TarInfo(name)
             info.size = len(content)
@@ -76,6 +88,42 @@ def test_backup_verification_rejects_payload_tampering(tmp_path):
 
     with pytest.raises(ValueError, match="checksum failed for postgres.dump"):
         backup_compose.verify_backup(archive_path)
+
+
+@pytest.mark.parametrize("unsafe_name", ["../escape.txt", "/absolute.txt", "C:/drive.txt", "folder\\escape.txt"])
+def test_workspace_archive_rejects_unsafe_paths(tmp_path, unsafe_name):
+    workspace_archive = tmp_path / "workspace.tar.gz"
+    with tarfile.open(workspace_archive, "w:gz") as archive:
+        info = tarfile.TarInfo(unsafe_name)
+        info.size = 1
+        archive.addfile(info, io.BytesIO(b"x"))
+
+    with pytest.raises(ValueError, match="unsafe or duplicate path"):
+        backup_compose._validate_workspace_archive(workspace_archive)
+
+
+def test_workspace_archive_rejects_links_and_extracts_only_regular_files(tmp_path):
+    workspace_archive = tmp_path / "workspace.tar.gz"
+    with tarfile.open(workspace_archive, "w:gz") as archive:
+        directory = tarfile.TarInfo("docs")
+        directory.type = tarfile.DIRTYPE
+        archive.addfile(directory)
+        info = tarfile.TarInfo("docs/notes.txt")
+        info.size = len(b"saved workspace")
+        archive.addfile(info, io.BytesIO(b"saved workspace"))
+
+    extracted = tmp_path / "restored"
+    backup_compose.extract_workspace_archive(workspace_archive, extracted)
+    assert (extracted / "docs" / "notes.txt").read_text(encoding="utf-8") == "saved workspace"
+
+    link_archive = tmp_path / "workspace-link.tar.gz"
+    with tarfile.open(link_archive, "w:gz") as archive:
+        link = tarfile.TarInfo("outside")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../outside"
+        archive.addfile(link)
+    with pytest.raises(ValueError, match="regular files or directories"):
+        backup_compose._validate_workspace_archive(link_archive)
 
 
 def test_list_backups_reports_verified_and_invalid_archives_without_changing_them(tmp_path, monkeypatch):
