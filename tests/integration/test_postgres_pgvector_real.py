@@ -1,12 +1,17 @@
 """Real integration tests for PostgreSQL + pgvector extension, catalog schema, and vector queries."""
 
+import asyncio
 import os
+import uuid
 import pytest
-from sqlalchemy import text
+from fastapi import HTTPException
+from sqlalchemy import delete, func as sa_func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.db.models import MemoryModel
 from app.memory.base import MemoryType
+from app.memory.service import SQLMemoryService
+from app.api.routes.memory import _set_memory_active
 from app.memory.stores.pgvector_store import PgVectorSemanticStore
 
 
@@ -141,3 +146,98 @@ async def test_postgres_pgvector_insert_and_cosine_search(pg_session):
     assert matched_mem.id == mem_atlas.id
     assert sim > 0.99
     assert matched_mem.project_name == "Atlas"
+
+
+@pytest.mark.asyncio
+async def test_postgres_concurrent_profile_writes_keep_one_active_version(pg_session):
+    """Same-key profile writes serialize and retain the supersession chain."""
+    key = f"concurrent-profile-{uuid.uuid4()}"
+    engine = pg_session.bind
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def write_fact(value: str):
+        async with session_factory() as session:
+            return await SQLMemoryService(session).set_profile_fact(key, value)
+
+    try:
+        await asyncio.gather(write_fact("first value"), write_fact("second value"))
+        async with session_factory() as session:
+            rows = list((await session.execute(
+                select(MemoryModel).where(
+                    MemoryModel.memory_type == MemoryType.PROFILE.value,
+                    MemoryModel.project_name.is_(None),
+                    MemoryModel.key == key,
+                ).order_by(MemoryModel.created_at, MemoryModel.id)
+            )).scalars())
+            active = [row for row in rows if row.is_active]
+            inactive = [row for row in rows if not row.is_active]
+            assert len(rows) == 2
+            assert len(active) == 1
+            assert len(inactive) == 1
+            assert inactive[0].superseded_by_id == active[0].id
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(MemoryModel).where(
+                MemoryModel.memory_type == MemoryType.PROFILE.value,
+                MemoryModel.project_name.is_(None),
+                MemoryModel.key == key,
+            ))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_postgres_concurrent_memory_restores_reject_second_active_version(pg_session):
+    """Two archived versions restored simultaneously cannot both become active."""
+    key = f"concurrent-restore-{uuid.uuid4()}"
+    ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+    engine = pg_session.bind
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async with session_factory() as session:
+        session.add_all([
+            MemoryModel(
+                id=memory_id,
+                memory_type=MemoryType.PROFILE.value,
+                project_name=None,
+                key=key,
+                content=f"archived-{index}",
+                confidence=1.0,
+                is_active=False,
+                metadata_json={},
+            )
+            for index, memory_id in enumerate(ids)
+        ])
+        await session.commit()
+
+    async def restore(memory_id: str):
+        async with session_factory() as session:
+            return await _set_memory_active(
+                session,
+                memory_id=memory_id,
+                memory_type=MemoryType.PROFILE.value,
+                project_name=None,
+                not_found_detail="Profile memory not found.",
+                is_active=True,
+            )
+
+    try:
+        results = await asyncio.gather(restore(ids[0]), restore(ids[1]), return_exceptions=True)
+        assert sum(not isinstance(result, Exception) for result in results) == 1
+        conflicts = [result for result in results if isinstance(result, HTTPException)]
+        assert len(conflicts) == 1
+        assert conflicts[0].status_code == 409
+
+        async with session_factory() as session:
+            active_count = await session.scalar(
+                select(sa_func.count()).select_from(MemoryModel).where(
+                    MemoryModel.memory_type == MemoryType.PROFILE.value,
+                    MemoryModel.project_name.is_(None),
+                    MemoryModel.key == key,
+                    MemoryModel.is_active.is_(True),
+                )
+            )
+            assert active_count == 1
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(MemoryModel).where(MemoryModel.id.in_(ids)))
+            await session.commit()

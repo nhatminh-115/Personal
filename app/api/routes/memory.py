@@ -4,6 +4,7 @@ import uuid
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import and_, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
@@ -11,6 +12,7 @@ from app.api.schemas import MemoryActivationUpdate, MemoryItemResponse, ProjectM
 from app.db.models import MemoryModel
 from app.db.session import get_db
 from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError
+from app.memory.locks import lock_memory_key, project_memory_lock_key
 from app.memory.service import SQLMemoryService
 
 router = APIRouter(prefix="/v1/memory", tags=["Memory"])
@@ -200,6 +202,26 @@ async def edit_project_memory(
         # Preserve the edit without sending private text to a disallowed embedder.
         embedding = None
 
+    await lock_memory_key(
+        db,
+        memory_type="project",
+        project_name=normalized_project,
+        key=project_memory_lock_key(normalized_project, current.key),
+    )
+    locked_result = await db.execute(select(MemoryModel).where(
+        MemoryModel.id == current.id,
+        MemoryModel.memory_type == "project",
+        MemoryModel.project_name == normalized_project,
+        MemoryModel.is_active.is_(True),
+    ))
+    locked_current = locked_result.scalar_one_or_none()
+    if locked_current is None:
+        raise HTTPException(
+            status_code=409,
+            detail="This project memory changed while you were editing it. Reload and try again.",
+        )
+    current = locked_current
+
     changed = await db.execute(
         update(MemoryModel)
         .where(
@@ -242,7 +264,14 @@ async def edit_project_memory(
         metadata_json=metadata,
     )
     db.add(replacement)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "MemoryActiveVersionConflict", "message": "This project memory changed while you were editing it. Reload and try again."},
+        ) from exc
     await db.refresh(replacement)
     return _memory_response(replacement)
 
@@ -287,6 +316,23 @@ async def _set_memory_active(
     if memory is None:
         raise HTTPException(status_code=404, detail=not_found_detail)
 
+    await lock_memory_key(
+        db,
+        memory_type=memory_type,
+        project_name=project_name,
+        key=(project_memory_lock_key(project_name, memory.key) if memory_type == "project" and project_name else memory.key or ""),
+    )
+    result = await db.execute(select(MemoryModel).where(
+        MemoryModel.id == memory_id,
+        MemoryModel.memory_type == memory_type,
+        scope_filter,
+    ))
+    memory = result.scalar_one_or_none()
+    if memory is None:
+        raise HTTPException(status_code=404, detail=not_found_detail)
+    if memory.is_active == is_active:
+        return _memory_response(memory)
+
     if is_active and not memory.is_active:
         active_query = select(MemoryModel.id).where(
             MemoryModel.memory_type == memory.memory_type,
@@ -302,20 +348,25 @@ async def _set_memory_active(
                 detail="An active memory already uses this key. Deactivate it before restoring this version.",
             )
 
-    memory.is_active = is_active
-    await db.commit()
-    await db.refresh(memory)
-    return MemoryItemResponse(
-        id=memory.id,
-        session_id=memory.session_id,
-        memory_type=memory.memory_type,
-        project_name=memory.project_name,
-        key=memory.key,
-        content=memory.content,
-        confidence=memory.confidence,
-        is_active=memory.is_active,
-        supersedes_id=memory.supersedes_id,
-        superseded_by_id=memory.superseded_by_id,
-        metadata_json=memory.metadata_json,
-        created_at=memory.created_at,
+    changed = await db.execute(
+        update(MemoryModel)
+        .where(MemoryModel.id == memory_id, MemoryModel.is_active.is_(not is_active))
+        .values(is_active=is_active)
+        .returning(MemoryModel.id)
     )
+    if changed.scalar_one_or_none() is None:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "MemoryActiveVersionConflict", "message": "This memory changed. Reload and try again."},
+        )
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "MemoryActiveVersionConflict", "message": "An active memory already uses this key. Reload and try again."},
+        ) from exc
+    await db.refresh(memory)
+    return _memory_response(memory)

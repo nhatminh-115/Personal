@@ -1,13 +1,14 @@
 """SQLAlchemy-backed implementation of the MemoryService."""
 
 from typing import Any, Dict, List, Optional
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.logging import logger
-from app.db.models import MemoryModel, MessageModel, SessionModel, WorkspaceEdgeModel, WorkspaceObjectModel
+from app.db.models import MemoryModel, MessageModel, SessionModel, WorkspaceEdgeModel, WorkspaceObjectModel, generate_uuid
 from app.memory.base import MemoryService, MemoryType
 from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError, EmbeddingRouter, embedding_router
+from app.memory.locks import lock_memory_key
 from app.memory.stores.factory import get_semantic_store
 
 
@@ -374,15 +375,26 @@ class SQLMemoryService(MemoryService):
 
     # --- Profile Memory ---
     async def set_profile_fact(self, key: str, value: str, metadata: Optional[Dict[str, Any]] = None) -> MemoryModel:
+        await lock_memory_key(self.db, memory_type=MemoryType.PROFILE.value, project_name=None, key=key)
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROFILE.value,
+            MemoryModel.project_name.is_(None),
             MemoryModel.key == key,
             MemoryModel.is_active.is_(True),
         )
         result = await self.db.execute(query)
         existing_active = result.scalar_one_or_none()
+        new_id = generate_uuid()
+
+        if existing_active:
+            await self.db.execute(
+                update(MemoryModel)
+                .where(MemoryModel.id == existing_active.id, MemoryModel.is_active.is_(True))
+                .values(is_active=False, superseded_by_id=new_id)
+            )
 
         new_memory = MemoryModel(
+            id=new_id,
             session_id=None,
             memory_type=MemoryType.PROFILE.value,
             key=key,
@@ -393,11 +405,6 @@ class SQLMemoryService(MemoryService):
         )
         self.db.add(new_memory)
         await self.db.flush()
-
-        if existing_active:
-            existing_active.is_active = False
-            existing_active.superseded_by_id = new_memory.id
-
         await self.db.commit()
         await self.db.refresh(new_memory)
         return new_memory
@@ -455,18 +462,35 @@ class SQLMemoryService(MemoryService):
             except EmbeddingPrivacyBoundaryError:
                 vec = None
 
+        full_key = f"{project_name}:{key}"
+        await lock_memory_key(
+            self.db,
+            memory_type=MemoryType.PROJECT.value,
+            project_name=project_name,
+            key=full_key,
+        )
         query = select(MemoryModel).where(
             MemoryModel.memory_type == MemoryType.PROJECT.value,
-            MemoryModel.key == f"{project_name}:{key}",
+            MemoryModel.project_name == project_name,
+            MemoryModel.key == full_key,
             MemoryModel.is_active.is_(True),
         )
         result = await self.db.execute(query)
         existing_active = result.scalar_one_or_none()
+        new_id = generate_uuid()
+
+        if existing_active:
+            await self.db.execute(
+                update(MemoryModel)
+                .where(MemoryModel.id == existing_active.id, MemoryModel.is_active.is_(True))
+                .values(is_active=False, superseded_by_id=new_id)
+            )
 
         new_memory = MemoryModel(
+            id=new_id,
             session_id=None,
             memory_type=MemoryType.PROJECT.value,
-            key=f"{project_name}:{key}",
+            key=full_key,
             content=content,
             embedding=vec,
             embedding_model=self.embedding_router.current_model_name if vec is not None else None,
@@ -478,11 +502,6 @@ class SQLMemoryService(MemoryService):
         )
         self.db.add(new_memory)
         await self.db.flush()
-
-        if existing_active:
-            existing_active.is_active = False
-            existing_active.superseded_by_id = new_memory.id
-
         await self.db.commit()
         await self.db.refresh(new_memory)
         return new_memory
