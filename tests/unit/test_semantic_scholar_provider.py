@@ -1,6 +1,8 @@
 """Unit tests for SemanticScholarResearchProvider."""
 
 import asyncio
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 from unittest.mock import AsyncMock, patch, MagicMock
 import httpx
 import pytest
@@ -112,7 +114,27 @@ async def test_semantic_scholar_rate_limit_and_retry(mock_cache):
             assert len(results) == 1
             assert results[0].title == "Success Paper"
             mock_sleep.assert_called_once()
-            assert mock_get.call_count == 2
+        assert mock_get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_semantic_scholar_rate_limit_parses_http_date_retry_after(mock_cache):
+    provider = SemanticScholarResearchProvider(cache=mock_cache, max_retries=1)
+    resp_429 = MagicMock(spec=httpx.Response)
+    resp_429.status_code = 429
+    resp_429.headers = {
+        "Retry-After": format_datetime(datetime.now(timezone.utc) + timedelta(seconds=30), usegmt=True)
+    }
+    resp_200 = MagicMock(spec=httpx.Response)
+    resp_200.status_code = 200
+    resp_200.json.return_value = {"data": []}
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
+        mock_get.side_effect = [resp_429, resp_200]
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            assert await provider.search("HTTP date retry") == []
+
+    mock_sleep.assert_awaited_once_with(15.0)
 
 
 @pytest.mark.asyncio

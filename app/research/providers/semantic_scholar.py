@@ -12,8 +12,7 @@ from app.research.cache import research_cache
 from app.research.dedup import compute_canonical_id, extract_arxiv_id, extract_doi
 from app.research.document import FullTextStatus
 from app.research.models import ResearchSource, SourceStatus
-from app.research.provider import ResearchSourceProvider
-from app.research.provider import ResearchProviderUnavailable
+from app.research.provider import ResearchProviderUnavailable, ResearchSourceProvider, retry_after_seconds
 
 
 class SemanticScholarResearchProvider(ResearchSourceProvider):
@@ -75,11 +74,11 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
                         raise ResearchProviderUnavailable("Semantic Scholar", "rate limited")
 
                     retry_after = resp.headers.get("Retry-After")
-                    try:
-                        wait_seconds = float(retry_after) if retry_after else (1.5 * (2 ** retries) + random.uniform(0.1, 0.5))
-                    except ValueError:
-                        wait_seconds = 2.0
-                    wait_seconds = min(wait_seconds, 15.0)  # Bound maximum pause
+                    wait_seconds = retry_after_seconds(
+                        retry_after,
+                        default=1.5 * (2 ** retries) + random.uniform(0.1, 0.5),
+                        maximum=15.0,
+                    )
                     logger.info(f"Semantic Scholar 429 received. Backing off {wait_seconds:.2f}s (retry {retries}/{self.max_retries})")
                     await asyncio.sleep(wait_seconds)
                     continue

@@ -1,6 +1,9 @@
 """Provider-neutral abstract interface for research literature retrieval."""
 
 from abc import ABC, abstractmethod
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+import math
 from typing import List, Optional
 from app.research.models import ResearchSource
 
@@ -24,6 +27,25 @@ class ResearchSearchUnavailable(RuntimeError):
             "No search results can be confirmed because these research providers "
             f"could not complete the search: {providers}. Check provider availability or configuration and retry."
         )
+
+
+def retry_after_seconds(value: Optional[str], *, default: float, maximum: float) -> float:
+    """Parse delta-seconds or an HTTP date and clamp the delay to a finite bound."""
+    if not value:
+        return default
+    try:
+        delay = float(value)
+    except ValueError:
+        try:
+            retry_at = parsedate_to_datetime(value)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=timezone.utc)
+            delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return default
+    if not math.isfinite(delay):
+        return default
+    return min(max(delay, 0.0), maximum)
 
 
 class ResearchSourceProvider(ABC):
