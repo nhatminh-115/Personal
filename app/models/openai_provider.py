@@ -152,6 +152,6 @@ class OpenAICompatibleProvider(ModelProvider):
                     usage=usage,
                     finish_reason="tool_calls" if tool_calls else ("stop" if finish_reason == "stop" else finish_reason),
                 )
-        except httpx.RequestError as e:
-            logger.error(f"HTTP request to model provider failed: {e}")
-            raise ProviderError(f"Connection to provider {self._name} failed: {e}")
+        except httpx.RequestError:
+            logger.error("HTTP request to model provider '%s' failed.", self._name)
+            raise ProviderError(f"Connection to provider {self._name} failed.") from None
