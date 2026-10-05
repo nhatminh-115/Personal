@@ -25,15 +25,24 @@ closed. Tool risk, permission, and approval policy is still enforced by AURA.
 
 ## Dogfood status
 
-CodeGraph live dogfood is **pending external setup**. The current execution
-environment does not have a confirmed CodeGraph installation, and AURA must
-not install or download it automatically. An older report records run
-`98637894-40c8-4df0-b040-11eaadc24e00` using the read-only
-`mcp_codegraph_codegraph_symbol_search` tool and a local Ollama model. Keep that
-as historical evidence only; it does not verify provider availability in the
-current environment. Once the environment owner supplies an installation,
-rerun the dogfood and confirm MCP discovery before describing CodeGraph as
-currently verified. CodeGraph remains optional and is not a CI dependency.
+On 2026-10-05, the environment already had CodeGraph MCP 0.20.1 installed;
+AURA did not install or download it. An isolated, telemetry-disabled setup
+was discovered by AURA's MCP manager with 10 allowlisted read-only tools, and
+`mcp_codegraph_codegraph_get_module_summary` returned successfully with the
+provider marked healthy. The profile and generated index were kept outside the
+repository.
+
+This verifies the AURA MCP provider smoke only, not the complete Coding
+Specialist flow. Live attempts using `qwen2.5-coder:3b`,
+`qwen2.5-coder:7b`, and `qwen3:4b` did not satisfy the delegation/tool-use
+acceptance: the 3b model did not delegate, and the 7b/4b Ollama runner timed
+out or terminated before delegation. Example run IDs:
+`8630027c-6698-4b76-a231-8e24a88caf59`,
+`2ee684ec-21d9-41de-bc8a-6fdec69e56b7`,
+`bce8217f-8255-4559-ab31-80b7edb82d35`, and
+`36653b69-1de2-4fca-9612-88252583b42f`. Full CodeGraph dogfood remains
+pending a capable local or hosted model. CodeGraph remains optional and stays
+outside CI.
 
 ## Candidate review
 
@@ -111,7 +120,8 @@ The telemetry opt-out follows the [upstream MCP package configuration](https://g
 ## Verification boundary
 
 CI verifies registry and specialist scoping with deterministic local fixtures.
-It does not install CodeGraph or assert live provider health. A real dogfood
-run must record the AURA run ID, discovered provider/tool metadata, project
-scope, selected code graph tools, result artifact, and any failures before the
-provider can be described as verified.
+It does not install CodeGraph or assert live provider health. The 2026-10-05
+MCP provider smoke confirms discovery, health, and one read-only tool call in
+this environment; a complete Coding Specialist dogfood must additionally
+record successful delegation, selected code graph tools, and its result
+artifact before the full workflow can be described as verified.
