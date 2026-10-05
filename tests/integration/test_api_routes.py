@@ -6,8 +6,15 @@ import uuid
 import pytest
 from httpx import AsyncClient
 from app.db.models import (
-    ApprovalModel, MemoryModel, MessageModel, RunEventModel, RunModel, SessionModel,
-    WorkspaceObjectModel, WorkspaceObjectProjectLinkModel,
+    ApprovalModel,
+    MemoryModel,
+    MessageModel,
+    RoutingConfirmationModel,
+    RunEventModel,
+    RunModel,
+    SessionModel,
+    WorkspaceObjectModel,
+    WorkspaceObjectProjectLinkModel,
 )
 from app.orchestrator.graph import get_compiled_graph
 from sqlalchemy import select
@@ -479,6 +486,14 @@ async def test_chat_turn_cancellation_is_durable_and_idempotent(async_client: As
             status="running",
             user_message="A long running task",
         ),
+        RoutingConfirmationModel(
+            id="cancel-turn-routing-confirmation",
+            root_run_id=run_id,
+            execution_run_id=run_id,
+            session_id=session_id,
+            proposed_provider="cloud",
+            proposed_model="test-model",
+        ),
     ])
     await test_db_session.commit()
 
@@ -490,6 +505,16 @@ async def test_chat_turn_cancellation_is_durable_and_idempotent(async_client: As
         "status": "cancellation_requested",
         "already_requested": False,
     }
+
+    confirmation_attempt = await async_client.post(
+        "/v1/routing-confirmations/cancel-turn-routing-confirmation/decision",
+        json={"decision": "rejected"},
+    )
+    assert confirmation_attempt.status_code == 409
+    confirmation = await test_db_session.get(
+        RoutingConfirmationModel, "cancel-turn-routing-confirmation"
+    )
+    assert confirmation.status == "pending"
 
     run = await test_db_session.get(RunModel, run_id)
     await test_db_session.refresh(run)

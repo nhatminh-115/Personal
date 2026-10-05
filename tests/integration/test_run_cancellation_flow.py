@@ -277,6 +277,11 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
             "client_turn_id": client_turn_id,
         })
         assert cancel.status_code == 202, cancel.text
+        approval_after_cancel = await async_client.post(
+            f"/v1/approvals/{start_data['approval_id']}/decision",
+            json={"decision": "approved", "decision_notes": "Attempt resume after cancel request"},
+        )
+        assert approval_after_cancel.status_code == 409
         release_finalization.set()
         chat = await asyncio.wait_for(chat_task, timeout=30)
         assert chat.status_code == 200, chat.text
