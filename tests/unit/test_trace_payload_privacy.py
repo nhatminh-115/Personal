@@ -86,6 +86,23 @@ async def test_trace_keeps_allowlisted_research_provider_failure_metadata_only(t
     assert "private query" not in str(event.payload)
     assert "private response body" not in str(event.payload)
 
+    success_event = await trace.record_event(
+        run_id="research-error-trace-run",
+        session_id="research-error-trace-session",
+        event_type="tool_executed",
+        payload={
+            "tool": "research_search",
+            "result": {
+                "success": True,
+                "metadata": {
+                    "error_code": "research_providers_unavailable",
+                    "failed_providers": ["Semantic Scholar"],
+                },
+            },
+        },
+    )
+    assert "metadata" not in success_event.payload["result"]
+
 
 @pytest.mark.asyncio
 async def test_context_manifest_keeps_provenance_and_metrics_without_object_text(test_db_session):
