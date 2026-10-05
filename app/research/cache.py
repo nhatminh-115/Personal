@@ -22,8 +22,8 @@ class ResearchCache:
         self._memory_docs: Dict[str, Dict[str, Any]] = {}
         try:
             self.cache_dir.mkdir(parents=True, exist_ok=True)
-        except OSError as e:
-            logger.warning(f"Could not initialize disk research cache directory '{self.cache_dir}': {e}")
+        except OSError:
+            logger.warning("Could not initialize the disk research cache directory.")
 
     def _hash_key(self, key: str) -> str:
         return hashlib.sha256(key.strip().lower().encode("utf-8")).hexdigest()
@@ -43,8 +43,8 @@ class ResearchCache:
                 source = ResearchSource(**data)
                 self._memory_papers[norm_id] = source
                 return source.model_copy(deep=True)
-            except Exception as e:
-                logger.warning(f"Failed to read disk cache for paper '{canonical_id}': {e}")
+            except Exception:
+                logger.warning("Could not read a cached research paper; it will be fetched again.")
         return None
 
     def put_paper(self, source: ResearchSource) -> None:
@@ -59,8 +59,8 @@ class ResearchCache:
         disk_file = self.cache_dir / f"paper_{self._hash_key(norm_id)}.json"
         try:
             disk_file.write_text(source.model_dump_json(indent=2), encoding="utf-8")
-        except Exception as e:
-            logger.debug(f"Failed writing disk cache for paper '{source.canonical_id}': {e}")
+        except Exception:
+            logger.debug("Could not write a research paper to the disk cache.")
 
     def get_document(self, doc_url_or_id: str) -> Optional[Dict[str, Any]]:
         """Retrieve cached parsed document text, pages, and section extractions."""
@@ -76,8 +76,8 @@ class ResearchCache:
                 data = json.loads(disk_file.read_text(encoding="utf-8"))
                 self._memory_docs[norm_key] = data
                 return dict(data)
-            except Exception as e:
-                logger.warning(f"Failed reading document cache for '{doc_url_or_id}': {e}")
+            except Exception:
+                logger.warning("Could not read a cached research document; it will be fetched again.")
         return None
 
     def put_document(self, doc_url_or_id: str, doc_data: Dict[str, Any]) -> None:
@@ -90,8 +90,8 @@ class ResearchCache:
         disk_file = self.cache_dir / f"doc_{self._hash_key(norm_key)}.json"
         try:
             disk_file.write_text(json.dumps(doc_data, indent=2, ensure_ascii=False), encoding="utf-8")
-        except Exception as e:
-            logger.debug(f"Failed writing document cache for '{doc_url_or_id}': {e}")
+        except Exception:
+            logger.debug("Could not write a research document to the disk cache.")
 
     def clear(self) -> None:
         """Clear all in-memory cached entries."""

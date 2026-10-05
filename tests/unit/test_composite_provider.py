@@ -73,12 +73,13 @@ async def test_composite_provider_deduplication(mock_cache):
 
 
 @pytest.mark.asyncio
-async def test_composite_provider_s2_failure_fallback_to_arxiv(mock_cache):
+async def test_composite_provider_s2_failure_fallback_to_arxiv_does_not_log_upstream_diagnostic(mock_cache, caplog):
     s2_provider = MagicMock()
     arxiv_provider = MagicMock()
     fetcher = MagicMock()
 
-    s2_provider.search = AsyncMock(side_effect=Exception("Semantic Scholar down"))
+    diagnostic = "private Semantic Scholar diagnostic"
+    s2_provider.search = AsyncMock(side_effect=Exception(diagnostic))
 
     arxiv_paper = ResearchSource(
         source_id="arxiv_2402_99999",
@@ -99,6 +100,7 @@ async def test_composite_provider_s2_failure_fallback_to_arxiv(mock_cache):
     results = await composite.search("test query")
     assert len(results) == 1
     assert results[0].canonical_id == "arxiv:2402.99999"
+    assert diagnostic not in caplog.text
 
 
 @pytest.mark.asyncio

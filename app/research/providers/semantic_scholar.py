@@ -61,16 +61,14 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
 
                 # Success
                 if resp.status_code == 200:
-                    logger.debug(
-                        f"Semantic Scholar [{endpoint}] status=200 duration={duration:.2f}s retries={retries}"
-                    )
+                    logger.debug("Semantic Scholar request status=200 duration=%.2fs retries=%s", duration, retries)
                     return resp.json()
 
                 # Rate Limit (429) -> respect Retry-After
                 if resp.status_code == 429:
                     retries += 1
                     if retries > self.max_retries:
-                        logger.warning(f"Semantic Scholar rate limit exceeded after {retries} retries: {endpoint}")
+                        logger.warning("Semantic Scholar rate limit exceeded after %s retries.", retries)
                         raise ResearchProviderUnavailable("Semantic Scholar", "rate limited")
 
                     retry_after = resp.headers.get("Retry-After")
@@ -87,7 +85,11 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
                 if resp.status_code >= 500:
                     retries += 1
                     if retries > self.max_retries:
-                        logger.warning(f"Semantic Scholar 5xx error ({resp.status_code}) after {retries} retries: {endpoint}")
+                        logger.warning(
+                            "Semantic Scholar server error (HTTP %s) after %s retries.",
+                            resp.status_code,
+                            retries,
+                        )
                         raise ResearchProviderUnavailable("Semantic Scholar", "temporarily unavailable")
                     wait_seconds = 1.0 * (2 ** retries) + random.uniform(0.1, 0.5)
                     logger.info(f"Semantic Scholar {resp.status_code} received. Backing off {wait_seconds:.2f}s")
@@ -95,26 +97,26 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
                     continue
 
                 # Do not retry client errors; preserve failures except a missing fetched paper.
-                logger.info(f"Semantic Scholar unrecoverable client error {resp.status_code} on {endpoint}")
+                logger.info("Semantic Scholar rejected a request with HTTP %s.", resp.status_code)
                 if resp.status_code >= 400 and resp.status_code != 404:
                     raise ResearchProviderUnavailable(
                         "Semantic Scholar", f"rejected the request (HTTP {resp.status_code})"
                     )
                 return None
 
-            except httpx.TransportError as exc:
+            except httpx.TransportError:
                 retries += 1
                 if retries > self.max_retries:
-                    logger.warning(f"Semantic Scholar network error after {retries} retries on {endpoint}: {exc}")
-                    raise ResearchProviderUnavailable("Semantic Scholar", "temporarily unavailable") from exc
+                    logger.warning("Semantic Scholar request failed after %s retries.", retries)
+                    raise ResearchProviderUnavailable("Semantic Scholar", "temporarily unavailable") from None
                 wait_seconds = 1.0 * (2 ** retries) + random.uniform(0.1, 0.5)
-                logger.info(f"Semantic Scholar network issue ({exc}). Retrying in {wait_seconds:.2f}s")
+                logger.info("Semantic Scholar request failed; retrying in %.2fs.", wait_seconds)
                 await asyncio.sleep(wait_seconds)
             except ResearchProviderUnavailable:
                 raise
-            except Exception as e:
-                logger.warning(f"Semantic Scholar unexpected error on {endpoint}: {e}")
-                raise ResearchProviderUnavailable("Semantic Scholar", "returned an unreadable response") from e
+            except Exception:
+                logger.warning("Semantic Scholar returned an unreadable response.")
+                raise ResearchProviderUnavailable("Semantic Scholar", "returned an unreadable response") from None
 
         return None
 

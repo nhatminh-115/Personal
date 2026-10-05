@@ -199,11 +199,11 @@ class ArxivResearchProvider(ResearchSourceProvider):
                         return None
             except ResearchProviderUnavailable:
                 raise
-            except httpx.TransportError as e:
-                logger.warning(f"arXiv API connection error: {e}")
+            except httpx.TransportError:
+                logger.warning("arXiv API request failed; retrying.")
                 await asyncio.sleep(2.0)
-            except Exception as e:
-                logger.warning(f"arXiv API response error: {e}")
+            except Exception:
+                logger.warning("arXiv API returned an unreadable response.")
                 return None
 
         raise ResearchProviderUnavailable("arXiv", failure_reason)
@@ -233,9 +233,9 @@ class ArxivResearchProvider(ResearchSourceProvider):
 
         try:
             root = ET.fromstring(xml_data)
-        except ET.ParseError as e:
-            logger.warning(f"Failed parsing arXiv XML response: {e}")
-            raise ResearchProviderUnavailable("arXiv", "returned an unreadable search response") from e
+        except ET.ParseError:
+            logger.warning("arXiv returned an unreadable search response.")
+            raise ResearchProviderUnavailable("arXiv", "returned an unreadable search response") from None
 
         atom_feed_tag = f"{{{self.ATOM_NS['atom']}}}feed"
         if root.tag != atom_feed_tag:
@@ -277,8 +277,8 @@ class ArxivResearchProvider(ResearchSourceProvider):
             entry = root.find("atom:entry", self.ATOM_NS)
             if entry is not None:
                 return self._parse_entry(entry)
-        except ET.ParseError as e:
-            logger.warning(f"Failed parsing arXiv entry for '{source_id}': {e}")
+        except ET.ParseError:
+            logger.warning("arXiv returned an unreadable paper record.")
 
         return None
 

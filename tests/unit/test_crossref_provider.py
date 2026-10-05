@@ -87,9 +87,10 @@ async def test_crossref_http_error_is_reported_without_query_text():
 
 
 @pytest.mark.asyncio
-async def test_crossref_transport_error_is_reported_as_provider_unavailable():
+async def test_crossref_transport_diagnostic_is_not_returned_or_chained():
+    diagnostic = "private Crossref transport diagnostic"
     client = MagicMock()
-    client.get = AsyncMock(side_effect=httpx.ConnectError("connection failed"))
+    client.get = AsyncMock(side_effect=httpx.ConnectError(diagnostic))
     client_context = MagicMock()
     client_context.__aenter__ = AsyncMock(return_value=client)
     client_context.__aexit__ = AsyncMock(return_value=False)
@@ -97,8 +98,11 @@ async def test_crossref_transport_error_is_reported_as_provider_unavailable():
 
     with patch("app.research.providers.crossref.httpx.AsyncClient", return_value=client_context):
         with patch("app.research.providers.crossref.asyncio.sleep", new_callable=AsyncMock):
-            with pytest.raises(ResearchProviderUnavailable, match="Crossref is temporarily unavailable"):
+            with pytest.raises(ResearchProviderUnavailable, match="Crossref is temporarily unavailable") as raised:
                 await provider.search("query", max_results=1)
+
+    assert diagnostic not in str(raised.value)
+    assert raised.value.__cause__ is None
 
 
 @pytest.mark.asyncio
