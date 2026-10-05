@@ -176,9 +176,12 @@ history; restore returns them as paused routines.
 Saved automations can also be duplicated into a paused routine with its own
 session and run history, so copying a schedule never copies execution history
 or starts a second schedule unexpectedly.
-Queued Automation runs can be cancelled only while their outbox event remains
-pending and unclaimed. Once a worker claims a run, cancellation is rejected; the
-interface does not claim to stop an active tool or model execution.
+Queued Automation runs can be cancelled atomically while their outbox event is
+pending and unclaimed. A running Automation accepts a persisted cooperative
+cancellation request that the runtime observes at a safe execution boundary.
+An in-flight model or tool operation may finish before AURA observes the
+request; if the dispatcher has claimed the event but has not created its run
+yet, the API asks the caller to refresh and retry.
 Automations may also accept bearer-authenticated webhook signals. A newly enabled trigger
 returns a random bearer secret once and stores only its SHA-256 digest. Send
 `Authorization: Bearer <secret>` and a unique `X-Aura-Event-Id`; duplicate
