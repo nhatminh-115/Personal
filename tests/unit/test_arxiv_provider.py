@@ -120,6 +120,30 @@ async def test_arxiv_search_valid_empty_feed_returns_no_results():
 
 
 @pytest.mark.asyncio
+async def test_arxiv_search_empty_success_body_is_provider_unavailable():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0), cache=ResearchCache())
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.text = ""
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+        with pytest.raises(ResearchProviderUnavailable, match="empty search response"):
+            await provider.search("empty successful response")
+
+
+@pytest.mark.asyncio
+async def test_arxiv_search_wrong_xml_root_is_provider_unavailable():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0), cache=ResearchCache())
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.status_code = 200
+    mock_resp.text = "<html></html>"
+
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+        with pytest.raises(ResearchProviderUnavailable, match="invalid search response"):
+            await provider.search("wrong XML root")
+
+
+@pytest.mark.asyncio
 async def test_arxiv_api_client_does_not_follow_redirects():
     provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0))
     response = MagicMock(spec=httpx.Response)
@@ -159,7 +183,7 @@ async def test_arxiv_rate_limit_respects_bounded_retry_after_delay():
     rate_limited.headers = {"Retry-After": "0.25"}
     success = MagicMock(spec=httpx.Response)
     success.status_code = 200
-    success.text = "<feed />"
+    success.text = '<feed xmlns="http://www.w3.org/2005/Atom" />'
     client = MagicMock()
     client.get = AsyncMock(side_effect=[rate_limited, success])
     client.__aenter__ = AsyncMock(return_value=client)
@@ -169,7 +193,7 @@ async def test_arxiv_rate_limit_respects_bounded_retry_after_delay():
         with patch("app.research.providers.arxiv.asyncio.sleep", new_callable=AsyncMock) as sleep:
             response = await provider._execute_arxiv_request({"search_query": "all:test"})
 
-    assert response == "<feed />"
+    assert response == '<feed xmlns="http://www.w3.org/2005/Atom" />'
     sleep.assert_awaited_once_with(0.25)
 
 
