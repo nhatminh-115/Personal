@@ -52,7 +52,7 @@ import {
   type DirectoryConnection,
   type IndexedFolderFile,
 } from './lib/folderConnections';
-import { ApiError, api } from './services/api';
+import { ApiError, api, createClientTurnId } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
@@ -478,6 +478,7 @@ export default function App() {
   interface ThreadLiveState {
     runId: string | null;
     runStatus: string | null;
+    clientTurnId?: string | null;
     approval: ApprovalDetail | null;
     runDetail: RunDetail | null;
     researchData: ResearchInspectorData | null;
@@ -755,6 +756,7 @@ export default function App() {
           [thread.id]: {
             runId,
             runStatus: state.run_status ?? null,
+            clientTurnId: state.client_turn_id ?? null,
             approval: state.approval ?? null,
             runDetail: existing?.runDetail ?? null,
             researchData: existing?.researchData ?? null,
@@ -1553,6 +1555,7 @@ export default function App() {
       // Capture originating thread at the time of send so approval decisions
       // are bound even if the user switches threads before the run completes.
       const originatingThreadId = activeThreadId;
+      const clientTurnId = createClientTurnId();
 
       const nonce = Date.now();
       const userMsg: ChatMessage = {
@@ -1568,7 +1571,7 @@ export default function App() {
       };
 
       updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
-      patchThreadLive(originatingThreadId, { runStatus: 'running' });
+      patchThreadLive(originatingThreadId, { runStatus: 'running', clientTurnId });
 
       try {
         const resp = await api.sendChat(
@@ -1580,6 +1583,7 @@ export default function App() {
           selectedObjectIds,
           taskType,
           contextAttachments,
+          clientTurnId,
         );
         if (activeProject?.name) notifyWorkspaceGraphChanged(activeProject.name);
 
@@ -1589,7 +1593,7 @@ export default function App() {
           ));
         }
 
-        patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
+        patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status, clientTurnId: null });
 
         if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
           const confirmation = await api.fetchRoutingConfirmation(resp.routing_confirmation_id);
@@ -1646,7 +1650,7 @@ export default function App() {
         if (activeProject) void loadProjectSessionPage(activeProject);
         if (activeProject?.name) void loadMemoryPage(activeProject.name);
       } catch (err: any) {
-        patchThreadLive(originatingThreadId, { runStatus: 'failed' });
+        patchThreadLive(originatingThreadId, { runStatus: 'failed', clientTurnId: null });
         const errorMsg: ChatMessage = {
           id: `live-err-${nonce}`,
           role: 'assistant',
@@ -1674,6 +1678,23 @@ export default function App() {
       notifyWorkspaceGraphChanged,
     ]
   );
+
+  const handleCancelActiveRun = useCallback(async () => {
+    if (!activeThreadId) return false;
+    const currentThread = chatThreads.find((thread) => thread.id === activeThreadId);
+    const clientTurnId = threadLiveStates[activeThreadId]?.clientTurnId;
+    if (!currentThread?.sessionId || !clientTurnId) return false;
+    patchThreadLive(activeThreadId, { runStatus: 'cancellation_requested' });
+    try {
+      await api.cancelChatTurn(currentThread.sessionId, clientTurnId);
+      pushToast('Stopping run', 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.');
+      return true;
+    } catch (error) {
+      patchThreadLive(activeThreadId, { runStatus: 'running' });
+      pushToast('Could not stop run', executionErrorText(error));
+      return false;
+    }
+  }, [activeThreadId, chatThreads, patchThreadLive, pushToast, threadLiveStates]);
 
   /**
    * handleStartLiveChat — creates a fresh live thread for the active project
@@ -1722,11 +1743,13 @@ export default function App() {
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
+          const clientTurnId = createClientTurnId();
+          patchThreadLive(originatingThreadId, { runStatus: 'running', clientTurnId });
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType, [], clientTurnId);
           notifyWorkspaceGraphChanged(activeProject.name);
-          patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status });
+          patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status, clientTurnId: null });
           if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
             const confirmation = await api.fetchRoutingConfirmation(resp.routing_confirmation_id);
             patchThreadLive(originatingThreadId, { routingConfirmation: { id: confirmation.id, provider: confirmation.proposed_provider, model: confirmation.proposed_model }, approval: null });
@@ -1758,7 +1781,7 @@ export default function App() {
           }
           if (resp.run_id) void refreshInspectorData(originatingThreadId, resp.run_id);
         } catch (err: any) {
-          patchThreadLive(originatingThreadId, { runStatus: 'failed' });
+          patchThreadLive(originatingThreadId, { runStatus: 'failed', clientTurnId: null });
           updateThreadMessages(originatingThreadId, (prev) => [...prev, { id: `live-err-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-err-node-${nonce}`, content: `Error: ${executionErrorText(err)}`, timestamp: 'just now', status: 'Failed' }]);
         }
       })();
@@ -3189,10 +3212,12 @@ export default function App() {
             onContextObjectFocus={handleChatContextObjectFocus}
             onAttachRequest={openProjectFiles}
             onSendMessage={handleSendMessage}
+            onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
             onStartLiveChat={handleStartLiveChat}
             onContextObjectIdsChange={handleContextObjectIdsChange}
             onContextFileContentIdsChange={handleContextFileContentIdsChange}
             currentApproval={activeThreadLive.approval}
+            runInProgress={activeThreadLive.runStatus === 'running' || activeThreadLive.runStatus === 'cancellation_requested'}
             onApprovalDecision={handleApprovalDecision}
           />
         ) : null}
@@ -3244,10 +3269,12 @@ export default function App() {
                 onContextObjectFocus={handleChatContextObjectFocus}
                 onAttachRequest={openProjectFiles}
                 onSendMessage={handleSendMessage}
+                onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
                 onStartLiveChat={handleStartLiveChat}
                 onContextObjectIdsChange={handleContextObjectIdsChange}
                 onContextFileContentIdsChange={handleContextFileContentIdsChange}
                 currentApproval={activeThreadLive.approval}
+                runInProgress={activeThreadLive.runStatus === 'running' || activeThreadLive.runStatus === 'cancellation_requested'}
                 onApprovalDecision={handleApprovalDecision}
               />
             </div>

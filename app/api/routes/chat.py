@@ -5,7 +5,7 @@ import json
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -120,6 +120,43 @@ async def _existing_chat_response(
         # Tool results remain available from persisted run details; replays do
         # not reconstruct or execute tool calls.
         tool_results=[],
+    )
+
+
+async def _close_pending_decisions_for_cancelled_run(db: AsyncSession, run_id: str) -> None:
+    """Prevent an approval/confirmation racing with cancellation from resuming a terminal run."""
+    child_run_ids = select(RunModel.id).where(
+        or_(RunModel.id == run_id, RunModel.parent_run_id == run_id)
+    )
+    decided_at = utc_now()
+    await db.execute(
+        update(ApprovalModel)
+        .where(ApprovalModel.run_id.in_(child_run_ids), ApprovalModel.status == "pending")
+        .values(status="rejected", decision_notes="Run cancelled before approval.", decided_at=decided_at)
+    )
+    await db.execute(
+        update(RoutingConfirmationModel)
+        .where(
+            or_(
+                RoutingConfirmationModel.root_run_id == run_id,
+                RoutingConfirmationModel.execution_run_id.in_(child_run_ids),
+            ),
+            RoutingConfirmationModel.status == "pending",
+        )
+        .values(status="rejected", decision_notes="Run cancelled before routing confirmation.", decided_at=decided_at)
+    )
+
+
+async def _replace_cancelled_run_response(db: AsyncSession, session_id: str, run_id: str, response: str) -> None:
+    """Keep a late cancellation response consistent with any already-persisted assistant turn."""
+    await db.execute(
+        update(MessageModel)
+        .where(
+            MessageModel.session_id == session_id,
+            MessageModel.role == "assistant",
+            MessageModel.metadata_json["run_id"].as_string() == run_id,
+        )
+        .values(content=response)
     )
 
 
@@ -338,6 +375,25 @@ async def chat_endpoint(
         graph = await get_compiled_graph()
         result_state = await graph.ainvoke(initial_state, config=config)
 
+        await db.refresh(run_record)
+        if run_record.cancel_requested_at is not None:
+            await _close_pending_decisions_for_cancelled_run(db, run_id)
+            run_record.status = RunStatus.CANCELLED.value
+            run_record.final_response = (
+                "Run cancelled. An operation already in progress may have completed "
+                "before AURA observed the request."
+            )
+            run_record.error_message = None
+            await _replace_cancelled_run_response(db, req.session_id, run_id, run_record.final_response)
+            await db.commit()
+            return ChatResponse(
+                run_id=run_id,
+                session_id=req.session_id,
+                status=RunStatus.CANCELLED.value,
+                response=run_record.final_response,
+                tool_results=result_state.get("tool_results", []),
+            )
+
         # 6. Check if execution was suspended via interrupt()
         if "__interrupt__" in result_state and len(result_state["__interrupt__"]) > 0:
             interrupt_val = result_state["__interrupt__"][0].value
@@ -397,6 +453,23 @@ async def chat_endpoint(
 
     except Exception as e:
         logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
+        await db.refresh(run_record)
+        if run_record.cancel_requested_at is not None:
+            await _close_pending_decisions_for_cancelled_run(db, run_id)
+            run_record.status = RunStatus.CANCELLED.value
+            run_record.final_response = (
+                "Run cancelled. An operation already in progress may have completed "
+                "before AURA observed the request."
+            )
+            run_record.error_message = None
+            await _replace_cancelled_run_response(db, req.session_id, run_id, run_record.final_response)
+            await db.commit()
+            return ChatResponse(
+                run_id=run_id,
+                session_id=req.session_id,
+                status=RunStatus.CANCELLED.value,
+                response=run_record.final_response,
+            )
         run_record.status = RunStatus.FAILED.value
         run_record.error_message = str(e)
         await db.commit()

@@ -1,19 +1,59 @@
 """Runs and trace auditing endpoint: GET /v1/runs/{id}."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies import get_trace_service
 from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
-from app.api.schemas import ResearchInspectorResponse, RunDetailResponse, RunEventResponse
-from app.db.models import DelegationModel, RunModel, RunEventModel
+from app.api.schemas import CancelChatTurnRequest, CancelChatTurnResponse, ResearchInspectorResponse, RunDetailResponse, RunEventResponse
+from app.db.models import DelegationModel, RunModel, RunEventModel, RunStatus, utc_now
 from app.db.session import get_db
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import get_compiled_graph
 from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER
 
 router = APIRouter(prefix="/v1/runs", tags=["Runs"])
+
+
+@router.post("/cancel-turn", response_model=CancelChatTurnResponse, status_code=status.HTTP_202_ACCEPTED)
+async def request_chat_turn_cancellation(
+    body: CancelChatTurnRequest,
+    db: AsyncSession = Depends(get_db),
+) -> CancelChatTurnResponse:
+    """Persist a cooperative cancellation request for an active idempotent chat turn."""
+    result = await db.execute(
+        update(RunModel)
+        .where(
+            RunModel.session_id == body.session_id,
+            RunModel.client_turn_id == body.client_turn_id,
+            RunModel.status == RunStatus.RUNNING.value,
+            RunModel.cancel_requested_at.is_(None),
+        )
+        .values(cancel_requested_at=utc_now())
+    )
+    if result.rowcount:
+        run = await db.scalar(select(RunModel).where(
+            RunModel.session_id == body.session_id,
+            RunModel.client_turn_id == body.client_turn_id,
+        ))
+        db.add(RunEventModel(
+            run_id=run.id,
+            event_type="run_cancellation_requested",
+            payload={"source": "user"},
+        ))
+        await db.commit()
+        return CancelChatTurnResponse(run_id=run.id, status="cancellation_requested")
+
+    run = await db.scalar(select(RunModel).where(
+        RunModel.session_id == body.session_id,
+        RunModel.client_turn_id == body.client_turn_id,
+    ))
+    if run is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat turn not found.")
+    if run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None:
+        return CancelChatTurnResponse(run_id=run.id, status="cancellation_requested", already_requested=True)
+    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Chat turn is no longer running.")
 
 
 def _safe_event_payload(event_type: str, payload: object) -> dict:

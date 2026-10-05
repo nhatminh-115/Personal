@@ -9,7 +9,7 @@
  * Invariant: CTA with draft text sends that exact text; CTA with empty draft
  *            creates thread only without backend call.
  */
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -81,6 +81,45 @@ describe('Demo / Live Separation', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Stop/i })); });
     expect(screen.queryByText('AURA is working')).not.toBeInTheDocument();
     expect(postCalls).toHaveLength(0);
+  });
+
+  it('shows live progress and supports cancellation when Start live chat launches the first turn', async () => {
+    let completeChat: (() => void) | null = null;
+    const fetchMock = vi.fn().mockImplementation((url: string, options?: RequestInit) => {
+      if (options?.method === 'POST' && url.includes('/v1/chat')) {
+        postCalls.push({ url, body: typeof options.body === 'string' ? options.body : '' });
+        return new Promise((resolve) => {
+          completeChat = () => resolve({
+            ok: true,
+            json: () => Promise.resolve({ run_id: 'run-cta-cancel', session_id: 'session-cta-cancel', status: 'cancelled', response: 'Run cancelled.', tool_results: [] }),
+          });
+        });
+      }
+      if (url.includes('/v1/runs/cancel-turn')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ run_id: 'run-cta-cancel', status: 'cancellation_requested', already_requested: false }) });
+      }
+      if (url.includes('/v1/runs/run-cta-cancel')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ events: [] }) });
+      }
+      if (url.includes('/v1/models') || url.includes('/v1/sessions') || url.includes('/v1/memory')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+    global.fetch = fetchMock;
+    await openStatefulChats();
+
+    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat/i), { target: { value: 'Start a live turn that can be stopped' } });
+    await act(async () => { fireEvent.click(screen.getByText('Start live chat')); });
+
+    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Stop$/i })); });
+    expect(await screen.findByRole('button', { name: /Stopping/i })).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/runs/cancel-turn'))).toBe(true);
+    expect(postCalls).toHaveLength(1);
+
+    await act(async () => { completeChat?.(); });
+    await waitFor(() => expect(screen.queryByText('AURA is working')).not.toBeInTheDocument());
   });
 
   it('newThread creates a live thread (source: live)', async () => {

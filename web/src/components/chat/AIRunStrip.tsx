@@ -6,6 +6,7 @@ interface AIRunStripProps {
   phase: RunPhase;
   specialist: string;
   onStop?: () => void;
+  stopping?: boolean;
 }
 
 const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
@@ -16,7 +17,7 @@ const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
 
 const order: RunPhase[] = ['routing', 'context', 'synthesizing'];
 
-export function AIRunStrip({ phase, specialist, onStop }: AIRunStripProps) {
+export function AIRunStrip({ phase, specialist, onStop, stopping = false }: AIRunStripProps) {
   const activeIndex = order.indexOf(phase);
 
   return (
@@ -43,8 +44,8 @@ export function AIRunStrip({ phase, specialist, onStop }: AIRunStripProps) {
       </div>
 
       {onStop ? (
-        <button type="button" className="ai-run-strip__stop" onClick={onStop}>
-          <Square size={10} /> Stop
+        <button type="button" className="ai-run-strip__stop" onClick={onStop} disabled={stopping}>
+          <Square size={10} /> {stopping ? 'Stopping…' : 'Stop'}
         </button>
       ) : null}
     </div>

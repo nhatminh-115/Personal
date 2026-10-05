@@ -55,6 +55,11 @@ export class ApiError extends Error {
 
 const BASE_URL = ''; // Proxy forwards /v1 to FastAPI in dev
 
+export function createClientTurnId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `turn-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+}
+
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     const text = await res.text();
@@ -740,12 +745,12 @@ export const api = {
     contextObjectIds: string[] = [],
     taskType?: 'research' | 'coding' | 'writing' | null,
     contextAttachments: ChatContextAttachment[] = [],
+    clientTurnId?: string,
   ): Promise<ChatResponse> {
-    const clientTurnId = globalThis.crypto?.randomUUID?.()
-      ?? `turn-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+    const turnId = clientTurnId ?? createClientTurnId();
     const payload: Record<string, any> = {
       session_id: sessionId,
-      client_turn_id: clientTurnId,
+      client_turn_id: turnId,
       message,
     };
     if (projectName) {
@@ -774,6 +779,14 @@ export const api = {
       res = await fetch(`${BASE_URL}/v1/chat`, request);
     }
     return handleResponse<ChatResponse>(res);
+  },
+
+  async cancelChatTurn(sessionId: string, clientTurnId: string): Promise<{ run_id: string; status: 'cancellation_requested'; already_requested: boolean }> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/runs/cancel-turn`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: sessionId, client_turn_id: clientTurnId }),
+    }));
   },
 
   async fetchPendingRoutingConfirmations(sessionId: string, pageSize = 25, cursor?: string | null): Promise<{

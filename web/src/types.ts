@@ -209,6 +209,7 @@ export interface SessionExecutionState {
   session_id: string;
   run_id?: string | null;
   run_status?: string | null;
+  client_turn_id?: string | null;
   approval?: ApprovalDetail | null;
 }
 

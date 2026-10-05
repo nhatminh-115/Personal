@@ -9,16 +9,19 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     vi.restoreAllMocks();
   });
 
-  it('does not offer a fake Stop action while a live backend run is in progress', async () => {
+  it('requests durable cancellation for an active live turn and keeps the composer locked until completion', async () => {
     let completeChat: (() => void) | null = null;
-    global.fetch = vi.fn().mockImplementation((url: string) => {
+    const fetchMock = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/chat')) {
         return new Promise((resolve) => {
           completeChat = () => resolve({
             ok: true,
-            json: () => Promise.resolve({ run_id: 'run-stop-test', session_id: 'session-stop-test', status: 'completed', response: 'Finished', tool_results: [] }),
+            json: () => Promise.resolve({ run_id: 'run-stop-test', session_id: 'session-stop-test', status: 'cancelled', response: 'Run cancelled.', tool_results: [] }),
           });
         });
+      }
+      if (url.includes('/v1/runs/cancel-turn')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ run_id: 'run-stop-test', status: 'cancellation_requested', already_requested: false }) });
       }
       if (url.includes('/v1/runs/run-stop-test')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ events: [] }) });
@@ -31,6 +34,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
+    global.fetch = fetchMock;
 
     await act(async () => { render(<App />); });
     const projectButton = (await screen.findByText(/^AURA$/i, { selector: '.project-card *' })).closest('.project-card')!;
@@ -43,7 +47,12 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
 
     expect(await screen.findByText('AURA is working')).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Stop/i })).not.toBeInTheDocument();
+    const stopButton = screen.getByRole('button', { name: /^Stop$/i });
+    await act(async () => { fireEvent.click(stopButton); });
+    expect(await screen.findByRole('button', { name: /Stopping/i })).toBeDisabled();
+    const cancellationCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/v1/runs/cancel-turn'));
+    expect(cancellationCall).toBeDefined();
+    expect(JSON.parse(String(cancellationCall?.[1]?.body))).toMatchObject({ session_id: expect.any(String), client_turn_id: expect.any(String) });
     expect(screen.getByRole('button', { name: /Send/i })).toBeDisabled();
 
     await act(async () => { completeChat?.(); });
