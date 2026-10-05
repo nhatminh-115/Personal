@@ -2,6 +2,7 @@
 
 import ipaddress
 from unittest.mock import AsyncMock, MagicMock, patch
+import httpx
 import pytest
 import pypdf
 from app.research.document import (
@@ -207,12 +208,54 @@ async def test_pdf_security_rechecks_redirect_before_requesting_private_destinat
     client.stream.assert_called_once_with("GET", "https://papers.example/paper.pdf")
 
 
+@pytest.mark.asyncio
+async def test_pdf_transport_error_message_does_not_expose_upstream_diagnostic(monkeypatch):
+    diagnostic = "private transport diagnostic"
+    fetcher = ResearchDocumentFetcher(cache=MagicMock(get_document=MagicMock(return_value=None)))
+    monkeypatch.setattr(
+        fetcher,
+        "_resolve_host_addresses",
+        AsyncMock(return_value={ipaddress.ip_address("8.8.8.8")}),
+    )
+
+    class FailingStream:
+        async def __aenter__(self):
+            raise httpx.ConnectError(
+                diagnostic,
+                request=httpx.Request("GET", "https://papers.example/paper.pdf"),
+            )
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class Client:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def stream(self, *_args, **_kwargs):
+            return FailingStream()
+
+    with patch("app.research.document.httpx.AsyncClient", Client):
+        parsed = await fetcher.fetch_and_parse("https://papers.example/paper.pdf")
+
+    assert parsed.status == FullTextStatus.FETCH_FAILED
+    assert "network or transport error" in (parsed.error_message or "")
+    assert diagnostic not in (parsed.error_message or "")
+
+
 def test_pdf_parsing_handles_corrupt_bytes():
     """Ensure malformed or non-PDF bytes result in PARSE_FAILED rather than an uncaught exception."""
     fetcher = ResearchDocumentFetcher()
     parsed = fetcher.parse_pdf_bytes(b"NOT A REAL PDF CONTENT AT ALL", doc_url="https://example.com/bad.pdf")
     assert parsed.status == FullTextStatus.PARSE_FAILED
     assert "Corrupt or invalid PDF format" in (parsed.error_message or "")
+    assert "NOT A REAL PDF" not in (parsed.error_message or "")
 
 
 def test_pdf_resource_limits_max_pages():

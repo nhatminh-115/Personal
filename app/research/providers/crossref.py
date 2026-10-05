@@ -67,13 +67,13 @@ class CrossrefResearchProvider(ResearchSourceProvider):
                 raise ResearchProviderUnavailable("Crossref", "returned an invalid response")
             except ResearchProviderUnavailable:
                 raise
-            except httpx.TransportError as exc:
+            except httpx.TransportError:
                 retries += 1
                 if retries > self.max_retries:
-                    raise ResearchProviderUnavailable("Crossref", "temporarily unavailable") from exc
+                    raise ResearchProviderUnavailable("Crossref", "temporarily unavailable") from None
                 await asyncio.sleep(min(1.0 * (2 ** (retries - 1)), 8.0))
-            except (ValueError, TypeError) as exc:
-                raise ResearchProviderUnavailable("Crossref", "returned an unreadable response") from exc
+            except (ValueError, TypeError):
+                raise ResearchProviderUnavailable("Crossref", "returned an unreadable response") from None
         return None
 
     @staticmethod

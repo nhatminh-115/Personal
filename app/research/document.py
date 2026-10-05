@@ -146,17 +146,17 @@ class ResearchDocumentFetcher:
         if cached:
             try:
                 return ParsedDocument(**cached)
-            except Exception as e:
-                logger.debug(f"Cache deserialization failed for document '{cache_key}': {e}")
+            except Exception:
+                logger.debug("Cached research document could not be read; it will be fetched again.")
 
         try:
             self._validate_url(doc_url)
-        except ValueError as err:
+        except ValueError:
             return ParsedDocument(
                 doc_url=doc_url,
                 canonical_id=canonical_id,
                 status=FullTextStatus.FETCH_FAILED,
-                error_message=str(err),
+                error_message="Invalid document URL. Only public HTTP/HTTPS destinations are permitted.",
             )
 
         # 1. Download PDF stream with byte bounds. Redirects are handled manually so
@@ -205,12 +205,12 @@ class ResearchDocumentFetcher:
                         status=FullTextStatus.FETCH_FAILED,
                         error_message="Document redirect limit exceeded.",
                     )
-        except ValueError as exc:
+        except ValueError:
             return ParsedDocument(
                 doc_url=doc_url,
                 canonical_id=canonical_id,
                 status=FullTextStatus.FETCH_FAILED,
-                error_message=str(exc),
+                error_message="Document destination could not be validated safely.",
             )
         except httpx.TimeoutException:
             return ParsedDocument(
@@ -219,12 +219,12 @@ class ResearchDocumentFetcher:
                 status=FullTextStatus.FETCH_FAILED,
                 error_message=f"Document download timed out after {self.timeout_seconds}s.",
             )
-        except Exception as exc:
+        except Exception:
             return ParsedDocument(
                 doc_url=doc_url,
                 canonical_id=canonical_id,
                 status=FullTextStatus.FETCH_FAILED,
-                error_message=f"Network error downloading document: {exc}",
+                error_message="Document download failed due to a network or transport error.",
             )
 
         # 2. Parse PDF with pypdf
@@ -240,12 +240,12 @@ class ResearchDocumentFetcher:
         """Parse raw PDF bytes into pages, full text, and detected sections."""
         try:
             reader = pypdf.PdfReader(io.BytesIO(raw_bytes))
-        except Exception as e:
+        except Exception:
             return ParsedDocument(
                 doc_url=doc_url,
                 canonical_id=canonical_id,
                 status=FullTextStatus.PARSE_FAILED,
-                error_message=f"Corrupt or invalid PDF format: {e}",
+                error_message="Corrupt or invalid PDF format.",
             )
 
         pages: Dict[int, str] = {}
@@ -257,8 +257,8 @@ class ResearchDocumentFetcher:
             page_num = p_idx + 1
             try:
                 page_text = reader.pages[p_idx].extract_text() or ""
-            except Exception as e:
-                logger.warning(f"Error extracting text from page {page_num} of '{doc_url}': {e}")
+            except Exception:
+                logger.warning("Could not extract text from PDF page %s.", page_num)
                 page_text = ""
 
             # Check character bounds

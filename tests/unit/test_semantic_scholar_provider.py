@@ -153,14 +153,19 @@ async def test_semantic_scholar_server_error_exhausted(mock_cache):
 
 
 @pytest.mark.asyncio
-async def test_semantic_scholar_timeout_handling(mock_cache):
+async def test_semantic_scholar_timeout_handling_does_not_expose_transport_diagnostic(mock_cache, caplog):
     provider = SemanticScholarResearchProvider(cache=mock_cache, max_retries=1)
+    diagnostic = "private upstream diagnostic"
 
     with patch("httpx.AsyncClient.get", new_callable=AsyncMock) as mock_get:
-        mock_get.side_effect = httpx.TimeoutException("Connection timed out")
+        mock_get.side_effect = httpx.TimeoutException(diagnostic)
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            with pytest.raises(ResearchProviderUnavailable, match="Semantic Scholar"):
+            with pytest.raises(ResearchProviderUnavailable, match="Semantic Scholar") as error:
                 await provider.search("timeout query")
+
+    assert diagnostic not in caplog.text
+    assert diagnostic not in str(error.value)
+    assert error.value.__cause__ is None
 
 
 @pytest.mark.asyncio

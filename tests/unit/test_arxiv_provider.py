@@ -160,19 +160,22 @@ async def test_arxiv_api_client_does_not_follow_redirects():
 
 
 @pytest.mark.asyncio
-async def test_arxiv_transient_transport_exhaustion_is_reported_as_provider_unavailable():
+async def test_arxiv_transport_diagnostic_is_not_logged_or_returned(caplog):
     provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0))
+    diagnostic = "private upstream diagnostic"
     client = MagicMock()
-    client.get = AsyncMock(side_effect=httpx.ConnectError("upstream unavailable"))
+    client.get = AsyncMock(side_effect=httpx.ConnectError(diagnostic))
     client.__aenter__ = AsyncMock(return_value=client)
     client.__aexit__ = AsyncMock(return_value=None)
 
     with patch("app.research.providers.arxiv.httpx.AsyncClient", return_value=client):
         with patch("app.research.providers.arxiv.asyncio.sleep", new_callable=AsyncMock):
-            with pytest.raises(ResearchProviderUnavailable, match="arXiv"):
+            with pytest.raises(ResearchProviderUnavailable, match="arXiv") as error:
                 await provider.search("persistent context")
 
     assert client.get.await_count == 3
+    assert diagnostic not in caplog.text
+    assert diagnostic not in str(error.value)
 
 
 @pytest.mark.asyncio

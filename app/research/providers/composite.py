@@ -48,12 +48,12 @@ class CompositeResearchProvider(ResearchSourceProvider):
         try:
             s2_sources = await self.s2_provider.search(query, search_type=search_type, max_results=max_results)
             provider_completed = True
-        except ResearchProviderUnavailable as e:
-            failed_providers.append(e.provider)
-            logger.warning(f"Semantic Scholar search failed: {e}")
-        except Exception as e:
+        except ResearchProviderUnavailable:
             failed_providers.append("Semantic Scholar")
-            logger.warning(f"Semantic Scholar search failed: {e}")
+            logger.warning("Semantic Scholar search is unavailable.")
+        except Exception:
+            failed_providers.append("Semantic Scholar")
+            logger.warning("Semantic Scholar search failed.")
 
         # 2. Enrich arXiv-identified papers concurrently and fetch supplementary arXiv papers if needed
         supplementary_arxiv: List[ResearchSource] = []
@@ -74,12 +74,12 @@ class CompositeResearchProvider(ResearchSourceProvider):
                     query, search_type=search_type, max_results=max_results
                 )
                 provider_completed = True
-            except ResearchProviderUnavailable as e:
-                failed_providers.append(e.provider)
-                logger.warning(f"Direct arXiv search failed: {e}")
-            except Exception as e:
+            except ResearchProviderUnavailable:
                 failed_providers.append("arXiv")
-                logger.warning(f"Direct arXiv search failed: {e}")
+                logger.warning("Direct arXiv search is unavailable.")
+            except Exception:
+                failed_providers.append("arXiv")
+                logger.warning("Direct arXiv search failed.")
 
         # Crossref is a metadata-only final fallback when existing sources return too few distinct items.
         combined = s2_sources + supplementary_arxiv
@@ -90,12 +90,12 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 )
                 combined.extend(supplementary_crossref)
                 provider_completed = True
-            except ResearchProviderUnavailable as e:
-                failed_providers.append(e.provider)
-                logger.warning(f"Crossref search failed: {e}")
-            except Exception as e:
+            except ResearchProviderUnavailable:
                 failed_providers.append("Crossref")
-                logger.warning(f"Crossref search failed: {e}")
+                logger.warning("Crossref search is unavailable.")
+            except Exception:
+                failed_providers.append("Crossref")
+                logger.warning("Crossref search failed.")
 
         # 3. Deduplicate and merge identities through SourceDeduplicator
         if not combined and failed_providers and not provider_completed:
@@ -143,8 +143,8 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 if "arxiv" not in provs:
                     provs.append("arxiv")
                 source.metadata["providers"] = provs
-        except Exception as e:
-            logger.debug(f"arXiv enrichment failed for '{arxiv_id}': {e}")
+        except Exception:
+            logger.debug("arXiv metadata enrichment failed.")
 
     async def fetch_source(self, source_id: str) -> Optional[ResearchSource]:
         """Fetch source by identifier from appropriate provider."""
@@ -202,5 +202,5 @@ class CompositeResearchProvider(ResearchSourceProvider):
             return src.sections.get(sec_name)
         else:
             src.metadata["full_text_status"] = parsed_doc.status.value
-            logger.info(f"Full-text extraction failed for '{src.title}': {parsed_doc.error_message}")
+            logger.info("Full-text extraction failed for a research source.")
             return None
