@@ -476,7 +476,11 @@ class DelegationRuntime:
             steps = final_state.get("step_number", 0)
 
             artifacts_dict: Dict[str, Any] = {}
-            if spec.name == "research" and final_state.get("research_state"):
+            if (
+                spec.name == "research"
+                and final_state.get("research_state")
+                and status not in {RunStatus.FAILED.value, RunStatus.CANCELLED.value}
+            ):
                 from app.research.models import ClaimType, ResearchResult, ResearchState, ResearchStatus, SourceStatus
                 from app.research.provenance import CitationValidator, validate_research_state
 
