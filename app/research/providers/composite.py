@@ -31,6 +31,14 @@ class CompositeResearchProvider(ResearchSourceProvider):
         self.fetcher = fetcher or document_fetcher
         self.cache = cache or research_cache
 
+    @staticmethod
+    def _distinct_source_count(sources: List[ResearchSource]) -> int:
+        """Count canonical sources without mutating provider results."""
+        indexed: Dict[str, ResearchSource] = {}
+        copies = [source.model_copy(deep=True) for source in sources]
+        SourceDeduplicator.deduplicate(copies, existing_sources=indexed)
+        return len(indexed)
+
     async def search(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:
         """Search across scholarly providers, enrich arXiv identifiers, and deduplicate."""
         # 1. Primary discovery via Semantic Scholar
@@ -60,7 +68,7 @@ class CompositeResearchProvider(ResearchSourceProvider):
             await asyncio.gather(*enrichment_tasks, return_exceptions=True)
 
         # If Semantic Scholar returned few results, query arXiv directly
-        if len(s2_sources) < max_results:
+        if self._distinct_source_count(s2_sources) < max_results:
             try:
                 supplementary_arxiv = await self.arxiv_provider.search(
                     query, search_type=search_type, max_results=max_results
@@ -73,9 +81,9 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 failed_providers.append("arXiv")
                 logger.warning(f"Direct arXiv search failed: {e}")
 
-        # Crossref is a metadata-only final fallback when the existing sources return too few items.
+        # Crossref is a metadata-only final fallback when existing sources return too few distinct items.
         combined = s2_sources + supplementary_arxiv
-        if self.crossref_provider is not None and len(combined) < max_results:
+        if self.crossref_provider is not None and self._distinct_source_count(combined) < max_results:
             try:
                 supplementary_crossref = await self.crossref_provider.search(
                     query, search_type=search_type, max_results=max_results

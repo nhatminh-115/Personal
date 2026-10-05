@@ -154,6 +154,39 @@ async def test_composite_provider_skips_crossref_when_existing_results_fill_requ
 
 
 @pytest.mark.asyncio
+async def test_composite_provider_falls_back_when_s2_count_is_full_of_duplicates(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    crossref_provider = MagicMock()
+    duplicate_sources = [
+        ResearchSource(source_id=f"s2_{index}", canonical_id="doi:10.5555/duplicate", title="Same Paper")
+        for index in range(2)
+    ]
+    s2_provider.search = AsyncMock(return_value=duplicate_sources)
+    arxiv_provider.search = AsyncMock(return_value=[])
+    crossref_source = ResearchSource(
+        source_id="crossref_10_5555_unique",
+        canonical_id="doi:10.5555/unique",
+        title="A Distinct Paper",
+        metadata={"provider": "crossref"},
+    )
+    crossref_provider.search = AsyncMock(return_value=[crossref_source])
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        crossref_provider=crossref_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    results = await composite.search("duplicate query", max_results=2)
+
+    arxiv_provider.search.assert_awaited_once_with("duplicate query", search_type="broad", max_results=2)
+    crossref_provider.search.assert_awaited_once_with("duplicate query", search_type="broad", max_results=2)
+    assert {source.canonical_id for source in results} == {"doi:10.5555/duplicate", "doi:10.5555/unique"}
+
+
+@pytest.mark.asyncio
 async def test_composite_provider_reports_outage_when_no_source_provider_completed(mock_cache):
     s2_provider = MagicMock()
     arxiv_provider = MagicMock()
