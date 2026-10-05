@@ -7,6 +7,7 @@ import pytest
 
 from app.research.cache import ResearchCache
 from app.research.document import FullTextStatus, ParsedDocument, SectionExtractionResult
+from app.research.provider import ResearchProviderUnavailable
 from app.research.providers.arxiv import ArxivRateLimiter, ArxivResearchProvider
 
 
@@ -124,8 +125,46 @@ async def test_arxiv_api_client_does_not_follow_redirects():
 
 
 @pytest.mark.asyncio
-async def test_arxiv_fetch_section_with_pdf_extraction():
-    cache = ResearchCache()
+async def test_arxiv_transient_transport_exhaustion_is_reported_as_provider_unavailable():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0))
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=httpx.ConnectError("upstream unavailable"))
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.research.providers.arxiv.httpx.AsyncClient", return_value=client):
+        with patch("app.research.providers.arxiv.asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(ResearchProviderUnavailable, match="arXiv"):
+                await provider.search("persistent context")
+
+    assert client.get.await_count == 3
+
+
+@pytest.mark.asyncio
+async def test_arxiv_rate_limit_respects_bounded_retry_after_delay():
+    provider = ArxivResearchProvider(rate_limiter=ArxivRateLimiter(min_interval_seconds=0.0))
+    rate_limited = MagicMock(spec=httpx.Response)
+    rate_limited.status_code = 429
+    rate_limited.headers = {"Retry-After": "0.25"}
+    success = MagicMock(spec=httpx.Response)
+    success.status_code = 200
+    success.text = "<feed />"
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=[rate_limited, success])
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.research.providers.arxiv.httpx.AsyncClient", return_value=client):
+        with patch("app.research.providers.arxiv.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            response = await provider._execute_arxiv_request({"search_query": "all:test"})
+
+    assert response == "<feed />"
+    sleep.assert_awaited_once_with(0.25)
+
+
+@pytest.mark.asyncio
+async def test_arxiv_fetch_section_with_pdf_extraction(tmp_path):
+    cache = ResearchCache(cache_dir=tmp_path)
     limiter = ArxivRateLimiter(min_interval_seconds=0.0)
     provider = ArxivResearchProvider(rate_limiter=limiter, cache=cache)
 

@@ -6,7 +6,9 @@ import pytest
 from app.research.cache import ResearchCache
 from app.research.document import FullTextStatus, ParsedDocument, SectionExtractionResult
 from app.research.models import ResearchSource, SourceStatus
+from app.research.provider import ResearchProviderUnavailable, ResearchSearchUnavailable
 from app.research.providers.composite import CompositeResearchProvider
+from app.research.tools import ResearchSearchTool
 
 
 @pytest.fixture
@@ -96,6 +98,64 @@ async def test_composite_provider_s2_failure_fallback_to_arxiv(mock_cache):
     results = await composite.search("test query")
     assert len(results) == 1
     assert results[0].canonical_id == "arxiv:2402.99999"
+
+
+@pytest.mark.asyncio
+async def test_composite_provider_reports_outage_when_no_source_provider_completed(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    s2_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("Semantic Scholar", "rate limited"))
+    arxiv_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("arXiv"))
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    with pytest.raises(ResearchSearchUnavailable) as raised:
+        await composite.search("test query")
+
+    assert raised.value.failed_providers == ("Semantic Scholar", "arXiv")
+
+
+@pytest.mark.asyncio
+async def test_composite_provider_keeps_successful_empty_search_distinct_from_outage(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    s2_provider.search = AsyncMock(return_value=[])
+    arxiv_provider.search = AsyncMock(return_value=[])
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    assert await composite.search("no matching topic") == []
+
+
+@pytest.mark.asyncio
+async def test_search_tool_does_not_report_provider_outage_as_empty_results(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    s2_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("Semantic Scholar"))
+    arxiv_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("arXiv"))
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    result = await ResearchSearchTool().execute(
+        {"query": "test query"}, context={"research_provider": composite}
+    )
+
+    assert result.success is False
+    assert "could not complete the search" in (result.error or "")
+    assert result.metadata["error_code"] == "research_providers_unavailable"
+    assert result.metadata["failed_providers"] == ["Semantic Scholar", "arXiv"]
 
 
 @pytest.mark.asyncio

@@ -13,6 +13,7 @@ from app.research.dedup import compute_canonical_id, extract_arxiv_id, extract_d
 from app.research.document import FullTextStatus
 from app.research.models import ResearchSource, SourceStatus
 from app.research.provider import ResearchSourceProvider
+from app.research.provider import ResearchProviderUnavailable
 
 
 class SemanticScholarResearchProvider(ResearchSourceProvider):
@@ -71,7 +72,7 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
                     retries += 1
                     if retries > self.max_retries:
                         logger.warning(f"Semantic Scholar rate limit exceeded after {retries} retries: {endpoint}")
-                        return None
+                        raise ResearchProviderUnavailable("Semantic Scholar", "rate limited")
 
                     retry_after = resp.headers.get("Retry-After")
                     try:
@@ -88,27 +89,33 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
                     retries += 1
                     if retries > self.max_retries:
                         logger.warning(f"Semantic Scholar 5xx error ({resp.status_code}) after {retries} retries: {endpoint}")
-                        return None
+                        raise ResearchProviderUnavailable("Semantic Scholar", "temporarily unavailable")
                     wait_seconds = 1.0 * (2 ** retries) + random.uniform(0.1, 0.5)
                     logger.info(f"Semantic Scholar {resp.status_code} received. Backing off {wait_seconds:.2f}s")
                     await asyncio.sleep(wait_seconds)
                     continue
 
-                # Unrecoverable client errors (400, 404, etc.) -> do not retry
+                # Do not retry client errors; preserve failures except a missing fetched paper.
                 logger.info(f"Semantic Scholar unrecoverable client error {resp.status_code} on {endpoint}")
+                if resp.status_code >= 400 and resp.status_code != 404:
+                    raise ResearchProviderUnavailable(
+                        "Semantic Scholar", f"rejected the request (HTTP {resp.status_code})"
+                    )
                 return None
 
-            except (httpx.TimeoutException, httpx.ConnectError) as exc:
+            except httpx.TransportError as exc:
                 retries += 1
                 if retries > self.max_retries:
                     logger.warning(f"Semantic Scholar network error after {retries} retries on {endpoint}: {exc}")
-                    return None
+                    raise ResearchProviderUnavailable("Semantic Scholar", "temporarily unavailable") from exc
                 wait_seconds = 1.0 * (2 ** retries) + random.uniform(0.1, 0.5)
                 logger.info(f"Semantic Scholar network issue ({exc}). Retrying in {wait_seconds:.2f}s")
                 await asyncio.sleep(wait_seconds)
+            except ResearchProviderUnavailable:
+                raise
             except Exception as e:
                 logger.warning(f"Semantic Scholar unexpected error on {endpoint}: {e}")
-                return None
+                raise ResearchProviderUnavailable("Semantic Scholar", "returned an unreadable response") from e
 
         return None
 
@@ -236,8 +243,11 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
             target_id = target_id[3:]
 
         params = {"fields": self.DEFAULT_FIELDS}
-        async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
-            resp_data = await self._request_with_retry(client, f"paper/{target_id}", params=params)
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
+                resp_data = await self._request_with_retry(client, f"paper/{target_id}", params=params)
+        except ResearchProviderUnavailable:
+            return None
 
         if not resp_data:
             return None
