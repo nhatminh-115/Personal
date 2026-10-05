@@ -1,12 +1,14 @@
 """Integration tests for crash-safe and idempotent approval resumption."""
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.memory import MemorySaver
 from sqlalchemy import select
 
 from app.api.server import app
+from app.api.routes.approvals import _record_parent_resume_failure
 from app.approvals.service import ApprovalService
 from app.core.errors import MODEL_PROVIDER_FAILURE_MESSAGE, MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
 from app.core.settings import settings
@@ -165,3 +167,26 @@ async def test_provider_failure_during_resume_marks_run_failed_cleanly(async_cli
         RunEventModel.event_type == "run_failed",
     ))
     assert events.one().payload == {"error_category": "provider_failure"}
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_resuming_parent_after_specialist_is_redacted(caplog):
+    parent = RunModel(id="parent-run", session_id="session-parent", user_message="Run specialist task")
+    trace_service = AsyncMock()
+
+    await _record_parent_resume_failure(
+        parent,
+        ProviderError("Provider returned 500: private runner diagnostic"),
+        trace_service,
+    )
+
+    assert parent.status == RunStatus.FAILED.value
+    assert parent.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    assert parent.final_response == MODEL_PROVIDER_FAILURE_MESSAGE
+    assert "private runner diagnostic" not in caplog.text
+    trace_service.record_event.assert_awaited_once_with(
+        run_id="parent-run",
+        session_id="session-parent",
+        event_type="run_failed",
+        payload={"error_category": "provider_failure"},
+    )

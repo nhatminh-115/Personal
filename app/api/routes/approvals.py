@@ -50,6 +50,24 @@ def _get_active_interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
     return None
 
 
+async def _record_parent_resume_failure(parent: RunModel, exc: Exception, trace_service: TraceService) -> None:
+    provider_failure = isinstance(exc, ProviderError)
+    if provider_failure:
+        logger.error("Model provider failed while resuming parent run '%s'.", parent.id)
+        parent.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+        parent.final_response = MODEL_PROVIDER_FAILURE_MESSAGE
+        await trace_service.record_event(
+            run_id=parent.id,
+            session_id=parent.session_id,
+            event_type="run_failed",
+            payload={"error_category": "provider_failure"},
+        )
+    else:
+        logger.error("Error resuming parent graph: %s", exc, exc_info=True)
+        parent.error_message = str(exc)
+    parent.status = RunStatus.FAILED.value
+
+
 @router.get("/pending", response_model=List[ApprovalResponse])
 async def list_pending_approvals(
     response: Response,
@@ -337,8 +355,7 @@ async def submit_approval_decision(
                         parent.status = parent_final.get("execution_status", exec_status)
                         parent.final_response = parent_final.get("final_response") or f"Personal Orchestrator: Specialist completed task. {final_response}"
                     except Exception as parent_exc:
-                        logger.error(f"Error resuming parent graph: {parent_exc}", exc_info=True)
-                        parent.status = RunStatus.FAILED.value
+                        await _record_parent_resume_failure(parent, parent_exc, trace_service)
                 else:
                     parent.status = exec_status
                     parent.final_response = f"Personal Orchestrator: Specialist completed task. {final_response}"
