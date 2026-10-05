@@ -71,7 +71,7 @@ async def test_trace_keeps_allowlisted_research_provider_failure_metadata_only(t
                 "error": "private query and provider response",
                 "metadata": {
                     "error_code": "research_providers_unavailable",
-                    "failed_providers": ["Semantic Scholar", "arXiv", "attacker supplied provider"],
+                    "failed_providers": ["Semantic Scholar", "arXiv", "Crossref", "attacker supplied provider"],
                     "query": "private query text",
                     "response_body": "private response body",
                 },
@@ -81,7 +81,7 @@ async def test_trace_keeps_allowlisted_research_provider_failure_metadata_only(t
 
     assert event.payload["result"]["metadata"] == {
         "error_code": "research_providers_unavailable",
-        "failed_providers": ["Semantic Scholar", "arXiv"],
+        "failed_providers": ["Semantic Scholar", "arXiv", "Crossref"],
     }
     assert "private query" not in str(event.payload)
     assert "private response body" not in str(event.payload)

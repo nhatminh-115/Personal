@@ -1259,7 +1259,7 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
                 "success": False,
                 "metadata": {
                     "error_code": "research_providers_unavailable",
-                    "failed_providers": ["Semantic Scholar", "arXiv", "untrusted provider"],
+                    "failed_providers": ["Semantic Scholar", "arXiv", "Crossref", "untrusted provider"],
                     "query": "private research query",
                 },
             },
@@ -1293,7 +1293,7 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
     assert tool_result["success"] is True
     research_failure = next(event for event in trace["events"] if event["error_code"] == "research_providers_unavailable")
     assert research_failure["success"] is False
-    assert research_failure["failed_providers"] == ["Semantic Scholar", "arXiv"]
+    assert research_failure["failed_providers"] == ["Semantic Scholar", "arXiv", "Crossref"]
     research_success = next(
         event for event in trace["events"]
         if event["event_type"] == "tool_executed" and event["success"] is True and event.get("tool_name") == "research_search"
