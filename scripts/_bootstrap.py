@@ -12,3 +12,11 @@ def ensure_project_root(script_file: str | Path) -> Path:
         sys.path.remove(root_entry)
     sys.path.insert(0, root_entry)
     return project_root
+
+
+def resolve_project_path(project_root: str | Path, path: str | Path) -> Path:
+    """Resolve a default project artifact path without depending on the caller's cwd."""
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = Path(project_root) / candidate
+    return candidate.resolve()

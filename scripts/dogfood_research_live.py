@@ -37,11 +37,11 @@ from sqlalchemy import select
 from urllib.parse import urlparse
 
 if __package__:
-    from ._bootstrap import ensure_project_root
+    from ._bootstrap import ensure_project_root, resolve_project_path
 else:
-    from _bootstrap import ensure_project_root
+    from _bootstrap import ensure_project_root, resolve_project_path
 
-ensure_project_root(__file__)
+PROJECT_ROOT = ensure_project_root(__file__)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -159,7 +159,7 @@ def configure_dogfood_runtime(run_key: str, state_dir: Path | None = None) -> tu
     """Configure unique run-scoped storage without deleting prior dogfood evidence."""
     from sqlalchemy.engine import URL
 
-    data_dir = Path(state_dir or ".aura_dogfood").resolve()
+    data_dir = resolve_project_path(PROJECT_ROOT, state_dir if state_dir is not None else ".aura_dogfood")
     data_dir.mkdir(parents=True, exist_ok=True)
     database_path = data_dir / f"research-{run_key}.db"
     checkpoint_path = data_dir / f"research-{run_key}-checkpoints.db"
@@ -191,7 +191,7 @@ def pending_approval_report(run_id: str, approval_id: str) -> Dict[str, Any]:
 
 def write_pending_approval_report(run_id: str, approval_id: str, output_dir: Path | None = None) -> Path:
     report = pending_approval_report(run_id, approval_id)
-    directory = Path(output_dir or "artifacts/dogfood").resolve()
+    directory = resolve_project_path(PROJECT_ROOT, output_dir if output_dir is not None else "artifacts/dogfood")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"research-pending-approval-{run_id}.json"
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -437,7 +437,7 @@ async def audit_dogfood_run(
 
 def write_audit_report(parent_run_id: str, report: Dict[str, Any], output_dir: Path | None = None) -> Path:
     """Persist the sanitized audit summary without source text or model output."""
-    directory = Path(output_dir or "artifacts/dogfood").resolve()
+    directory = resolve_project_path(PROJECT_ROOT, output_dir if output_dir is not None else "artifacts/dogfood")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"research-{parent_run_id}.json"
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

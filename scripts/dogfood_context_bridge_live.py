@@ -14,11 +14,11 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 if __package__:
-    from ._bootstrap import ensure_project_root
+    from ._bootstrap import ensure_project_root, resolve_project_path
 else:
-    from _bootstrap import ensure_project_root
+    from _bootstrap import ensure_project_root, resolve_project_path
 
-ensure_project_root(__file__)
+PROJECT_ROOT = ensure_project_root(__file__)
 
 RESEARCH_PROMPT = (
     "You are the AURA root orchestrator. Delegate this request now to the Research Specialist using "
@@ -145,7 +145,7 @@ def _safe_context_manifest(events: list[Any], bridge_id: str) -> dict[str, Any] 
 def configure_isolated_runtime(run_key: str) -> None:
     from sqlalchemy.engine import URL
 
-    data_dir = Path(".aura_dogfood").resolve()
+    data_dir = resolve_project_path(PROJECT_ROOT, ".aura_dogfood")
     data_dir.mkdir(parents=True, exist_ok=True)
     database_url = URL.create("sqlite+aiosqlite", database=str(data_dir / f"bridge-{run_key}.db")).render_as_string(hide_password=False)
     checkpoint_path = data_dir / f"bridge-{run_key}-checkpoints.db"
@@ -335,7 +335,7 @@ async def run_live_dogfood() -> None:
         "context_manifest": context_manifest,
         "elapsed_seconds": round(time.monotonic() - started, 2),
     }
-    output_dir = Path("artifacts/dogfood").resolve()
+    output_dir = resolve_project_path(PROJECT_ROOT, "artifacts/dogfood")
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"context-bridge-{research_run_id}.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")

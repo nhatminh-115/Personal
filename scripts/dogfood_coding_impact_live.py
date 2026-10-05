@@ -13,11 +13,11 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 if __package__:
-    from ._bootstrap import ensure_project_root
+    from ._bootstrap import ensure_project_root, resolve_project_path
 else:
-    from _bootstrap import ensure_project_root
+    from _bootstrap import ensure_project_root, resolve_project_path
 
-ensure_project_root(__file__)
+PROJECT_ROOT = ensure_project_root(__file__)
 
 CODING_IMPACT_WORKLOAD = (
     "You are the root orchestrator. This request requires the Coding Specialist: call delegate_task now with "
@@ -157,7 +157,7 @@ async def _latest_run_id_for_session(session_id: str) -> str | None:
 
 
 def _write_coding_report(report: dict[str, Any]) -> Path:
-    output_dir = Path("artifacts/dogfood").resolve()
+    output_dir = resolve_project_path(PROJECT_ROOT, "artifacts/dogfood")
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"coding-impact-{report['parent_run_id']}.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -168,7 +168,7 @@ def configure_isolated_runtime(workspace_root: Path, run_key: str) -> None:
     """Point all mutable runtime state at ignored, run-specific dogfood files."""
     from sqlalchemy.engine import URL
 
-    isolated = Path(".aura_dogfood").resolve()
+    isolated = resolve_project_path(PROJECT_ROOT, ".aura_dogfood")
     isolated.mkdir(parents=True, exist_ok=True)
     database_path = isolated / f"coding-{run_key}.db"
     checkpoint_path = isolated / f"coding-{run_key}-checkpoints.db"
@@ -271,7 +271,7 @@ async def run_live_dogfood() -> None:
         raise SystemExit(2)
 
     run_key = uuid.uuid4().hex[:12]
-    workspace_root = Path(os.environ.get("AURA_DOGFOOD_WORKSPACE_ROOT", Path.cwd())).resolve()
+    workspace_root = Path(os.environ["AURA_DOGFOOD_WORKSPACE_ROOT"]).resolve() if os.environ.get("AURA_DOGFOOD_WORKSPACE_ROOT") else PROJECT_ROOT
     if not workspace_root.is_dir():
         raise SystemExit(f"AURA_DOGFOOD_WORKSPACE_ROOT is not a directory: {workspace_root}")
     configure_isolated_runtime(workspace_root, run_key)
