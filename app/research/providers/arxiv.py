@@ -235,7 +235,7 @@ class ArxivResearchProvider(ResearchSourceProvider):
             root = ET.fromstring(xml_data)
         except ET.ParseError as e:
             logger.warning(f"Failed parsing arXiv XML response: {e}")
-            return []
+            raise ResearchProviderUnavailable("arXiv", "returned an unreadable search response") from e
 
         results: List[ResearchSource] = []
         for entry in root.findall("atom:entry", self.ATOM_NS):
