@@ -9,6 +9,47 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     vi.restoreAllMocks();
   });
 
+  it('does not offer a fake Stop action while a live backend run is in progress', async () => {
+    let completeChat: (() => void) | null = null;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/chat')) {
+        return new Promise((resolve) => {
+          completeChat = () => resolve({
+            ok: true,
+            json: () => Promise.resolve({ run_id: 'run-stop-test', session_id: 'session-stop-test', status: 'completed', response: 'Finished', tool_results: [] }),
+          });
+        });
+      }
+      if (url.includes('/v1/runs/run-stop-test')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ events: [] }) });
+      }
+      if (url.includes('/v1/models') || url.includes('/v1/sessions') || url.includes('/v1/memory')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [], edges: [], layout: { project_name: 'AURA', layout: {}, revision: 0 }, execution_traces: [] }) });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    await act(async () => { render(<App />); });
+    const projectButton = (await screen.findByText(/^AURA$/i, { selector: '.project-card *' })).closest('.project-card')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsButton = await screen.findByRole('button', { name: /Open project chats/i });
+    await act(async () => { fireEvent.click(chatsButton); });
+    await act(async () => { fireEvent.click(screen.getByTitle('New chat')); });
+
+    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep running until the backend responds' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
+
+    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Stop/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Send/i })).toBeDisabled();
+
+    await act(async () => { completeChat?.(); });
+    await waitFor(() => expect(screen.queryByText('AURA is working')).not.toBeInTheDocument());
+  });
+
   it('sends chat request to /v1/chat and renders completed response with real execution events', async () => {
     let chatPayload: any = null;
     const consoleError = vi.spyOn(console, 'error');

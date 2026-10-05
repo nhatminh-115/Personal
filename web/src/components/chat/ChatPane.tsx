@@ -399,7 +399,7 @@ export function ChatPane({
       </div>
 
       <div className="chat-composer-wrap">
-        {runPhase ? <AIRunStrip phase={runPhase} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={stopRun} /> : null}
+        {runPhase ? <AIRunStrip phase={runPhase} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? undefined : stopRun} /> : null}
         <div className="chat-composer chat-composer--ai">
           {contextOpen ? (
             <AIContextPanel

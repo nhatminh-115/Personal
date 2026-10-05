@@ -71,6 +71,18 @@ describe('Demo / Live Separation', () => {
     expect(screen.getByText(/demo thread/i)).toBeInTheDocument();
   });
 
+  it('keeps Stop available for a local demo run', async () => {
+    await openStatefulChats();
+    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    fireEvent.change(textarea, { target: { value: 'Stop this local demo response' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
+
+    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Stop/i })); });
+    expect(screen.queryByText('AURA is working')).not.toBeInTheDocument();
+    expect(postCalls).toHaveLength(0);
+  });
+
   it('newThread creates a live thread (source: live)', async () => {
     await openStatefulChats();
 
