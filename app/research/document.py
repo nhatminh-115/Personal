@@ -210,7 +210,7 @@ class ResearchDocumentFetcher:
                 doc_url=doc_url,
                 canonical_id=canonical_id,
                 status=FullTextStatus.FETCH_FAILED,
-                error_message="Document destination could not be validated safely.",
+                error_message="Document destination must resolve to a public HTTP/HTTPS address.",
             )
         except httpx.TimeoutException:
             return ParsedDocument(
