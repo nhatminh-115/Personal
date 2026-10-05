@@ -458,6 +458,10 @@ async def test_personal_note_delete_checks_revision_and_cascades_project_links(a
     assert created.status_code == 201
     note = created.json()
 
+    fetched = await async_client.get(f"/v1/workspace/notes/{note['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["revision"] == note["revision"]
+
     stale_delete = await async_client.delete(
         f"/v1/workspace/notes/{note['id']}?expected_revision={note['revision'] + 1}"
     )
@@ -489,6 +493,7 @@ async def test_personal_note_delete_does_not_delete_project_local_objects(async_
     response = await async_client.delete(f"/v1/workspace/notes/{item['id']}?expected_revision=1")
 
     assert response.status_code == 404
+    assert (await async_client.get(f"/v1/workspace/notes/{item['id']}")).status_code == 404
     graph = (await async_client.get("/v1/workspace/projects/aura/graph")).json()
     assert item["id"] in {obj["id"] for obj in graph["objects"]}
 

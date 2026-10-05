@@ -522,6 +522,10 @@ export const api = {
     };
   },
 
+  async fetchWorkspaceNote(id: string): Promise<WorkspaceNoteRecord> {
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`));
+  },
+
   async createWorkspaceProject(input: { id: string; name: string; subtitle: string }): Promise<WorkspaceProjectRecord> {
     return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },

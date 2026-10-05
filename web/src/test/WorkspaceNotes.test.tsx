@@ -157,5 +157,40 @@ describe('Persistent personal workspace Notes', () => {
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes/note-delete?expected_revision=7', { method: 'DELETE' }));
     await waitFor(() => expect(screen.queryByDisplayValue('Finished note')).not.toBeInTheDocument());
   });
+
+  it('reloads the saved Note version after an optimistic-concurrency conflict', async () => {
+    const savedNote = {
+      id: 'note-conflict', title: 'Shared draft', body: 'Version from this tab.', tags: [], project_names: [],
+      pinned: false, revision: 1,
+      created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+    };
+    const latestNote = { ...savedNote, title: 'Remote title', body: 'Saved by another tab.', revision: 2 };
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
+      if (url.includes('/v1/sessions?') || url.endsWith('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+      if (url.startsWith('/v1/workspace/notes?')) return Promise.resolve({ ok: true, json: () => Promise.resolve([savedNote]) } as Response);
+      if (url === '/v1/workspace/notes/note-conflict' && init?.method === 'PUT') {
+        return Promise.resolve({ ok: false, status: 409, text: () => Promise.resolve(JSON.stringify({ detail: { message: 'Workspace object changed since it was loaded.', current_revision: 2 } })) } as Response);
+      }
+      if (url === '/v1/workspace/notes/note-conflict') return Promise.resolve({ ok: true, json: () => Promise.resolve(latestNote) } as Response);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response);
+    });
+    await act(async () => { render(<App />); });
+    fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /Shared draft/i }));
+
+    fireEvent.change(await screen.findByDisplayValue('Shared draft'), { target: { value: 'My local edit' } });
+    fireEvent.change(screen.getByPlaceholderText('Write anything…'), { target: { value: 'Unsaved local body.' } });
+
+    const reloadButton = await screen.findByRole('button', { name: 'Load saved version' }, { timeout: 3000 });
+    fireEvent.click(reloadButton);
+
+    expect(confirm).toHaveBeenCalledWith('Load the saved version and discard your unsaved edits?');
+    await waitFor(() => expect(screen.getByDisplayValue('Remote title')).toBeInTheDocument());
+    expect(screen.getByDisplayValue('Saved by another tab.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });
 

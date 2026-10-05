@@ -11,6 +11,8 @@ interface NotesViewProps {
   onNotesChange: (notes: WorkspaceNote[]) => void;
   onOpenProject: (projectId: string) => void;
   onDeleteNote?: (note: WorkspaceNote) => Promise<boolean>;
+  onReloadNote?: (noteId: string) => void;
+  noteConflicts?: Record<string, { loading: boolean; error?: string }>;
   onShowAllNotes?: () => void;
   hasMoreNotes?: boolean;
   loadingMoreNotes?: boolean;
@@ -18,7 +20,7 @@ interface NotesViewProps {
   onLoadMoreNotes?: () => void;
 }
 
-export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChange, onOpenProject, onDeleteNote, onShowAllNotes, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
+export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChange, onOpenProject, onDeleteNote, onReloadNote, noteConflicts, onShowAllNotes, hasMoreNotes = false, loadingMoreNotes = false, notesLoadError, onLoadMoreNotes }: NotesViewProps) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState(notes[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
@@ -40,6 +42,7 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
     setActiveId(focusNoteId);
   }, [focusNoteId, notes]);
   const active = notes.find((note) => note.id === activeId) ?? null;
+  const noteConflict = active ? noteConflicts?.[active.id] ?? null : null;
 
   const updateActive = (patch: Partial<WorkspaceNote>) => {
     if (!active) return;
@@ -99,6 +102,12 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
       <div className="note-editor-panel">
         {active ? (
           <>
+            {noteConflict && onReloadNote ? <div className="note-conflict-notice" role="alert">
+              <span>{noteConflict.error ?? 'This note changed elsewhere. Your edits are still local.'}</span>
+              <button type="button" disabled={noteConflict.loading} onClick={() => {
+                if (window.confirm('Load the saved version and discard your unsaved edits?')) onReloadNote(active.id);
+              }}>{noteConflict.loading ? 'Loading…' : 'Load saved version'}</button>
+            </div> : null}
             <div className="note-editor-panel__meta">
               <span className="eyebrow">{active.projectIds.length ? 'LINKED NOTE' : 'PERSONAL NOTE'}</span>
               <div className="note-editor-panel__controls">
