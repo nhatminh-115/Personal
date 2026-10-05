@@ -25,24 +25,10 @@ closed. Tool risk, permission, and approval policy is still enforced by AURA.
 
 ## Dogfood status
 
-On 2026-10-05, the environment already had CodeGraph MCP 0.20.1 installed;
-AURA did not install or download it. An isolated, telemetry-disabled setup
-was discovered by AURA's MCP manager with 10 allowlisted read-only tools, and
-`mcp_codegraph_codegraph_get_module_summary` returned successfully with the
-provider marked healthy. The profile and generated index were kept outside the
-repository.
-
-This verifies the AURA MCP provider smoke only, not the complete Coding
-Specialist flow. Live attempts using `qwen2.5-coder:3b`,
-`qwen2.5-coder:7b`, and `qwen3:4b` did not satisfy the delegation/tool-use
-acceptance: the 3b model did not delegate, and the 7b/4b Ollama runner timed
-out or terminated before delegation. Example run IDs:
-`8630027c-6698-4b76-a231-8e24a88caf59`,
-`2ee684ec-21d9-41de-bc8a-6fdec69e56b7`,
-`bce8217f-8255-4559-ab31-80b7edb82d35`, and
-`36653b69-1de2-4fca-9612-88252583b42f`. Full CodeGraph dogfood remains
-pending a capable local or hosted model. CodeGraph remains optional and stays
-outside CI.
+CodeGraph is not installed or configured in the current environment. Its live
+provider smoke and Coding Specialist dogfood are pending external setup. Do not
+install or download CodeGraph automatically. This dogfood item does not block
+other AURA milestones. CodeGraph remains optional and stays outside CI.
 
 ## Candidate review
 
