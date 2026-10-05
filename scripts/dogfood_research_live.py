@@ -193,6 +193,46 @@ def write_pending_approval_report(run_id: str, approval_id: str, output_dir: Pat
     path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return path
 
+
+async def latest_run_id_for_session(session_id: str, db: Any | None = None) -> str | None:
+    """Find a persisted run when /v1/chat fails before returning its run ID."""
+    from app.db.models import RunModel
+    from app.db.session import async_session_factory
+
+    if db is None:
+        async with async_session_factory() as session:
+            return await latest_run_id_for_session(session_id, db=session)
+    result = await db.execute(
+        select(RunModel.id)
+        .where(RunModel.session_id == session_id, RunModel.parent_run_id.is_(None))
+        .order_by(RunModel.created_at.desc(), RunModel.id.desc())
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
+def failed_run_report(
+    session_id: str,
+    *,
+    parent_run_id: str | None = None,
+    http_status: int | None = None,
+    elapsed_seconds: float | None = None,
+    failure: str,
+) -> Dict[str, Any]:
+    """Build a safe failure artifact without raw HTTP, prompt, or source content."""
+    report: Dict[str, Any] = {
+        "scenario": "research_live_dogfood",
+        "session_id": session_id,
+        "parent_run_id": parent_run_id,
+        "accepted": False,
+        "acceptance_failures": [failure],
+    }
+    if http_status is not None:
+        report["http_status"] = http_status
+    if elapsed_seconds is not None:
+        report["elapsed_seconds"] = round(elapsed_seconds, 2)
+    return report
+
 async def audit_dogfood_run(
     parent_run_id: str,
     db: Optional[Any] = None,
@@ -215,7 +255,14 @@ async def audit_dogfood_run(
     delegation = del_res.scalar_one_or_none()
 
     if not delegation:
-        raise ValueError(f"Traces prove delegate_task was NOT executed by root orchestrator for run '{parent_run_id}'!")
+        parent_run = await db.get(RunModel, parent_run_id)
+        session_id = parent_run.session_id if parent_run else "unknown"
+        return failed_run_report(
+            session_id,
+            parent_run_id=parent_run_id,
+            elapsed_seconds=elapsed_seconds,
+            failure="root did not persist a delegation to the Research Specialist",
+        )
 
     child_run_id = delegation.child_run_id
     specialist_name = delegation.specialist_name
@@ -296,9 +343,9 @@ async def audit_dogfood_run(
     print(f"ResearchState Status      : {r_state.status.value}")
     print(f"Parsed Synthesis Status   : {parsed_synthesis_status}")
 
-    print("\nActual Model-Generated Search Queries:")
+    print("\nSearch Query Trace:")
     for q in r_state.queries:
-        print(f"  - '{q.query_text}' (Type: {q.search_type}, Iteration: {q.iteration}, Results: {q.results_count})")
+        print(f"  - [{q.query_id}] Type: {q.search_type}, Iteration: {q.iteration}, Results: {q.results_count}")
 
     print(f"\nDiscovered Canonical Sources ({len(r_state.sources)} unified):")
     pdf_count = 0
@@ -323,18 +370,15 @@ async def audit_dogfood_run(
     print(f"Actual EvidenceItem IDs   : {list(r_state.evidence.keys())}")
     for eid, ev in r_state.evidence.items():
         print(f"  + [{eid}] Locator: {ev.source_locator}")
-        print(f"    Quote: \"{ev.extracted_text[:120]}...\"")
 
     print(f"Actual ResearchClaim IDs  : {[c.claim_id for c in r_state.claims]}")
     for c in r_state.claims:
-        print(f"  [OK] [{c.claim_id}] Type={c.claim_type.value}: \"{c.claim_text}\" (Cites: {c.evidence_ids})")
+        print(f"  [OK] [{c.claim_id}] Type={c.claim_type.value} (Cites: {c.evidence_ids})")
 
     print(f"Project Memories Stored   : {len(mem_records)} in '{PROJECT_NAME}'")
     for m in mem_records:
-        print(f"  - Memory ID: {m.id} | Key: {m.key}")
-        print(f"    Content: {m.content[:100]}...")
         meta = m.metadata_json or {}
-        print(f"    Lineage: Claims={meta.get('claim_ids')}, Evidence={meta.get('evidence_ids')}, Sources={meta.get('sources_cited')}")
+        print(f"  - Memory ID: {m.id} | Lineage: Claims={meta.get('claim_ids')}, Evidence={meta.get('evidence_ids')}, Sources={meta.get('sources_cited')}")
 
     claim_ids = {claim.claim_id for claim in r_state.claims}
     evidence_ids = set(r_state.evidence)
@@ -432,8 +476,9 @@ async def run_live_agent_dogfood():
     print("\n[Phase 1] Starting application lifecycle and sending research workload to /v1/chat...")
     print(f"Workload:\n\"{RESEARCH_WORKLOAD}\"\n")
 
-    parent_run_id = None
-    chat_response_data = None
+    parent_run_id: str | None = None
+    chat_response_data: Dict[str, Any] = {}
+    http_failure_status: int | None = None
 
     async with lifespan(app):
         transport = httpx.ASGITransport(app=app)
@@ -446,29 +491,31 @@ async def run_live_agent_dogfood():
             chat_duration = time.time() - t0
 
             if chat_resp.status_code != 200:
-                print(f"\n[ERROR] /v1/chat failed with status {chat_resp.status_code}: {chat_resp.text}")
-                sys.exit(1)
+                http_failure_status = chat_resp.status_code
+                parent_run_id = await latest_run_id_for_session(session_id)
+                print(
+                    f"\n[ERROR] /v1/chat returned HTTP {http_failure_status}; "
+                    f"persisted run found={isinstance(parent_run_id, str)}."
+                )
+            else:
+                chat_response_data = chat_resp.json()
+                parent_run_id = chat_response_data.get("run_id")
+                run_status = chat_response_data.get("status")
 
-            chat_response_data = chat_resp.json()
-            parent_run_id = chat_response_data.get("run_id")
-            run_status = chat_response_data.get("status")
+                print(f" -> Initial /v1/chat returned status='{run_status}' in {chat_duration:.2f}s (run_id='{parent_run_id}')")
 
-            print(f" -> Initial /v1/chat returned status='{run_status}' in {chat_duration:.2f}s (run_id='{parent_run_id}')")
+                pending_approval_id = (
+                    chat_response_data.get("approval_id")
+                    if run_status == "waiting_for_approval"
+                    else None
+                )
 
-            pending_approval_id = (
-                chat_response_data.get("approval_id")
-                if run_status == "waiting_for_approval"
-                else None
-            )
+    if http_failure_status is None:
+        final_text = chat_response_data.get("response", "")
+        print(f"Root response recorded ({len(final_text)} characters); response text omitted from dogfood output.")
 
-    print("\n" + "-" * 80)
-    print("ROOT ORCHESTRATOR SYNTHESIS RESPONSE:")
-    print("-" * 80)
-    final_text = chat_response_data.get("response", "")
-    print(final_text if final_text else "[No response text returned]")
-    print("-" * 80)
-
-    if pending_approval_id:
+    pending_approval_id = chat_response_data.get("approval_id") if chat_response_data.get("status") == "waiting_for_approval" else None
+    if pending_approval_id and parent_run_id:
         pending_report = write_pending_approval_report(parent_run_id, pending_approval_id)
         print(
             "LIVE DOGFOOD PAUSED FOR HUMAN APPROVAL — "
@@ -482,9 +529,33 @@ async def run_live_agent_dogfood():
     # --------------------------------------------------------------------------
     print("\n[Phase 2] Inspecting Database Lineage, Checkpoints & Audit Traces...")
     elapsed = time.time() - overall_start_time
-    report = await audit_dogfood_run(parent_run_id=parent_run_id, elapsed_seconds=elapsed)
+    if isinstance(parent_run_id, str):
+        try:
+            report = await audit_dogfood_run(parent_run_id=parent_run_id, elapsed_seconds=elapsed)
+        except ValueError:
+            report = failed_run_report(
+                session_id,
+                parent_run_id=parent_run_id,
+                http_status=http_failure_status,
+                elapsed_seconds=elapsed,
+                failure="persisted Research Specialist lineage could not be audited",
+            )
+    else:
+        report = failed_run_report(
+            session_id,
+            http_status=http_failure_status,
+            elapsed_seconds=elapsed,
+            failure="/v1/chat failed before a durable run ID could be recovered",
+        )
     report["elapsed_seconds"] = round(elapsed, 2)
-    report_path = write_audit_report(parent_run_id, report)
+    if http_failure_status is not None:
+        report["http_status"] = http_failure_status
+        report["accepted"] = False
+        failures = report.setdefault("acceptance_failures", [])
+        http_failure = f"/v1/chat returned HTTP {http_failure_status}"
+        if http_failure not in failures:
+            failures.append(http_failure)
+    report_path = write_audit_report(parent_run_id or session_id, report)
     print(f"Sanitized audit artifact: {report_path}")
     if not report["accepted"]:
         raise SystemExit(1)
