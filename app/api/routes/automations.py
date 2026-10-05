@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.schemas import AutomationDuplicateWrite, AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRunResponse, AutomationSchedule, AutomationWrite
+from app.api.schemas import AutomationDuplicateWrite, AutomationEditWrite, AutomationExecutionResponse, AutomationResponse, AutomationRevisionWrite, AutomationRunResponse, AutomationSchedule, AutomationWrite
 from app.api.pagination import (
     MAX_COLLECTION_PAGE_SIZE,
     decode_timestamp_id_cursor,
@@ -73,6 +73,7 @@ async def _release_automation_dispatch(db: AsyncSession, automation_id: str, cla
 
 class AutomationEnabledWrite(BaseModel):
     enabled: bool
+    expected_revision: int
 
 
 class WebhookRunResponse(BaseModel):
@@ -94,6 +95,7 @@ def _automation_response(job: ScheduledJobModel) -> AutomationResponse:
     scope = metadata.get("scope")
     return AutomationResponse(
         id=job.id,
+        revision=job.revision,
         name=job.name,
         description=metadata.get("description", ""),
         instruction=metadata.get("instruction", ""),
@@ -297,16 +299,35 @@ async def set_automation_enabled(
     job = await db.get(ScheduledJobModel, automation_id)
     if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
         raise HTTPException(status_code=404, detail="Automation not found.")
+    if job.revision != body.expected_revision:
+        raise HTTPException(status_code=409, detail={"code": "AutomationRevisionConflict", "message": "Automation changed since it was loaded.", "current_revision": job.revision})
     was_enabled = job.is_active
-    job.is_active = body.enabled
+    next_run_at = job.next_run_at
     if body.enabled and not was_enabled:
         try:
             interval = max(60, int(float(job.schedule_expression)))
         except (TypeError, ValueError):
             raise HTTPException(status_code=409, detail="Automation interval is invalid.")
         schedule = AutomationSchedule.model_validate((job.metadata_json or {}).get("schedule", {}))
-        job.next_run_at = next_automation_run(schedule, utc_now(), interval)
-    job.updated_at = utc_now()
+        next_run_at = next_automation_run(schedule, utc_now(), interval)
+    updated_at = utc_now()
+    result = await db.execute(
+        update(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id, ScheduledJobModel.revision == body.expected_revision)
+        .values(
+            is_active=body.enabled,
+            next_run_at=next_run_at,
+            revision=ScheduledJobModel.revision + 1,
+            updated_at=updated_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        current_revision = await db.scalar(select(ScheduledJobModel.revision).where(ScheduledJobModel.id == automation_id))
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        raise HTTPException(status_code=409, detail={"message": "Automation changed since it was loaded.", "current_revision": current_revision})
     await db.commit()
     await db.refresh(job)
     return _automation_response(job)
@@ -327,6 +348,8 @@ async def update_automation(
     job = result.scalar_one_or_none()
     if job is None or (job.metadata_json or {}).get("kind") != "automation" or (job.metadata_json or {}).get("archived") is True:
         raise HTTPException(status_code=404, detail="Automation not found.")
+    if job.revision != body.expected_revision:
+        raise HTTPException(status_code=409, detail={"code": "AutomationRevisionConflict", "message": "Automation changed since it was loaded.", "current_revision": job.revision})
     if not body.name.strip() or not body.instruction.strip():
         raise HTTPException(status_code=422, detail="Automation name and instruction must not be blank.")
 
@@ -339,10 +362,9 @@ async def update_automation(
     previous_schedule_data = metadata.get("schedule", {})
     previous_schedule = AutomationSchedule.model_validate(previous_schedule_data)
     schedule = body.schedule or previous_schedule
-    job.name = body.name.strip()
-    job.schedule_expression = str(body.interval_seconds)
+    next_run_at = job.next_run_at
     if previous_interval != body.interval_seconds or schedule != previous_schedule:
-        job.next_run_at = next_automation_run(schedule, utc_now(), body.interval_seconds)
+        next_run_at = next_automation_run(schedule, utc_now(), body.interval_seconds)
     metadata["description"] = body.description.strip()
     metadata["instruction"] = body.instruction.strip()
     metadata["schedule"] = schedule.model_dump()
@@ -353,9 +375,27 @@ async def update_automation(
     elif body.webhook_enabled is False:
         metadata.pop("webhook_secret_hash", None)
     payload["message"] = body.instruction.strip()
-    job.metadata_json = metadata
-    job.payload_json = payload
-    job.updated_at = utc_now()
+    updated_at = utc_now()
+    result = await db.execute(
+        update(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id, ScheduledJobModel.revision == body.expected_revision)
+        .values(
+            name=body.name.strip(),
+            schedule_expression=str(body.interval_seconds),
+            next_run_at=next_run_at,
+            metadata_json=metadata,
+            payload_json=payload,
+            revision=ScheduledJobModel.revision + 1,
+            updated_at=updated_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        current_revision = await db.scalar(select(ScheduledJobModel.revision).where(ScheduledJobModel.id == automation_id))
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        raise HTTPException(status_code=409, detail={"code": "AutomationRevisionConflict", "message": "Automation changed since it was loaded.", "current_revision": current_revision})
     await db.commit()
     await db.refresh(job)
     latest = await _latest_executions(db, [job])
@@ -440,7 +480,7 @@ async def trigger_automation_webhook(
         await _release_automation_dispatch(db, automation_id, claim_token)
 
 
-async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSession) -> AutomationResponse:
+async def _set_archived_state(automation_id: str, archived: bool, expected_revision: int, db: AsyncSession) -> AutomationResponse:
     result = await db.execute(
         select(ScheduledJobModel).where(ScheduledJobModel.id == automation_id)
         .with_for_update().execution_options(populate_existing=True)
@@ -448,6 +488,8 @@ async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSessi
     job = result.scalar_one_or_none()
     if job is None or (job.metadata_json or {}).get("kind") != "automation":
         raise HTTPException(status_code=404, detail="Automation not found.")
+    if job.revision != expected_revision:
+        raise HTTPException(status_code=409, detail={"code": "AutomationRevisionConflict", "message": "Automation changed since it was loaded.", "current_revision": job.revision})
     metadata = dict(job.metadata_json or {})
     was_archived = metadata.get("archived") is True
     if not archived and not was_archived:
@@ -457,10 +499,25 @@ async def _set_archived_state(automation_id: str, archived: bool, db: AsyncSessi
         metadata["archived"] = True
     else:
         metadata.pop("archived", None)
-    job.metadata_json = metadata
-    # Restored automations stay paused until the user explicitly resumes them.
-    job.is_active = False
-    job.updated_at = utc_now()
+    updated_at = utc_now()
+    result = await db.execute(
+        update(ScheduledJobModel)
+        .where(ScheduledJobModel.id == automation_id, ScheduledJobModel.revision == expected_revision)
+        .values(
+            metadata_json=metadata,
+            # Restored automations stay paused until the user explicitly resumes them.
+            is_active=False,
+            revision=ScheduledJobModel.revision + 1,
+            updated_at=updated_at,
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        await db.rollback()
+        current_revision = await db.scalar(select(ScheduledJobModel.revision).where(ScheduledJobModel.id == automation_id))
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Automation not found.")
+        raise HTTPException(status_code=409, detail={"code": "AutomationRevisionConflict", "message": "Automation changed since it was loaded.", "current_revision": current_revision})
     await db.commit()
     await db.refresh(job)
     latest = await _latest_executions(db, [job])
@@ -529,13 +586,13 @@ async def duplicate_automation(
 
 
 @router.post("/{automation_id}/archive", response_model=AutomationResponse)
-async def archive_automation(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
-    return await _set_archived_state(automation_id, True, db)
+async def archive_automation(automation_id: str, body: AutomationRevisionWrite, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
+    return await _set_archived_state(automation_id, True, body.expected_revision, db)
 
 
 @router.post("/{automation_id}/restore", response_model=AutomationResponse)
-async def restore_automation(automation_id: str, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
-    return await _set_archived_state(automation_id, False, db)
+async def restore_automation(automation_id: str, body: AutomationRevisionWrite, db: AsyncSession = Depends(get_db)) -> AutomationResponse:
+    return await _set_archived_state(automation_id, False, body.expected_revision, db)
 
 
 @router.post("/{automation_id}/run", response_model=AutomationRunResponse, status_code=status.HTTP_202_ACCEPTED)

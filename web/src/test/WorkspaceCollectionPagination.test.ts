@@ -156,13 +156,13 @@ describe('workspace collection pagination', () => {
     const fetch = vi.fn().mockResolvedValue(jsonResponse({ id: 'automation/one' }));
     vi.stubGlobal('fetch', fetch);
 
-    await api.setAutomationArchived('automation/one', true);
-    await api.setAutomationArchived('automation/one', false);
+    await api.setAutomationArchived('automation/one', true, 3);
+    await api.setAutomationArchived('automation/one', false, 4);
 
     expect(new URL(fetch.mock.calls[0][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/archive');
-    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST' });
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ expected_revision: 3 }) });
     expect(new URL(fetch.mock.calls[1][0] as string, 'http://aura.test').pathname).toBe('/v1/automations/automation%2Fone/restore');
-    expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST' });
+    expect(fetch.mock.calls[1][1]).toMatchObject({ method: 'POST', body: JSON.stringify({ expected_revision: 4 }) });
   });
 
   it('duplicates an automation through a separate endpoint', async () => {
@@ -209,6 +209,7 @@ describe('workspace collection pagination', () => {
 
     await api.updateAutomation('automation/one', {
       name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+      expected_revision: 6,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     });
 
@@ -217,6 +218,7 @@ describe('workspace collection pagination', () => {
     expect(init.method).toBe('PATCH');
     expect(JSON.parse(String(init.body))).toEqual({
       name: 'Updated', description: 'New description', instruction: 'New instruction.', interval_seconds: 7200,
+      expected_revision: 6,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
     });
   });

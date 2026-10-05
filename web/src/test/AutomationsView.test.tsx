@@ -6,7 +6,7 @@ import type { AutomationRecord, ProjectRecord } from '../data/workspaceData';
 
 const projects: ProjectRecord[] = [{ id: 'p1', name: 'AURA', subtitle: 'Workspace', status: 'active', accent: 'cyan', updated: 'today', meta: '', thesis: '', next: '' }];
 const liveAutomation: AutomationRecord = {
-  id: 'auto-1', name: 'Daily digest', description: 'Summarize changes', instruction: 'Summarize updates.',
+  id: 'auto-1', revision: 1, name: 'Daily digest', description: 'Summarize changes', instruction: 'Summarize updates.',
   enabled: true, scope: 'global', trigger: 'Every 1 day', actions: ['Run through AURA'],
   lastRun: 'Never', nextRun: 'Tomorrow', status: 'ready', source: 'live', intervalSeconds: 86400,
   latestExecution: { eventId: 'event-1', runId: 'run-1', queuedAt: '2026-10-01T00:00:00Z', status: 'waiting_for_approval', retryCount: 0 },
@@ -76,7 +76,7 @@ describe('AutomationsView', () => {
       name: 'Project review', description: 'Summarize changes', instruction: 'Summarize decisions and owners.', interval_seconds: 7200,
       webhook_enabled: false,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: 'UTC' },
-    }));
+    }, 1));
   });
 
   it('creates an authenticated webhook and reveals its secret only in the one-time setup dialog', async () => {

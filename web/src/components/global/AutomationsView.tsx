@@ -25,7 +25,7 @@ interface AutomationsViewProps {
   pageError?: string | null;
   onLoadMore?: () => void;
   onCreate: (input: AutomationInput) => Promise<AutomationRecord>;
-  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds' | 'schedule' | 'webhook_enabled'>) => Promise<AutomationRecord>;
+  onUpdate?: (id: string, input: Pick<AutomationInput, 'name' | 'description' | 'instruction' | 'interval_seconds' | 'schedule' | 'webhook_enabled'>, expectedRevision: number) => Promise<AutomationRecord>;
   onDuplicate?: (automation: AutomationRecord) => void;
   onSetArchived?: (automation: AutomationRecord, archived: boolean) => void;
   includeArchived?: boolean;
@@ -309,7 +309,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
       let saved: AutomationRecord;
       if (editingAutomation) {
         if (!onUpdate) throw new Error('Editing automations is unavailable.');
-        saved = await onUpdate(editingAutomation.id, common);
+        if (editingAutomation.revision === undefined) throw new Error('Reload this automation before editing it.');
+        saved = await onUpdate(editingAutomation.id, common, editingAutomation.revision);
       } else {
         const project = projects.find((item) => item.id === projectId);
         saved = await onCreate({ ...common, scope, project_name: scope === 'project' ? project?.name : undefined });

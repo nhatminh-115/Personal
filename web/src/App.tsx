@@ -2520,6 +2520,7 @@ export default function App() {
     const lastAt = latest?.queued_at ?? record.last_run_at;
     return {
       id: record.id, name: record.name, description: record.description, instruction: record.instruction, schedule,
+      revision: record.revision,
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
       webhookEnabled: record.webhook_enabled, webhookPath: record.webhook_path, webhookSecret: record.webhook_secret,
       archived: record.archived,
@@ -2550,8 +2551,8 @@ export default function App() {
     name: string; description: string; instruction: string; interval_seconds: number;
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
     webhook_enabled?: boolean;
-  }) => {
-    const record = await api.updateAutomation(automationId, input);
+  }, expectedRevision: number) => {
+    const record = await api.updateAutomation(automationId, { ...input, expected_revision: expectedRevision });
     const updated = automationFromRecord(record, projectCatalog);
     setAutomations((current) => current.map((item) => item.id === automationId ? { ...updated, webhookSecret: null } : item));
     pushToast('Automation updated', 'Future scheduled runs will use the saved routine settings.');
@@ -2562,7 +2563,8 @@ export default function App() {
     if (automation.source !== 'live' || automationArchiveRequests.current.has(automation.id)) return;
     automationArchiveRequests.current.add(automation.id);
     try {
-      const record = await api.setAutomationArchived(automation.id, archived);
+      if (automation.revision === undefined) throw new Error('Reload this automation before changing it.');
+      const record = await api.setAutomationArchived(automation.id, archived, automation.revision);
       const updated = automationFromRecord(record, projectCatalog);
       setAutomations((current) => {
         if (archived && !includeArchivedAutomations) return current.filter((item) => item.id !== automation.id);
@@ -2598,7 +2600,8 @@ export default function App() {
   const setAutomationEnabled = useCallback(async (automation: AutomationRecord, enabled: boolean) => {
     if (automation.source !== 'live') return;
     try {
-      const record = await api.setAutomationEnabled(automation.id, enabled);
+      if (automation.revision === undefined) throw new Error('Reload this automation before changing it.');
+      const record = await api.setAutomationEnabled(automation.id, enabled, automation.revision);
       const updated = automationFromRecord(record, projectCatalog);
       setAutomations((current) => current.map((item) => item.id === updated.id ? updated : item));
       if (updated.enabled !== automation.enabled) {

@@ -504,6 +504,7 @@ export interface WorkspaceSearchResult {
 
 export interface AutomationRecordResponse {
   id: string;
+  revision: number;
   name: string;
   description: string;
   instruction: string;

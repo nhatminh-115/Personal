@@ -412,6 +412,11 @@ class AutomationEditWrite(BaseModel):
     interval_seconds: int = Field(default=86_400, ge=60, le=31_536_000)
     schedule: Optional[AutomationSchedule] = None
     webhook_enabled: Optional[bool] = None
+    expected_revision: int = Field(ge=1)
+
+
+class AutomationRevisionWrite(BaseModel):
+    expected_revision: int = Field(ge=1)
 
 
 class AutomationDuplicateWrite(BaseModel):
@@ -430,6 +435,7 @@ class AutomationExecutionResponse(BaseModel):
 
 class AutomationResponse(BaseModel):
     id: str
+    revision: int = 1
     name: str
     description: str
     instruction: str

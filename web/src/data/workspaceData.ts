@@ -290,6 +290,7 @@ export type AutomationScope = 'global' | 'project';
 
 export interface AutomationRecord {
   id: string;
+  revision?: number;
   name: string;
   description: string;
   enabled: boolean;

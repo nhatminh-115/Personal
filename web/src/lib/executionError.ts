@@ -10,6 +10,9 @@ const ROUTING_ERROR_GUIDANCE: Record<string, string> = {
 
 export function executionErrorText(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === 'AutomationRevisionConflict') {
+      return 'This automation changed elsewhere. Reload the Automations list, then retry your change.';
+    }
     const nextStep = error.code ? ROUTING_ERROR_GUIDANCE[error.code] : undefined;
     return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;
   }
