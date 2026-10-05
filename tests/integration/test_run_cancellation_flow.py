@@ -17,6 +17,8 @@ from app.db.models import (
     RunEventModel,
     RunModel,
     RunStatus,
+    SessionModel,
+    utc_now,
 )
 from app.db.session import get_db
 from app.models.base import ModelResponse
@@ -123,6 +125,70 @@ async def test_live_chat_cancel_request_is_observed_after_inflight_model_call(as
             assert all("must be discarded" not in message.content for message in messages)
     finally:
         release_model_call.set()
+        app.dependency_overrides[get_db] = previous_override
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_client, tmp_path):
+    database_path = tmp_path / "run-cancellation-recovery.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def independent_db_sessions():
+        async with factory() as session:
+            yield session
+
+    previous_override = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = independent_db_sessions
+    session_id = "cancel-recovery-session"
+    client_turn_id = "cancel-recovery-turn"
+    run_id = str(uuid.uuid4())
+
+    try:
+        async with factory() as session:
+            session.add(SessionModel(id=session_id, title="Cancellation recovery"))
+            session.add(RunModel(
+                id=run_id,
+                session_id=session_id,
+                client_turn_id=client_turn_id,
+                status=RunStatus.RUNNING.value,
+                user_message="Recover this run after its executor is gone.",
+                cancel_requested_at=utc_now(),
+            ))
+            session.add(RunEventModel(
+                run_id=run_id,
+                event_type="run_cancellation_requested",
+                payload={"source": "user"},
+            ))
+            await session.commit()
+
+        retry_cancel = await async_client.post("/v1/runs/cancel-turn", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+        })
+        assert retry_cancel.status_code == 202, retry_cancel.text
+        assert retry_cancel.json()["already_requested"] is True
+
+        finished_state = await async_client.get(f"/v1/sessions/{session_id}/state")
+        assert finished_state.json()["run_status"] == "cancelled"
+        assert finished_state.json()["client_turn_id"] is None
+        async with factory() as session:
+            run = await session.get(RunModel, run_id)
+            events = list((await session.scalars(
+                select(RunEventModel).where(RunEventModel.run_id == run.id)
+            )).all())
+            assert run.status == RunStatus.CANCELLED.value
+            assert run.cancel_requested_at is not None
+            assert run.final_response.startswith("Run cancelled.")
+            assert {event.event_type for event in events} >= {
+                "run_cancellation_requested",
+                "run_cancelled",
+            }
+            assert sum(event.event_type == "run_cancelled" for event in events) == 1
+    finally:
         app.dependency_overrides[get_db] = previous_override
         await engine.dispose()
 

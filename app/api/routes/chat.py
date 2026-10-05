@@ -1,5 +1,6 @@
 """Chat endpoint: POST /v1/chat."""
 
+from contextlib import AsyncExitStack
 import hashlib
 import json
 import uuid
@@ -18,6 +19,7 @@ from app.api.dependencies import (
     get_trace_service,
 )
 from app.api.schemas import ChatRequest, ChatResponse
+from app.api.run_resume_lock import lock_run_execution, lock_run_resume, try_lock_run_execution
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
 from app.db.models import (
@@ -233,6 +235,40 @@ async def _persist_cancelled_chat_turn(
     )
 
 
+async def _finalize_cancelled_chat_turn_if_idle(
+    db: AsyncSession,
+    run: RunModel,
+    *,
+    trace_service: TraceService,
+) -> bool:
+    """Finish a persisted cancellation after its original chat executor has exited."""
+    child_run_ids = list((await db.scalars(
+        select(RunModel.id).where(RunModel.parent_run_id == run.id)
+    )).all())
+    async with AsyncExitStack() as lock_stack:
+        for run_id in sorted({run.id, *child_run_ids}):
+            await lock_stack.enter_async_context(lock_run_resume(db, run_id))
+
+        await db.refresh(run)
+        if run.status != RunStatus.RUNNING.value or run.cancel_requested_at is None:
+            return run.status == RunStatus.CANCELLED.value
+
+        async with try_lock_run_execution(db, run.id) as acquired:
+            if not acquired:
+                return False
+            await db.refresh(run)
+            if run.status != RunStatus.RUNNING.value or run.cancel_requested_at is None:
+                return run.status == RunStatus.CANCELLED.value
+            await _persist_cancelled_chat_turn(
+                db,
+                run=run,
+                session_id=run.session_id,
+                trace_service=trace_service,
+                result_state={},
+            )
+            return True
+
+
 @router.post("/chat", response_model=ChatResponse, status_code=status.HTTP_200_OK)
 async def chat_endpoint(
     req: ChatRequest,
@@ -255,6 +291,13 @@ async def chat_endpoint(
             )
         )
         if existing is not None:
+            if existing.status == RunStatus.RUNNING.value and existing.cancel_requested_at is not None:
+                await _finalize_cancelled_chat_turn_if_idle(
+                    db,
+                    existing,
+                    trace_service=trace_service,
+                )
+                await db.refresh(existing)
             return await _existing_chat_response(
                 db,
                 existing,
@@ -446,17 +489,18 @@ async def chat_endpoint(
     try:
         # 5. Invoke LangGraph orchestrator with durable checkpointer
         graph = await get_compiled_graph()
-        result_state = await graph.ainvoke(initial_state, config=config)
+        async with lock_run_execution(db, run_id):
+            result_state = await graph.ainvoke(initial_state, config=config)
 
-        await db.refresh(run_record)
-        if run_record.cancel_requested_at is not None:
-            return await _persist_cancelled_chat_turn(
-                db,
-                run=run_record,
-                session_id=req.session_id,
-                trace_service=trace_service,
-                result_state=result_state,
-            )
+            await db.refresh(run_record)
+            if run_record.cancel_requested_at is not None:
+                return await _persist_cancelled_chat_turn(
+                    db,
+                    run=run_record,
+                    session_id=req.session_id,
+                    trace_service=trace_service,
+                    result_state=result_state,
+                )
 
         response_details: Dict[str, Any] = {}
         execution_run_id: Optional[str] = None
@@ -504,13 +548,22 @@ async def chat_endpoint(
         if finalized.rowcount != 1:
             await db.refresh(run_record)
             if run_record.cancel_requested_at is not None:
-                return await _persist_cancelled_chat_turn(
-                    db,
-                    run=run_record,
-                    session_id=req.session_id,
-                    trace_service=trace_service,
-                    result_state=result_state,
-                )
+                async with lock_run_execution(db, run_id):
+                    await db.refresh(run_record)
+                    if run_record.status == RunStatus.CANCELLED.value:
+                        return await _existing_chat_response(
+                            db,
+                            run_record,
+                            request_fingerprint=request_fingerprint or "",
+                        )
+                    if run_record.cancel_requested_at is not None:
+                        return await _persist_cancelled_chat_turn(
+                            db,
+                            run=run_record,
+                            session_id=req.session_id,
+                            trace_service=trace_service,
+                            result_state=result_state,
+                        )
             return await _existing_chat_response(
                 db,
                 run_record,
@@ -541,13 +594,22 @@ async def chat_endpoint(
             logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
         await db.refresh(run_record)
         if run_record.cancel_requested_at is not None:
-            return await _persist_cancelled_chat_turn(
-                db,
-                run=run_record,
-                session_id=req.session_id,
-                trace_service=trace_service,
-                result_state={},
-            )
+            async with lock_run_execution(db, run_id):
+                await db.refresh(run_record)
+                if run_record.status == RunStatus.CANCELLED.value:
+                    return await _existing_chat_response(
+                        db,
+                        run_record,
+                        request_fingerprint=request_fingerprint or "",
+                    )
+                if run_record.cancel_requested_at is not None:
+                    return await _persist_cancelled_chat_turn(
+                        db,
+                        run=run_record,
+                        session_id=req.session_id,
+                        trace_service=trace_service,
+                        result_state={},
+                    )
         run_record.status = RunStatus.FAILED.value
         run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(e)
         await db.commit()

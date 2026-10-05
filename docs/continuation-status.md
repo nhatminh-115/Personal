@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `e6d7001b5f2a03a0c705f456c35bd372de21a80b`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), and [#345](https://github.com/nhatminh-115/Personal/pull/345) are merged.
+- Canonical `main`: `ef5578f6173f2f51c4d3972029e3938101cd26b3`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), and [#346](https://github.com/nhatminh-115/Personal/pull/346) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -21,13 +21,15 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR #343 fixed Research delegation synthesis overwriting terminal child status when partial research state exists. It merged as `36ae0198e73f651eba8fcbefa5f573f8bd8177ec`. CI run #898 (`37337627934`), job `111856307701`, passed: backend 678 tests in 81.32s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.15s.
 - PR #344 fixed delegated child resume failures leaving the delegation/root lifecycle unresolved. It merged as `b8c7ed5f65c69763e4f30b8c7eb0d87cf64c4f37`. CI run #900 (`37339311176`), job `111862023469`, passed: backend 679 tests in 79.60s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 11.93s.
 - PR #345 fixed parent cancellation leaving delegated child runs and approval links waiting. It merged as `e6d7001b5f2a03a0c705f456c35bd372de21a80b`. Final CI run #903 (`37341654963`), job `111869946318`, passed: backend 680 tests in 52.58s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 9.24s. CI #902 found one repeated-decision status-code compatibility regression (400 expected); it was corrected and the full CI rerun passed.
-- Active branch: `codex/aura-next-milestone-20261005-103`, created from the canonical SHA above.
+- PR #346 serialized cancellation requests with run resumes and prevented approval/routing-confirmation resumes after cancellation is acknowledged. It merged as `ef5578f6173f2f51c4d3972029e3938101cd26b3`. Final CI run #907 (`37344410275`), job `111879258794`, passed: backend 680 tests in 77.91s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.08s. Earlier CI attempts exposed a test variable typo and a repeatable test-hook wait; both were fixed before the green run.
+- Active branch: `codex/aura-next-milestone-20261005-104`, created from the canonical SHA above.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
 - Completed on PR #344: an approved delegated child failing during graph resume now persists the child/delegation terminal state, clears stale approval linkage, and resumes the matching root interrupt with the failure result.
 - Completed on PR #345: cancellation during root finalization now marks active descendant runs and delegations cancelled, records child cancellation events, and prevents matching approval/routing-confirmation retries from resuming terminal runs.
-- Current milestone (branch 103): `cancel-turn` and approval/routing-confirmation resume paths use per-run locks independently. Cancellation now acquires the root and existing child resume locks before persisting `cancel_requested_at`; resume endpoints reject work after that flag is set. A regression test attempts an approval immediately after cancellation is acknowledged and before root finalization. CI verification is pending.
+- Completed on PR #346: cancellation now holds the root and existing child resume locks before persisting `cancel_requested_at`; approval and routing-confirmation endpoints reject resume attempts after cancellation is acknowledged.
+- Current milestone (branch 104): make cancellation-requested chat turns recoverable when their in-flight executor exits before finalization. An active executor owns a per-run execution lock; a repeated stop or idempotent chat retry finalizes the persisted request only after it can claim that lock. A deterministic integration regression simulates a lost executor. Local pytest is unavailable because the active Python environment lacks `aiosqlite` and `pytest`; static parse and diff checks pass. Remote CI verification is pending.
 
 ## Recent verified milestones
 
@@ -45,13 +47,14 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #343: preserve terminal Research child run status when partial state exists | Merged as `36ae019`; CI #898 (`37337627934`), backend 678 passed in 81.32s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.15s |
 | PR #344: propagate delegated child resume failures | Merged as `b8c7ed5`; CI #900 (`37339311176`), backend 679 passed in 79.60s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 11.93s |
 | PR #345: cancel delegated child runs with parent turn | Merged as `e6d7001`; CI #903 (`37341654963`), backend 680 passed in 52.58s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 9.24s |
+| PR #346: serialize cancellation and run resume | Merged as `ef5578f`; CI #907 (`37344410275`), backend 680 passed in 77.91s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.08s |
 
 ## Immediate next steps
 
-1. Verify cancellation/resume serialization with the deterministic child approval race test.
-2. Open a PR, wait for GitHub Actions, and merge only after all required checks are green.
-3. Continue auditing root/child persistence and resume paths while quota allows; CodeGraph setup remains pending external setup and is not a blocker.
-4. Repeat the audit and implementation cycle while quota allows; do not start a blocked external dogfood task as if it were a code milestone.
+1. Check the recovery lock/finalization paths for regression risks and confirm the lost-executor integration test shape.
+2. Commit this milestone to branch 104, push it, and open a PR.
+3. Wait for GitHub Actions; merge only when all required checks are green.
+4. Start the next highest-value non-blocked root/child durability audit while quota allows; CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
 
