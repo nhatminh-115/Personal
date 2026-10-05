@@ -168,7 +168,12 @@ async def submit_approval_decision(
             RunStatus.FAILED.value,
             RunStatus.CANCELLED.value,
         }:
-            if approval.status == req.decision:
+            if approval.status != "pending":
+                if approval.status != req.decision:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Approval has already been resolved with status '{approval.status}'.",
+                    )
                 return ApprovalDecisionResponse(
                     approval_id=approval_id,
                     status=approval.status,
