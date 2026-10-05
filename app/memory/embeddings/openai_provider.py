@@ -69,7 +69,7 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                 resp = await client.post(url, headers=headers, json=payload)
                 if resp.status_code != 200:
                     raise EmbeddingProviderError(
-                        f"OpenAI embedding endpoint returned HTTP {resp.status_code}: {resp.text[:200]}"
+                        f"Embedding provider '{self._name}' returned HTTP {resp.status_code}."
                     )
                 data = resp.json()
                 raw_items = data.get("data", [])
@@ -88,8 +88,10 @@ class OpenAIEmbeddingProvider(EmbeddingProvider):
                     dimension=self._dimension,
                     embeddings=embeddings,
                 )
-        except httpx.RequestError as exc:
-            raise EmbeddingProviderError(f"Network failure connecting to embedding provider: {exc}") from exc
+        except httpx.RequestError:
+            raise EmbeddingProviderError(
+                f"Network failure connecting to embedding provider '{self._name}'."
+            ) from None
 
     async def embed_query(self, text: str) -> List[float]:
         res = await self.embed(EmbeddingRequest(texts=[text]))
