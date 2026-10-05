@@ -4,11 +4,13 @@ from pathlib import Path
 import pytest
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.memory import MemorySaver
+from sqlalchemy import select
 
 from app.api.server import app
 from app.approvals.service import ApprovalService
+from app.core.errors import MODEL_PROVIDER_FAILURE_MESSAGE, MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
 from app.core.settings import settings
-from app.db.models import RunModel, RunStatus
+from app.db.models import RunEventModel, RunModel, RunStatus
 from app.models.base import ModelRequest, ModelResponse, ToolCallRequest
 from app.models.mock_provider import MockModelProvider
 from app.models.router import model_router
@@ -133,9 +135,13 @@ async def test_provider_failure_during_resume_marks_run_failed_cleanly(async_cli
     # 2. Mock provider to raise runtime exception when verify_result synthesizes response
     call_count = [0]
 
-    async def failing_route(request: ModelRequest):
+    async def failing_route(
+        request: ModelRequest,
+        provider_name: str | None = None,
+        routing_context=None,
+    ):
         call_count[0] += 1
-        raise RuntimeError("LLM provider unavailable: 503 Service Unavailable")
+        raise ProviderError("Provider returned 500: private runner diagnostic")
 
     monkeypatch.setattr(model_router, "route", failing_route)
 
@@ -147,7 +153,15 @@ async def test_provider_failure_during_resume_marks_run_failed_cleanly(async_cli
     assert appr_res.status_code == 200
     data = appr_res.json()
     assert data["execution_status"] == "failed"
+    assert data["final_response"] == MODEL_PROVIDER_FAILURE_MESSAGE
+    assert "private runner diagnostic" not in appr_res.text
 
     # Check DB run status
     run = await test_db_session.get(RunModel, run_id)
     assert run.status == "failed"
+    assert run.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    events = await test_db_session.scalars(select(RunEventModel).where(
+        RunEventModel.run_id == run_id,
+        RunEventModel.event_type == "run_failed",
+    ))
+    assert events.one().payload == {"error_category": "provider_failure"}

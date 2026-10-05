@@ -19,7 +19,12 @@ from app.api.schemas import (
 from app.api.pagination import decode_timestamp_id_cursor, set_next_cursor_header
 from app.api.run_resume_lock import lock_run_resume
 from app.approvals.service import ApprovalService
-from app.core.errors import ApprovalNotFoundError
+from app.core.errors import (
+    ApprovalNotFoundError,
+    MODEL_PROVIDER_FAILURE_MESSAGE,
+    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
+    ProviderError,
+)
 from app.core.logging import logger
 from app.db.models import DelegationModel, RunModel, RunStatus
 from app.db.session import get_db
@@ -246,23 +251,31 @@ async def submit_approval_decision(
         try:
             final_state = await graph.ainvoke(Command(resume=resume_payload), config=config)
         except Exception as exc:
-            logger.error(f"Graph execution failed during resume: {exc}", exc_info=True)
+            provider_failure = isinstance(exc, ProviderError)
+            if provider_failure:
+                logger.error("Model provider failed while resuming approved run '%s'.", run_record.id)
+            else:
+                logger.error(f"Graph execution failed during resume: {exc}", exc_info=True)
             run_record.status = RunStatus.FAILED.value
+            run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
             await db.commit()
             if trace_service:
-                err_category = "provider_failure" if "provider" in type(exc).__name__.lower() else "graph_failure"
                 await trace_service.record_event(
                     run_id=approval.run_id,
                     session_id=approval.session_id,
                     event_type="run_failed",
-                    payload={"error": str(exc), "error_category": err_category},
+                    payload={"error_category": "provider_failure" if provider_failure else "graph_failure"},
                 )
             return ApprovalDecisionResponse(
                 approval_id=approval_id,
                 status=current_status,
                 run_id=run_record.id,
                 execution_status=RunStatus.FAILED.value,
-                final_response=f"Run failed during execution: {exc}",
+                final_response=(
+                    MODEL_PROVIDER_FAILURE_MESSAGE
+                    if provider_failure
+                    else f"Run failed during execution: {exc}"
+                ),
             )
 
         # Check if graph suspended at the NEXT interrupt (e.g. multi-tool approval)

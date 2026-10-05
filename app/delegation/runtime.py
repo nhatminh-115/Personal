@@ -9,7 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import PermissionError, ToolError
+from app.core.errors import (
+    MODEL_PROVIDER_FAILURE_MESSAGE,
+    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
+    PermissionError,
+    ProviderError,
+    ToolError,
+)
 from app.core.logging import logger
 from app.db.models import DelegationModel, RunModel, RunStatus
 from app.delegation.registry import SpecialistRegistry, specialist_registry
@@ -611,16 +617,21 @@ class DelegationRuntime:
         except GraphInterrupt:
             raise
         except Exception as exc:
-            logger.error(f"Specialist child run '{child_run_id}' failed: {exc}", exc_info=True)
+            provider_failure = isinstance(exc, ProviderError)
+            safe_error = MODEL_PROVIDER_FAILURE_MESSAGE if provider_failure else str(exc)
+            if provider_failure:
+                logger.error("Model provider failed during specialist child run '%s'.", child_run_id)
+            else:
+                logger.error(f"Specialist child run '{child_run_id}' failed: {exc}", exc_info=True)
             child_run.status = RunStatus.FAILED.value
-            child_run.error_message = str(exc)
+            child_run.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
 
             del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == child_run_id)
             del_res = await db.execute(del_stmt)
             del_rec = del_res.scalar_one_or_none()
             if del_rec:
                 del_rec.status = RunStatus.FAILED.value
-                del_rec.result_summary = str(exc)
+                del_rec.result_summary = safe_error
             await db.commit()
 
             if trace_service:
@@ -631,7 +642,7 @@ class DelegationRuntime:
                     payload={
                         "child_run_id": child_run_id,
                         "specialist": spec.name,
-                        "error": str(exc),
+                        "error_category": "provider_failure" if provider_failure else "graph_failure",
                     },
                 )
 
@@ -639,9 +650,13 @@ class DelegationRuntime:
                 specialist_name=spec.name,
                 child_run_id=child_run_id,
                 status="failed",
-                summary="Specialist failed due to an execution error.",
+                summary=(
+                    MODEL_PROVIDER_FAILURE_MESSAGE
+                    if provider_failure
+                    else "Specialist failed due to an execution error."
+                ),
                 steps_taken=0,
-                error=str(exc),
+                error=safe_error,
             )
 
 
