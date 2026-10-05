@@ -47,6 +47,25 @@ def test_alembic_upgrade_downgrade_cycle():
                         'normal', 'normal', '{}', :updated_at, :updated_at
                     )
                 """), {"id": profile_id, "name": profile_id, "is_active": is_active, "updated_at": updated_at})
+            for memory_id, memory_type, project_name, key, created_at in (
+                ("legacy-profile-old", "profile", None, "preferred_language", "2026-09-01 00:00:00"),
+                ("legacy-profile-new", "profile", None, "preferred_language", "2026-09-02 00:00:00"),
+                ("legacy-project-old", "project", "Atlas", "Atlas:thesis", "2026-09-01 00:00:00"),
+                ("legacy-project-new", "project", "Atlas", "Atlas:thesis", "2026-09-02 00:00:00"),
+            ):
+                connection.execute(text("""
+                    INSERT INTO memories (
+                        id, session_id, memory_type, key, content, embedding, metadata_json,
+                        created_at, updated_at, project_name, confidence, is_active,
+                        supersedes_id, superseded_by_id
+                    ) VALUES (
+                        :id, NULL, :memory_type, :key, :id, NULL, '{}', :created_at,
+                        :created_at, :project_name, 1.0, 1, NULL, NULL
+                    )
+                """), {
+                    "id": memory_id, "memory_type": memory_type, "project_name": project_name,
+                    "key": key, "created_at": created_at,
+                })
         engine.dispose()
 
         # The next migration normalizes old data before enforcing uniqueness.
@@ -164,6 +183,21 @@ def test_alembic_upgrade_downgrade_cycle():
                 "SELECT id FROM routing_profiles WHERE is_default = TRUE"
             )).scalars().all()
         assert defaults == ["legacy-default-z"]
+        with engine.connect() as connection:
+            memory_state = connection.execute(text(
+                "SELECT id, is_active, superseded_by_id FROM memories ORDER BY id"
+            )).all()
+        assert memory_state == [
+            ("legacy-profile-new", 1, None),
+            ("legacy-profile-old", 0, "legacy-profile-new"),
+            ("legacy-project-new", 1, None),
+            ("legacy-project-old", 0, "legacy-project-new"),
+        ]
+        with engine.connect() as connection:
+            memory_index_names = set(connection.execute(text(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'memories'"
+            )).scalars())
+        assert {"uq_memories_active_project_key", "uq_memories_active_profile_key"}.issubset(memory_index_names)
 
         # The full downgrade cycle exercises old routing migrations whose
         # SQLite ALTER TABLE steps predate safe defaults for populated tables.

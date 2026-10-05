@@ -1,4 +1,5 @@
 import pytest
+from sqlalchemy.exc import IntegrityError
 from app.db.models import MemoryModel
 from app.memory.service import SQLMemoryService
 
@@ -275,3 +276,43 @@ async def test_profile_restore_rejects_superseded_duplicate_and_wrong_scope(asyn
     wrong_scope = await async_client.patch(f"/v1/memory/profile/{project_scoped.id}", json={"is_active": False})
     assert wrong_scope.status_code == 404
     assert (await test_db_session.get(MemoryModel, active.id)).is_active is True
+
+
+@pytest.mark.asyncio
+async def test_database_allows_one_active_project_and_profile_memory_per_key(test_db_session):
+    active = MemoryModel(
+        id="active-project-key", memory_type="project", project_name="Atlas", key="Atlas:architecture",
+        content="Current", confidence=1.0, is_active=True, metadata_json={},
+    )
+    duplicate = MemoryModel(
+        id="duplicate-project-key", memory_type="project", project_name="Atlas", key="Atlas:architecture",
+        content="Conflicting current", confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add(active)
+    await test_db_session.commit()
+    test_db_session.add(duplicate)
+    with pytest.raises(IntegrityError):
+        await test_db_session.commit()
+    await test_db_session.rollback()
+
+    other_project = MemoryModel(
+        id="same-key-other-project", memory_type="project", project_name="Borealis", key="Atlas:architecture",
+        content="Independent project value", confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add(other_project)
+    await test_db_session.commit()
+
+    active_profile = MemoryModel(
+        id="active-global-profile-key", memory_type="profile", project_name=None, key="preferred_language",
+        content="Vietnamese", confidence=1.0, is_active=True, metadata_json={},
+    )
+    duplicate_profile = MemoryModel(
+        id="duplicate-global-profile-key", memory_type="profile", project_name=None, key="preferred_language",
+        content="English", confidence=1.0, is_active=True, metadata_json={},
+    )
+    test_db_session.add(active_profile)
+    await test_db_session.commit()
+    test_db_session.add(duplicate_profile)
+    with pytest.raises(IntegrityError):
+        await test_db_session.commit()
+    await test_db_session.rollback()

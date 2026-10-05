@@ -205,6 +205,21 @@ class MemoryModel(Base):
         Index("ix_memories_created_id", "created_at", "id"),
         Index("ix_memories_project_created_id", "project_name", "created_at", "id"),
         Index("ix_memories_session_created_id", "session_id", "created_at", "id"),
+        Index(
+            "uq_memories_active_project_key",
+            text("coalesce(project_name, '')"),
+            "key",
+            unique=True,
+            postgresql_where=text("memory_type = 'project' AND is_active IS TRUE AND key IS NOT NULL"),
+            sqlite_where=text("memory_type = 'project' AND is_active = 1 AND key IS NOT NULL"),
+        ),
+        Index(
+            "uq_memories_active_profile_key",
+            "key",
+            unique=True,
+            postgresql_where=text("memory_type = 'profile' AND project_name IS NULL AND is_active IS TRUE AND key IS NOT NULL"),
+            sqlite_where=text("memory_type = 'profile' AND project_name IS NULL AND is_active = 1 AND key IS NOT NULL"),
+        ),
     )
 
 
