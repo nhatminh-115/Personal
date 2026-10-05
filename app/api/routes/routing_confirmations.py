@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.responses import JSONResponse
 from langgraph.types import Command
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,12 @@ from app.api.schemas import (
     RoutingConfirmationResponse,
 )
 from app.approvals.service import ApprovalService
+from app.core.errors import (
+    MODEL_PROVIDER_FAILURE_CODE,
+    MODEL_PROVIDER_FAILURE_MESSAGE,
+    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
+    ProviderError,
+)
 from app.core.logging import logger
 from app.db.models import RunModel, RunStatus, RoutingConfirmationModel
 from app.db.session import get_db
@@ -203,16 +210,30 @@ async def decide_routing_confirmation(
                 config=root_config,
             )
         except Exception as exc:
-            logger.error("Graph failed while resolving routing confirmation.", exc_info=True)
+            provider_failure = isinstance(exc, ProviderError)
+            if provider_failure:
+                logger.error("Model provider failed while resuming routing confirmation '%s'.", item.id)
+            else:
+                logger.error("Graph failed while resolving routing confirmation.", exc_info=True)
             root_run.status = RunStatus.FAILED.value
-            root_run.error_message = str(exc)
+            root_run.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
             await db.commit()
             await trace_service.record_event(
                 run_id=root_run.id,
                 session_id=root_run.session_id,
                 event_type="run_failed",
-                payload={"error": str(exc), "error_category": "routing_confirmation_resume"},
+                payload={"error_category": "provider_failure" if provider_failure else "routing_confirmation_resume"},
             )
+            if provider_failure:
+                return JSONResponse(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    content={
+                        "error": MODEL_PROVIDER_FAILURE_CODE,
+                        "code": MODEL_PROVIDER_FAILURE_CODE,
+                        "message": MODEL_PROVIDER_FAILURE_MESSAGE,
+                        "details": {},
+                    },
+                )
             raise HTTPException(
                 status_code=500,
                 detail="The run failed while resuming after routing confirmation.",

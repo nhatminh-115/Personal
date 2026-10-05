@@ -5,8 +5,13 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import select
 
-from app.core.errors import RoutingConfirmationRequired
-from app.db.models import RunModel, RoutingConfirmationModel, SessionModel
+from app.core.errors import (
+    MODEL_PROVIDER_FAILURE_CODE,
+    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
+    ProviderError,
+    RoutingConfirmationRequired,
+)
+from app.db.models import RunEventModel, RunModel, RoutingConfirmationModel, SessionModel
 from app.models.base import ModelResponse, ToolCallRequest
 from app.models.routing_policy import ModelSelection
 from app.models.router import model_router
@@ -242,6 +247,60 @@ async def test_specialist_routing_confirmation_bubbles_to_root_and_resumes_child
     child_run = await test_db_session.get(RunModel, confirmation.execution_run_id)
     assert parent_run.status == "completed"
     assert child_run.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_provider_failure_after_routing_confirmation_is_redacted(
+    async_client,
+    test_db_session,
+    monkeypatch,
+):
+    mock_provider = model_router.get_provider("mock")
+
+    def require_confirmation(context):
+        if not context or not context.explicit_model_override:
+            raise RoutingConfirmationRequired(
+                "Cloud fallback requires confirmation.",
+                {"proposed_provider": "openai", "proposed_model": "gpt-4o-mini"},
+            )
+        return mock_provider, ModelSelection(
+            provider_name="mock",
+            model_name="mock-default",
+            reason="confirmed test route",
+        )
+
+    async def fail_provider(*_args, **_kwargs):
+        raise ProviderError("Provider returned 500: private runner diagnostic")
+
+    monkeypatch.setattr(model_router, "select_model_for_task", require_confirmation)
+    monkeypatch.setattr(model_router, "route", fail_provider)
+    started = await async_client.post("/v1/chat", json={
+        "session_id": "routing-confirm-provider-failure",
+        "message": "Summarize this test.",
+    })
+
+    assert started.status_code == 200
+    assert started.json()["status"] == "waiting_for_routing_confirmation"
+    confirmation_id = started.json()["routing_confirmation_id"]
+    confirmation = await test_db_session.get(RoutingConfirmationModel, confirmation_id)
+    assert confirmation is not None
+
+    resumed = await async_client.post(
+        f"/v1/routing-confirmations/{confirmation_id}/decision",
+        json={"decision": "approved"},
+    )
+    assert resumed.status_code == 502
+    assert resumed.json()["error"] == MODEL_PROVIDER_FAILURE_CODE
+    assert "private runner diagnostic" not in resumed.text
+
+    run = await test_db_session.get(RunModel, confirmation.root_run_id)
+    assert run is not None and run.status == "failed"
+    assert run.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    events = await test_db_session.scalars(select(RunEventModel).where(
+        RunEventModel.run_id == run.id,
+        RunEventModel.event_type == "run_failed",
+    ))
+    assert events.one().payload == {"error_category": "provider_failure"}
 
 
 @pytest.mark.asyncio

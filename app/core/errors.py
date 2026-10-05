@@ -19,6 +19,14 @@ class ProviderError(AuraError):
     pass
 
 
+MODEL_PROVIDER_FAILURE_CODE = "ModelProviderError"
+MODEL_PROVIDER_FAILURE_MESSAGE = (
+    "The selected model provider could not complete this request. "
+    "Check provider availability and routing settings, then retry."
+)
+MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE = "Model provider request failed."
+
+
 class MalformedModelOutputError(AuraError):
     """Raised when model response cannot be parsed or lacks expected structure."""
     pass

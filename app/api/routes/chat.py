@@ -36,6 +36,9 @@ from app.models.router import ModelRouter
 from app.core.errors import (
     AuraError,
     ContextSelectionError,
+    MODEL_PROVIDER_FAILURE_CODE,
+    MODEL_PROVIDER_FAILURE_MESSAGE,
+    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
     ModelCapabilityMismatch,
     ModelUnavailable,
     NoEligibleRoute,
@@ -512,7 +515,7 @@ async def chat_endpoint(
                 result_state={},
             )
         run_record.status = RunStatus.FAILED.value
-        run_record.error_message = "Model provider request failed." if provider_failure else str(e)
+        run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(e)
         await db.commit()
         await trace_service.record_event(
             run_id=run_id,
@@ -521,11 +524,14 @@ async def chat_endpoint(
             payload={"error_category": "provider_failure" if provider_failure else "graph_failure"},
         )
         if provider_failure:
-            code = "ModelProviderError"
-            message = "The selected model provider could not complete this request. Check provider availability and routing settings, then retry."
             return JSONResponse(
                 status_code=status.HTTP_502_BAD_GATEWAY,
-                content={"error": code, "code": code, "message": message, "details": {}},
+                content={
+                    "error": MODEL_PROVIDER_FAILURE_CODE,
+                    "code": MODEL_PROVIDER_FAILURE_CODE,
+                    "message": MODEL_PROVIDER_FAILURE_MESSAGE,
+                    "details": {},
+                },
             )
         if isinstance(e, AuraError):
             if isinstance(e, RoutingConfirmationRequired):
