@@ -219,12 +219,19 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
             raise ResearchProviderUnavailable("Semantic Scholar", "returned an invalid search response")
 
         results: List[ResearchSource] = []
-        for raw_item in resp_data.get("data", []):
+        raw_items = resp_data["data"]
+        if any(not isinstance(raw_item, dict) for raw_item in raw_items):
+            raise ResearchProviderUnavailable("Semantic Scholar", "returned an invalid search response")
+
+        for raw_item in raw_items:
             converted = self._convert_s2_item(raw_item)
             if converted:
                 results.append(converted)
                 if len(results) >= max_results:
                     break
+
+        if raw_items and not results:
+            raise ResearchProviderUnavailable("Semantic Scholar", "returned no readable papers in its search response")
 
         return results
 
