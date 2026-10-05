@@ -750,7 +750,7 @@ export default function App() {
       if (cancelled || !runId) return;
       setThreadLiveStates((current) => {
         const existing = current[thread.id];
-        if (existing?.runStatus === 'running' || existing?.runStatus === 'resuming_routing') return current;
+        if (existing?.runStatus === 'running' || existing?.runStatus === 'cancellation_requested' || existing?.runStatus === 'resuming_routing') return current;
         return {
           ...current,
           [thread.id]: {
@@ -1284,7 +1284,7 @@ export default function App() {
   useEffect(() => {
     const thread = activeThread;
     const runId = activeThreadLive.runId;
-    if (thread?.source !== 'live' || !thread.sessionId || !runId || activeThreadLive.runStatus !== 'running') return;
+    if (thread?.source !== 'live' || !thread.sessionId || !runId || !['running', 'cancellation_requested'].includes(activeThreadLive.runStatus ?? '')) return;
 
     let cancelled = false;
     let timer: number | undefined;
@@ -1293,7 +1293,10 @@ export default function App() {
       try {
         const execution = await api.fetchSessionExecutionState(thread.sessionId!);
         if (cancelled) return;
-        if (execution.run_id !== runId || execution.run_status === 'running' || !execution.run_status) {
+        if (execution.run_id !== runId || execution.run_status === 'running' || execution.run_status === 'cancellation_requested' || !execution.run_status) {
+          if (execution.run_id === runId && execution.run_status === 'cancellation_requested') {
+            patchThreadLive(thread.id, { runStatus: 'cancellation_requested' });
+          }
           nextPollDelay = Math.min(nextPollDelay * 2, 10_000);
           timer = window.setTimeout(() => void poll(), nextPollDelay);
           return;
