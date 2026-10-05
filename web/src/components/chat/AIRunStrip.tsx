@@ -5,7 +5,7 @@ type RunPhase = 'routing' | 'context' | 'synthesizing';
 interface AIRunStripProps {
   phase: RunPhase;
   specialist: string;
-  onStop: () => void;
+  onStop?: () => void;
 }
 
 const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
@@ -42,9 +42,11 @@ export function AIRunStrip({ phase, specialist, onStop }: AIRunStripProps) {
         })}
       </div>
 
-      <button type="button" className="ai-run-strip__stop" onClick={onStop}>
-        <Square size={10} /> Stop
-      </button>
+      {onStop ? (
+        <button type="button" className="ai-run-strip__stop" onClick={onStop}>
+          <Square size={10} /> Stop
+        </button>
+      ) : null}
     </div>
   );
 }
