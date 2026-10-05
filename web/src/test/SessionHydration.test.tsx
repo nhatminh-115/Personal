@@ -5,7 +5,7 @@
  * GET /v1/sessions/{sessionId} and reconciles the backend messages into
  * the thread — without destroying existing local state.
  */
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 
@@ -112,6 +112,65 @@ describe('Session Hydration', () => {
     );
     const sessionDetailCalls = fetchCalls.filter((url: string) => url.includes('/v1/sessions/live-sess-1'));
     expect(sessionDetailCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('polls a live running turn and hydrates its canonical messages after completion', async () => {
+    let stateCalls = 0;
+    let detailCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (/\/v1\/sessions(?:\?|$)/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions/live-sess-running/state')) {
+        stateCalls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session_id: 'live-sess-running',
+            run_id: 'hydrated-run-1',
+            run_status: stateCalls === 1 ? 'running' : 'completed',
+          }),
+        });
+      }
+      if (url.includes('/v1/sessions/live-sess-running')) {
+        detailCalls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            id: 'live-sess-running',
+            title: 'Recoverable live chat',
+            created_at: '2024-01-01',
+            updated_at: '2024-01-01',
+            messages: detailCalls === 1 ? [] : [BACKEND_MESSAGE],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const liveThread = {
+      id: 'stateful-live-running',
+      projectId: 'stateful',
+      title: 'Recoverable live chat',
+      summary: 'A retried request is still executing',
+      updated: 'now',
+      messages: [],
+      sessionId: 'live-sess-running',
+      source: 'live',
+      pinned: false,
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsButton = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsButton); });
+    await act(async () => { fireEvent.click(screen.getByText('Recoverable live chat')); });
+
+    await waitFor(() => expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument(), { timeout: 5000 });
+    expect(stateCalls).toBeGreaterThanOrEqual(2);
   });
 
   it('restores backend sessions into the matching project chat rail', async () => {
