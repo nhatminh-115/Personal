@@ -136,6 +136,38 @@ async def test_composite_provider_keeps_successful_empty_search_distinct_from_ou
 
 
 @pytest.mark.asyncio
+async def test_composite_provider_preserves_successful_empty_result_when_arxiv_fails(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    s2_provider.search = AsyncMock(return_value=[])
+    arxiv_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("arXiv"))
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    assert await composite.search("no matching topic") == []
+
+
+@pytest.mark.asyncio
+async def test_composite_provider_preserves_successful_empty_arxiv_result_when_s2_fails(mock_cache):
+    s2_provider = MagicMock()
+    arxiv_provider = MagicMock()
+    s2_provider.search = AsyncMock(side_effect=ResearchProviderUnavailable("Semantic Scholar"))
+    arxiv_provider.search = AsyncMock(return_value=[])
+    composite = CompositeResearchProvider(
+        s2_provider=s2_provider,
+        arxiv_provider=arxiv_provider,
+        fetcher=MagicMock(),
+        cache=mock_cache,
+    )
+
+    assert await composite.search("no matching topic") == []
+
+
+@pytest.mark.asyncio
 async def test_search_tool_does_not_report_provider_outage_as_empty_results(mock_cache):
     s2_provider = MagicMock()
     arxiv_provider = MagicMock()

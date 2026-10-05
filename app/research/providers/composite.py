@@ -33,8 +33,10 @@ class CompositeResearchProvider(ResearchSourceProvider):
         # 1. Primary discovery via Semantic Scholar
         s2_sources: List[ResearchSource] = []
         failed_providers: List[str] = []
+        provider_completed = False
         try:
             s2_sources = await self.s2_provider.search(query, search_type=search_type, max_results=max_results)
+            provider_completed = True
         except ResearchProviderUnavailable as e:
             failed_providers.append(e.provider)
             logger.warning(f"Semantic Scholar search failed: {e}")
@@ -60,6 +62,7 @@ class CompositeResearchProvider(ResearchSourceProvider):
                 supplementary_arxiv = await self.arxiv_provider.search(
                     query, search_type=search_type, max_results=max_results
                 )
+                provider_completed = True
             except ResearchProviderUnavailable as e:
                 failed_providers.append(e.provider)
                 logger.warning(f"Direct arXiv search failed: {e}")
@@ -69,7 +72,7 @@ class CompositeResearchProvider(ResearchSourceProvider):
 
         # 3. Deduplicate and merge identities through SourceDeduplicator
         combined = s2_sources + supplementary_arxiv
-        if not combined and failed_providers:
+        if not combined and failed_providers and not provider_completed:
             raise ResearchSearchUnavailable(failed_providers)
         merged_sources_dict: Dict[str, ResearchSource] = {}
         SourceDeduplicator.deduplicate(combined, existing_sources=merged_sources_dict)
