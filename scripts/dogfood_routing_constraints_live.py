@@ -36,7 +36,6 @@ def configured_model(providers: list[dict[str, Any]], *, local: bool) -> tuple[s
 
 
 def _draft(name: str, model: str, privacy: str, fallback: str) -> dict[str, Any]:
-    provider, model_id = model.split(":", 1)
     return {
         "name": name,
         "version": 1,
@@ -48,9 +47,10 @@ def _draft(name: str, model: str, privacy: str, fallback: str) -> dict[str, Any]
         "latency_preference": "normal",
         "routes": {
             "root": {
-                "model_override": model_id,
-                "provider_override": provider,
-                "reasoning": {"policy": "fixed", "effort": "low"},
+                "model_override": model,
+                # Instant preserves unknown/fixed_by_model catalog metadata in
+                # the preview; this scenario does not assert native control.
+                "reasoning": {"policy": "fixed", "effort": "instant"},
                 "privacy_policy": privacy,
                 "fallback_policy": fallback,
             }
@@ -125,6 +125,7 @@ async def run_live_dogfood() -> None:
 
     report = {
         "scenario": "routing_local_privacy_and_cloud_allowed_preview",
+        "dogfood_run_id": run_key,
         "catalog_provider_count": len(providers),
         "local_model_identity": local_model,
         "cloud_model_identity": cloud_model,
@@ -161,7 +162,7 @@ async def run_live_dogfood() -> None:
     )
     output_dir = Path("artifacts/dogfood").resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    report_path = output_dir / f"routing-constraints-{uuid.uuid4().hex[:12]}.json"
+    report_path = output_dir / f"routing-constraints-{run_key}.json"
     report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2))
     print(f"Audit artifact: {report_path}")
