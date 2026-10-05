@@ -1352,6 +1352,8 @@ async def test_delegation_model_lock_preserves_child_reasoning_route(test_db_ses
     assert child_routing["explicit_model_override"] == "mock:locked"
     assert child_routing["reasoning_policy"] == "adaptive"
     assert child_routing["reasoning_effort"] is None
+    assert child_routing["reasoning_effort_min"] == "medium"
+    assert child_routing["reasoning_effort_max"] == "high"
 
 
 @pytest.mark.asyncio
