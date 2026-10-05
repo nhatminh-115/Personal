@@ -7,6 +7,7 @@ interface AIRunStripProps {
   specialist: string;
   onStop?: () => void;
   stopping?: boolean;
+  stopRequested?: boolean;
 }
 
 const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
@@ -17,7 +18,7 @@ const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
 
 const order: RunPhase[] = ['routing', 'context', 'synthesizing'];
 
-export function AIRunStrip({ phase, specialist, onStop, stopping = false }: AIRunStripProps) {
+export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRequested = false }: AIRunStripProps) {
   const activeIndex = order.indexOf(phase);
 
   return (
@@ -43,9 +44,15 @@ export function AIRunStrip({ phase, specialist, onStop, stopping = false }: AIRu
         })}
       </div>
 
-      {onStop ? (
-        <button type="button" className="ai-run-strip__stop" onClick={onStop} disabled={stopping}>
-          <Square size={10} /> {stopping ? 'Stopping…' : 'Stop'}
+      {onStop || stopRequested ? (
+        <button
+          type="button"
+          className="ai-run-strip__stop"
+          onClick={onStop}
+          disabled={stopping || stopRequested}
+          title={stopRequested ? 'AURA will stop at the next safe execution boundary.' : undefined}
+        >
+          <Square size={10} /> {stopping ? 'Stopping…' : stopRequested ? 'Stop requested' : 'Stop'}
         </button>
       ) : null}
     </div>

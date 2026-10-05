@@ -3230,6 +3230,7 @@ export default function App() {
             onContextFileContentIdsChange={handleContextFileContentIdsChange}
             currentApproval={activeThreadLive.approval}
             runInProgress={activeThreadLive.runStatus === 'running' || activeThreadLive.runStatus === 'cancellation_requested'}
+            runCancellationRequested={activeThreadLive.runStatus === 'cancellation_requested'}
             onApprovalDecision={handleApprovalDecision}
           />
         ) : null}
@@ -3287,6 +3288,7 @@ export default function App() {
                 onContextFileContentIdsChange={handleContextFileContentIdsChange}
                 currentApproval={activeThreadLive.approval}
                 runInProgress={activeThreadLive.runStatus === 'running' || activeThreadLive.runStatus === 'cancellation_requested'}
+                runCancellationRequested={activeThreadLive.runStatus === 'cancellation_requested'}
                 onApprovalDecision={handleApprovalDecision}
               />
             </div>

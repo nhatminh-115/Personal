@@ -57,6 +57,7 @@ export interface ChatPaneProps {
   onContextPanelOpenChange?: (open: boolean) => void;
   currentApproval?: ApprovalDetail | null;
   runInProgress?: boolean;
+  runCancellationRequested?: boolean;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
     notes?: string,
@@ -146,6 +147,7 @@ export function ChatPane({
   onContextPanelOpenChange,
   currentApproval,
   runInProgress = false,
+  runCancellationRequested = false,
   onApprovalDecision,
   isLiveThread = true,
 }: ChatPaneProps) {
@@ -185,9 +187,7 @@ export function ChatPane({
     if (isLiveThread) {
       if (!onCancelRun || stoppingRun) return;
       setStoppingRun(true);
-      void onCancelRun().then((requested) => {
-        if (!requested) setStoppingRun(false);
-      }).catch(() => setStoppingRun(false));
+      void onCancelRun().then(() => setStoppingRun(false)).catch(() => setStoppingRun(false));
       return;
     }
     clearRunTimers();
@@ -417,7 +417,7 @@ export function ChatPane({
       </div>
 
       <div className="chat-composer-wrap">
-        {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'routing'} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} /> : null}
+        {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'routing'} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} stopRequested={runCancellationRequested} /> : null}
         <div className="chat-composer chat-composer--ai">
           {contextOpen ? (
             <AIContextPanel

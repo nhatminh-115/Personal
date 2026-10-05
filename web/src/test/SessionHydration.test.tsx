@@ -228,6 +228,9 @@ describe('Session Hydration', () => {
     await act(async () => { fireEvent.click(chatsButton); });
     await act(async () => { fireEvent.click(screen.getByText('Recovering cancelled chat')); });
 
+    await waitFor(() => expect(stateCalls).toBeGreaterThanOrEqual(1));
+    const stopRequested = await screen.findByRole('button', { name: 'Stop requested' });
+    expect(stopRequested).toBeDisabled();
     await waitFor(() => expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument(), { timeout: 12_000 });
     expect(stateCalls).toBeGreaterThanOrEqual(3);
   });
