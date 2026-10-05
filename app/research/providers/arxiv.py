@@ -1,9 +1,6 @@
 """Official arXiv API research provider with rate limiting and PDF linkage."""
 
 import asyncio
-from datetime import datetime, timezone
-from email.utils import parsedate_to_datetime
-import math
 import re
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -16,7 +13,7 @@ from app.research.cache import research_cache
 from app.research.dedup import extract_arxiv_id
 from app.research.document import FullTextStatus, document_fetcher
 from app.research.models import ResearchSource, SourceStatus
-from app.research.provider import ResearchProviderUnavailable, ResearchSourceProvider
+from app.research.provider import ResearchProviderUnavailable, ResearchSourceProvider, retry_after_seconds
 
 
 class ArxivRateLimiter:
@@ -69,25 +66,6 @@ class ArxivResearchProvider(ResearchSourceProvider):
         if not text:
             return ""
         return re.sub(r"\s+", " ", text).strip()
-
-    @staticmethod
-    def _retry_after_seconds(value: Optional[str], default: float) -> float:
-        """Parse both Retry-After forms and bound waits so a provider cannot stall a run indefinitely."""
-        if not value:
-            return default
-        try:
-            delay = float(value)
-        except ValueError:
-            try:
-                retry_at = parsedate_to_datetime(value)
-                if retry_at.tzinfo is None:
-                    retry_at = retry_at.replace(tzinfo=timezone.utc)
-                delay = (retry_at - datetime.now(timezone.utc)).total_seconds()
-            except (TypeError, ValueError, OverflowError):
-                return default
-        if not math.isfinite(delay):
-            return default
-        return min(max(delay, 0.0), 60.0)
 
     def _parse_entry(self, entry: ET.Element) -> Optional[ResearchSource]:
         """Convert an arXiv Atom <entry> XML element to a canonical ResearchSource."""
@@ -206,7 +184,11 @@ class ArxivResearchProvider(ResearchSourceProvider):
                         failure_reason = "rate limited" if resp.status_code == 429 else "temporarily unavailable"
                         logger.warning(f"arXiv API {resp.status_code}. Backing off on attempt {attempt + 1}")
                         await asyncio.sleep(
-                            self._retry_after_seconds(resp.headers.get("Retry-After"), 3.0 * (attempt + 1))
+                            retry_after_seconds(
+                                resp.headers.get("Retry-After"),
+                                default=3.0 * (attempt + 1),
+                                maximum=60.0,
+                            )
                         )
                     else:
                         logger.warning(f"arXiv API unrecoverable status {resp.status_code}")
