@@ -271,6 +271,8 @@ export interface WorkspaceExecutionEvent {
   status?: string | null;
   success?: boolean | null;
   error_category?: string | null;
+  error_code?: string | null;
+  failed_providers?: string[];
   risk_level?: string | null;
   step?: number | null;
   task_type?: string | null;

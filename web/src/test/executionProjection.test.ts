@@ -104,6 +104,25 @@ describe('execution trace projection', () => {
     expect(byId.get('execution-blocked')?.body).toContain('Proposed cloud-provider:exact-model');
   });
 
+  it('shows safe research provider failure details on the execution result', () => {
+    const trace: WorkspaceExecutionTrace = {
+      run_id: 'research-failed-run',
+      session_id: 'session',
+      events: [{
+        id: 'research-tool-result',
+        event_type: 'tool_executed',
+        created_at: '2026-10-02T00:00:00Z',
+        tool_name: 'research_search',
+        success: false,
+        error_code: 'research_providers_unavailable',
+        failed_providers: ['Semantic Scholar', 'arXiv'],
+      }],
+    };
+
+    const [node] = projectExecutionGraph([trace], workspaceNodes).nodes;
+    expect(node.data.body).toBe('Research providers unavailable · Semantic Scholar, arXiv');
+  });
+
 
   it('connects directly selected and linked context objects to the compilation event', () => {
     const selected = {

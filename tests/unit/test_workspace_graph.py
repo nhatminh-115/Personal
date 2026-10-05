@@ -1254,6 +1254,16 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
         RunEventModel(id="trace-tool-result", run_id=run.id, event_type="tool_executed", payload={
             "tool": "workspace.read", "result": {"success": True, "output": "private tool output secret"},
         }),
+        RunEventModel(id="trace-research-failure", run_id=run.id, event_type="tool_executed", payload={
+            "tool": "research_search", "result": {
+                "success": False,
+                "metadata": {
+                    "error_code": "research_providers_unavailable",
+                    "failed_providers": ["Semantic Scholar", "arXiv", "untrusted provider"],
+                    "query": "private research query",
+                },
+            },
+        }),
         RunEventModel(id="trace-unrelated-event", run_id=run.id, event_type="internal_reasoning", payload={"text": "never expose"}),
     ]
     test_db_session.add_all([session, run, user, assistant, *events])
@@ -1266,12 +1276,18 @@ async def test_workspace_graph_projects_sanitized_execution_trace_to_turns(async
     assert trace["run_id"] == run.id
     assert trace["user_object_id"] == user.id
     assert trace["response_object_id"] == assistant.id
-    assert [event["event_type"] for event in trace["events"]] == ["model_selected", "tool_requested", "tool_executed"]
-    tool_result = next(event for event in trace["events"] if event["event_type"] == "tool_executed")
+    assert [event["event_type"] for event in trace["events"]] == ["model_selected", "tool_requested", "tool_executed", "tool_executed"]
+    tool_result = next(event for event in trace["events"] if event["event_type"] == "tool_executed" and event.get("tool_name") == "workspace.read")
     assert tool_result["tool_name"] == "workspace.read"
     assert tool_result["success"] is True
+    research_failure = next(event for event in trace["events"] if event["error_code"] == "research_providers_unavailable")
+    assert research_failure["success"] is False
+    assert research_failure["failed_providers"] == ["Semantic Scholar", "arXiv"]
     serialized = response.text
-    for private_value in ("private prompt secret", "secret/path.txt", "private tool output secret", "never expose"):
+    for private_value in (
+        "private prompt secret", "secret/path.txt", "private tool output secret", "never expose",
+        "private research query", "untrusted provider",
+    ):
         assert private_value not in serialized
 
 
