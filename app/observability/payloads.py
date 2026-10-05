@@ -141,7 +141,8 @@ def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
             metadata = result.get("metadata")
             if isinstance(metadata, dict):
                 safe_metadata = pick(metadata, ("artifact_id", "object_id", "bytes", "line_count", "exit_code"))
-                safe_metadata.update(safe_operational_error_metadata(metadata))
+                if result.get("success") is False:
+                    safe_metadata.update(safe_operational_error_metadata(metadata))
                 if safe_metadata:
                     safe_result["metadata"] = safe_metadata
             safe["result"] = safe_result

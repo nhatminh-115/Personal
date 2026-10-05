@@ -360,7 +360,11 @@ def _safe_execution_event(event: RunEventModel) -> WorkspaceExecutionEventRespon
     payload = event.payload if isinstance(event.payload, dict) else {}
     event_type = event.event_type
     result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-    error_metadata = safe_operational_error_metadata(result.get("metadata"))
+    error_metadata = (
+        safe_operational_error_metadata(result.get("metadata"))
+        if result.get("success") is False
+        else {}
+    )
     raw_tool_name = payload.get("tool") or payload.get("tool_name")
     tool_name = raw_tool_name if isinstance(raw_tool_name, str) else None
     step = payload.get("step")
