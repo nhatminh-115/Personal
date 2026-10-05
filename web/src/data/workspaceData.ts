@@ -304,7 +304,7 @@ export interface AutomationRecord {
   actions: string[];
   lastRun: string;
   nextRun: string;
-  status: 'ready' | 'queued' | 'running' | 'waiting_for_approval' | 'completed' | 'failed' | 'paused';
+  status: 'ready' | 'queued' | 'running' | 'cancellation_requested' | 'waiting_for_approval' | 'waiting_for_routing_confirmation' | 'completed' | 'cancelled' | 'failed' | 'dead_letter' | 'paused';
   source?: 'demo' | 'live';
   instruction?: string;
   intervalSeconds?: number;

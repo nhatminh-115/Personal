@@ -73,6 +73,11 @@ cooperative cancellation: it cannot interrupt an in-flight provider/tool call
 or undo a side effect that already completed. The run then persists a cancelled
 terminal status and trace. Session execution-state hydration returns the active
 turn key so the Stop action remains available after the UI reloads.
+Automation history can also request cooperative cancellation after an outbox
+worker claims the event and creates its active run. A claimed event whose run is
+still starting returns a retryable conflict; once active, the run records the
+same cancellation marker and stops at the next runtime boundary. The UI states
+that an in-flight model or tool operation may finish before AURA observes it.
 Approval and routing-confirmation decisions serialize graph resumes by run. On
 PostgreSQL, a session advisory lock stays held across graph commits and prevents
 another API worker from resuming the same run concurrently. SQLite uses a

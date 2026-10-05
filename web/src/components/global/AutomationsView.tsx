@@ -153,8 +153,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
     void loadRunHistory(automation.id);
   };
 
-  const cancelQueuedRun = async (automation: AutomationRecord, run: AutomationExecutionRecord) => {
-    if (!onCancelRun || run.status !== 'queued' || cancellingEventId) return;
+  const cancelAutomationRun = async (automation: AutomationRecord, run: AutomationExecutionRecord) => {
+    if (!onCancelRun || !['queued', 'running'].includes(run.status) || cancellingEventId) return;
     setCancellingEventId(run.event_id);
     setHistoryError('');
     try {
@@ -164,7 +164,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         [automation.id]: (current[automation.id] ?? []).map((item) => item.event_id === run.event_id ? cancelled : item),
       }));
     } catch (cause) {
-      setHistoryError(cause instanceof Error ? cause.message : 'Could not cancel queued run.');
+      setHistoryError(cause instanceof Error ? cause.message : 'Could not request run cancellation.');
     } finally {
       setCancellingEventId(null);
     }
@@ -360,7 +360,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         {automations.map((automation) => {
           const project = automation.projectId ? projects.find((item) => item.id === automation.projectId) : null;
           const live = automation.source === 'live';
-          const runInProgress = ['queued', 'running', 'waiting_for_approval', 'waiting_for_routing_confirmation']
+          const runInProgress = ['queued', 'running', 'cancellation_requested', 'waiting_for_approval', 'waiting_for_routing_confirmation']
             .includes(automation.latestExecution?.status ?? '');
           return (
             <article key={automation.id} className={`automation-card ${automation.archived ? 'is-archived' : automation.enabled ? '' : 'is-paused'}`}>
@@ -399,7 +399,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
                                 {run.retry_of_event_id ? <small>Retry of {run.retry_of_event_id.slice(0, 8)}</small> : null}
-                                {['failed', 'dead_letter'].includes(run.status) && onRetryRun && automation.enabled && !automation.archived ? <button type="button" onClick={() => void retryFailedRun(automation, run)} disabled={retryingEventId !== null || runInProgress} title={runInProgress ? 'Wait for the current Automation run to finish' : "Queue a fresh run using the Automation's saved instruction"}>{retryingEventId === run.event_id ? 'Queueing retry…' : 'Retry run'}</button> : run.status === 'queued' && onCancelRun ? <button type="button" onClick={() => void cancelQueuedRun(automation, run)} disabled={cancellingEventId !== null} title="Cancel only if AURA has not started this run">{cancellingEventId === run.event_id ? 'Cancelling…' : 'Cancel queued run'}</button> : run.status === 'cancelled' ? <span>Cancelled before execution</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
+                                {['failed', 'dead_letter'].includes(run.status) && onRetryRun && automation.enabled && !automation.archived ? <button type="button" onClick={() => void retryFailedRun(automation, run)} disabled={retryingEventId !== null || runInProgress} title={runInProgress ? 'Wait for the current Automation run to finish' : "Queue a fresh run using the Automation's saved instruction"}>{retryingEventId === run.event_id ? 'Queueing retry…' : 'Retry run'}</button> : ['queued', 'running'].includes(run.status) && onCancelRun ? <button type="button" onClick={() => void cancelAutomationRun(automation, run)} disabled={cancellingEventId !== null} title={run.status === 'queued' ? 'Cancel before execution starts' : 'Request cooperative cancellation at the next safe execution boundary'}>{cancellingEventId === run.event_id ? 'Sending request…' : run.status === 'queued' ? 'Cancel queued run' : 'Stop active run'}</button> : run.status === 'cancellation_requested' ? <span title="An operation already in progress may finish before AURA observes the request.">Stop requested · waiting for a safe boundary</span> : run.status === 'cancelled' ? <span title="An operation already in progress may have completed before cancellation took effect.">Run cancelled</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
                               </li>
                             ))}
                           </ol>

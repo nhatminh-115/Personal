@@ -2735,9 +2735,18 @@ export default function App() {
   const cancelAutomationRun = useCallback(async (automationId: string, eventId: string) => {
     const cancelled = await api.cancelAutomationRun(automationId, eventId);
     setAutomations((current) => current.map((item) => item.id === automationId && item.latestExecution?.eventId === eventId
-      ? { ...item, latestExecution: { ...item.latestExecution, status: 'cancelled' }, status: 'ready' }
+      ? {
+        ...item,
+        latestExecution: { ...item.latestExecution, status: cancelled.status },
+        status: cancelled.status === 'cancelled' ? 'ready' : cancelled.status as AutomationRecord['status'],
+      }
       : item));
-    pushToast('Queued run cancelled', 'AURA had not started this run. Its history is preserved.');
+    pushToast(
+      cancelled.status === 'cancelled' ? 'Queued run cancelled' : 'Stop requested',
+      cancelled.status === 'cancelled'
+        ? 'AURA had not started this run. Its history is preserved.'
+        : 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.',
+    );
     return cancelled;
   }, [pushToast]);
 

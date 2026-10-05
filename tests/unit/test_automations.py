@@ -815,9 +815,51 @@ async def test_started_automation_run_cannot_be_cancelled(async_client, test_db_
     response = await async_client.post(f"/v1/automations/{automation_id}/runs/{event.id}/cancel")
 
     assert response.status_code == 409
-    assert response.json()["detail"] == "Only queued automation runs can be cancelled."
+    assert response.json()["detail"] == "Automation run is starting. Refresh history and try again."
     await test_db_session.refresh(event)
     assert event.status == EventStatus.PROCESSING.value
+
+
+@pytest.mark.asyncio
+async def test_running_automation_run_can_be_cancelled_idempotently(async_client, test_db_session):
+    created = await async_client.post("/v1/automations", json={
+        "name": "Stop active routine",
+        "instruction": "A long-running local task.",
+        "interval_seconds": 3600,
+    })
+    automation_id = created.json()["id"]
+    queued = await async_client.post(f"/v1/automations/{automation_id}/run")
+    event = await test_db_session.get(EventRecordModel, queued.json()["event_id"])
+    event.status = EventStatus.PROCESSING.value
+    event.locked_by = "worker-test"
+    session_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+    test_db_session.add(SessionModel(id=session_id, title="Automation cancellation", metadata_json={}))
+    run = RunModel(id=run_id, session_id=session_id, status=RunStatus.RUNNING.value, user_message="A long-running local task.")
+    test_db_session.add(run)
+    await test_db_session.commit()
+
+    response = await async_client.post(f"/v1/automations/{automation_id}/runs/{event.id}/cancel")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "cancellation_requested"
+    assert response.json()["run_id"] == run_id
+    await test_db_session.refresh(run)
+    assert run.cancel_requested_at is not None
+    events = list((await test_db_session.scalars(select(RunEventModel).where(RunEventModel.run_id == run_id))).all())
+    assert [item.event_type for item in events] == ["run_cancellation_requested"]
+
+    history = await async_client.get(f"/v1/automations/{automation_id}/runs")
+    assert history.json()[0]["status"] == "cancellation_requested"
+    repeated = await async_client.post(f"/v1/automations/{automation_id}/runs/{event.id}/cancel")
+    assert repeated.status_code == 200
+    assert repeated.json()["status"] == "cancellation_requested"
+    assert len(list((await test_db_session.scalars(select(RunEventModel).where(RunEventModel.run_id == run_id))).all())) == 1
+
+    run.status = RunStatus.COMPLETED.value
+    await test_db_session.commit()
+    finished = await async_client.post(f"/v1/automations/{automation_id}/runs/{event.id}/cancel")
+    assert finished.status_code == 409
+    assert finished.json()["detail"] == "Automation run is no longer running."
 
 
 @pytest.mark.asyncio

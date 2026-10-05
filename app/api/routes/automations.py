@@ -18,7 +18,7 @@ from app.api.pagination import (
     decode_timestamp_id_cursor,
     set_next_cursor_header,
 )
-from app.db.models import EventRecordModel, EventStatus, JobType, RunModel, RunStatus, ScheduledJobModel, utc_now
+from app.db.models import EventRecordModel, EventStatus, JobType, RunEventModel, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.db.session import get_db
 from app.events.bus import event_bus
 from app.events.automation_schedule import next_automation_run
@@ -36,6 +36,19 @@ def _automation_trigger_type(event_type: str, source: str | None = None) -> str:
         EventType.CRON_TICK.value: "schedule",
         EventType.WEBHOOK_RECEIVED.value: "webhook",
     }.get(event_type, "manual")
+
+
+def _automation_execution_response(event: EventRecordModel, run_id: str, execution_status: str) -> AutomationExecutionResponse:
+    retry_of_event_id = (event.payload_json or {}).get("retry_of_event_id")
+    return AutomationExecutionResponse(
+        event_id=event.id,
+        run_id=run_id,
+        queued_at=event.occurred_at,
+        status=execution_status,
+        retry_count=event.retry_count,
+        trigger_type=_automation_trigger_type(event.event_type, event.source),
+        retry_of_event_id=retry_of_event_id if isinstance(retry_of_event_id, str) else None,
+    )
 
 
 async def _claim_automation_dispatch(db: AsyncSession, automation_id: str, claim_prefix: str) -> str | None:
@@ -163,7 +176,11 @@ async def _latest_executions(db: AsyncSession, jobs: list[ScheduledJobModel]) ->
         execution_status = (
             "dead_letter"
             if event.status == EventStatus.DEAD_LETTER.value
-            else run.status if run is not None else event_status
+            else (
+                "cancellation_requested"
+                if run is not None and run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None
+                else run.status if run is not None else event_status
+            )
         )
         response[automation_id] = AutomationExecutionResponse(
             event_id=event.id,
@@ -706,7 +723,13 @@ async def list_automation_runs(
             status=(
                 "dead_letter"
                 if event.status == EventStatus.DEAD_LETTER.value
-                else runs[run_id].status if run_id in runs else event_status.get(event.status, event.status)
+                else (
+                    "cancellation_requested"
+                    if run_id in runs
+                    and runs[run_id].status == RunStatus.RUNNING.value
+                    and runs[run_id].cancel_requested_at is not None
+                    else runs[run_id].status if run_id in runs else event_status.get(event.status, event.status)
+                )
             ),
             retry_count=event.retry_count,
             trigger_type=_automation_trigger_type(event.event_type, event.source),
@@ -721,12 +744,12 @@ async def list_automation_runs(
 
 
 @router.post("/{automation_id}/runs/{event_id}/cancel", response_model=AutomationExecutionResponse)
-async def cancel_queued_automation_run(
+async def cancel_automation_run(
     automation_id: str,
     event_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> AutomationExecutionResponse:
-    """Cancel an outbox event only while it is still pending and unclaimed."""
+    """Cancel queued work or cooperatively stop an active automation run."""
     job = await db.get(ScheduledJobModel, automation_id)
     if job is None or (job.metadata_json or {}).get("kind") != "automation":
         raise HTTPException(status_code=404, detail="Automation not found.")
@@ -739,7 +762,11 @@ async def cancel_queued_automation_run(
     event = result.scalar_one_or_none()
     if event is None:
         raise HTTPException(status_code=404, detail="Automation run not found.")
-    if event.status != EventStatus.CANCELLED.value:
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+    if event.status == EventStatus.CANCELLED.value:
+        return _automation_execution_response(event, run_id, "cancelled")
+
+    if event.status == EventStatus.PENDING.value:
         cancelled = await db.execute(
             update(EventRecordModel)
             .where(
@@ -766,25 +793,47 @@ async def cancel_queued_automation_run(
             event = current_result.scalar_one_or_none()
             if event is None:
                 raise HTTPException(status_code=404, detail="Automation run not found.")
-            if event.status != EventStatus.CANCELLED.value:
-                raise HTTPException(status_code=409, detail="Only queued automation runs can be cancelled.")
+            if event.status == EventStatus.CANCELLED.value:
+                return _automation_execution_response(event, run_id, "cancelled")
+            else:
+                # The worker may have claimed this event while the queued update
+                # was in flight. Continue only when it has created an active run.
+                if event.status != EventStatus.PROCESSING.value:
+                    raise HTTPException(status_code=409, detail="Only queued or running automation runs can be cancelled.")
         else:
             await db.refresh(event)
+            return _automation_execution_response(event, run_id, "cancelled")
 
-    return AutomationExecutionResponse(
-        event_id=event.id,
-        run_id=str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}")),
-        queued_at=event.occurred_at,
-        status="cancelled",
-        retry_count=event.retry_count,
-        trigger_type=_automation_trigger_type(event.event_type, event.source),
-        retry_of_event_id=(
-            event.payload_json.get("retry_of_event_id")
-            if isinstance(event.payload_json, dict) and isinstance(event.payload_json.get("retry_of_event_id"), str)
-            else None
-        ),
-    )
+    if event.status == EventStatus.PROCESSING.value:
+        cancellation_requested_at = utc_now()
+        cancelled = await db.execute(
+            update(RunModel)
+            .where(
+                RunModel.id == run_id,
+                RunModel.status == RunStatus.RUNNING.value,
+                RunModel.cancel_requested_at.is_(None),
+            )
+            .values(cancel_requested_at=cancellation_requested_at)
+        )
+        if cancelled.rowcount:
+            db.add(RunEventModel(
+                run_id=run_id,
+                event_type="run_cancellation_requested",
+                payload={"source": "user", "trigger": "automation"},
+            ))
+            await db.commit()
+            return _automation_execution_response(event, run_id, "cancellation_requested")
 
+        run = await db.get(RunModel, run_id, populate_existing=True)
+        if run is not None and run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None:
+            return _automation_execution_response(event, run_id, "cancellation_requested")
+        if run is None:
+            raise HTTPException(status_code=409, detail="Automation run is starting. Refresh history and try again.")
+        if run.status == RunStatus.CANCELLED.value and run.cancel_requested_at is not None:
+            return _automation_execution_response(event, run_id, "cancelled")
+        raise HTTPException(status_code=409, detail="Automation run is no longer running.")
+
+    raise HTTPException(status_code=409, detail="Only queued or running automation runs can be cancelled.")
 
 @router.post("/{automation_id}/runs/{event_id}/retry", response_model=AutomationExecutionResponse, status_code=status.HTTP_202_ACCEPTED)
 async def retry_automation_run(
