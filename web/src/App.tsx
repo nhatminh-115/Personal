@@ -1274,6 +1274,73 @@ export default function App() {
     }
   }, [activeProjectId, chatThreads]);
 
+  // An idempotent chat retry can legitimately return an existing run that is
+  // still executing. Keep that live thread attached to the durable run until
+  // it reaches a terminal or approval-paused state, then hydrate its canonical
+  // messages and inspector data. Without this, the optimistic user bubble can
+  // remain in a permanent running state after a lost network response.
+  useEffect(() => {
+    const thread = activeThread;
+    const runId = activeThreadLive.runId;
+    if (thread?.source !== 'live' || !thread.sessionId || !runId || activeThreadLive.runStatus !== 'running') return;
+
+    let cancelled = false;
+    let timer: number | undefined;
+    let nextPollDelay = 1500;
+    const poll = async () => {
+      try {
+        const execution = await api.fetchSessionExecutionState(thread.sessionId!);
+        if (cancelled) return;
+        if (execution.run_id !== runId || execution.run_status === 'running' || !execution.run_status) {
+          nextPollDelay = Math.min(nextPollDelay * 2, 10_000);
+          timer = window.setTimeout(() => void poll(), nextPollDelay);
+          return;
+        }
+
+        let routingConfirmation: ThreadLiveState['routingConfirmation'] = null;
+        if (execution.run_status === 'waiting_for_routing_confirmation') {
+          const { items } = await api.fetchPendingRoutingConfirmations(thread.sessionId!, 25);
+          const pending = items.find((item) => item.root_run_id === runId);
+          if (pending) routingConfirmation = {
+            id: pending.id,
+            provider: pending.proposed_provider,
+            model: pending.proposed_model,
+          };
+        }
+        if (cancelled) return;
+
+        patchThreadLive(thread.id, {
+          runStatus: execution.run_status,
+          approval: execution.run_status === 'waiting_for_approval' ? execution.approval ?? null : null,
+          routingConfirmation,
+        });
+        // selectThread reconciles optimistic bubbles against persisted
+        // role/content occurrences and adopts the backend's canonical IDs.
+        selectThread(thread.id);
+        void refreshInspectorData(thread.id, runId);
+      } catch {
+        if (!cancelled) {
+          nextPollDelay = Math.min(nextPollDelay * 2, 10_000);
+          timer = window.setTimeout(() => void poll(), nextPollDelay);
+        }
+      }
+    };
+
+    timer = window.setTimeout(() => void poll(), 1500);
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [
+    activeThread?.id,
+    activeThread?.sessionId,
+    activeThread?.source,
+    activeThreadLive.runId,
+    activeThreadLive.runStatus,
+    refreshInspectorData,
+    selectThread,
+  ]);
+
   const openMemorySourceChat = useCallback(async (sessionId: string): Promise<ChatThreadRecord | null> => {
     try {
       let sourceThread = chatThreads.find((thread) => thread.sessionId === sessionId && thread.source === 'live');
