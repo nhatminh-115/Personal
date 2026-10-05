@@ -49,7 +49,9 @@ def retry_after_seconds(value: Optional[str], *, default: float, maximum: float)
 
 
 class ResearchSourceProvider(ABC):
-    """Abstract interface for external or deterministic research literature providers."""
+    """Abstract interface for external or deterministic research literature retrieval."""
+
+    requires_external_egress = True
 
     @abstractmethod
     async def search(self, query: str, search_type: str = "broad", max_results: int = 5) -> List[ResearchSource]:

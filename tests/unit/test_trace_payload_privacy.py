@@ -86,6 +86,27 @@ async def test_trace_keeps_allowlisted_research_provider_failure_metadata_only(t
     assert "private query" not in str(event.payload)
     assert "private response body" not in str(event.payload)
 
+    privacy_event = await trace.record_event(
+        run_id="research-error-trace-run",
+        session_id="research-error-trace-session",
+        event_type="tool_executed",
+        payload={
+            "tool": "research_search",
+            "result": {
+                "success": False,
+                "error": "private query was blocked",
+                "metadata": {
+                    "error_code": "privacy_boundary_violation",
+                    "query": "private query text",
+                },
+            },
+        },
+    )
+    assert privacy_event.payload["result"]["metadata"] == {
+        "error_code": "privacy_boundary_violation",
+    }
+    assert "private query" not in str(privacy_event.payload)
+
     success_event = await trace.record_event(
         run_id="research-error-trace-run",
         session_id="research-error-trace-session",

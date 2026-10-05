@@ -79,9 +79,12 @@ default. The Research Specialist uses deterministic sources by default unless
 
 Live research search combines Semantic Scholar and arXiv, then uses Crossref as
 a final metadata-only fallback when fewer than the requested number of sources
-were returned. Live search queries are sent to these providers. Crossref results
-include bibliographic metadata only; AURA does not request Crossref abstracts or
-full text. A failure from one provider does not discard sources returned by the
+were returned. Live search queries are sent to these providers unless the run
+is classified `confidential` or `local_only`, in which case AURA blocks
+external provider search before sending the query. The deterministic corpus
+remains available within those privacy boundaries. Crossref results include
+bibliographic metadata only; AURA does not request Crossref abstracts or full
+text. A failure from one provider does not discard sources returned by the
 others. When no provider completes the search, the tool reports a structured
 provider error instead of claiming that the query returned no matches; a
 successful search with zero matches remains a normal empty result.

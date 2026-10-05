@@ -32,6 +32,19 @@ def _extract_research_provider(context: Optional[Dict[str, Any]]) -> ResearchSou
     return get_default_research_provider()
 
 
+def _research_privacy_requirement(context: Optional[Dict[str, Any]]) -> str:
+    """Read the effective privacy classification attached to the child run."""
+    metadata = context.get("metadata") if isinstance(context, dict) else None
+    if not isinstance(metadata, dict):
+        return "public"
+    routing_context = metadata.get("routing_context_dict")
+    value = routing_context.get("privacy_requirement") if isinstance(routing_context, dict) else None
+    value = value or metadata.get("privacy_requirement") or "public"
+    if hasattr(value, "value"):
+        value = value.value
+    return str(value).strip().lower()
+
+
 def normalize_snippet(text: str) -> str:
     """Normalize text whitespace and lowercase for substring grounding check."""
     return re.sub(r"\s+", " ", text).strip().lower()
@@ -124,6 +137,17 @@ class ResearchSearchTool(Tool):
         max_results = int(input_data.get("max_results", 5))
         search_type = input_data.get("search_type", "broad")
         provider = _extract_research_provider(context)
+        privacy_requirement = _research_privacy_requirement(context)
+        if provider.requires_external_egress and privacy_requirement in {"confidential", "local_only"}:
+            return ToolResult(
+                success=False,
+                output="",
+                error=(
+                    f"Research search was blocked by the {privacy_requirement} privacy boundary. "
+                    "The query was not sent to external providers."
+                ),
+                metadata={"error_code": "privacy_boundary_violation"},
+            )
         try:
             raw_results = await provider.search(query, search_type=search_type, max_results=max_results)
         except ResearchSearchUnavailable as exc:
