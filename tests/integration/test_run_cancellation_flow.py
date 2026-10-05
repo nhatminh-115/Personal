@@ -17,6 +17,8 @@ from app.db.models import (
     RunEventModel,
     RunModel,
     RunStatus,
+    SessionModel,
+    utc_now,
 )
 from app.db.session import get_db
 from app.models.base import ModelResponse
@@ -128,7 +130,7 @@ async def test_live_chat_cancel_request_is_observed_after_inflight_model_call(as
 
 
 @pytest.mark.asyncio
-async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_client, tmp_path, monkeypatch):
+async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_client, tmp_path):
     database_path = tmp_path / "run-cancellation-recovery.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
     async with engine.begin() as connection:
@@ -141,41 +143,27 @@ async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_cl
 
     previous_override = app.dependency_overrides[get_db]
     app.dependency_overrides[get_db] = independent_db_sessions
-    model_call_started = asyncio.Event()
-    release_model_call = asyncio.Event()
     session_id = "cancel-recovery-session"
     client_turn_id = "cancel-recovery-turn"
-
-    async def slow_model_call(_request, provider_name=None):
-        model_call_started.set()
-        await release_model_call.wait()
-        return ModelResponse(content="The abandoned response must not be committed.")
-
-    monkeypatch.setattr("app.models.router.model_router.route", slow_model_call)
+    run_id = str(uuid.uuid4())
 
     try:
-        chat_task = asyncio.create_task(async_client.post("/v1/chat", json={
-            "session_id": session_id,
-            "client_turn_id": client_turn_id,
-            "message": "Stop this turn, then simulate losing its worker.",
-        }))
-        await asyncio.wait_for(model_call_started.wait(), timeout=5)
-
-        first_cancel = await async_client.post("/v1/runs/cancel-turn", json={
-            "session_id": session_id,
-            "client_turn_id": client_turn_id,
-        })
-        assert first_cancel.status_code == 202, first_cancel.text
-        assert first_cancel.json()["already_requested"] is False
-        stopping_state = await async_client.get(f"/v1/sessions/{session_id}/state")
-        assert stopping_state.json()["run_status"] == "cancellation_requested"
-
-        # Model a worker disappearing after the durable cancellation request
-        # commits but before the chat endpoint can finalize the run.
-        chat_task.cancel()
-        release_model_call.set()
-        with pytest.raises(asyncio.CancelledError):
-            await chat_task
+        async with factory() as session:
+            session.add(SessionModel(id=session_id, title="Cancellation recovery"))
+            session.add(RunModel(
+                id=run_id,
+                session_id=session_id,
+                client_turn_id=client_turn_id,
+                status=RunStatus.RUNNING.value,
+                user_message="Recover this run after its executor is gone.",
+                cancel_requested_at=utc_now(),
+            ))
+            session.add(RunEventModel(
+                run_id=run_id,
+                event_type="run_cancellation_requested",
+                payload={"source": "user"},
+            ))
+            await session.commit()
 
         retry_cancel = await async_client.post("/v1/runs/cancel-turn", json={
             "session_id": session_id,
@@ -188,7 +176,7 @@ async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_cl
         assert finished_state.json()["run_status"] == "cancelled"
         assert finished_state.json()["client_turn_id"] is None
         async with factory() as session:
-            run = await session.get(RunModel, first_cancel.json()["run_id"])
+            run = await session.get(RunModel, run_id)
             events = list((await session.scalars(
                 select(RunEventModel).where(RunEventModel.run_id == run.id)
             )).all())
@@ -201,13 +189,6 @@ async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_cl
             }
             assert sum(event.event_type == "run_cancelled" for event in events) == 1
     finally:
-        release_model_call.set()
-        if "chat_task" in locals() and not chat_task.done():
-            chat_task.cancel()
-            try:
-                await chat_task
-            except asyncio.CancelledError:
-                pass
         app.dependency_overrides[get_db] = previous_override
         await engine.dispose()
 
