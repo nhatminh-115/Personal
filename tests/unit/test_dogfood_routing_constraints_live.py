@@ -34,7 +34,12 @@ def test_routing_profile_draft_preserves_exact_provider_model_identity():
     route = draft["routes"]["root"]
     assert route["model_override"] == "ollama:qwen:latest"
     assert route.get("provider_override") is None
-    assert route["reasoning"] == {"policy": "fixed", "effort": "instant"}
+    assert route["reasoning"] == {
+        "policy": "adaptive",
+        "effort": "medium",
+        "min_effort": "instant",
+        "max_effort": "max",
+    }
 
 
 def test_import_does_not_create_runtime_state_or_change_environment(tmp_path):

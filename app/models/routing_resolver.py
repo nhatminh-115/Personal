@@ -160,7 +160,15 @@ def apply_routing_profile_to_context(
         
     # Apply reasoning config
     context.reasoning_policy = route_config.reasoning.policy
-    context.reasoning_effort = route_config.reasoning.effort
+    # Adaptive profiles contribute bounds, not a fixed requested effort. Keeping
+    # the config's default effort here makes exact-model routing misclassify an
+    # adaptive route as fixed and reject models with unknown/fixed-by-model
+    # reasoning metadata.
+    context.reasoning_effort = (
+        route_config.reasoning.effort
+        if route_config.reasoning.policy == ReasoningPolicy.FIXED
+        else None
+    )
     context.reasoning_effort_min = route_config.reasoning.min_effort
     context.reasoning_effort_max = route_config.reasoning.max_effort
 

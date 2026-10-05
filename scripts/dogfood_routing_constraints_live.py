@@ -48,9 +48,12 @@ def _draft(name: str, model: str, privacy: str, fallback: str) -> dict[str, Any]
         "routes": {
             "root": {
                 "model_override": model,
-                # Instant preserves unknown/fixed_by_model catalog metadata in
-                # the preview; this scenario does not assert native control.
-                "reasoning": {"policy": "fixed", "effort": "instant"},
+                "reasoning": {
+                    "policy": "adaptive",
+                    "effort": "medium",
+                    "min_effort": "instant",
+                    "max_effort": "max",
+                },
                 "privacy_policy": privacy,
                 "fallback_policy": fallback,
             }
