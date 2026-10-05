@@ -103,6 +103,7 @@ export interface ProjectChatWorkspaceProps {
   sessionLoadError?: string | null;
   currentApproval?: ApprovalDetail | null;
   runInProgress?: boolean;
+  runCancellationRequested?: boolean;
   onApprovalDecision?: (
     decision: 'approved' | 'rejected' | 'edited',
     notes?: string,
@@ -138,6 +139,7 @@ export function ProjectChatWorkspace({
   sessionLoadError,
   currentApproval,
   runInProgress = false,
+  runCancellationRequested = false,
   onApprovalDecision,
 }: ProjectChatWorkspaceProps) {
   const [query, setQuery] = useState('');
@@ -365,6 +367,7 @@ export function ProjectChatWorkspace({
             onContextPanelOpenChange={setContextPanelOpen}
             currentApproval={currentApproval}
             runInProgress={runInProgress}
+            runCancellationRequested={runCancellationRequested}
             onApprovalDecision={onApprovalDecision}
             isLiveThread={activeThread.source === 'live' || Boolean(activeThread.sessionId)}
           />

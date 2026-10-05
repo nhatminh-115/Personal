@@ -114,7 +114,7 @@ describe('Demo / Live Separation', () => {
 
     expect(await screen.findByText('AURA is working')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Stop$/i })); });
-    expect(await screen.findByRole('button', { name: /Stopping/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Stop requested' })).toBeDisabled();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/runs/cancel-turn'))).toBe(true);
     expect(postCalls).toHaveLength(1);
 

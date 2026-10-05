@@ -49,7 +49,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText('AURA is working')).toBeInTheDocument();
     const stopButton = screen.getByRole('button', { name: /^Stop$/i });
     await act(async () => { fireEvent.click(stopButton); });
-    expect(await screen.findByRole('button', { name: /Stopping/i })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Stop requested' })).toBeDisabled();
     const cancellationCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/v1/runs/cancel-turn'));
     expect(cancellationCall).toBeDefined();
     expect(JSON.parse(String(cancellationCall?.[1]?.body))).toMatchObject({ session_id: expect.any(String), client_turn_id: expect.any(String) });
