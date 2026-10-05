@@ -272,7 +272,7 @@ async def run_live_dogfood() -> None:
     import httpx
     from app.api.server import create_app, lifespan
     from app.core.settings import settings
-    from app.orchestrator.graph import init_checkpointer
+    from app.orchestrator.graph import close_checkpointer, init_checkpointer
 
     await init_checkpointer(settings.CHECKPOINT_DB_PATH)
     app = create_app()
@@ -304,7 +304,14 @@ async def run_live_dogfood() -> None:
             if not isinstance(parent_run_id, str):
                 raise SystemExit("/v1/chat returned no run_id; no durable run can be audited.")
 
-    report = await audit_coding_run(parent_run_id, response_status, time.monotonic() - started)
+    try:
+        report = await audit_coding_run(parent_run_id, response_status, time.monotonic() - started)
+    finally:
+        # Auditing checkpoints runs after the API lifespan has closed its
+        # checkpointer. get_compiled_graph() reopens it for the persisted-state
+        # audit, so close that second connection before this standalone script
+        # exits (aiosqlite otherwise keeps its worker thread alive).
+        await close_checkpointer()
     if http_failure_status is not None:
         report["http_status"] = http_failure_status
         report["acceptance_result"] = "not_accepted"
