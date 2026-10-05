@@ -3,6 +3,7 @@
 import hashlib
 import json
 import uuid
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy import and_, or_, select, update
@@ -157,6 +158,40 @@ async def _replace_cancelled_run_response(db: AsyncSession, session_id: str, run
             MessageModel.metadata_json["run_id"].as_string() == run_id,
         )
         .values(content=response)
+    )
+
+
+async def _persist_cancelled_chat_turn(
+    db: AsyncSession,
+    *,
+    run: RunModel,
+    session_id: str,
+    trace_service: TraceService,
+    result_state: Dict[str, Any],
+) -> ChatResponse:
+    already_cancelled = result_state.get("execution_status") == RunStatus.CANCELLED.value
+    await _close_pending_decisions_for_cancelled_run(db, run.id)
+    run.status = RunStatus.CANCELLED.value
+    run.final_response = (
+        "Run cancelled. An operation already in progress may have completed "
+        "before AURA observed the request."
+    )
+    run.error_message = None
+    await _replace_cancelled_run_response(db, session_id, run.id, run.final_response)
+    if not already_cancelled:
+        await trace_service.record_event(
+            run_id=run.id,
+            session_id=session_id,
+            event_type="run_cancelled",
+            payload={"status": RunStatus.CANCELLED.value},
+        )
+    await db.commit()
+    return ChatResponse(
+        run_id=run.id,
+        session_id=session_id,
+        status=RunStatus.CANCELLED.value,
+        response=run.final_response,
+        tool_results=result_state.get("tool_results", []),
     )
 
 
@@ -377,98 +412,99 @@ async def chat_endpoint(
 
         await db.refresh(run_record)
         if run_record.cancel_requested_at is not None:
-            await _close_pending_decisions_for_cancelled_run(db, run_id)
-            run_record.status = RunStatus.CANCELLED.value
-            run_record.final_response = (
-                "Run cancelled. An operation already in progress may have completed "
-                "before AURA observed the request."
-            )
-            run_record.error_message = None
-            await _replace_cancelled_run_response(db, req.session_id, run_id, run_record.final_response)
-            await db.commit()
-            return ChatResponse(
-                run_id=run_id,
+            return await _persist_cancelled_chat_turn(
+                db,
+                run=run_record,
                 session_id=req.session_id,
-                status=RunStatus.CANCELLED.value,
-                response=run_record.final_response,
-                tool_results=result_state.get("tool_results", []),
+                trace_service=trace_service,
+                result_state=result_state,
             )
 
+        response_details: Dict[str, Any] = {}
+        execution_run_id: Optional[str] = None
         # 6. Check if execution was suspended via interrupt()
         if "__interrupt__" in result_state and len(result_state["__interrupt__"]) > 0:
             interrupt_val = result_state["__interrupt__"][0].value
             if isinstance(interrupt_val, dict) and interrupt_val.get("kind") == "routing_confirmation":
-                confirmation_id = interrupt_val.get("confirmation_id")
-                run_record.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
-                run_record.final_response = "Cloud routing requires your confirmation."
+                next_status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
+                next_response = "Cloud routing requires your confirmation."
                 execution_run_id = interrupt_val.get("execution_run_id")
-                if isinstance(execution_run_id, str) and execution_run_id != run_id:
-                    execution_run = await db.get(RunModel, execution_run_id)
-                    if execution_run is not None:
-                        execution_run.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
-                await db.commit()
-                return ChatResponse(
-                    run_id=run_id,
+                response_details = {
+                    "routing_confirmation_id": interrupt_val.get("confirmation_id"),
+                    "proposed_provider": interrupt_val.get("proposed_provider"),
+                    "proposed_model": interrupt_val.get("proposed_model"),
+                    "tool_results": [],
+                }
+            else:
+                approval_id = interrupt_val.get("approval_id")
+                tool_name = interrupt_val.get("tool_name")
+                risk_level = interrupt_val.get("risk_level")
+                next_status = RunStatus.WAITING_FOR_APPROVAL.value
+                next_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
+                response_details = {"approval_id": approval_id, "tool_results": []}
+        else:
+            next_status = result_state.get("execution_status", RunStatus.COMPLETED.value)
+            next_response = result_state.get("final_response")
+            response_details = {
+                "user_message_id": result_state.get("persisted_user_message_id"),
+                "assistant_message_id": result_state.get("persisted_assistant_message_id"),
+                "tool_results": result_state.get("tool_results", []),
+            }
+
+        # A cancellation request and any terminal/waiting transition contend on
+        # one conditional update. Exactly one can win the run row.
+        finalized = await db.execute(
+            update(RunModel)
+            .where(
+                RunModel.id == run_id,
+                RunModel.status == RunStatus.RUNNING.value,
+                RunModel.cancel_requested_at.is_(None),
+            )
+            .values(status=next_status, final_response=next_response)
+            .execution_options(synchronize_session=False)
+        )
+        if finalized.rowcount != 1:
+            await db.refresh(run_record)
+            if run_record.cancel_requested_at is not None:
+                return await _persist_cancelled_chat_turn(
+                    db,
+                    run=run_record,
                     session_id=req.session_id,
-                    status=RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value,
-                    response=run_record.final_response,
-                    routing_confirmation_id=confirmation_id,
-                    proposed_provider=interrupt_val.get("proposed_provider"),
-                    proposed_model=interrupt_val.get("proposed_model"),
-                    tool_results=[],
+                    trace_service=trace_service,
+                    result_state=result_state,
                 )
-
-            approval_id = interrupt_val.get("approval_id")
-            tool_name = interrupt_val.get("tool_name")
-            risk_level = interrupt_val.get("risk_level")
-
-            run_record.status = RunStatus.WAITING_FOR_APPROVAL.value
-            run_record.final_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
-            await db.commit()
-
-            return ChatResponse(
-                run_id=run_id,
-                session_id=req.session_id,
-                status=RunStatus.WAITING_FOR_APPROVAL.value,
-                response=run_record.final_response,
-                approval_id=approval_id,
-                tool_results=[],
+            return await _existing_chat_response(
+                db,
+                run_record,
+                request_fingerprint=request_fingerprint or "",
             )
 
-        # 7. Normal completion
-        run_record.status = result_state.get("execution_status", RunStatus.COMPLETED.value)
-        run_record.final_response = result_state.get("final_response")
+        run_record.status = next_status
+        run_record.final_response = next_response
+        if isinstance(execution_run_id, str) and execution_run_id != run_id:
+            execution_run = await db.get(RunModel, execution_run_id)
+            if execution_run is not None:
+                execution_run.status = RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
         await db.commit()
 
         return ChatResponse(
             run_id=run_id,
             session_id=req.session_id,
-            status=run_record.status,
-            response=result_state.get("final_response"),
-            approval_id=None,
-            user_message_id=result_state.get("persisted_user_message_id"),
-            assistant_message_id=result_state.get("persisted_assistant_message_id"),
-            tool_results=result_state.get("tool_results", []),
+            status=next_status,
+            response=next_response,
+            **response_details,
         )
 
     except Exception as e:
         logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
         await db.refresh(run_record)
         if run_record.cancel_requested_at is not None:
-            await _close_pending_decisions_for_cancelled_run(db, run_id)
-            run_record.status = RunStatus.CANCELLED.value
-            run_record.final_response = (
-                "Run cancelled. An operation already in progress may have completed "
-                "before AURA observed the request."
-            )
-            run_record.error_message = None
-            await _replace_cancelled_run_response(db, req.session_id, run_id, run_record.final_response)
-            await db.commit()
-            return ChatResponse(
-                run_id=run_id,
+            return await _persist_cancelled_chat_turn(
+                db,
+                run=run_record,
                 session_id=req.session_id,
-                status=RunStatus.CANCELLED.value,
-                response=run_record.final_response,
+                trace_service=trace_service,
+                result_state={},
             )
         run_record.status = RunStatus.FAILED.value
         run_record.error_message = str(e)

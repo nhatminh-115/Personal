@@ -1,6 +1,7 @@
 """End-to-end cooperative cancellation across independent API requests."""
 
 import asyncio
+import uuid
 
 import pytest
 from sqlalchemy import select
@@ -114,5 +115,84 @@ async def test_live_chat_cancel_request_is_observed_after_inflight_model_call(as
             assert all("must be discarded" not in message.content for message in messages)
     finally:
         release_model_call.set()
+        app.dependency_overrides[get_db] = previous_override
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_chat_stop_racing_terminalization_is_linearized(async_client, tmp_path, monkeypatch):
+    database_path = tmp_path / "chat-cancellation-finalize-race.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def independent_db_sessions():
+        async with factory() as session:
+            yield session
+
+    previous_override = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = independent_db_sessions
+    model_call_started = asyncio.Event()
+    release_model_call = asyncio.Event()
+    status_read = asyncio.Event()
+    release_finalization = asyncio.Event()
+    original_refresh = AsyncSession.refresh
+    session_id = str(uuid.uuid4())
+    client_turn_id = "chat-finalization-race"
+
+    async def slow_model_call(_request, provider_name=None):
+        model_call_started.set()
+        await release_model_call.wait()
+        return ModelResponse(content="The answer is ready.")
+
+    async def pause_after_status_read(session, instance, *args, **kwargs):
+        result = await original_refresh(session, instance, *args, **kwargs)
+        if isinstance(instance, RunModel) and instance.client_turn_id == client_turn_id:
+            status_read.set()
+            await release_finalization.wait()
+        return result
+
+    monkeypatch.setattr("app.models.router.model_router.route", slow_model_call)
+    monkeypatch.setattr(AsyncSession, "refresh", pause_after_status_read)
+
+    try:
+        chat_task = asyncio.create_task(async_client.post("/v1/chat", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+            "message": "race at finalization",
+        }))
+        await asyncio.wait_for(model_call_started.wait(), timeout=5)
+        release_model_call.set()
+        await asyncio.wait_for(status_read.wait(), timeout=5)
+
+        cancel = await async_client.post("/v1/runs/cancel-turn", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+        })
+        release_finalization.set()
+        chat = await asyncio.wait_for(chat_task, timeout=5)
+
+        assert cancel.status_code == 202, cancel.text
+        assert cancel.json()["status"] == "cancellation_requested"
+        assert chat.status_code == 200, chat.text
+        assert chat.json()["status"] == "cancelled"
+        assert chat.json()["response"].startswith("Run cancelled.")
+
+        async with factory() as session:
+            run = await session.get(RunModel, cancel.json()["run_id"])
+            assert run.status == "cancelled"
+            assert run.cancel_requested_at is not None
+            assert run.final_response.startswith("Run cancelled.")
+            events = list((await session.scalars(
+                select(RunEventModel).where(RunEventModel.run_id == run.id)
+            )).all())
+            assert {event.event_type for event in events} >= {
+                "run_cancellation_requested",
+                "run_cancelled",
+            }
+    finally:
+        release_model_call.set()
+        release_finalization.set()
         app.dependency_overrides[get_db] = previous_override
         await engine.dispose()
