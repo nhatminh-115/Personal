@@ -198,7 +198,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
     setBusy(true); setError('');
     try {
       const deletedId = draft.id;
-      await api.deleteRoutingProfile(deletedId);
+      await api.deleteRoutingProfile(deletedId, savedProfile.version);
       const next = profiles.filter((item) => item.id !== deletedId);
       const fallback = next[0] ?? null;
       setProfiles(next);

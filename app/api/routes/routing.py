@@ -209,19 +209,62 @@ async def update_routing_profile(profile_id: str, profile_update: RoutingProfile
 
 
 @router.delete("/profiles/{profile_id}")
-async def delete_routing_profile(profile_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_routing_profile(
+    profile_id: str,
+    expected_version: int = Query(ge=1),
+    db: AsyncSession = Depends(get_db),
+):
     """Delete a custom routing profile (Requirement 13)."""
     if profile_id == "system-balanced":
         raise HTTPException(status_code=400, detail="Cannot delete the system balanced profile.")
         
-    result = await db.execute(select(RoutingProfileModel).where(RoutingProfileModel.id == profile_id))
+    result = await db.execute(
+        select(RoutingProfileModel)
+        .where(RoutingProfileModel.id == profile_id)
+        .with_for_update()
+    )
     db_profile = result.scalar_one_or_none()
     if not db_profile:
         raise HTTPException(status_code=404, detail="Routing profile not found")
 
+    if db_profile.version != expected_version:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RoutingProfileVersionConflict",
+                "message": "Routing profile changed since it was loaded.",
+                "current_version": db_profile.version,
+            },
+        )
+
+    deleted = await db.execute(
+        sa_delete(RoutingProfileModel)
+        .where(
+            RoutingProfileModel.id == profile_id,
+            RoutingProfileModel.version == expected_version,
+        )
+        .returning(RoutingProfileModel.id)
+    )
+    if deleted.scalar_one_or_none() is None:
+        await db.rollback()
+        current_version = await db.scalar(
+            select(RoutingProfileModel.version).where(RoutingProfileModel.id == profile_id)
+        )
+        if current_version is None:
+            raise HTTPException(status_code=404, detail="Routing profile not found")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "RoutingProfileVersionConflict",
+                "message": "Routing profile changed since it was loaded.",
+                "current_version": current_version,
+            },
+        )
+
     # Assignments intentionally do not use foreign keys so profiles can be
     # portable across stores. Clear every reference in the same transaction
-    # before deleting, so callers immediately inherit the next routing scope.
+    # after the compare-and-swap delete, so callers immediately inherit the
+    # next routing scope and stale delete requests preserve their assignments.
     await db.execute(
         sa_delete(ProjectRoutingAssignmentModel).where(
             ProjectRoutingAssignmentModel.routing_profile_id == profile_id
@@ -232,7 +275,6 @@ async def delete_routing_profile(profile_id: str, db: AsyncSession = Depends(get
         .where(SessionModel.routing_profile_id == profile_id)
         .values(routing_profile_id=None)
     )
-    await db.delete(db_profile)
     await db.commit()
     return {"status": "success", "deleted_profile_id": profile_id}
 
