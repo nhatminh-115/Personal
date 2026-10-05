@@ -495,6 +495,8 @@ async def _compare_and_swap_workspace_object(
     title: str,
     content: str,
     metadata_json: dict[str, object],
+    conflict_code: str | None = None,
+    conflict_message: str = "Workspace object changed since it was loaded.",
 ) -> WorkspaceObjectModel:
     object_id = item.id
     result = await db.execute(
@@ -519,12 +521,12 @@ async def _compare_and_swap_workspace_object(
         )
         if current_revision is None:
             raise HTTPException(status_code=404, detail="Workspace object not found.")
+        detail = {"message": conflict_message, "current_revision": current_revision}
+        if conflict_code is not None:
+            detail["code"] = conflict_code
         raise HTTPException(
             status_code=409,
-            detail={
-                "message": "Workspace object changed since it was loaded.",
-                "current_revision": current_revision,
-            },
+            detail=detail,
         )
     await db.flush()
     await db.refresh(item)
@@ -674,6 +676,7 @@ async def _workspace_library_responses(
             project_names=projects_by_item[item.id],
             size=metadata.get("size") if isinstance(metadata.get("size"), int) else None,
             mime_type=metadata.get("mime_type") if isinstance(metadata.get("mime_type"), str) else None,
+            revision=item.revision,
             created_at=item.created_at,
             updated_at=item.updated_at,
         ))
@@ -1226,9 +1229,18 @@ async def update_personal_library_reference(
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="Library file name must not be blank.")
-    item.title = name
-    item.metadata_json = _library_reference_metadata(body)
-    item.updated_at = datetime.now(timezone.utc)
+    if body.expected_revision is None:
+        raise HTTPException(status_code=422, detail="expected_revision is required when updating a Library reference.")
+    await _compare_and_swap_workspace_object(
+        db,
+        item,
+        expected_revision=body.expected_revision,
+        title=name,
+        content=item.content,
+        metadata_json=_library_reference_metadata(body),
+        conflict_code="WorkspaceLibraryRevisionConflict",
+        conflict_message="Library reference changed since it was loaded.",
+    )
     await _sync_workspace_note_links(db, item, body.project_names)
     await db.commit()
     await db.refresh(item)
@@ -1236,7 +1248,11 @@ async def update_personal_library_reference(
 
 
 @router.delete("/library/{reference_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_personal_library_reference(reference_id: str, db: AsyncSession = Depends(get_db)) -> None:
+async def delete_personal_library_reference(
+    reference_id: str,
+    expected_revision: int = Query(ge=1),
+    db: AsyncSession = Depends(get_db),
+) -> None:
     item = await db.get(WorkspaceObjectModel, reference_id)
     if item is None or item.project_name is not None or item.object_type != "file_reference" or item.created_by != "user":
         raise HTTPException(status_code=404, detail="Personal Library reference not found.")
@@ -1245,7 +1261,37 @@ async def delete_personal_library_reference(reference_id: str, db: AsyncSession 
             (WorkspaceEdgeModel.source_object_id == item.id) | (WorkspaceEdgeModel.target_object_id == item.id)
         )
     )
-    await db.delete(item)
+    result = await db.execute(
+        sa_delete(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.id == reference_id,
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "file_reference",
+            WorkspaceObjectModel.created_by == "user",
+            WorkspaceObjectModel.revision == expected_revision,
+        )
+        .returning(WorkspaceObjectModel.id)
+    )
+    if result.scalar_one_or_none() is None:
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(
+                WorkspaceObjectModel.id == reference_id,
+                WorkspaceObjectModel.project_name.is_(None),
+                WorkspaceObjectModel.object_type == "file_reference",
+                WorkspaceObjectModel.created_by == "user",
+            )
+        )
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Personal Library reference not found.")
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "WorkspaceLibraryRevisionConflict",
+                "message": "Library reference changed since it was loaded.",
+                "current_revision": current_revision,
+            },
+        )
     await db.commit()
 
 

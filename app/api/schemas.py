@@ -342,6 +342,7 @@ class WorkspaceLibraryReferenceWrite(BaseModel):
     project_names: List[str] = Field(default_factory=list, max_length=64)
     size: Optional[int] = Field(default=None, ge=0)
     mime_type: Optional[str] = Field(default=None, max_length=255)
+    expected_revision: Optional[int] = Field(default=None, ge=1)
 
 
 class WorkspaceLibraryReferenceResponse(BaseModel):
@@ -354,6 +355,7 @@ class WorkspaceLibraryReferenceResponse(BaseModel):
     project_names: List[str]
     size: Optional[int] = None
     mime_type: Optional[str] = None
+    revision: int
     created_at: datetime
     updated_at: datetime
 

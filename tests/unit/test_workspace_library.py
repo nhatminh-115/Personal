@@ -20,6 +20,7 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
     assert created.status_code == 201
     assert created.json()["id"] == reference_id
     assert created.json()["project_names"] == ["aura", "transportability"]
+    assert created.json()["revision"] == 1
 
     listed = await async_client.get("/v1/workspace/library")
     assert len(listed.json()) == 1
@@ -36,7 +37,7 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
     assert reference["content"] == ""
     assert reference["metadata_json"]["storage_location"] == "browser_local"
 
-    updated = await async_client.put(f"/v1/workspace/library/{reference_id}", json={
+    update_payload = {
         "name": "Methods paper",
         "kind": "PDF",
         "collection": "Research",
@@ -45,13 +46,42 @@ async def test_imported_library_reference_is_shared_with_project_graph_without_f
         "project_names": ["aura"],
         "size": 4096,
         "mime_type": "application/pdf",
+    }
+    missing_revision = await async_client.put(f"/v1/workspace/library/{reference_id}", json=update_payload)
+    assert missing_revision.status_code == 422
+
+    updated = await async_client.put(f"/v1/workspace/library/{reference_id}", json={
+        **update_payload,
+        "expected_revision": created.json()["revision"],
     })
     assert updated.status_code == 200
     assert updated.json()["project_names"] == ["aura"]
+    assert updated.json()["revision"] == 2
     transport_graph = (await async_client.get("/v1/workspace/projects/transportability/graph")).json()
     assert reference_id not in {item["id"] for item in transport_graph["objects"]}
 
-    removed = await async_client.delete(f"/v1/workspace/library/{reference_id}")
+    stale_update = await async_client.put(f"/v1/workspace/library/{reference_id}", json={
+        "name": "Stale name",
+        "kind": "PDF",
+        "collection": "Research",
+        "project_names": ["transportability"],
+        "expected_revision": created.json()["revision"],
+    })
+    assert stale_update.status_code == 409
+    assert stale_update.json()["detail"]["code"] == "WorkspaceLibraryRevisionConflict"
+    persisted = (await async_client.get("/v1/workspace/library")).json()[0]
+    assert persisted["detail"] == "Updated local index metadata"
+    assert persisted["project_names"] == ["aura"]
+
+    stale_delete = await async_client.delete(
+        f"/v1/workspace/library/{reference_id}", params={"expected_revision": created.json()["revision"]}
+    )
+    assert stale_delete.status_code == 409
+    assert (await async_client.get("/v1/workspace/library")).json()[0]["revision"] == 2
+
+    removed = await async_client.delete(
+        f"/v1/workspace/library/{reference_id}", params={"expected_revision": updated.json()["revision"]}
+    )
     assert removed.status_code == 204
     assert (await async_client.get("/v1/workspace/library")).json() == []
 

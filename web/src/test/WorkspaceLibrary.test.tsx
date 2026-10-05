@@ -143,7 +143,7 @@ describe('Workspace Library references', () => {
     const firstMatch = {
       id: 'library-match-1', name: 'Result one', kind: 'PDF', collection: 'cross-page',
       detail: 'Found by backend search', tags: ['metadata'], project_names: [], size: 2048,
-      mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+      mime_type: 'application/pdf', revision: 1, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     };
     const secondMatch = {
       ...firstMatch, id: 'library-match-2', name: 'Result two',
@@ -182,7 +182,7 @@ describe('Workspace Library references', () => {
     const reference = {
       id: 'library-search-match', name: 'Methods paper', kind: 'PDF', collection: 'Research',
       detail: 'Imported local file · methods.pdf', tags: ['methods'], project_names: [], size: 2048,
-      mime_type: 'application/pdf', created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+      mime_type: 'application/pdf', revision: 1, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
     };
     global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL) => {
       const url = String(input);
@@ -196,7 +196,7 @@ describe('Workspace Library references', () => {
           ? jsonResponse([reference])
           : jsonResponse([{
             id: 'library-first-page', name: 'An earlier reference', kind: 'MD', collection: 'Reference',
-            detail: 'First page', tags: [], project_names: [], created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
+            detail: 'First page', tags: [], project_names: [], revision: 1, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
           }], 'next-library'));
       }
       if (url.endsWith('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) } as Response);
