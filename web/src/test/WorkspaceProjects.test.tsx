@@ -13,7 +13,7 @@ describe('Persistent workspace projects', () => {
       if (url.endsWith('/v1/workspace/projects') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body));
         return Promise.resolve({ ok: true, json: () => Promise.resolve({
-          ...body, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
+          ...body, revision: 1, created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z',
         }) } as Response);
       }
       if (url.endsWith('/v1/workspace/projects')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);

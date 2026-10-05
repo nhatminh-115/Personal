@@ -22,6 +22,9 @@ export function executionErrorText(error: unknown): string {
     if (error.code === 'WorkspaceLibraryRevisionConflict') {
       return 'This Library reference changed elsewhere. Refresh the AURA workspace before changing its project links or removing it.';
     }
+    if (error.code === 'WorkspaceProjectRevisionConflict') {
+      return 'This project archive state changed elsewhere. Reload AURA if the Projects list still looks stale, then retry.';
+    }
     const nextStep = error.code ? ROUTING_ERROR_GUIDANCE[error.code] : undefined;
     return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;
   }

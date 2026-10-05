@@ -535,9 +535,12 @@ export const api = {
     }));
   },
 
-  async setWorkspaceProjectArchived(id: string, archived: boolean): Promise<WorkspaceProjectRecord> {
+  async setWorkspaceProjectArchived(id: string, archived: boolean, expectedRevision: number): Promise<WorkspaceProjectRecord> {
     const action = archived ? 'archive' : 'restore';
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(id)}/${action}`, { method: 'POST' }));
+    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(id)}/${action}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expected_revision: expectedRevision }),
+    }));
   },
 
   async fetchAutomations(cursor?: string | null, pageSize = 50, includeArchived = false): Promise<{

@@ -25,6 +25,7 @@ export interface ProjectRecord {
   thesis: string;
   next: string;
   archived?: boolean;
+  revision?: number;
   source?: 'demo' | 'user';
 }
 
