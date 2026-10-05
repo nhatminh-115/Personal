@@ -1065,7 +1065,7 @@ async def test_chat_task_type_selects_the_assigned_profile_task_route(async_clie
     })
     assert profile.status_code == 201
     profile_id = profile.json()["id"]
-    assignment = await async_client.post(f"/v1/routing/assignments/aura?profile_id={profile_id}")
+    assignment = await async_client.post(f"/v1/routing/assignments/aura?profile_id={profile_id}&expected_revision=0")
     assert assignment.status_code == 200
 
     response = await async_client.post("/v1/chat", json={
