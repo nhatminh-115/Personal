@@ -20,6 +20,62 @@ from app.orchestrator.state import AgentState, create_initial_agent_state
 from app.tools.registry import tool_registry
 
 
+async def _finalize_cancelled_run(
+    db: AsyncSession,
+    *,
+    run: RunModel,
+    run_id: str,
+    session_id: str,
+    trace_service: TraceService,
+    final_state: Dict[str, Any],
+) -> None:
+    was_cancelled = final_state.get("execution_status") == RunStatus.CANCELLED.value
+    cancelled_run_ids = select(RunModel.id).where(
+        or_(RunModel.id == run_id, RunModel.parent_run_id == run_id)
+    )
+    decided_at = utc_now()
+    await db.execute(
+        update(ApprovalModel)
+        .where(ApprovalModel.run_id.in_(cancelled_run_ids), ApprovalModel.status == "pending")
+        .values(status="rejected", decision_notes="Run cancelled before approval.", decided_at=decided_at)
+    )
+    await db.execute(
+        update(RoutingConfirmationModel)
+        .where(
+            or_(
+                RoutingConfirmationModel.root_run_id == run_id,
+                RoutingConfirmationModel.execution_run_id.in_(cancelled_run_ids),
+            ),
+            RoutingConfirmationModel.status == "pending",
+        )
+        .values(status="rejected", decision_notes="Run cancelled before routing confirmation.", decided_at=decided_at)
+    )
+    run.status = RunStatus.CANCELLED.value
+    run.final_response = (
+        "Run cancelled. An operation already in progress may have completed "
+        "before AURA observed the request."
+    )
+    run.error_message = None
+    final_state["execution_status"] = RunStatus.CANCELLED.value
+    final_state["final_response"] = run.final_response
+    await db.execute(
+        update(MessageModel)
+        .where(
+            MessageModel.session_id == session_id,
+            MessageModel.role == "assistant",
+            MessageModel.metadata_json["run_id"].as_string() == run_id,
+        )
+        .values(content=run.final_response)
+    )
+    if not was_cancelled:
+        await trace_service.record_event(
+            run_id=run_id,
+            session_id=session_id,
+            event_type="run_cancelled",
+            payload={"status": RunStatus.CANCELLED.value},
+        )
+
+
 class EventToAgentBridge:
     """
     Subscribes to proactive events (timers, cron ticks, external webhooks)
@@ -217,58 +273,57 @@ class EventToAgentBridge:
             if db_run:
                 await db.refresh(db_run)
                 if db_run.cancel_requested_at is not None:
-                    cancelled_run_ids = select(RunModel.id).where(
-                        or_(RunModel.id == run_id, RunModel.parent_run_id == run_id)
+                    await _finalize_cancelled_run(
+                        db,
+                        run=db_run,
+                        run_id=run_id,
+                        session_id=session_id,
+                        trace_service=trace_service,
+                        final_state=final_state,
                     )
-                    decided_at = utc_now()
-                    await db.execute(
-                        update(ApprovalModel)
-                        .where(ApprovalModel.run_id.in_(cancelled_run_ids), ApprovalModel.status == "pending")
-                        .values(status="rejected", decision_notes="Run cancelled before approval.", decided_at=decided_at)
-                    )
-                    await db.execute(
-                        update(RoutingConfirmationModel)
-                        .where(
-                            or_(
-                                RoutingConfirmationModel.root_run_id == run_id,
-                                RoutingConfirmationModel.execution_run_id.in_(cancelled_run_ids),
-                            ),
-                            RoutingConfirmationModel.status == "pending",
-                        )
-                        .values(status="rejected", decision_notes="Run cancelled before routing confirmation.", decided_at=decided_at)
-                    )
-                    db_run.status = RunStatus.CANCELLED.value
-                    db_run.final_response = (
-                        "Run cancelled. An operation already in progress may have completed "
-                        "before AURA observed the request."
-                    )
-                    db_run.error_message = None
-                    await db.execute(
-                        update(MessageModel)
-                        .where(
-                            MessageModel.session_id == session_id,
-                            MessageModel.role == "assistant",
-                            MessageModel.metadata_json["run_id"].as_string() == run_id,
-                        )
-                        .values(content=db_run.final_response)
-                    )
-                    if final_state.get("execution_status") != RunStatus.CANCELLED.value:
-                        await trace_service.record_event(
-                            run_id=run_id,
-                            session_id=session_id,
-                            event_type="run_cancelled",
-                            payload={"status": RunStatus.CANCELLED.value},
-                        )
                 elif "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
                     interrupt_val = final_state["__interrupt__"][0].value
                     approval_id = interrupt_val.get("approval_id")
                     tool_name = interrupt_val.get("tool_name")
                     risk_level = interrupt_val.get("risk_level")
-                    db_run.status = RunStatus.WAITING_FOR_APPROVAL.value
-                    db_run.final_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
+                    next_status = RunStatus.WAITING_FOR_APPROVAL.value
+                    next_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
                 else:
-                    db_run.status = final_state.get("execution_status", RunStatus.COMPLETED.value)
-                    db_run.final_response = final_state.get("final_response")
+                    next_status = final_state.get("execution_status", RunStatus.COMPLETED.value)
+                    next_response = final_state.get("final_response")
+
+                if db_run.cancel_requested_at is None:
+                    finalized = await db.execute(
+                        update(RunModel)
+                        .where(
+                            RunModel.id == run_id,
+                            RunModel.status == RunStatus.RUNNING.value,
+                            RunModel.cancel_requested_at.is_(None),
+                        )
+                        .values(status=next_status, final_response=next_response)
+                        .execution_options(synchronize_session=False)
+                    )
+                    if finalized.rowcount == 1:
+                        db_run.status = next_status
+                        db_run.final_response = next_response
+                    else:
+                        # Cancellation and terminalization race on this row.
+                        # The conditional update is the linearization point: if
+                        # cancellation committed first, it wins; otherwise the
+                        # API sees a terminal run and rejects the stop request.
+                        await db.refresh(db_run)
+                        if db_run.cancel_requested_at is not None:
+                            await _finalize_cancelled_run(
+                                db,
+                                run=db_run,
+                                run_id=run_id,
+                                session_id=session_id,
+                                trace_service=trace_service,
+                                final_state=final_state,
+                            )
+                        else:
+                            final_state["execution_status"] = db_run.status
+                            final_state["final_response"] = db_run.final_response
                 await db.commit()
 
             return final_state
