@@ -13,6 +13,13 @@ import uuid
 from typing import Any, Mapping
 from urllib.parse import urlparse
 
+if __package__:
+    from ._bootstrap import ensure_project_root
+else:
+    from _bootstrap import ensure_project_root
+
+ensure_project_root(__file__)
+
 RESEARCH_PROMPT = (
     "You are the AURA root orchestrator. Delegate this request now to the Research Specialist using "
     "delegate_task with specialist_name='research'; do not research or answer directly. Ask the "

@@ -6,6 +6,7 @@ ResearchState snapshot, and MemoryModel records.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from datetime import datetime, timedelta, timezone
 import pytest
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,9 +72,11 @@ async def test_dogfood_audit_preflight(test_db_session: AsyncSession):
     test_db_session.add(ev_root)
 
     # Child model_called event
+    event_time = datetime.now(timezone.utc)
     ev_model = RunEventModel(
         run_id=child_run.id,
         event_type="model_called",
+        created_at=event_time,
         payload={
             "routing_decision": {
                 "provider": "openai",
@@ -96,6 +99,7 @@ async def test_dogfood_audit_preflight(test_db_session: AsyncSession):
         ev_tool = RunEventModel(
             run_id=child_run.id,
             event_type="tool_executed",
+            created_at=event_time + timedelta(seconds=idx + 1),
             payload={"tool": t_name, "tool_call_id": f"call_{idx}"},
         )
         test_db_session.add(ev_tool)

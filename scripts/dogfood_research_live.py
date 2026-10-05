@@ -36,8 +36,12 @@ import httpx
 from sqlalchemy import select
 from urllib.parse import urlparse
 
-# Ensure project root is on PYTHONPATH
-sys.path.insert(0, os.path.abspath("."))
+if __package__:
+    from ._bootstrap import ensure_project_root
+else:
+    from _bootstrap import ensure_project_root
+
+ensure_project_root(__file__)
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -277,7 +281,7 @@ async def audit_dogfood_run(
     root_events_stmt = (
         select(RunEventModel)
         .where(RunEventModel.run_id == parent_run_id)
-        .order_by(RunEventModel.created_at.asc())
+        .order_by(RunEventModel.created_at.asc(), RunEventModel.id.asc())
     )
     root_events = list((await db.execute(root_events_stmt)).scalars().all())
 
@@ -285,7 +289,7 @@ async def audit_dogfood_run(
     child_events_stmt = (
         select(RunEventModel)
         .where(RunEventModel.run_id == child_run_id)
-        .order_by(RunEventModel.created_at.asc())
+        .order_by(RunEventModel.created_at.asc(), RunEventModel.id.asc())
     )
     child_events = list((await db.execute(child_events_stmt)).scalars().all())
 
