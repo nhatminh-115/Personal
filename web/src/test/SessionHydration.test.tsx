@@ -173,6 +173,65 @@ describe('Session Hydration', () => {
     expect(stateCalls).toBeGreaterThanOrEqual(2);
   });
 
+  it('keeps polling a restored cancellation request until it hydrates the cancelled turn', async () => {
+    let stateCalls = 0;
+    let detailCalls = 0;
+    global.fetch = vi.fn().mockImplementation((url: string) => {
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (/\/v1\/sessions(?:\?|$)/.test(url)) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      if (url.includes('/v1/sessions/live-sess-cancelling/state')) {
+        stateCalls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            session_id: 'live-sess-cancelling',
+            run_id: 'cancelled-run-1',
+            run_status: stateCalls < 3 ? 'cancellation_requested' : 'cancelled',
+          }),
+        });
+      }
+      if (url.includes('/v1/sessions/live-sess-cancelling')) {
+        detailCalls += 1;
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({
+            id: 'live-sess-cancelling',
+            title: 'Recovering cancelled chat',
+            created_at: '2024-01-01',
+            updated_at: '2024-01-01',
+            messages: detailCalls > 1 ? [BACKEND_MESSAGE] : [],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const liveThread = {
+      id: 'stateful-live-cancelling',
+      projectId: 'stateful',
+      title: 'Recovering cancelled chat',
+      summary: 'Cancellation was requested before reload',
+      updated: 'now',
+      messages: [],
+      sessionId: 'live-sess-cancelling',
+      source: 'live',
+      pinned: false,
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsButton = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsButton); });
+    await act(async () => { fireEvent.click(screen.getByText('Recovering cancelled chat')); });
+
+    await waitFor(() => expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument(), { timeout: 12_000 });
+    expect(stateCalls).toBeGreaterThanOrEqual(3);
+  });
+
   it('restores backend sessions into the matching project chat rail', async () => {
     await act(async () => { render(<App />); });
 
