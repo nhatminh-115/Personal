@@ -42,6 +42,11 @@ describe('Persistent workspace projects', () => {
     expect(screen.getAllByRole('button').filter((button) => button.closest('.workspace-chrome') && button.textContent?.includes('Field Notes'))).toHaveLength(1);
     expect(screen.getByTitle('Field Notes')).toBeInTheDocument();
     expect(screen.getByText('Your project is ready.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Notes 0 Linked workspace notes/i }));
+    expect(await screen.findByRole('heading', { name: 'Field Notes notes' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All notes' }));
+    expect(await screen.findByRole('heading', { name: 'Personal notes' })).toBeInTheDocument();
   });
 
   it('hides archived projects by default and offers a restore action', async () => {
