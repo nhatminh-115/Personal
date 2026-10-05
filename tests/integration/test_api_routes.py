@@ -101,6 +101,60 @@ async def test_direct_chat_turn(async_client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_chat_provider_failure_is_classified_and_redacted(
+    async_client: AsyncClient,
+    test_db_session,
+    monkeypatch,
+):
+    from app.core.errors import ProviderError
+
+    class FailingGraph:
+        async def ainvoke(self, *_args, **_kwargs):
+            raise ProviderError(
+                "Provider ollama returned status 500: private runner diagnostic",
+                details={"body": "private runner diagnostic"},
+            )
+
+    async def get_failing_graph():
+        return FailingGraph()
+
+    monkeypatch.setattr("app.api.routes.chat.get_compiled_graph", get_failing_graph)
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "provider-failure-session",
+        "project_name": "Provider Failure Project",
+        "message": "Test provider failure handling.",
+    })
+
+    assert response.status_code == 502
+    assert response.json() == {
+        "error": "ModelProviderError",
+        "code": "ModelProviderError",
+        "message": "The selected model provider could not complete this request. Check provider availability and routing settings, then retry.",
+        "details": {},
+    }
+    assert "private runner diagnostic" not in response.text
+
+    run = await test_db_session.scalar(
+        select(RunModel)
+        .where(RunModel.session_id == "provider-failure-session")
+        .order_by(RunModel.created_at.desc(), RunModel.id.desc())
+    )
+    assert run is not None
+    assert run.status == "failed"
+    assert run.error_message == "Model provider request failed."
+    assert "private runner diagnostic" not in run.error_message
+
+    events = await test_db_session.scalars(
+        select(RunEventModel).where(
+            RunEventModel.run_id == run.id,
+            RunEventModel.event_type == "run_failed",
+        )
+    )
+    failed_event = events.one()
+    assert failed_event.payload == {"error_category": "provider_failure"}
+
+
+@pytest.mark.asyncio
 async def test_session_hydration_returns_sanitized_context_manifest(async_client: AsyncClient):
     object_response = await async_client.post("/v1/workspace/projects/aura/objects", json={
         "object_type": "manual_note",

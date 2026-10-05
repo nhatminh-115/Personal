@@ -39,6 +39,7 @@ from app.core.errors import (
     ModelCapabilityMismatch,
     ModelUnavailable,
     NoEligibleRoute,
+    ProviderError,
     PrivacyBoundaryViolation,
     ReasoningControlUnsupported,
     RoutingConfirmationRequired,
@@ -496,7 +497,11 @@ async def chat_endpoint(
         )
 
     except Exception as e:
-        logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
+        provider_failure = isinstance(e, ProviderError)
+        if provider_failure:
+            logger.error("Model provider failed while executing run '%s'.", run_id)
+        else:
+            logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
         await db.refresh(run_record)
         if run_record.cancel_requested_at is not None:
             return await _persist_cancelled_chat_turn(
@@ -507,14 +512,21 @@ async def chat_endpoint(
                 result_state={},
             )
         run_record.status = RunStatus.FAILED.value
-        run_record.error_message = str(e)
+        run_record.error_message = "Model provider request failed." if provider_failure else str(e)
         await db.commit()
         await trace_service.record_event(
             run_id=run_id,
             session_id=req.session_id,
             event_type="run_failed",
-            payload={"error": str(e), "error_category": "graph_failure"},
+            payload={"error_category": "provider_failure" if provider_failure else "graph_failure"},
         )
+        if provider_failure:
+            code = "ModelProviderError"
+            message = "The selected model provider could not complete this request. Check provider availability and routing settings, then retry."
+            return JSONResponse(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                content={"error": code, "code": code, "message": message, "details": {}},
+            )
         if isinstance(e, AuraError):
             if isinstance(e, RoutingConfirmationRequired):
                 code, http_status = "RoutingConfirmationRequired", status.HTTP_409_CONFLICT

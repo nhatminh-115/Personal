@@ -1,6 +1,7 @@
 import { ApiError } from '../services/api';
 
 const ROUTING_ERROR_GUIDANCE: Record<string, string> = {
+  ModelProviderError: 'Check that the selected provider is running and that its model is available, then retry or change the route in Routing Studio.',
   PrivacyBoundaryViolation: 'Privacy policy blocked this route. Review the profile scope and select a route that meets its privacy boundary.',
   ModelCapabilityMismatch: 'The selected model cannot meet this request’s capability requirements. Choose a compatible model or adjust the request requirements.',
   ReasoningControlUnsupported: 'The selected model does not support the requested reasoning control. Use Profile reasoning or choose a model with known support.',
