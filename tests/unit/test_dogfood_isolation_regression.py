@@ -40,6 +40,7 @@ async def test_dogfood_runtime_uses_unique_run_paths_and_preserves_prior_evidenc
     orig_env_cp = os.environ.get("CHECKPOINT_DB_PATH")
     orig_settings_db = settings.DATABASE_URL
     orig_settings_cp = settings.CHECKPOINT_DB_PATH
+    orig_settings_model_provider = settings.MODEL_PROVIDER
     prior_db = tmp_path / "research-older-run.db"
     prior_checkpoints = tmp_path / "research-older-run-checkpoints.db"
     configure_dogfood_runtime("older-run", state_dir=tmp_path)
@@ -54,6 +55,7 @@ async def test_dogfood_runtime_uses_unique_run_paths_and_preserves_prior_evidenc
         assert os.environ["CHECKPOINT_DB_PATH"] == str(dogfood_checkpoints)
         assert settings.DATABASE_URL == database_url
         assert settings.CHECKPOINT_DB_PATH == dogfood_checkpoints
+        assert settings.MODEL_PROVIDER == orig_settings_model_provider
         assert str(db_session.engine.url).endswith("research-current-run.db")
         assert not database_url.endswith("aura.db")
 
@@ -82,6 +84,7 @@ async def test_dogfood_runtime_uses_unique_run_paths_and_preserves_prior_evidenc
             os.environ.pop("CHECKPOINT_DB_PATH", None)
         settings.DATABASE_URL = orig_settings_db
         settings.CHECKPOINT_DB_PATH = orig_settings_cp
+        settings.MODEL_PROVIDER = orig_settings_model_provider
         db_session.configure_engine(orig_settings_db)
 
 

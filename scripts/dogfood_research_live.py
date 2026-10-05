@@ -168,7 +168,6 @@ def configure_dogfood_runtime(run_key: str, state_dir: Path | None = None) -> tu
     from app.core.settings import settings
     settings.DATABASE_URL = database_url
     settings.CHECKPOINT_DB_PATH = checkpoint_path
-    settings.MODEL_PROVIDER = os.environ.get("MODEL_PROVIDER", "openai")
 
     from app.db import session as db_session
     db_session.configure_engine(database_url)
