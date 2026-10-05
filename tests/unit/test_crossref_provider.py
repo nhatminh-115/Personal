@@ -77,11 +77,12 @@ async def test_crossref_http_error_is_reported_without_query_text():
     client_context = MagicMock()
     client_context.__aenter__ = AsyncMock(return_value=client)
     client_context.__aexit__ = AsyncMock(return_value=False)
-    provider = CrossrefResearchProvider(cache=ResearchCache())
+    provider = CrossrefResearchProvider(cache=ResearchCache(), max_retries=1)
 
     with patch("app.research.providers.crossref.httpx.AsyncClient", return_value=client_context):
-        with pytest.raises(ResearchProviderUnavailable, match="Crossref is returned HTTP 503") as raised:
-            await provider.search("private research query", max_results=1)
+        with patch("app.research.providers.crossref.asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(ResearchProviderUnavailable, match="Crossref is temporarily unavailable") as raised:
+                await provider.search("private research query", max_results=1)
     assert "private research query" not in str(raised.value)
 
 
@@ -92,11 +93,32 @@ async def test_crossref_transport_error_is_reported_as_provider_unavailable():
     client_context = MagicMock()
     client_context.__aenter__ = AsyncMock(return_value=client)
     client_context.__aexit__ = AsyncMock(return_value=False)
-    provider = CrossrefResearchProvider(cache=ResearchCache())
+    provider = CrossrefResearchProvider(cache=ResearchCache(), max_retries=1)
 
     with patch("app.research.providers.crossref.httpx.AsyncClient", return_value=client_context):
-        with pytest.raises(ResearchProviderUnavailable, match="Crossref is returned an unreadable response"):
-            await provider.search("query", max_results=1)
+        with patch("app.research.providers.crossref.asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(ResearchProviderUnavailable, match="Crossref is temporarily unavailable"):
+                await provider.search("query", max_results=1)
+
+
+@pytest.mark.asyncio
+async def test_crossref_rate_limit_retries_with_bounded_retry_after():
+    rate_limited = MagicMock(status_code=429, headers={"Retry-After": "120"})
+    recovered = MagicMock(status_code=200)
+    recovered.json.return_value = {"message": {"items": []}}
+    client = MagicMock()
+    client.get = AsyncMock(side_effect=[rate_limited, recovered])
+    client_context = MagicMock()
+    client_context.__aenter__ = AsyncMock(return_value=client)
+    client_context.__aexit__ = AsyncMock(return_value=False)
+    provider = CrossrefResearchProvider(cache=ResearchCache(), max_retries=1)
+
+    with patch("app.research.providers.crossref.httpx.AsyncClient", return_value=client_context):
+        with patch("app.research.providers.crossref.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            assert await provider.search("public test query") == []
+
+    assert client.get.await_count == 2
+    sleep.assert_awaited_once_with(15.0)
 
 
 @pytest.mark.asyncio

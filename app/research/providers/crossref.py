@@ -1,5 +1,6 @@
 """Crossref REST API provider for scholarly bibliographic metadata."""
 
+import asyncio
 import re
 import time
 from typing import Any, Dict, List, Optional
@@ -10,7 +11,7 @@ from app.core.settings import settings
 from app.research.cache import research_cache
 from app.research.dedup import compute_canonical_id, extract_doi
 from app.research.models import ResearchSource, SourceStatus
-from app.research.provider import ResearchProviderUnavailable, ResearchSourceProvider
+from app.research.provider import ResearchProviderUnavailable, ResearchSourceProvider, retry_after_seconds
 
 
 class CrossrefResearchProvider(ResearchSourceProvider):
@@ -18,9 +19,62 @@ class CrossrefResearchProvider(ResearchSourceProvider):
 
     API_URL = "https://api.crossref.org/works"
 
-    def __init__(self, timeout_seconds: Optional[float] = None, cache: Optional[Any] = None) -> None:
+    def __init__(
+        self,
+        timeout_seconds: Optional[float] = None,
+        cache: Optional[Any] = None,
+        max_retries: int = 2,
+    ) -> None:
         self.timeout_seconds = timeout_seconds or settings.RESEARCH_HTTP_TIMEOUT_SECONDS
         self.cache = cache or research_cache
+        self.max_retries = max(0, max_retries)
+
+    async def _get_json(self, url: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """Fetch JSON with bounded retries for transient Crossref failures."""
+        retries = 0
+        while retries <= self.max_retries:
+            try:
+                async with httpx.AsyncClient(
+                    timeout=self.timeout_seconds, follow_redirects=False, verify=True
+                ) as client:
+                    response = await client.get(url, params=params, headers={
+                        "Accept": "application/json",
+                        "User-Agent": "AURA-Research-Specialist/1.0",
+                    })
+                if response.status_code == 200:
+                    payload = response.json()
+                    if isinstance(payload, dict):
+                        return payload
+                    raise ResearchProviderUnavailable("Crossref", "returned an invalid response")
+                if response.status_code == 404:
+                    return None
+                if response.status_code == 429 or response.status_code >= 500:
+                    retries += 1
+                    reason = "rate limited" if response.status_code == 429 else "temporarily unavailable"
+                    if retries > self.max_retries:
+                        raise ResearchProviderUnavailable("Crossref", reason)
+                    delay = retry_after_seconds(
+                        response.headers.get("Retry-After") if response.status_code == 429 else None,
+                        default=min(1.5 * (2 ** (retries - 1)), 8.0),
+                        maximum=15.0,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                if response.status_code >= 400:
+                    raise ResearchProviderUnavailable(
+                        "Crossref", f"rejected the request (HTTP {response.status_code})"
+                    )
+                raise ResearchProviderUnavailable("Crossref", "returned an invalid response")
+            except ResearchProviderUnavailable:
+                raise
+            except httpx.TransportError as exc:
+                retries += 1
+                if retries > self.max_retries:
+                    raise ResearchProviderUnavailable("Crossref", "temporarily unavailable") from exc
+                await asyncio.sleep(min(1.0 * (2 ** (retries - 1)), 8.0))
+            except (ValueError, TypeError) as exc:
+                raise ResearchProviderUnavailable("Crossref", "returned an unreadable response") from exc
+        return None
 
     @staticmethod
     def _convert_item(item: Dict[str, Any]) -> Optional[ResearchSource]:
@@ -81,19 +135,7 @@ class CrossrefResearchProvider(ResearchSourceProvider):
         if not query or max_results <= 0:
             return []
         params = {"query.bibliographic": query, "rows": min(max_results * 2, 20), "select": "DOI,title,author,published-print,published-online,created,container-title,type,publisher"}
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
-                response = await client.get(self.API_URL, params=params, headers={
-                    "Accept": "application/json",
-                    "User-Agent": "AURA-Research-Specialist/1.0",
-                })
-            if response.status_code != 200:
-                raise ResearchProviderUnavailable("Crossref", f"returned HTTP {response.status_code}")
-            payload = response.json()
-        except ResearchProviderUnavailable:
-            raise
-        except (httpx.HTTPError, ValueError) as exc:
-            raise ResearchProviderUnavailable("Crossref", "returned an unreadable response") from exc
+        payload = await self._get_json(self.API_URL, params=params)
 
         message = payload.get("message") if isinstance(payload, dict) else None
         items = message.get("items") if isinstance(message, dict) else None
@@ -119,21 +161,9 @@ class CrossrefResearchProvider(ResearchSourceProvider):
         doi = extract_doi(source_id)
         if not doi:
             return None
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, verify=True) as client:
-                response = await client.get(f"{self.API_URL}/{doi}", headers={
-                    "Accept": "application/json",
-                    "User-Agent": "AURA-Research-Specialist/1.0",
-                })
-            if response.status_code == 404:
-                return None
-            if response.status_code != 200:
-                raise ResearchProviderUnavailable("Crossref", f"returned HTTP {response.status_code}")
-            payload = response.json()
-        except ResearchProviderUnavailable:
-            raise
-        except (httpx.HTTPError, ValueError) as exc:
-            raise ResearchProviderUnavailable("Crossref", "returned an unreadable response") from exc
+        payload = await self._get_json(f"{self.API_URL}/{doi}")
+        if payload is None:
+            return None
 
         message = payload.get("message") if isinstance(payload, dict) else None
         source = self._convert_item(message) if isinstance(message, dict) else None
