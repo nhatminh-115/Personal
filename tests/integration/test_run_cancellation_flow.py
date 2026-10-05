@@ -268,6 +268,8 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
                 DelegationModel.parent_run_id == root.id,
             ))
             assert delegation is not None
+            approval_id = delegation.pending_approval_id
+            assert approval_id is not None
             child = await session.get(RunModel, delegation.child_run_id)
             assert child is not None and child.status == RunStatus.WAITING_FOR_APPROVAL.value
             assert delegation.status == RunStatus.WAITING_FOR_APPROVAL.value
@@ -278,7 +280,7 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
         })
         assert cancel.status_code == 202, cancel.text
         approval_after_cancel = await async_client.post(
-            f"/v1/approvals/{start_data['approval_id']}/decision",
+            f"/v1/approvals/{approval_id}/decision",
             json={"decision": "approved", "decision_notes": "Attempt resume after cancel request"},
         )
         assert approval_after_cancel.status_code == 409
