@@ -787,7 +787,9 @@ async def test_routing_api_endpoints_complete(async_client: AsyncClient, test_db
     assert reset_sess.json()["routing_profile_id"] is None
 
     # 6. Delete profile
-    del_resp = await async_client.delete(f"/v1/routing/profiles/{created_id}")
+    del_resp = await async_client.delete(
+        f"/v1/routing/profiles/{created_id}?expected_version={create_resp.json()['version']}"
+    )
     assert del_resp.status_code == 200
     assert del_resp.json()["deleted_profile_id"] == created_id
 
@@ -1468,7 +1470,30 @@ async def test_deleting_routing_profile_clears_assignments_and_restores_inherita
     )
     assert project_assignment.status_code == session_assignment.status_code == 200
 
-    deleted = await async_client.delete("/v1/routing/profiles/delete-assigned-profile")
+    initial_version = profile.json()["version"]
+    missing_version = await async_client.delete("/v1/routing/profiles/delete-assigned-profile")
+    assert missing_version.status_code == 422
+    edited = await async_client.put(
+        "/v1/routing/profiles/delete-assigned-profile",
+        json={**profile.json(), "name": "Edited assigned profile"},
+    )
+    assert edited.status_code == 200
+
+    stale_delete = await async_client.delete(
+        f"/v1/routing/profiles/delete-assigned-profile?expected_version={initial_version}"
+    )
+    assert stale_delete.status_code == 409
+    assert stale_delete.json()["detail"] == {
+        "code": "RoutingProfileVersionConflict",
+        "message": "Routing profile changed since it was loaded.",
+        "current_version": edited.json()["version"],
+    }
+    assert (await async_client.get("/v1/routing/assignments/Deletion%20Project")).json()["routing_profile_id"] == "delete-assigned-profile"
+    assert (await async_client.get(f"/v1/routing/sessions/{session_id}")).json()["routing_profile_id"] == "delete-assigned-profile"
+
+    deleted = await async_client.delete(
+        f"/v1/routing/profiles/delete-assigned-profile?expected_version={edited.json()['version']}"
+    )
     assert deleted.status_code == 200
     assert deleted.json()["deleted_profile_id"] == "delete-assigned-profile"
 

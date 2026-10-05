@@ -157,8 +157,9 @@ export const api = {
     }));
   },
 
-  async deleteRoutingProfile(id: string): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' }));
+  async deleteRoutingProfile(id: string, expectedVersion: number): Promise<void> {
+    const params = new URLSearchParams({ expected_version: String(expectedVersion) });
+    await handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}?${params}`, { method: 'DELETE' }));
   },
 
   async fetchEffectiveRouting(projectName?: string, sessionId?: string): Promise<EffectiveRouting> {

@@ -123,6 +123,10 @@ describe('Routing Studio v2', () => {
 
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(confirm).toHaveBeenCalledWith(expect.stringContaining('Unsaved profile edits will also be discarded.'));
+    await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(
+      '/v1/routing/profiles/custom-profile?expected_version=3',
+      expect.objectContaining({ method: 'DELETE' }),
+    ));
     expect(await screen.findByLabelText('Profile name')).toHaveValue('System Balanced');
     expect(screen.queryByRole('button', { name: /Custom profile/i })).not.toBeInTheDocument();
   });
@@ -448,6 +452,39 @@ describe('Routing Studio v2', () => {
     expect(alert).toHaveTextContent('Reload the profile in Routing Studio');
     expect(alert).not.toHaveTextContent('current_version');
     expect(screen.getByLabelText('Profile name')).toHaveValue('Stale edit');
+  });
+
+  it('keeps a routing profile in place when its confirmed delete is stale', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    await openProject();
+    fireEvent.click(screen.getByText(/System Balanced · system/i));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Routing Studio' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Custom profile/i }));
+
+    const normalFetch = global.fetch as ReturnType<typeof vi.fn>;
+    global.fetch = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes('/v1/routing/profiles/custom-profile?expected_version=3') && init?.method === 'DELETE') {
+        return Promise.resolve({
+          ok: false,
+          status: 409,
+          text: () => Promise.resolve(JSON.stringify({
+            detail: {
+              code: 'RoutingProfileVersionConflict',
+              message: 'Routing profile changed since it was loaded.',
+              current_version: 4,
+            },
+          })),
+        } as Response);
+      }
+      return normalFetch(input, init);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('This routing profile changed elsewhere.');
+    expect(screen.getByRole('button', { name: /Custom profile/i })).toBeInTheDocument();
+    expect(screen.getByLabelText('Profile name')).toHaveValue('Custom profile');
   });
 
   it('duplicates a saved profile and selects the persisted copy', async () => {
