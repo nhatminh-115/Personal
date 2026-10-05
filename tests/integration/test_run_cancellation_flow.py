@@ -128,6 +128,90 @@ async def test_live_chat_cancel_request_is_observed_after_inflight_model_call(as
 
 
 @pytest.mark.asyncio
+async def test_repeated_cancel_recovers_run_after_chat_executor_is_lost(async_client, tmp_path, monkeypatch):
+    database_path = tmp_path / "run-cancellation-recovery.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def independent_db_sessions():
+        async with factory() as session:
+            yield session
+
+    previous_override = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = independent_db_sessions
+    model_call_started = asyncio.Event()
+    release_model_call = asyncio.Event()
+    session_id = "cancel-recovery-session"
+    client_turn_id = "cancel-recovery-turn"
+
+    async def slow_model_call(_request, provider_name=None):
+        model_call_started.set()
+        await release_model_call.wait()
+        return ModelResponse(content="The abandoned response must not be committed.")
+
+    monkeypatch.setattr("app.models.router.model_router.route", slow_model_call)
+
+    try:
+        chat_task = asyncio.create_task(async_client.post("/v1/chat", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+            "message": "Stop this turn, then simulate losing its worker.",
+        }))
+        await asyncio.wait_for(model_call_started.wait(), timeout=5)
+
+        first_cancel = await async_client.post("/v1/runs/cancel-turn", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+        })
+        assert first_cancel.status_code == 202, first_cancel.text
+        assert first_cancel.json()["already_requested"] is False
+        stopping_state = await async_client.get(f"/v1/sessions/{session_id}/state")
+        assert stopping_state.json()["run_status"] == "cancellation_requested"
+
+        # Model a worker disappearing after the durable cancellation request
+        # commits but before the chat endpoint can finalize the run.
+        chat_task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await chat_task
+
+        retry_cancel = await async_client.post("/v1/runs/cancel-turn", json={
+            "session_id": session_id,
+            "client_turn_id": client_turn_id,
+        })
+        assert retry_cancel.status_code == 202, retry_cancel.text
+        assert retry_cancel.json()["already_requested"] is True
+
+        finished_state = await async_client.get(f"/v1/sessions/{session_id}/state")
+        assert finished_state.json()["run_status"] == "cancelled"
+        assert finished_state.json()["client_turn_id"] is None
+        async with factory() as session:
+            run = await session.get(RunModel, first_cancel.json()["run_id"])
+            events = list((await session.scalars(
+                select(RunEventModel).where(RunEventModel.run_id == run.id)
+            )).all())
+            assert run.status == RunStatus.CANCELLED.value
+            assert run.cancel_requested_at is not None
+            assert run.final_response.startswith("Run cancelled.")
+            assert {event.event_type for event in events} >= {
+                "run_cancellation_requested",
+                "run_cancelled",
+            }
+            assert sum(event.event_type == "run_cancelled" for event in events) == 1
+    finally:
+        release_model_call.set()
+        if "chat_task" in locals() and not chat_task.done():
+            chat_task.cancel()
+            try:
+                await chat_task
+            except asyncio.CancelledError:
+                pass
+        app.dependency_overrides[get_db] = previous_override
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
 async def test_chat_stop_racing_terminalization_is_linearized(async_client, tmp_path, monkeypatch):
     database_path = tmp_path / "chat-cancellation-finalize-race.db"
     engine = create_async_engine(f"sqlite+aiosqlite:///{database_path}")

@@ -35,6 +35,7 @@ async def request_chat_turn_cancellation(
         select(RunModel.id).where(RunModel.parent_run_id == run.id)
     )).all())
     lock_ids = sorted({run.id, *child_run_ids})
+    already_requested = False
     async with AsyncExitStack() as lock_stack:
         for run_id in lock_ids:
             await lock_stack.enter_async_context(lock_run_resume(db, run_id))
@@ -56,12 +57,28 @@ async def request_chat_turn_cancellation(
                 payload={"source": "user"},
             ))
             await db.commit()
-            return CancelChatTurnResponse(run_id=run.id, status="cancellation_requested")
+        else:
+            await db.refresh(run)
+            if run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None:
+                already_requested = True
+            else:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Chat turn is no longer running.")
 
-        await db.refresh(run)
-    if run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None:
-        return CancelChatTurnResponse(run_id=run.id, status="cancellation_requested", already_requested=True)
-    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Chat turn is no longer running.")
+    # The request flag is durable now and resume locks are released. If the
+    # original chat executor disappeared before it could observe the flag,
+    # this retry can safely claim the idle execution lock and finalize it.
+    from app.api.routes.chat import _finalize_cancelled_chat_turn_if_idle
+
+    await _finalize_cancelled_chat_turn_if_idle(
+        db,
+        run,
+        trace_service=TraceService(db),
+    )
+    return CancelChatTurnResponse(
+        run_id=run.id,
+        status="cancellation_requested",
+        already_requested=already_requested,
+    )
 
 
 def _safe_event_payload(event_type: str, payload: object) -> dict:
