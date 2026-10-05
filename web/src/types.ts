@@ -443,6 +443,7 @@ export interface StudySessionRecord {
   reflection: string;
   started_at: string;
   completed_at?: string | null;
+  revision: number;
 }
 
 export interface StudyCardRecord {
@@ -455,6 +456,7 @@ export interface StudyCardRecord {
   review_count: number;
   reviewed_at?: string | null;
   next_review_at?: string | null;
+  revision: number;
 }
 
 export type StudyCardRating = 'again' | 'remembered' | 'easy';

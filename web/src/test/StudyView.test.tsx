@@ -2,8 +2,42 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StudyView } from '../components/global/StudyView';
 import type { StudyCardRecord, StudySessionRecord } from '../types';
+import { ApiError } from '../services/api';
 
 describe('StudyView', () => {
+  it('offers a confirmed reload after a concurrent reflection save conflict', async () => {
+    const session: StudySessionRecord = {
+      id: 'study-session-conflict', track_id: 'track-conflict', track_title: 'Concurrent session',
+      material_id: null, material_project_name: null, status: 'in_progress', reflection: '',
+      started_at: '2026-10-02T00:00:00Z', completed_at: null, revision: 2,
+    };
+    const onSaveReflection = vi.fn().mockRejectedValue(new ApiError(409, 'stale revision'));
+    const onReloadStudyContent = vi.fn().mockResolvedValue(undefined);
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<StudyView
+      libraryItems={[]}
+      sessions={[session]}
+      cards={[]}
+      onOpenItem={vi.fn()}
+      onBrowseLibrary={vi.fn()}
+      onStartSession={vi.fn()}
+      onCompleteSession={vi.fn()}
+      onCreateCard={vi.fn().mockResolvedValue(undefined)}
+      onUpdateCard={vi.fn().mockResolvedValue(undefined)}
+      onDeleteCard={vi.fn().mockResolvedValue(undefined)}
+      onSaveReflection={onSaveReflection}
+      onReloadStudyContent={onReloadStudyContent}
+    />);
+
+    fireEvent.change(screen.getByLabelText('What did you learn?'), { target: { value: 'Local draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save reflection' }));
+    expect(await screen.findByText('This reflection changed elsewhere. Your draft is still here.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Load saved version' }));
+    await waitFor(() => expect(onReloadStudyContent).toHaveBeenCalledTimes(1));
+    expect(confirm).toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it('saves an explicit reflection on a durable Study session', async () => {
     const session: StudySessionRecord = {
       id: 'study-session-1',
@@ -14,6 +48,7 @@ describe('StudyView', () => {
       status: 'in_progress',
       reflection: '',
       started_at: '2026-10-02T00:00:00Z',
+      revision: 1,
       completed_at: null,
     };
     const onSaveReflection = vi.fn().mockResolvedValue(undefined);
@@ -42,6 +77,7 @@ describe('StudyView', () => {
     await waitFor(() => expect(onSaveReflection).toHaveBeenCalledWith(
       'study-session-1',
       'A verified claim is distinct from its evidence.',
+      session.revision,
     ));
   });
 
@@ -55,6 +91,7 @@ describe('StudyView', () => {
       status: 'completed',
       reflection: '',
       started_at: '2026-10-02T00:00:00Z',
+      revision: 1,
       completed_at: '2026-10-02T01:00:00Z',
     };
     const onOpenResearchFinding = vi.fn();
@@ -84,14 +121,17 @@ describe('StudyView', () => {
     const session: StudySessionRecord = {
       id: 'study-session-cards', track_id: 'track-cards', track_title: 'Learning cards',
       material_id: null, material_project_name: null, status: 'completed', reflection: '',
-      started_at: '2026-10-02T00:00:00Z', completed_at: '2026-10-02T01:00:00Z',
+      started_at: '2026-10-02T00:00:00Z',
+      revision: 1, completed_at: '2026-10-02T01:00:00Z',
     };
     const card: StudyCardRecord = {
       id: 'card-1', session_id: session.id, question: 'What is provenance?', answer: 'The recorded origin of information.',
       created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', review_count: 0,
+      revision: 1,
     };
     const onReviewCard = vi.fn().mockResolvedValue({
-      ...card, review_count: 1, reviewed_at: '2026-10-03T00:00:00Z', next_review_at: '2026-10-06T00:00:00Z',
+      ...card, review_count: 1,
+      revision: 1, reviewed_at: '2026-10-03T00:00:00Z', next_review_at: '2026-10-06T00:00:00Z',
     });
 
     render(
@@ -114,7 +154,7 @@ describe('StudyView', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reveal answer' }));
     fireEvent.click(screen.getByRole('button', { name: 'Remembered · 3 days' }));
 
-    await waitFor(() => expect(onReviewCard).toHaveBeenCalledWith('card-1', 'study-session-cards', 'remembered'));
+    await waitFor(() => expect(onReviewCard).toHaveBeenCalledWith('card-1', 'study-session-cards', 'remembered', card.revision));
     expect(await screen.findByText(/1 review · next/)).toBeInTheDocument();
   });
 
@@ -122,6 +162,7 @@ describe('StudyView', () => {
     const card: StudyCardRecord = {
       id: 'queue-card', session_id: 'older-session', question: 'What is a keyset cursor?', answer: 'A stable position in a sorted collection.',
       created_at: '2026-10-02T00:00:00Z', updated_at: '2026-10-02T00:00:00Z', review_count: 0,
+      revision: 1,
     };
 
     render(

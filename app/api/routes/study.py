@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import and_, delete as sa_delete, or_, select, text
+from sqlalchemy import and_, delete as sa_delete, or_, select, text, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.schemas import (
@@ -45,6 +45,7 @@ def _study_session_response(item: WorkspaceObjectModel) -> StudySessionResponse:
         reflection=item.content or "",
         started_at=item.created_at,
         completed_at=datetime.fromisoformat(completed_at) if isinstance(completed_at, str) else None,
+        revision=item.revision,
     )
 
 
@@ -239,7 +240,46 @@ def _study_card_response(item: WorkspaceObjectModel) -> StudyCardResponse:
         review_count=review_count,
         reviewed_at=_metadata_datetime(metadata, "reviewed_at"),
         next_review_at=_metadata_datetime(metadata, "next_review_at"),
+        revision=item.revision,
     )
+
+
+async def _compare_and_swap_study_object(
+    db: AsyncSession,
+    item: WorkspaceObjectModel,
+    *,
+    expected_revision: int,
+    title: str,
+    content: str,
+    metadata_json: dict[str, Any],
+) -> WorkspaceObjectModel:
+    result = await db.execute(
+        sa_update(WorkspaceObjectModel)
+        .where(WorkspaceObjectModel.id == item.id, WorkspaceObjectModel.revision == expected_revision)
+        .values(
+            title=title,
+            content=content,
+            metadata_json=metadata_json,
+            revision=WorkspaceObjectModel.revision + 1,
+            updated_at=datetime.now(timezone.utc),
+        )
+        .execution_options(synchronize_session=False)
+    )
+    if result.rowcount != 1:
+        object_id = item.id
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == object_id)
+        )
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Study object not found.")
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Study content changed since it was loaded.", "current_revision": current_revision},
+        )
+    await db.flush()
+    await db.refresh(item)
+    return item
 
 
 def _metadata_datetime(metadata: dict[str, Any], key: str) -> datetime | None:
@@ -424,15 +464,23 @@ async def update_study_card(
         raise HTTPException(status_code=404, detail="Study card not found.")
     if not body.question.strip() or not body.answer.strip():
         raise HTTPException(status_code=422, detail="Study card question and answer must not be blank.")
+    if body.expected_revision is None:
+        raise HTTPException(status_code=422, detail="expected_revision is required when updating a Study card.")
     content_changed = card.title != body.question or card.content != body.answer
-    card.title = body.question
-    card.content = body.answer
+    next_metadata = metadata
     if content_changed:
-        card.metadata_json = {
+        next_metadata = {
             key: value for key, value in metadata.items()
             if key not in {"review_count", "reviewed_at", "next_review_at", "review_interval_days"}
         }
-    card.updated_at = datetime.now(timezone.utc)
+    await _compare_and_swap_study_object(
+        db,
+        card,
+        expected_revision=body.expected_revision,
+        title=body.question,
+        content=body.answer,
+        metadata_json=next_metadata,
+    )
     await db.commit()
     await db.refresh(card)
     return _study_card_response(card)
@@ -470,14 +518,20 @@ async def review_study_card(
         and previous_review_count >= 0
         else 1
     )
-    card.metadata_json = {
+    await _compare_and_swap_study_object(
+        db,
+        card,
+        expected_revision=body.expected_revision,
+        title=card.title,
+        content=card.content or "",
+        metadata_json={
         **metadata,
         "review_count": review_count,
         "reviewed_at": reviewed_at.isoformat(),
         "next_review_at": (reviewed_at + timedelta(days=interval_days)).isoformat(),
         "review_interval_days": interval_days,
-    }
-    card.updated_at = reviewed_at
+        },
+    )
     await db.commit()
     await db.refresh(card)
     return _study_card_response(card)
@@ -487,6 +541,7 @@ async def review_study_card(
 async def delete_study_card(
     session_id: str,
     card_id: str,
+    expected_revision: int = Query(ge=1),
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await _get_user_study_session(db, session_id)
@@ -500,6 +555,28 @@ async def delete_study_card(
         or metadata.get("study_session_id") != session_id
     ):
         raise HTTPException(status_code=404, detail="Study card not found.")
+    result = await db.execute(
+        sa_delete(WorkspaceObjectModel)
+        .where(
+            WorkspaceObjectModel.id == card_id,
+            WorkspaceObjectModel.project_name.is_(None),
+            WorkspaceObjectModel.object_type == "study_card",
+            WorkspaceObjectModel.created_by == "user",
+            WorkspaceObjectModel.revision == expected_revision,
+        )
+        .returning(WorkspaceObjectModel.id)
+    )
+    if result.scalar_one_or_none() is None:
+        await db.rollback()
+        current_revision = await db.scalar(
+            select(WorkspaceObjectModel.revision).where(WorkspaceObjectModel.id == card_id)
+        )
+        if current_revision is None:
+            raise HTTPException(status_code=404, detail="Study card not found.")
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Study card changed since it was loaded.", "current_revision": current_revision},
+        )
     await db.execute(
         sa_delete(WorkspaceEdgeModel).where(
             (WorkspaceEdgeModel.source_object_id == card_id)
@@ -511,7 +588,6 @@ async def delete_study_card(
             WorkspaceObjectProjectLinkModel.object_id == card_id
         )
     )
-    await db.delete(card)
     await db.commit()
 
 
@@ -529,8 +605,16 @@ async def update_study_reflection(
         or item.created_by != "user"
     ):
         raise HTTPException(status_code=404, detail="Study session not found.")
-    item.content = body.reflection
-    item.updated_at = datetime.now(timezone.utc)
+    if body.expected_revision is None:
+        raise HTTPException(status_code=422, detail="expected_revision is required when updating a Study reflection.")
+    await _compare_and_swap_study_object(
+        db,
+        item,
+        expected_revision=body.expected_revision,
+        title=item.title,
+        content=body.reflection,
+        metadata_json=dict(item.metadata_json or {}),
+    )
     await db.commit()
     await db.refresh(item)
     return _study_session_response(item)
@@ -550,8 +634,14 @@ async def complete_study_session(session_id: str, db: AsyncSession = Depends(get
     if metadata.get("status") != "completed":
         completed_at = datetime.now(timezone.utc)
         metadata.update(status="completed", completed_at=completed_at.isoformat())
-        item.metadata_json = metadata
-        item.updated_at = completed_at
+        await _compare_and_swap_study_object(
+            db,
+            item,
+            expected_revision=item.revision,
+            title=item.title,
+            content=item.content or "",
+            metadata_json=metadata,
+        )
         await db.commit()
         await db.refresh(item)
     return _study_session_response(item)

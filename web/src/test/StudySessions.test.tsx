@@ -74,6 +74,7 @@ describe('Study sessions use shared Library materials', () => {
       id: 'study-card-1', session_id: sessionId, question: 'What is a noun?',
       answer: 'A person, place, or thing.', created_at: '2026-10-02T00:00:00Z',
       updated_at: '2026-10-02T00:00:00Z', review_count: 0,
+      revision: 1,
     };
     const onCreateCard = vi.fn().mockResolvedValue(undefined);
     const onUpdateCard = vi.fn().mockResolvedValue(undefined);
@@ -83,6 +84,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions: [{
         id: sessionId, track_id: 'german', track_title: 'German A1',
         status: 'completed' as const, reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }],
       cards: [card],
       onOpenItem: vi.fn(),
@@ -104,10 +106,10 @@ describe('Study sessions use shared Library materials', () => {
     fireEvent.change(screen.getByDisplayValue('What is a noun?'), { target: { value: 'Define a noun.' } });
     fireEvent.change(screen.getByDisplayValue('A person, place, or thing.'), { target: { value: 'A naming word.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save card' }));
-    await waitFor(() => expect(onUpdateCard).toHaveBeenCalledWith(card.id, sessionId, 'Define a noun.', 'A naming word.'));
+    await waitFor(() => expect(onUpdateCard).toHaveBeenCalledWith(card.id, sessionId, 'Define a noun.', 'A naming word.', card.revision));
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(onDeleteCard).toHaveBeenCalledWith(card.id, sessionId));
+    await waitFor(() => expect(onDeleteCard).toHaveBeenCalledWith(card.id, sessionId, card.revision));
   });
 
   it('submits a user-authored learning card from the session', async () => {
@@ -118,6 +120,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions={[{
         id: sessionId, track_id: 'german', track_title: 'German A1',
         status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }]}
       cards={[]}
       onOpenItem={vi.fn()}
@@ -160,6 +163,7 @@ describe('Study sessions use shared Library materials', () => {
     rerender(<StudyView {...props} sessions={[{
       id: 'study-session-1', track_id: studyMaterial.id, track_title: studyMaterial.name,
       material_id: studyMaterial.id, status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+      revision: 1,
     }]} />);
     fireEvent.click(screen.getByRole('button', { name: 'Mark complete' }));
     expect(onCompleteSession).toHaveBeenCalledWith('study-session-1');
@@ -174,6 +178,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions={[{
         id: 'active-study-session', track_id: studyMaterial.id, track_title: studyMaterial.name,
         material_id: studyMaterial.id, status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }]}
       cards={[]}
       onCreateCard={vi.fn().mockResolvedValue(undefined)}
@@ -220,6 +225,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions={[{
         id: 'legacy-session', track_id: 'german', track_title: 'German A1',
         status: 'in_progress', reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }]}
       cards={[]}
       onCreateCard={vi.fn().mockResolvedValue(undefined)}
@@ -242,6 +248,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions={[{
         id: sessionId, track_id: studyMaterial.id, track_title: studyMaterial.name,
         material_id: studyMaterial.id, status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }]}
       focusSessionId={sessionId}
       cards={[]}
@@ -269,6 +276,7 @@ describe('Study sessions use shared Library materials', () => {
       sessions={[{
         id: sessionId, track_id: 'removed-material', track_title: 'Archived notes',
         status: 'completed', reflection: '', started_at: '2026-10-02T00:00:00Z',
+        revision: 1,
       }]}
       focusSessionId={sessionId}
       cards={[]}
