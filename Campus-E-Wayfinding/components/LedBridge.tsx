@@ -183,8 +183,8 @@ export default function LedBridge({ selection }: LedBridgeProps) {
   useEffect(() => () => mqtt.current?.close(), []);
 
   return (
-    <section aria-label="Đồng bộ LED mô hình" style={{ marginTop: 18, padding: 14, border: '1px solid #547f8b', borderRadius: 12, background: '#102731', color: '#eefaff' }}>
-      <strong style={{ display: 'block', marginBottom: 6 }}>Đồng bộ LED mô hình</strong>
+    <section id="led-pairing" aria-label="Ghép nối LED với ESP32" style={{ marginTop: 18, scrollMarginTop: 24, padding: 14, border: '1px solid #547f8b', borderRadius: 12, background: '#102731', color: '#eefaff' }}>
+      <strong style={{ display: 'block', marginBottom: 6 }}>Ghép nối LED · ESP32</strong>
       <small style={{ display: 'block', opacity: 0.85, marginBottom: 11 }}>
         Chọn F1–F7 hoặc GF sẽ bật Spotlight. “Toàn bộ tòa nhà” sẽ trở lại Sparse Ambient.
       </small>
