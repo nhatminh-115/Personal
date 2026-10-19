@@ -33,3 +33,26 @@ jobs:
       - name: Build GitHub Pages static app
         working-directory: Campus-E-Wayfinding
         run: pnpm pages:build
+
+  esp32-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Install ESP32 board package and libraries
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "Adafruit NeoPixel"
+          arduino-cli lib install "PubSubClient"
+      - name: Assemble test-only sketch with placeholder credentials
+        run: |
+          mkdir -p /tmp/BuildingSpotlight_SparseAmbient
+          cp Campus-E-Wayfinding/firmware/BuildingSpotlight_SparseAmbient.ino /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_mqtt_addon.h /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_mqtt_ca.h /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_private.h.example /tmp/BuildingSpotlight_SparseAmbient/led_private.h
+      - name: Compile Arduino ESP32 firmware
+        run: arduino-cli compile --fqbn esp32:esp32:esp32 /tmp/BuildingSpotlight_SparseAmbient
