@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#081a24">
+<title>Campus E · LED Controller</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#081a24;color:#ecfaf8;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100dvh}button,input{font:inherit}button{cursor:pointer}
+main{max-width:1000px;margin:auto;padding:24px 20px 50px}h1{font-size:clamp(26px,5vw,40px);letter-spacing:-1.3px;margin:8px 0 6px}h2{font-size:17px;margin:0 0 15px}
+small,.muted{color:#9cb9ba}.eyebrow{letter-spacing:2px;font-size:11px;color:#8ae4c9;font-weight:800}
+.sub{margin:0 0 25px;color:#adc6c9}.layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,330px);gap:20px}
+.card{background:#102a36;border:1px solid #284958;border-radius:19px;padding:19px;box-shadow:0 10px 25px #0002}.card+.card{margin-top:18px}
+.btn{border:1px solid #426879;background:#143947;color:#e4f3f7;border-radius:12px;padding:14px 17px;font-weight:750}
+.btn:hover{background:#1d5261}.btn.selected{background:#66dfb7;color:#0d2b29;border-color:#66dfb7}
+.all{width:100%;display:flex;justify-content:space-between;align-items:center;font-size:17px;text-align:left;padding:17px}
+.note{font-size:13px;line-height:1.6;margin:14px 0 0}.floors{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:17px 0}
+.floor{padding:18px 6px;font-size:19px}.floor span{display:block;font-size:11px;margin-top:2px;font-weight:500;opacity:.78}
+.visual{background:linear-gradient(160deg,#113746,#0b2431);border:1px solid #2d5260;border-radius:15px;padding:18px 22px;margin-top:20px}
+.building{display:flex;flex-direction:column;gap:5px;max-width:295px;margin:auto}.level{display:grid;grid-template-columns:45px 1fr;align-items:center;gap:8px;min-height:35px}.level b{font-size:12px;color:#aacbd0}
+.windows{height:30px;background:#122f3b;border:1px solid #37606b;border-radius:5px;display:flex;align-items:center;justify-content:space-around;padding:3px 9px}
+.windows i{width:9px;height:14px;background:#2b5662;border-radius:3px;transition:.2s}.level.active .windows{border-color:#d3b780;background:#29433e;box-shadow:0 0 14px #eabb6350}
+.level.active .windows i{background:#ffe0a1;box-shadow:0 0 9px #ffd07a}.level.active b{color:#a5f9d6}
+.grid-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.field{display:block;font-size:12px;color:#a8c7cc;font-weight:650;margin:13px 0 5px}
+input{width:100%;border-radius:9px;background:#0b202c;border:1px solid #3c6371;color:#e4fcfb;padding:12px;outline:none}
+input:focus{border-color:#88e9bf}
+.status{background:#0b202b;border-radius:11px;border:1px solid #3b6372;padding:13px;min-height:70px;color:#cfe6e4;line-height:1.5;font-size:13px;overflow-wrap:anywhere}
+.dot{display:inline-block;background:#728e99;height:9px;width:9px;border-radius:99px;margin-right:6px}.dot.ready{background:#52e5a4}
+button:disabled{opacity:.55;cursor:default}.row{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}.row>*{flex:1}
+.warning{border-left:3px solid #efc27c;padding-left:10px}
+footer{margin-top:25px;color:#92b3b8;font-size:12px;line-height:1.7}
+a{color:#9ae3d3}
+@media(max-width:730px){.layout{grid-template-columns:1fr}.card{padding:15px}.floors{gap:8px}main{padding:18px 14px 35px}.visual{margin-top:15px}}
+</style></head>
+<body><main>
+<div class="eyebrow">CAMPUS E / PHYSICAL DIGITAL TWIN</div>
+<h1>Building LED Controller</h1><p class="sub">5 dây WS2812 · 401 bóng · 8 mức (GF + F1–F7) · nguồn 5 V / 2 A</p>
+<div class="layout">
+<section>
+<div class="card">
+<h2>Điều khiển ánh sáng</h2>
+<button class="btn all selected" id="ambient"><span>✦ Toàn bộ tòa nhà</span><small>SPARSE AMBIENT</small></button>
+<p class="note muted">Chọn tầng để chuyển sang Spotlight. Chọn toàn bộ để chạy animation thưa (mặc định tối đa 30 bóng sáng cách nhau).</p>
+<div class="floors" id="floorBtns"></div>
+<p class="note">Chế độ chọn: <strong id="current">Ambient</strong></p>
+<div class="visual"><div class="building" id="building"></div></div>
+</div>
+</section>
+<aside><div class="card">
+<h2>Ghép nối ESP32</h2>
+<div class="status"><span id="stateDot" class="dot"></span><strong id="broker">Chưa kết nối</strong><div id="ack" class="muted" style="margin-top:5px">Chọn tầng để xem trước. Muốn bật bóng thật, hãy kết nối ESP32.</div></div>
+<label class="field" for="device">Device ID</label>
+<input id="device" placeholder="campus-e-001" autocomplete="off" spellcheck="false">
+<label class="field" for="secret">Pairing key</label>
+<input id="secret" type="password" placeholder="Mã bí mật trên ESP32" autocomplete="off">
+<div class="row"><button id="connect" class="btn selected">Kết nối ESP32</button><button id="resend" class="btn" disabled>Gửi lại</button></div>
+<p class="note muted">Tablet và ESP32 phải có Internet để liên lạc qua broker MQTT bảo mật. Device ID phải trùng với firmware; pairing key không được lưu trên web.</p>
+</div><div class="card">
+<h2>Hướng dẫn sử dụng</h2>
+<p class="note muted">1. Nạp bản firmware mới có MQTT TLS vào ESP32, đặt Device ID và pairing key riêng.</p>
+<p class="note muted">2. ESP32 kết nối Wi-Fi 2.4 GHz có Internet; có thể giữ AP riêng để cấu hình Pixel Mapping.</p>
+<p class="note muted">3. Mở trang này trên tablet, ghép nối một lần và chạm vào F1–F7 hoặc GF.</p>
+<p class="note warning">Broker thử nghiệm có thể gián đoạn. “Đã nối broker” không có nghĩa LED đã sáng: chỉ xác nhận <strong>ESP32 đã áp dụng</strong> mới là ACK từ thiết bị.</p>
+</div></aside></div>
+<footer>Campus E LED tablet panel · <a href="https://taitv-png.github.io/Campus-E-Wayfinding/" target="_blank" rel="noopener">Mở Wayfinding gốc</a> · <a href="https://github.com/nhatminh-115/Personal/tree/feature/campus-e-led-sync/Campus-E-Wayfinding" target="_blank" rel="noopener">Mã nguồn tích hợp</a></footer>
+</main><script>
+'use strict';
+const enc=new TextEncoder(),dec=new TextDecoder(), $=id=>document.getElementById(id);
+const bytes=s=>Array.from(enc.encode(s)),word=n=>[(n>>8)&255,n&255];
+const field=s=>word(bytes(s).length).concat(bytes(s));
+function packet(header,payload){let n=payload.length,out=[header];do{let b=n%128;n=Math.floor(n/128);if(n)b|=128;out.push(b)}while(n);return Uint8Array.from(out.concat(payload))}
+const toHex=buf=>Array.from(new Uint8Array(buf),x=>x.toString(16).padStart(2,'0')).join('');
+const fromHex=s=>Uint8Array.from(s.match(/../g).map(x=>parseInt(x,16)));
+let selection=0,socket=null,online=false,privateKey=null,device='',pending='',timer=null,receive=new Uint8Array(0),lastTs=0;
+try{$('device').value=localStorage.getItem('campus-e-led-id')||''}catch(_){}
+const label=n=>n===0?'Ambient':n===8?'GF':'F'+n;
+function render(){
+$('current').textContent=selection===0?'Sparse Ambient':label(selection)+' · Spotlight';
+$('ambient').classList.toggle('selected',selection===0);
+document.querySelectorAll('.floor').forEach(b=>b.classList.toggle('selected',Number(b.dataset.floor)===selection));
+document.querySelectorAll('.level').forEach(x=>x.classList.toggle('active',selection===0||Number(x.dataset.floor)===selection));
+}
+function chosen(n){selection=n;render();if(online)sendSelection()}
+$('ambient').onclick=()=>chosen(0);
+$('floorBtns').innerHTML=[8,1,2,3,4,5,6,7].map(n=>'<button class="btn floor" data-floor="'+n+'">'+label(n)+'<span>'+(n===8?'Tầng trệt':'Tầng '+n)+'</span></button>').join('');
+$('building').innerHTML=[7,6,5,4,3,2,1,8].map(n=>'<div class="level" data-floor="'+n+'"><b>'+label(n)+'</b><div class="windows"><i></i><i></i><i></i><i></i><i></i></div></div>').join('');
+document.querySelectorAll('.floor').forEach(b=>b.onclick=()=>chosen(Number(b.dataset.floor)));render();
+function status(t,active){$('broker').textContent=t;$('stateDot').classList.toggle('ready',!!active)}
+function note(t){$('ack').textContent=t}
+function stop(){online=false;if(timer){clearInterval(timer);timer=null}if(socket){const old=socket;socket=null;try{old.close()}catch(_){}}$('resend').disabled=true;$('connect').textContent='Kết nối ESP32';status('Chưa kết nối',false)}
+function publish(topic,data){if(!online||socket?.readyState!==1)return false;socket.send(packet(0x30,field(topic).concat(bytes(data))));return true}
+async function sendSelection(){
+if(!online||!privateKey)return;
+const ts=Math.max(Date.now(),lastTs+1);lastTs=ts;
+const mode=selection===0?'ambient':'spotlight',f=selection;
+const base=['v1',device,ts,mode,f].join('|');
+try{const digest=toHex(await crypto.subtle.sign('HMAC',privateKey,enc.encode(base)));pending=String(ts);
+if(publish('campus-e-led/v1/'+device+'/cmd',base+'|'+digest))note('Đã gửi '+label(f)+' · đang chờ ACK từ ESP32');
+}catch(e){note('Lỗi ký lệnh: '+e.message)}
+}
+function receiveData(data){
+const next=new Uint8Array(receive.length+data.length);next.set(receive);next.set(data,receive.length);receive=next;let offset=0;
+while(offset+2<=receive.length){let rem=0,m=1,digits=0,b;
+do{if(offset+1+digits>=receive.length){receive=receive.slice(offset);return}b=receive[offset+1+digits++];rem+=(b&127)*m;m*=128;if(digits>4){stop();return}}while(b&128);
+const begin=offset+1+digits,end=begin+rem;if(end>receive.length)break;
+const type=receive[offset]>>4;
+if(type===2){if(rem>=2&&receive[begin+1]===0){
+ socket.send(packet(0x82,word(1).concat(field('campus-e-led/v1/'+device+'/ack'),[0])));
+ }else note('Broker từ chối MQTT CONNECT')}
+else if(type===9){online=true;status('Đã kết nối broker MQTT',true);$('connect').textContent='Ngắt kết nối';$('resend').disabled=false;
+if(!timer)timer=setInterval(()=>{if(socket?.readyState===1)socket.send(Uint8Array.of(0xc0,0))},15000);
+sendSelection()}
+else if(type===3){if(rem>=2){const n=receive[begin]*256+receive[begin+1];const start=begin+2+n+((receive[offset]&6)?2:0);
+if(start<=end){const message=dec.decode(receive.slice(start,end));checkAck(message)}}}
+offset=end
+}receive=receive.slice(offset)
+}
+async function checkAck(message){const p=message.split('|');
+if(p.length!==6||p[0]!=='ack'||p[1]!==device||p[2]!==pending||!(/^[a-f0-9]{64}$/.test(p[5])))return;
+const body=p.slice(0,5).join('|');
+if(!privateKey||!await crypto.subtle.verify('HMAC',privateKey,fromHex(p[5]),enc.encode(body)))return;
+note('✓ ESP32 đã áp dụng '+(p[3]==='ambient'?'Sparse Ambient':Number(p[4])===8?'GF':'F'+p[4]));
+}
+$('connect').onclick=async()=>{
+if(online){stop();note('Đã ngắt kết nối');return}
+device=$('device').value.trim().toLowerCase();const secret=$('secret').value;
+if(!/^[a-z0-9-]{6,48}$/.test(device)){note('Device ID phải có 6–48 ký tự: a–z, 0–9, -');return}
+if(secret.length<16){note('Pairing key cần ít nhất 16 ký tự');return}
+try{
+stop();privateKey=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
+$('secret').value='';try{localStorage.setItem('campus-e-led-id',device)}catch(_){}
+status('Đang kết nối…',false);note('Kết nối WSS → test.mosquitto.org:8081');
+const ws=new WebSocket('wss://test.mosquitto.org:8081/mqtt','mqtt');
+socket=ws;ws.binaryType='arraybuffer';
+ws.onopen=()=>{const id='ce-web-'+crypto.randomUUID().replaceAll('-','').slice(0,20);ws.send(packet(0x10,field('MQTT').concat([4,2,0,30],field(id))))};
+ws.onmessage=e=>receiveData(new Uint8Array(e.data));
+ws.onerror=()=>note('Không kết nối được broker. Kiểm tra Internet và mạng chặn cổng 8081.');
+ws.onclose=()=>{if(socket!==ws)return;stop();note('MQTT đã ngắt, hãy kết nối lại')};
+}catch(e){status('Không kết nối được',false);note(e.message)}
+};
+$('resend').onclick=()=>sendSelection();
+</script></body></html>
