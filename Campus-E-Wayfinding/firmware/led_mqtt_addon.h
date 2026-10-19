@@ -99,8 +99,10 @@ static void ledOnMessage(char *topic, byte *bytes, unsigned int length) {
 }
 
 static void ledRemoteSetup() {
-  if (strlen(LED_PAIRING_KEY) < 16) {
-    Serial.println("Remote disabled: use a private pairing key of at least 16 characters");
+  if (strlen(LED_PAIRING_KEY) < 16 ||
+      strcmp(LED_PAIRING_KEY, "REPLACE_WITH_RANDOM_SECRET_MIN_32_CHARS") == 0 ||
+      strcmp(LED_STA_SSID, "YOUR_WIFI_SSID") == 0) {
+    Serial.println("Remote disabled: configure real private Wi-Fi and pairing credentials");
     return;
   }
   ledTopicRoot = String("campus-e-led/v1/") + LED_DEVICE_ID;
@@ -114,7 +116,8 @@ static void ledRemoteSetup() {
 }
 
 static void ledRemoteLoop() {
-  if (WiFi.status() != WL_CONNECTED || strlen(LED_PAIRING_KEY) < 16) return;
+  if (WiFi.status() != WL_CONNECTED || strlen(LED_PAIRING_KEY) < 16 ||
+      strcmp(LED_PAIRING_KEY, "REPLACE_WITH_RANDOM_SECRET_MIN_32_CHARS") == 0) return;
   if (ledMqtt.connected()) {
     ledMqtt.loop();
     return;
