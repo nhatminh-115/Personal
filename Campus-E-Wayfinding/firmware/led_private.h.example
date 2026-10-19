@@ -1,0 +1,15 @@
+#pragma once
+// COPY this file to led_private.h in this same firmware folder.
+// Never commit led_private.h to a public Git repository.
+//
+// A 2.4 GHz Wi-Fi with working Internet (AP-only mode cannot reach MQTT).
+#define LED_STA_SSID "YOUR_WIFI_SSID"
+#define LED_STA_PASSWORD "YOUR_WIFI_PASSWORD"
+
+// Must match "Device ID" typed into the Campus E website.
+// Use lowercase letters, digits and hyphens, 6-48 characters.
+#define LED_DEVICE_ID "campus-e-001"
+
+// Generate a random 32+ character pairing key offline.
+// Type this same key into the browser. It is never included in website code.
+#define LED_PAIRING_KEY "REPLACE_WITH_RANDOM_SECRET_MIN_32_CHARS"
