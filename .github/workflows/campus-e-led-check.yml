@@ -42,6 +42,23 @@ jobs:
           set -euo pipefail
           cd pages-dist
           touch .nojekyll
+          python3 - <<'PY'
+          import pathlib,base64,json
+          items=[]
+          for p in pathlib.Path('.').rglob('*'):
+              if not p.is_file() or p.name.startswith('__vercel_bundle_') or p.name=='.nojekyll':
+                  continue
+              data=p.read_bytes()
+              items.append((len(data),{'file':'Personal/'+p.as_posix(),'data':base64.b64encode(data).decode(),'encoding':'base64'}))
+          bins=[[] for _ in range(4)]
+          sizes=[0]*4
+          for length,item in sorted(items,key=lambda p:-p[0]):
+              i=sizes.index(min(sizes))
+              bins[i].append(item);sizes[i]+=length
+          for i,entries in enumerate(bins):
+              pathlib.Path('__vercel_bundle_%d.json'%i).write_text(json.dumps(entries,separators=(',',':')),encoding='utf8')
+          print('Prepared 4 Vercel parts, total static files:',len(items),'sizes:',sizes)
+          PY
           git init
           git config user.name "campus-e-build-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
