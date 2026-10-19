@@ -19,6 +19,8 @@
 #include <time.h>
 #include <string.h>
 
+struct Power; // Forward declaration for Arduino's generated function prototypes.
+
 // ============== PRIVATE DEPLOYMENT CONFIG (change locally) ============
 const char* AP_SSID = "ESP32_Building1";
 const char* AP_PASSWORD = "12345678";  // CHANGE THIS PASSWORD
@@ -88,9 +90,9 @@ bool parseHex(const String& input, uint8_t arr[FLOORS][STRIPS][MAP_BYTES]) {
 }
 String mappingHex() {
   String out; out.reserve(sizeof(saved)*2);
-  const char* HEX="0123456789abcdef";
+  const char* HEX_DIGITS="0123456789abcdef";
   const uint8_t* b=&saved[0][0][0];
-  for(size_t i=0;i<sizeof(saved);i++) {out += HEX[b[i]>>4];out += HEX[b[i]&15];}
+  for(size_t i=0;i<sizeof(saved);i++) {out += HEX_DIGITS[b[i]>>4];out += HEX_DIGITS[b[i]&15];}
   return out;
 }
 void loadMapping() {
