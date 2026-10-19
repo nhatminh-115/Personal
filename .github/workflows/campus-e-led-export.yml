@@ -5,6 +5,9 @@ on:
       - feature/campus-e-led-sync
     paths:
       - '.github/workflows/campus-e-led-export.yml'
+      - 'Campus-E-Wayfinding/components/**'
+      - 'Campus-E-Wayfinding/app/**'
+      - 'Campus-E-Wayfinding/src/**'
   workflow_dispatch:
 
 permissions:
