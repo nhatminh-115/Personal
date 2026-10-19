@@ -109,7 +109,7 @@ class SimpleMqtt {
 
 /** A public GitHub Pages site never stores or publishes the device pairing secret. */
 export default function LedBridge({ selection }: LedBridgeProps) {
-  const [device, setDevice] = useState(() => localStorage.getItem('campus-led-device') ?? '');
+  const [device, setDevice] = useState(() => typeof window === 'undefined' ? '' : (localStorage.getItem('campus-led-device') ?? ''));
   const [secret, setSecret] = useState('');
   const [connected, setConnected] = useState(false);
   const [status, setStatus] = useState('Chưa kết nối LED');
