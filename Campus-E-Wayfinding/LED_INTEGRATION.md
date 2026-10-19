@@ -2,13 +2,19 @@
 
 **Staging branch:** `nhatminh-115/Personal`, branch `feature/campus-e-led-sync`, directory `Campus-E-Wayfinding/`. The original `taitv-png/Campus-E-Wayfinding` is unchanged. Neither `Personal/main` nor upstream has been deployed/overwritten.
 
+## Full original 3D Wayfinding (now deployed)
+
+**Live website matching the upstream Campus E Wayfinding layout:** https://campus-e-wayfinding-led.vercel.app/ . This is the complete Three.js site with its original wayfinding UI and added `components/LedBridge.tsx` MQTT LED pairing/control panel. It is deployed on a separate Vercel project with a manually uploaded production build (READY). The original `taitv-png/Campus-E-Wayfinding` repository and URL are unchanged. To operate real LEDs, flash the MQTT firmware and pair device ID/key in the left-side panel.
+
+Production build output is exported by GitHub Actions to `deployment-bundle/campus-e-wayfinding-led/` in this feature branch. **Source commits do not automatically redeploy this Vercel project**, as direct Git import was not authorized; another deploy is needed when source code changes.
+
 ## Tablet web controller (deployed)
 
 **Live production URL:** https://campus-e-led-tablet.vercel.app/ (Vercel project `campus-e-led-tablet`, deploy READY, no SSO). It is a standalone, tablet-friendly 8-level lighting controller, not the full Three.js wayfinding page. Source: `tablet/index.html`.
 
 For remote control, flash the MQTT-enabled ESP32 sketch and connect both tablet and ESP32 to Internet-capable networks. The ESP32 listens on test.mosquitto.org:8886 TLS; tablet opens test.mosquitto.org:8081 WSS. Type the same `LED_DEVICE_ID` and private `LED_PAIRING_KEY` configured in `led_private.h` into the tablet panel. Do not share the key or leave it in screenshots. Select F1-F7 or GF; only the ESP32-signed `ESP32 đã áp dụng` message confirms physical application. For the website to work while Internet is unavailable, use the ESP32 local AP dashboard at http://192.168.4.1 (it is a different interface and is not reachable directly from the public HTTPS page).
 
-The full original wayfinding site with integrated LED-selection buttons is also staged under `components/CampusEMap.tsx` plus `components/LedBridge.tsx`, but **not yet hosted** as a separate live copy; GitHub Pages installation for the Personal repository requires permission configuration, and the Vercel Git import lacks authorization to read this repository. The standalone tablet controller is independently live.
+The full original Wayfinding interface with integrated LED selection is now live at https://campus-e-wayfinding-led.vercel.app/ . The separate minimal tablet control page remains available, but is not the intended replacement for the original 3D website.
 
 ## User-visible behavior
 
