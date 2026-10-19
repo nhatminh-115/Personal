@@ -8,6 +8,16 @@
 
 Production build output is exported by GitHub Actions to `deployment-bundle/campus-e-wayfinding-led/` in this feature branch. **Source commits do not automatically redeploy this Vercel project**, as direct Git import was not authorized; another deploy is needed when source code changes.
 
+## Full original 3D Wayfinding site (deployed)
+
+**Production URL:** https://campus-e-led-controller.vercel.app/ — Vercel production deployment `dpl_CDCQ3v9WcEaY9KkTVtcyC3JB4gii` reported READY on 2026-10-19. This is the **complete Campus E 3D Wayfinding interface** with the ESP32 selection bridge embedded in the left control panel. Its 3D visualization, room selection, route directions, floor rail, and original website presentation are retained.
+
+Use the `GF` / `F1`–`F7` floor rail to send Spotlight commands after pairing the ESP32 in the **Đồng bộ LED mô hình** panel. **Toàn bộ tòa nhà** restores sparse Ambient. It requires ESP32 firmware configured to join a 2.4 GHz Internet-enabled Wi-Fi and the browser to reach the broker. Website deployment does not by itself establish ESP32 connectivity.
+
+This site is deployed to a separate Vercel project using prebuilt static files exported from `pnpm exec vite build --config vite.pages.config.ts --base /`; the 39 compiled files are stored in `deployment-bundle/campus-e-wayfinding-led/` as a transfer manifest and base64 chunks for the deployment process. Static asset paths use root `/assets/`, unlike the original GitHub Pages deployment base `/Campus-E-Wayfinding/`.
+
+**Testing:** Source build checks passed and Vercel reports a ready production deployment with HTML, JS, CSS, fonts and images present. The HTTP site rendering on a physical tablet and real ESP32/LED communication have not yet been end-to-end tested.
+
 ## Tablet web controller (deployed)
 
 **Live production URL:** https://campus-e-led-tablet.vercel.app/ (Vercel project `campus-e-led-tablet`, deploy READY, no SSO). It is a standalone, tablet-friendly 8-level lighting controller, not the full Three.js wayfinding page. Source: `tablet/index.html`.
