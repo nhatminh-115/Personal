@@ -1,4 +1,4 @@
-name: Campus E LED integration checks
+name: Campus E LED - frontend and firmware checks
 
 on:
   push:
@@ -30,16 +30,28 @@ jobs:
           cache-dependency-path: Campus-E-Wayfinding/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm pages:build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: campus-e-led-pages-preview
+          path: Campus-E-Wayfinding/pages-dist/
+          if-no-files-found: error
+          retention-days: 7
 
   firmware:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: arduino/setup-arduino-cli@v2
-      - run: |
+      - name: Install ESP32 core and libraries
+        run: |
           arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
           arduino-cli lib install "Adafruit NeoPixel" "PubSubClient"
-          mkdir -p /tmp/CampusELedController
-          cp Campus-E-Wayfinding/esp32/CampusELedController.ino /tmp/CampusELedController/CampusELedController.ino
-          arduino-cli compile --fqbn esp32:esp32:esp32 /tmp/CampusELedController
+      - name: Compile with placeholder test credentials, no secrets
+        run: |
+          mkdir -p /tmp/BuildingSpotlight_SparseAmbient
+          cp Campus-E-Wayfinding/firmware/BuildingSpotlight_SparseAmbient.ino /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_mqtt_addon.h /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_mqtt_ca.h /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_private.h.example /tmp/BuildingSpotlight_SparseAmbient/led_private.h
+          arduino-cli compile --fqbn esp32:esp32:esp32 /tmp/BuildingSpotlight_SparseAmbient
