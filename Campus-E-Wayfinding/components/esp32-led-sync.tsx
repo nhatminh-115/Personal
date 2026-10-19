@@ -152,7 +152,7 @@ export function useCampusLed() {
     socket.current?.close();
   }, []);
 
-  const panel = <section style={{padding: '7px 14px', background: '#f0f5f6', border: '1px solid #d4e0e5', borderRadius: 10, marginBottom: 6}}>
+  const panel = <section style={{position: 'absolute', zIndex: 6, top: 76, right: 12, width: 'min(340px, calc(100% - 90px))', maxHeight: '75%', overflowY: 'auto', padding: '9px 12px', background: '#172932f2', color: '#f1f5f5', border: '1px solid #45606a', borderRadius: 10}}>
     <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between'}}>
       <span style={{fontSize: 12}}><strong>LED mô hình:</strong> {status}</span>
       <button type="button" onClick={() => setEditor(v => !v)} style={{padding: '5px 10px', fontSize: 12}}>⚙ {editor ? 'Đóng' : 'Thiết lập LED'}</button>
