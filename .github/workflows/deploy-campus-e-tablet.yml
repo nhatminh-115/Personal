@@ -1,0 +1,58 @@
+name: Deploy Campus E LED tablet website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-campus-e-tablet.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: campus-e-tablet-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout isolated Campus E integration branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/campus-e-led-sync
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Campus-E-Wayfinding/pnpm-lock.yaml
+
+      - name: Build website for tablet
+        working-directory: Campus-E-Wayfinding
+        run: |
+          pnpm install --frozen-lockfile
+          VITE_PAGES_BASE=/Personal/ pnpm pages:build
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload static assets
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: Campus-E-Wayfinding/pages-dist
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4
