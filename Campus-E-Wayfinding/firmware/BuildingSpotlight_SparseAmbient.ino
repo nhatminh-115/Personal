@@ -365,6 +365,7 @@ static bool pixelMapped(const FloorMap &m, uint8_t floor0, uint8_t strip0, uint1
 
 static PowerPlan calculatePowerPlan() {
   PowerPlan plan;
+  plan.estimatedLedMa = ALL_PIXELS_IDLE_MA;
   if (mode == MODE_OFF) return plan;
   const uint8_t wantR = uint16_t(red) * brightnessPercent / 100u;
   const uint8_t wantG = uint16_t(green) * brightnessPercent / 100u;
