@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   website:
@@ -36,6 +36,20 @@ jobs:
           path: Campus-E-Wayfinding/pages-dist/
           if-no-files-found: error
           retention-days: 7
+      - name: Export build to dedicated staging branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd Campus-E-Wayfinding/pages-dist
+          touch .nojekyll
+          git init
+          git config user.name "campus-e-build-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B campus-e-led-export
+          git add -A
+          git commit -m "Build Campus E Wayfinding with LED controls"
+          git remote add publish "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git"
+          git push --force publish HEAD:refs/heads/campus-e-led-export
 
   firmware:
     runs-on: ubuntu-latest
