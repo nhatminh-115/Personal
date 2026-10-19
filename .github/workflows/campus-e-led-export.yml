@@ -1,0 +1,59 @@
+name: Export Campus E Wayfinding for direct hosting
+on:
+  push:
+    branches:
+      - feature/campus-e-led-sync
+    paths:
+      - '.github/workflows/campus-e-led-export.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Campus-E-Wayfinding/pnpm-lock.yaml
+      - name: Install site
+        working-directory: Campus-E-Wayfinding
+        run: pnpm install --frozen-lockfile
+      - name: Build with root URL base for standalone Vercel
+        working-directory: Campus-E-Wayfinding
+        run: pnpm exec vite build --config vite.pages.config.ts --base /
+      - name: Export compiled static files into transfer manifest
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root='Campus-E-Wayfinding/pages-dist';
+          const walk=(d)=>fs.readdirSync(d,{withFileTypes:true}).flatMap(e=>e.isDirectory()?walk(path.join(d,e.name)):[path.join(d,e.name)]);
+          const files=walk(root).sort().map(abs=>({file:path.relative(root,abs).replaceAll('\\','/'),encoding:'base64',data:fs.readFileSync(abs).toString('base64')}));
+          const body=JSON.stringify({files});
+          const dir='deployment-bundle/campus-e-wayfinding-led';
+          fs.rmSync(dir,{recursive:true,force:true});fs.mkdirSync(dir,{recursive:true});
+          const chunks=body.match(/[\s\S]{1,460000}/g)??[];
+          chunks.forEach((chunk,i)=>fs.writeFileSync(path.join(dir,'part-'+String(i).padStart(3,'0')+'.txt'),chunk));
+          fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify({pieces:chunks.length,fileCount:files.length,assetNames:files.map(x=>x.file)},null,2));
+          console.log('Bundled '+files.length+' site files in '+chunks.length+' chunks');
+          NODE
+      - name: Push distributable bundle back to integration branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add deployment-bundle/campus-e-wayfinding-led/
+          if ! git diff --cached --quiet; then
+            git commit -m "build: export root-hostable Campus E Wayfinding static assets"
+            git push origin HEAD:feature/campus-e-led-sync
+          fi
