@@ -80,11 +80,13 @@ class SimpleMqtt {
       const type = joined[cursor] >> 4;
       if (type === 2) {
         if (n >= 2 && joined[start + 1] === 0) {
-          this.ready = true;
           this.subscribe();
-          this.ping = setInterval(() => this.send(Uint8Array.from([0xc0, 0])), 15000);
-          this.onReady();
         } else this.onClosed('Broker từ chối MQTT CONNECT');
+      } else if (type === 9 && n >= 3) {
+        // Only publish after subscription is confirmed, so the first ACK is not lost.
+        this.ready = true;
+        this.ping = setInterval(() => this.send(Uint8Array.from([0xc0, 0])), 15000);
+        this.onReady();
       } else if (type === 3 && n >= 2) {
         const size = (joined[start] << 8) | joined[start + 1];
         if (start + 2 + size <= end) {
