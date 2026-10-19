@@ -18,6 +18,8 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <Adafruit_NeoPixel.h>
+// Arduino's generated function prototypes appear before later type definitions.
+struct PowerPlan;
 
 static const char* AP_SSID = "ESP32_Building1";
 static const char* AP_PASSWORD = "12345678";
