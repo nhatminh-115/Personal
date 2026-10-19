@@ -40,7 +40,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd Campus-E-Wayfinding/pages-dist
+          cd pages-dist
           touch .nojekyll
           git init
           git config user.name "campus-e-build-bot"
