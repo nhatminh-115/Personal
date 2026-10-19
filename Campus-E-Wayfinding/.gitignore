@@ -39,3 +39,6 @@ next-env.d.ts
 /outputs/
 /work/
 /.openai/
+
+# ESP32 Wi-Fi credentials and device pairing key (local only)
+firmware/led_private.h
