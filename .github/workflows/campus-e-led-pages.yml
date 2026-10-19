@@ -1,11 +1,5 @@
 name: Deploy Campus E LED Control (tablet)
 on:
-  push:
-    branches:
-      - feature/campus-e-led-sync
-    paths:
-      - 'Campus-E-Wayfinding/**'
-      - '.github/workflows/campus-e-led-pages.yml'
   workflow_dispatch:
 
 permissions:
