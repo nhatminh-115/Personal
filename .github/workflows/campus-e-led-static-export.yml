@@ -1,0 +1,39 @@
+name: Export Campus E 3D website for Vercel
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/campus-e-led-sync]
+    paths:
+      - '.github/workflows/campus-e-led-static-export.yml'
+permissions:
+  contents: write
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Campus-E-Wayfinding/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: Campus-E-Wayfinding
+      - run: pnpm exec vite build --config vite.pages.config.ts --base=/
+        working-directory: Campus-E-Wayfinding
+      - name: Check in static site for self-contained production deploy
+        run: |
+          mkdir -p Campus-E-Wayfinding/deployed-static
+          cp -a Campus-E-Wayfinding/pages-dist/. Campus-E-Wayfinding/deployed-static/
+          git add -f Campus-E-Wayfinding/deployed-static
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --cached --quiet; then
+            git commit -m "build: export Campus E 3D static assets"
+            git push origin HEAD:feature/campus-e-led-sync
+          fi
