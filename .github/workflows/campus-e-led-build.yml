@@ -1,0 +1,35 @@
+name: Campus E LED integration build
+
+on:
+  push:
+    branches:
+      - feature/campus-e-led-sync
+    paths:
+      - 'Campus-E-Wayfinding/**'
+      - '.github/workflows/campus-e-led-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: Campus-E-Wayfinding/pnpm-lock.yaml
+      - name: Install pinned dependencies
+        working-directory: Campus-E-Wayfinding
+        run: pnpm install --frozen-lockfile
+      - name: Build GitHub Pages static app
+        working-directory: Campus-E-Wayfinding
+        run: pnpm pages:build
