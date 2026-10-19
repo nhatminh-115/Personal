@@ -1,0 +1,127 @@
+/* Layout + typography polish (loaded after theme.css) */
+.app-shell{--surface-2:#141d22;--line-2:#ffffff22;--teal:#5eead4}
+.app-shell .topbar .status{margin-left:auto}
+/* ---------- workspace grid: left | map | right ---------- */
+.app-shell .workspace{grid-template-columns:clamp(320px,24vw,400px) minmax(0,1fr) clamp(330px,24vw,400px);grid-template-rows:minmax(0,1fr)}
+.app-shell .workspace>.controls-panel{grid-row:1;display:flex;flex-direction:column;gap:0;padding:22px 22px 18px;overflow-y:auto}
+.app-shell .map-stage{grid-row:1}
+.app-shell .workspace>.side-panel{grid-column:3;grid-row:1;display:flex;flex-direction:column;gap:20px;padding:20px 22px;border-right:0;border-left:1px solid var(--line);overflow-y:auto;scrollbar-width:thin;scrollbar-color:#ffffff22 transparent}
+.app-shell .panel-title,.app-shell .mini-head{font-size:15px;font-weight:600;color:var(--text)}
+.app-shell .panel-title svg,.app-shell .mini-head svg{width:18px;height:18px}
+/* ---------- left: journey ---------- */
+.app-shell .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:40px}
+.app-shell .reset-journey{display:inline-flex;align-items:center;gap:6px;min-height:36px!important;padding:6px 12px;border:1px solid var(--line-2);border-radius:999px;background:transparent;color:#c3cfd3;font-size:13px;font-weight:500}
+.app-shell .reset-journey svg{width:15px;height:15px}
+.app-shell .reset-journey:hover{color:#fff;border-color:#ff6b2c;background:#ff6b2c1a}
+.app-shell .journey{position:relative;display:grid;gap:18px;margin-top:18px}
+.app-shell .room-selector.is-start::after{content:'';position:absolute;left:13px;top:32px;bottom:-16px;border-left:2px dashed #ffffff2e}
+.app-shell .room-selector{margin:0;position:relative}
+.app-shell .room-selector .selector-label{display:flex;align-items:center;gap:10px;margin:0 0 9px;font-size:14px;font-weight:600;color:#d5dfe2}
+.app-shell .selector-label i{position:relative;z-index:1;width:28px;height:28px;display:grid;place-items:center;border-radius:50%;font-style:normal;font-size:13px;font-weight:700;background:var(--raised);border:2px solid #ffffff2e;color:var(--muted)}
+.app-shell .is-start.is-set .selector-label i{background:#0d2a28;border-color:var(--teal);color:var(--teal)}
+.app-shell .is-dest.is-set .selector-label i{background:#3a1a0c;border-color:var(--accent);color:#ffb08a}
+.app-shell .select-room{margin-left:38px;width:calc(100% - 38px);min-height:64px;padding:11px 12px 11px 16px;gap:10px;border-radius:14px;background:var(--raised);border:1px solid var(--line-2)}
+.app-shell .select-room>span{display:grid;gap:3px;min-width:0}
+.app-shell .select-room b{font-size:17px;font-weight:650;line-height:1.25;color:#fff}
+.app-shell .select-room small{font-size:12.5px;line-height:1.4;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .room-selector:not(.is-set) .select-room{border-style:dashed;background:#ffffff06}
+.app-shell .room-selector:not(.is-set) .select-room b{color:#cfd9dc;font-weight:500}
+.app-shell .select-room:hover{border-color:#ffffff4d;background:#1c272e}
+.app-shell .select-room svg{width:20px;height:20px}
+.app-shell .journey-hint{margin:16px 0 0 38px;font-size:13px;line-height:1.55;color:var(--muted);text-wrap:pretty}
+.app-shell .room-card{display:block;margin:22px 0 0;padding:16px 18px;border:1px solid #ff6b2c55;border-left:1px solid #ff6b2c55;border-radius:16px;background:linear-gradient(150deg,#2a170e,#171f24 70%);transition:border-color .15s,transform .15s}
+.app-shell .room-card:hover{border-color:#ff6b2c;transform:translateY(-1px)}
+.app-shell .room-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.app-shell .room-card-top small{margin:0;font-size:12px;font-weight:600;letter-spacing:.02em;color:#ffad85}
+.app-shell .floor-chip{padding:3px 10px;border-radius:999px;background:var(--accent);color:#fff;font-size:12px;font-weight:700}
+.app-shell .room-card strong{display:block;margin-top:8px;font-size:30px;line-height:1.1;font-weight:700;color:#fff;white-space:nowrap}
+.app-shell .room-card p.room-card-name{margin:8px 0 0;font-size:15px;line-height:1.5;font-weight:500;color:#e4eaec;text-wrap:pretty}
+.app-shell .room-card>.room-card-link{display:inline-flex;align-items:center;gap:2px;margin-top:12px;font-size:13px;font-weight:600;color:#ffad85}
+.app-shell .room-card>.room-card-link svg{width:16px;height:16px}
+.app-shell .legend{margin-top:auto;padding-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:9px 12px;border-top:0}
+.app-shell .legend b{display:block;grid-column:1/-1;margin-bottom:2px;font-size:12px;font-weight:600;letter-spacing:.02em;color:#7d8f96}
+.app-shell .legend span{font-size:12.5px;color:#a9b8bd;gap:8px}
+.app-shell .legend span:last-child{grid-column:1/-1}
+/* ---------- right: tour + route + plan ---------- */
+.app-shell .side-panel .tour-launch{grid-template-columns:40px 1fr;gap:2px 12px;align-items:center;padding:16px 18px;flex-shrink:0}
+.app-shell .side-panel .tour-launch svg{width:32px;height:32px}
+.app-shell .side-panel .tour-launch strong{font-size:18px;line-height:1.2}
+.app-shell .side-panel .tour-launch span{font-size:13px;opacity:.92}
+.app-shell .route-section{display:flex;flex-direction:column;gap:14px}
+.app-shell .route-ends{display:grid;grid-template-columns:1fr 20px 1fr;align-items:stretch;gap:6px}
+.app-shell .route-ends>svg{align-self:center;width:20px;color:var(--muted)}
+.app-shell .route-ends>div{display:grid;gap:2px;padding:10px 12px;border-radius:12px;background:var(--raised);border:1px solid var(--line);min-width:0}
+.app-shell .route-ends small{font-size:11.5px;font-weight:600;color:var(--teal)}
+.app-shell .route-ends .to small{color:#ffad85}.app-shell .route-ends .to{border-color:#ff6b2c55}
+.app-shell .route-ends b{font-size:16px;font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.app-shell .route-ends span{font-size:12px;color:var(--muted)}
+.app-shell .side-panel .route-mode{align-self:flex-start;display:inline-flex;gap:8px;padding:8px 14px;font-size:13px;font-weight:600;border-radius:999px;background:#ff6b2c22;color:#ffb08a;letter-spacing:0}
+.app-shell .side-panel .route-mode svg{width:16px}
+.app-shell .side-panel ol{list-style:none;margin:0;padding:0;display:grid;gap:0;counter-reset:none}
+.app-shell .side-panel li{position:relative;display:grid;grid-template-columns:28px 1fr;gap:12px;padding:0 0 16px;font-size:14px;line-height:1.5;color:#dfe7ea;border:0}
+.app-shell .side-panel li:not(:last-child)::before{content:'';position:absolute;left:13px;top:30px;bottom:2px;border-left:2px solid #ffffff1a}
+.app-shell .side-panel li b{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:var(--raised);border:1px solid #ff6b2c66;color:#ffad85;font-size:13px;font-weight:700}
+.app-shell .side-panel li:last-child b{background:var(--accent);border-color:var(--accent);color:#fff}
+.app-shell .side-panel li span{padding-top:3px;text-wrap:pretty}
+.app-shell .plan-placeholder{margin:0;font-size:14px;line-height:1.6;color:var(--muted)}
+.app-shell .plan-section{display:flex;flex-direction:column;gap:10px}
+.app-shell .plan-section .mini-head{padding:0}
+.app-shell .plan-open{margin-left:auto;display:inline-flex;align-items:center;gap:6px;min-height:34px!important;padding:5px 12px;border:1px solid var(--line-2);border-radius:999px;background:transparent;color:#c3cfd3;font-size:12.5px;font-weight:500}
+.app-shell .plan-open svg{width:14px!important;height:14px!important;color:inherit!important}
+.app-shell .plan-open:hover{color:#fff;border-color:#ffffff55}
+.app-shell .plan-thumb{display:block;padding:0;border:1px solid var(--line);border-radius:14px;background:var(--bg);overflow:hidden}
+.app-shell .plan-thumb:hover{border-color:#ffffff40}
+.app-shell .plan-thumb .mini-plan{display:block;width:100%;height:auto;max-height:none;margin:0;border:0;border-radius:0;background:transparent}
+/* ---------- map tools ---------- */
+.app-shell .stage-tools span{font-size:12.5px}
+/* ---------- room picker dialog ---------- */
+dialog.room-picker-dialog{padding:28px 30px}
+.room-picker-dialog header{align-items:flex-start!important}
+.room-picker-dialog header small{font-size:12px;font-weight:600;letter-spacing:.04em;color:#ffad85!important}
+.room-picker-dialog h2{font-size:28px!important;margin:6px 0 0!important}
+.room-picker-dialog nav{gap:8px!important;margin-top:6px}
+.room-picker-dialog nav button{min-height:52px!important;font-size:15px;font-weight:600}
+.room-picker-dialog h3{margin:22px 0 12px!important;font-size:13px!important;font-weight:600!important;letter-spacing:.04em;text-transform:uppercase;color:#7d8f96!important}
+.picker-rooms{gap:12px!important}
+.picker-rooms button{display:grid!important;grid-template-columns:minmax(132px,max-content) 1fr;align-items:center;gap:18px!important;min-height:84px!important;padding:14px 20px!important;text-align:left;border-radius:14px!important;transition:border-color .15s,background .15s}
+.picker-rooms button:hover{background:#1f2b32!important}
+.picker-rooms b{min-width:0!important;font-size:22px!important;font-weight:700;line-height:1.15;white-space:nowrap;color:var(--accent)}
+.picker-rooms span{font-size:15px!important;line-height:1.5!important;color:#e6ecee;text-wrap:pretty}
+.room-picker-dialog .picker-rooms button[aria-pressed=true]{background:#2a170e!important;border-color:var(--accent)!important;color:var(--text)!important;box-shadow:0 0 0 1px var(--accent) inset}
+/* ---------- room detail dialog ---------- */
+.room-detail-dialog>header strong{font-size:17px;font-weight:600}
+.detail-layout section>p{color:#c3cfd3!important}
+/* ---------- tour screen ---------- */
+.tour-screen>header{height:76px!important;gap:20px;padding:0 22px!important;border-bottom:1px solid var(--line)}
+.tour-screen>header .tour-back{min-height:46px!important;padding:10px 18px!important;font-size:15px!important}
+.tour-screen .tour-title{flex:1;min-width:0;display:grid;gap:2px;text-align:center;padding-right:clamp(0px,12vw,220px)}
+.tour-screen .tour-title small{font-size:12.5px;font-weight:600;color:#ffad85}
+.tour-screen .tour-title strong{position:static!important;transform:none!important;width:auto!important;display:block;font-size:18px!important;font-weight:600!important;line-height:1.35;text-transform:none!important;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tour-screen .tour-title strong b{color:var(--accent);margin-right:10px;font-weight:700}
+.tour-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 22px;background:var(--surface);border-bottom:1px solid var(--line);flex-shrink:0}
+.tour-toolbar .tool-group{display:flex;align-items:center;gap:4px;padding:4px;border:1px solid var(--line);border-radius:999px;background:#0a0f128f}
+.tour-toolbar .tool-group button{min-height:38px!important;padding:7px 16px;border:0!important;background:transparent!important;color:var(--muted)!important;font-size:14px;font-weight:500}
+.tour-toolbar .tool-group button:hover{color:var(--text)!important}
+.tour-toolbar .tool-group button.active{background:var(--text)!important;color:var(--bg)!important;font-weight:600}
+.tour-toolbar .avatar-picker{margin:0!important;padding-left:14px!important}
+.tour-toolbar .avatar-picker>span{font-size:13px!important;color:var(--muted);margin-right:4px!important}
+.tour-toolbar .avatar-picker button.active{background:var(--accent)!important;color:#fff!important;box-shadow:0 4px 14px #ff6b2c44}
+.tour-toolbar .tour-location{padding:7px 14px;border-radius:999px;background:#5eead41a;color:var(--teal);font-size:13px;font-weight:600}
+.tour-toolbar .tool-actions{display:flex;gap:8px;margin-left:auto}
+.tour-toolbar .tool-actions button{min-height:42px!important;padding:8px 16px;font-size:14px}
+.tour-toolbar .help-button{display:inline-flex;align-items:center;gap:7px}
+.tour-toolbar .help-button svg{width:17px;height:17px}
+.room-preview .touch-help{top:96px!important;left:20px;width:420px;max-width:calc(100% - 40px);padding:22px 22px 20px}
+.touch-help strong{display:block;font-size:20px;font-weight:700}
+.touch-help ol{list-style:none;margin:14px 0 18px;padding:0;display:grid;gap:12px}
+.touch-help li{display:grid;grid-template-columns:28px 1fr;gap:12px;align-items:start}
+.touch-help li b{width:28px;height:28px;display:grid;place-items:center;border-radius:50%;background:#ff6b2c26;color:#ffad85;font-size:13px}
+.touch-help li span{padding-top:3px;font-size:14.5px;line-height:1.55;color:#dbe4e6;text-wrap:pretty}
+.touch-help button{min-height:48px!important;border-radius:999px!important;font-size:15px;font-weight:600}
+.tour-screen .room-preview-caption{font-size:14px!important;padding:11px 22px!important}
+.tour-screen .room-preview-caption span{font-weight:600;color:#c3cfd3}
+.room-preview .station-detail h3{font-size:19px;line-height:1.35}
+/* ---------- responsive ---------- */
+@media(max-width:1280px){.app-shell .workspace{grid-template-columns:clamp(290px,25vw,340px) minmax(0,1fr) clamp(300px,26vw,350px)}.app-shell .stage-tools span{display:none}.app-shell .workspace>.controls-panel,.app-shell .workspace>.side-panel{padding:18px}}
+@media(max-height:760px){.app-shell .journey{gap:12px;margin-top:12px}.app-shell .select-room{min-height:56px;padding-block:8px}.app-shell .room-card{margin-top:14px;padding:12px 14px}.app-shell .room-card strong{font-size:24px;margin-top:4px}.app-shell .room-card p.room-card-name{font-size:14px}.app-shell .room-card>.room-card-link{margin-top:6px}.app-shell .legend{padding-top:12px;gap:6px 10px}}
+@media(max-width:1000px){.room-preview .touch-help{top:150px!important}.app-shell .workspace>.side-panel,.app-shell .workspace>.controls-panel{overflow:visible}.tour-screen .tour-title{padding-right:0}.tour-toolbar .tool-actions{margin-left:0}.picker-rooms button{grid-template-columns:1fr;gap:4px!important}}
