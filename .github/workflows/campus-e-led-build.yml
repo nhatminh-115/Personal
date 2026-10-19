@@ -53,6 +53,7 @@ jobs:
           cp Campus-E-Wayfinding/firmware/BuildingSpotlight_SparseAmbient.ino /tmp/BuildingSpotlight_SparseAmbient/
           cp Campus-E-Wayfinding/firmware/led_mqtt_addon.h /tmp/BuildingSpotlight_SparseAmbient/
           cp Campus-E-Wayfinding/firmware/led_mqtt_ca.h /tmp/BuildingSpotlight_SparseAmbient/
+          cp Campus-E-Wayfinding/firmware/led_power_plan.h /tmp/BuildingSpotlight_SparseAmbient/
           cp Campus-E-Wayfinding/firmware/led_private.h.example /tmp/BuildingSpotlight_SparseAmbient/led_private.h
       - name: Compile Arduino ESP32 firmware
         run: arduino-cli compile --fqbn esp32:esp32:esp32 /tmp/BuildingSpotlight_SparseAmbient
