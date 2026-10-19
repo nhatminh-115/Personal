@@ -18,6 +18,7 @@
 #include <DNSServer.h>
 #include <Preferences.h>
 #include <Adafruit_NeoPixel.h>
+#include "led_power_plan.h"
 // Arduino's generated function prototypes appear before later type definitions.
 struct PowerPlan;
 
@@ -360,13 +361,7 @@ static bool pixelMapped(const FloorMap &m, uint8_t floor0, uint8_t strip0, uint1
 // Enforces a TOTAL pixel power budget, not a separate cap for each strip.
 // The UI brightness slider is treated as a request; the RGB values are
 // scaled in one step AFTER inspecting the mapped LED count.
-struct PowerPlan {
-  uint16_t litCount = 0;
-  uint16_t estimatedLedMa = ALL_PIXELS_IDLE_MA;
-  uint8_t r = 0, g = 0, b = 0;
-  uint8_t scalePercent = 100;
-  bool limited = false;
-};
+// PowerPlan is defined in led_power_plan.h before Arduino prototypes.
 
 static PowerPlan calculatePowerPlan() {
   PowerPlan plan;
