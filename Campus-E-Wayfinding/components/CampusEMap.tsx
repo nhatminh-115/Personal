@@ -8,7 +8,6 @@ import { createTeachingRoom, createHallway, type TourItem, type Portal } from '.
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ArrowLeft, Building2, ChevronRight, Footprints, Info, LocateFixed, Map, Maximize2, Navigation, RotateCcw, Route, Rotate3D } from 'lucide-react';
 import IntroScreen from './IntroScreen';
-import { useCampusLed } from './esp32-led-sync';
 
 type P = [number, number];
 type Room = { id:string; name:string; floor:number; box:[number,number,number,number]; door:P; doors?:P[]; outline?:P[]; kind:'lab'|'class'|'support' };
@@ -427,12 +426,11 @@ function RoomDetail({room,route,onClose}:{room:Room;route:RouteData;onClose:()=>
 }
 
 export default function CampusEMap(){
-  const led = useCampusLed();
   const [tourId,setTourId]=useState<string|null>(null);
   const [intro,setIntro]=useState(true);
   const host=useRef<HTMLDivElement>(null);const [startId,setStartId]=useState('');const [destId,setDestId]=useState('');const [detailId,setDetailId]=useState<string|null>(null);const [oneFloor,setOneFloor]=useState<number|null>(null);const [showAll,setShowAll]=useState(true);
   const start=STARTS.find(p=>p.id===startId)??PLACES[0];const dest=ROOMS.find(r=>r.id===destId)??ROOMS[0];const hasRoute=!!startId&&!!destId;const route=useMemo<RouteData>(()=>hasRoute?routeFor(start,dest):{mode:'WALK',floors:[],paths:{},steps:[]},[start,dest,hasRoute]);
-  const resetJourney=()=>{setStartId('');setDestId('');setOneFloor(null);setShowAll(true);setDetailId(null);led.sendAmbient()};
+  const resetJourney=()=>{setStartId('');setDestId('');setOneFloor(null);setShowAll(true);setDetailId(null)};
   useEffect(()=>{const f=(e:Event)=>{const id=(e as CustomEvent<string>).detail;if(!ROOMS.some(r=>r.id===id))return;if(tourId)setTourId(id);else {setDestId(id);setOneFloor(null);setShowAll(false)}};window.addEventListener('campus-room',f);return()=>window.removeEventListener('campus-room',f)},[tourId]);
   useEffect(()=>{if(tourId||!host.current)return;return buildScene(host.current,{exploded:true,floor:oneFloor,showAll:showAll||!hasRoute,dest:destId,start,route})},[oneFloor,showAll,destId,start,route,tourId]);
   return <main className="app-shell">
@@ -445,7 +443,7 @@ export default function CampusEMap(){
         {destId&&<div className="room-card" role="button" tabIndex={0} onClick={()=>setDetailId(destId)} onKeyDown={e=>{if(e.key==='Enter')setDetailId(destId)}}><div className="room-card-top"><small>Phòng đã chọn</small><span className="floor-chip">{roomGroups[dest.floor].label}</span></div><strong>{displayId(dest.id)}</strong><p className="room-card-name">{dest.name}</p><span className="room-card-link">Xem thông tin phòng <ChevronRight aria-hidden="true"/></span></div>}
         <div className="legend"><b>Chú thích</b><span><i className="lab"/>Phòng LAB</span><span><i className="class"/>Phòng học</span><span><i className="stair"/>CT1 / CT2</span><span><i className="lift"/>Thang máy</span><span><i className="wc"/>WC Nam / Nữ</span><span><i className="selected"/>Điểm đến</span><span><i className="route"/>Tuyến đường di chuyển</span></div>
       </aside>
-      <div className="map-stage"><div className="stage-tools"><button className={showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(true);led.sendAmbient()}}><Building2/>Toàn bộ tòa nhà</button><button className={!showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(false);led.sendAmbient()}}><Route/>Tầng của tuyến</button><span><Rotate3D/> Một ngón: dịch chuyển · Hai ngón: xoay / thu phóng</span></div>{led.panel}<div ref={host} className="three-host"/><nav className="floor-rail">{FLOOR_LABELS.map((f,i)=><button key={f} className={oneFloor===i?'active':''} onClick={()=>{setOneFloor(i);setShowAll(false);led.sendFloor(i)}}>{f}</button>)}</nav></div>
+      <div className="map-stage"><div className="stage-tools"><button className={showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(true)}}><Building2/>Toàn bộ tòa nhà</button><button className={!showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(false)}}><Route/>Tầng của tuyến</button><span><Rotate3D/> Một ngón: dịch chuyển · Hai ngón: xoay / thu phóng</span></div><div ref={host} className="three-host"/><nav className="floor-rail">{FLOOR_LABELS.map((f,i)=><button key={f} className={oneFloor===i?'active':''} onClick={()=>{setOneFloor(i);setShowAll(false)}}>{f}</button>)}</nav></div>
       <aside className="panel side-panel" aria-label="Chỉ đường và mặt bằng">
         <button className="tour-launch" disabled={!destId} onClick={()=>setTourId(destId)}><Rotate3D/><strong>Tham quan 3D</strong><span>{destId?'Đi vào '+displayId(dest.id)+' cùng nhân vật':'Chọn phòng để bắt đầu'}</span></button>
         <section className="route-section"><div className="panel-title"><Route/> Chỉ đường</div>{hasRoute?<><div className="route-ends"><div><small>Từ</small><b>{start.id==='ENTRY'?'Cổng vào':displayId(start.id.replace('ROOM-',''))}</b><span>{start.id==='ENTRY'?'Tầng trệt':roomGroups[start.floor].label}</span></div><ChevronRight aria-hidden="true"/><div className="to"><small>Đến</small><b>{displayId(dest.id)}</b><span>{roomGroups[dest.floor].label}</span></div></div><div className="route-mode"><Navigation/>{route.mode==='LIFT'?'Đi thang máy':route.mode==='WALK'?'Cùng tầng · đi bộ':`Cầu thang ${route.mode}`}</div><ol>{route.steps.map((s,i)=><li key={s}><b>{i+1}</b><span>{s}</span></li>)}</ol></>:<p className="plan-placeholder">Chọn vị trí hiện tại và phòng cần đến, các bước đi sẽ hiện ở đây. Bạn cũng có thể chạm thẳng vào một phòng trên mô hình.</p>}</section>
