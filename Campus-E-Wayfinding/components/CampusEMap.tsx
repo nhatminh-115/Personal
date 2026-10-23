@@ -406,17 +406,17 @@ function RoomRenderGallery({id}:{id:string}){
   </div>
 }
 
-function RoomPicker({value,onChange,start=false}:{value:string;onChange:(id:string)=>void;start?:boolean}){
+function RoomPicker({value,onChange,start=false,onFloorPreview}:{value:string;onChange:(id:string)=>void;start?:boolean;onFloorPreview?:(floor:number|null)=>void}){
   const [open,setOpen]=useState(false),[floor,setFloor]=useState(0);
   const dialog=useRef<HTMLDialogElement>(null),trigger=useRef<HTMLButtonElement>(null);
   const chosen=ROOMS.find(r=>r.id===(start?value.replace('ROOM-',''):value));
   useEffect(()=>{if(open)dialog.current?.showModal()},[open]);
-  const close=()=>{setOpen(false);trigger.current?.focus()};
+  const close=()=>{onFloorPreview?.(null);setOpen(false);trigger.current?.focus()};
   const choose=(id:string)=>{onChange(id);close()};
   const label=chosen?displayId(chosen.id):value==='ENTRY'?'Cổng Nguyễn Văn Thủ':start?'Chọn vị trí bắt đầu':'Chọn phòng cần đến';
   const sub=chosen?roomGroups[chosen.floor].label+' · '+chosen.name:value==='ENTRY'?'Tầng trệt · Lối vào chính':start?'Bạn đang đứng ở đâu?':'Chọn tầng, rồi chọn phòng';
   return <div className={'room-selector'+(start?' is-start':' is-dest')+(chosen||value==='ENTRY'?' is-set':'')}><span className="selector-label"><i aria-hidden="true">{start?'A':'B'}</i>{start?'Vị trí hiện tại':'Phòng cần đến'}</span><button ref={trigger} className="select-room" aria-haspopup="dialog" onClick={()=>{setFloor(chosen?.floor??0);setOpen(true)}}><span><b>{label}</b><small>{sub}</small></span><ChevronRight aria-hidden="true"/></button>
-    {open&&<dialog ref={dialog} className="room-picker-dialog" onCancel={close}><header><div><small>CHỌN TẦNG → CHỌN PHÒNG</small><h2>{start?'Bạn đang ở đâu?':'Bạn muốn đến phòng nào?'}</h2></div><button onClick={close}>Đóng ×</button></header><nav aria-label="Chọn tầng">{roomGroups.map(g=><button key={g.floor} aria-pressed={floor===g.floor} onClick={()=>setFloor(g.floor)}>{g.label}</button>)}</nav><h3>{roomGroups[floor].label}</h3><div className="picker-rooms">{start&&floor===0&&<button aria-pressed={value==='ENTRY'} onClick={()=>choose('ENTRY')}><b>Lối vào</b><span>Cổng Nguyễn Văn Thủ</span></button>}{roomGroups[floor].rooms.map(r=><button key={r.id} aria-pressed={(start?'ROOM-'+r.id:r.id)===value} onClick={()=>choose(start?'ROOM-'+r.id:r.id)}><b>{displayId(r.id)}</b><span>{r.name}</span></button>)}</div></dialog>}
+    {open&&<dialog ref={dialog} className="room-picker-dialog" onCancel={close}><header><div><small>CHỌN TẦNG → CHỌN PHÒNG</small><h2>{start?'Bạn đang ở đâu?':'Bạn muốn đến phòng nào?'}</h2></div><button onClick={close}>Đóng ×</button></header><nav aria-label="Chọn tầng">{roomGroups.map(g=><button key={g.floor} aria-pressed={floor===g.floor} onClick={()=>{setFloor(g.floor);onFloorPreview?.(g.floor)}}>{g.label}</button>)}</nav><h3>{roomGroups[floor].label}</h3><div className="picker-rooms">{start&&floor===0&&<button aria-pressed={value==='ENTRY'} onClick={()=>choose('ENTRY')}><b>Lối vào</b><span>Cổng Nguyễn Văn Thủ</span></button>}{roomGroups[floor].rooms.map(r=><button key={r.id} aria-pressed={(start?'ROOM-'+r.id:r.id)===value} onClick={()=>choose(start?'ROOM-'+r.id:r.id)}><b>{displayId(r.id)}</b><span>{r.name}</span></button>)}</div></dialog>}
   </div>
 }
 function RoomDetail({room,route,onClose}:{room:Room;route:RouteData;onClose:()=>void}){
@@ -429,29 +429,44 @@ function RoomDetail({room,route,onClose}:{room:Room;route:RouteData;onClose:()=>
 export default function CampusEMap(){
   const [tourId,setTourId]=useState<string|null>(null);
   const [intro,setIntro]=useState(true);
-  const host=useRef<HTMLDivElement>(null);const [startId,setStartId]=useState('');const [destId,setDestId]=useState('');const [detailId,setDetailId]=useState<string|null>(null);const [oneFloor,setOneFloor]=useState<number|null>(null);const [showAll,setShowAll]=useState(true);const [ledSelection,setLedSelection]=useState<{mode:'ambient'|'spotlight';floor:number}>({mode:'ambient',floor:0});
+  const host=useRef<HTMLDivElement>(null);const [startId,setStartId]=useState('');const [destId,setDestId]=useState('');const [detailId,setDetailId]=useState<string|null>(null);const [oneFloor,setOneFloor]=useState<number|null>(null);const [showAll,setShowAll]=useState(true);
+  // Lighting arbitration: destination picker preview > chosen route destination > floor rail > idle ambient.
+  // The floor rail selection survives a journey and its idle timer starts AFTER leaving the journey.
+  const [manualFloor,setManualFloor]=useState<number|null>(null);
+  const [manualActivity,setManualActivity]=useState(0);
+  const [destinationPreview,setDestinationPreview]=useState<number|null>(null);
+  const destination=ROOMS.find(r=>r.id===destId);
+  const priorityFloor=destinationPreview??destination?.floor??null;
+  const activeFloor=priorityFloor??manualFloor;
+  const ledSelection:{mode:'ambient'|'spotlight';floor:number}=activeFloor===null
+    ?{mode:'ambient',floor:0}:{mode:'spotlight',floor:activeFloor===0?8:activeFloor};
+  const chooseManualFloor=(floor:number|null)=>{setManualFloor(floor);setManualActivity(n=>n+1)};
+  useEffect(()=>{
+    if(priorityFloor!==null||manualFloor===null)return;
+    const timeout=window.setTimeout(()=>setManualFloor(null),60_000);
+    return()=>window.clearTimeout(timeout);
+  },[priorityFloor,manualFloor,manualActivity]);
   const start=STARTS.find(p=>p.id===startId)??PLACES[0];const dest=ROOMS.find(r=>r.id===destId)??ROOMS[0];const hasRoute=!!startId&&!!destId;const route=useMemo<RouteData>(()=>hasRoute?routeFor(start,dest):{mode:'WALK',floors:[],paths:{},steps:[]},[start,dest,hasRoute]);
-  const resetJourney=()=>{setStartId('');setDestId('');setOneFloor(null);setShowAll(true);setDetailId(null);setLedSelection({mode:'ambient',floor:0})};
+  const resetJourney=()=>{setStartId('');setDestId('');setDestinationPreview(null);setOneFloor(null);setShowAll(true);setDetailId(null)};
   useEffect(()=>{const f=(e:Event)=>{const id=(e as CustomEvent<string>).detail;if(!ROOMS.some(r=>r.id===id))return;if(tourId)setTourId(id);else {setDestId(id);setOneFloor(null);setShowAll(false)}};window.addEventListener('campus-room',f);return()=>window.removeEventListener('campus-room',f)},[tourId]);
   useEffect(()=>{if(tourId||!host.current)return;return buildScene(host.current,{exploded:true,floor:oneFloor,showAll:showAll||!hasRoute,dest:destId,start,route})},[oneFloor,showAll,destId,start,route,tourId]);
   return <main className="app-shell">
     {intro&&<IntroScreen roomCount={ROOMS.length} onDone={()=>setIntro(false)}/>}
     <header className="topbar"><img src={`${import.meta.env.BASE_URL}tch-logo-lockup.png`} alt="Technology Convergence Hub" width={218} height={60}/><div><span>Chỉ đường trong tòa nhà</span><b>Cơ sở E · UEH</b></div><div className="status"><i/> Đang hoạt động</div><button className="intro-replay" onClick={()=>document.getElementById("led-pairing")?.scrollIntoView({behavior:"smooth",block:"center"})}>Ghép nối LED</button><button className="intro-replay" onClick={()=>setIntro(true)}>Giới thiệu</button></header>
-    {!tourId&&<>    <section className="workspace">
+    <section className="workspace" style={tourId?{display:'none'}:undefined}>
       <aside className="panel controls-panel"><div className="panel-head"><div className="panel-title"><LocateFixed/> Hành trình của bạn</div>{(startId||destId)&&<button className="reset-journey" onClick={resetJourney}><RotateCcw aria-hidden="true"/><span>Đặt lại</span></button>}</div>
-        <div className="journey"><RoomPicker start value={startId} onChange={id=>{setStartId(id);setOneFloor(null);setShowAll(false)}}/><RoomPicker value={destId} onChange={id=>{setDestId(id);setOneFloor(null);setShowAll(false)}}/></div>
+        <div className="journey"><RoomPicker start value={startId} onChange={id=>{setStartId(id);setOneFloor(null);setShowAll(false)}}/><RoomPicker value={destId} onFloorPreview={setDestinationPreview} onChange={id=>{setDestId(id);setOneFloor(null);setShowAll(false)}}/></div>
         {!hasRoute&&<p className="journey-hint">{!startId&&!destId?'Bắt đầu bằng cách chọn nơi bạn đang đứng (A), sau đó chọn phòng muốn đến (B).':!startId?'Chọn thêm vị trí hiện tại (A) để xem tuyến đường.':'Chọn phòng cần đến (B) để xem tuyến đường.'}</p>}
         {destId&&<div className="room-card" role="button" tabIndex={0} onClick={()=>setDetailId(destId)} onKeyDown={e=>{if(e.key==='Enter')setDetailId(destId)}}><div className="room-card-top"><small>Phòng đã chọn</small><span className="floor-chip">{roomGroups[dest.floor].label}</span></div><strong>{displayId(dest.id)}</strong><p className="room-card-name">{dest.name}</p><span className="room-card-link">Xem thông tin phòng <ChevronRight aria-hidden="true"/></span></div>}
-        <LedBridge selection={ledSelection}/><div className="legend"><b>Chú thích</b><span><i className="lab"/>Phòng LAB</span><span><i className="class"/>Phòng học</span><span><i className="stair"/>CT1 / CT2</span><span><i className="lift"/>Thang máy</span><span><i className="wc"/>WC Nam / Nữ</span><span><i className="selected"/>Điểm đến</span><span><i className="route"/>Tuyến đường di chuyển</span></div>
+        <div role="status" aria-live="polite" style={{fontSize:12,marginTop:12,color:"#abd4ce"}}>{priorityFloor!==null?`Ưu tiên LED: tầng đến ${FLOOR_LABELS[priorityFloor]}`:manualFloor!==null?`LED theo lựa chọn ngoài: ${FLOOR_LABELS[manualFloor]} · 60 giây không thao tác → Ambient`:"LED: Ambient · chờ lựa chọn tầng"}</div><LedBridge selection={ledSelection}/><div className="legend"><b>Chú thích</b><span><i className="lab"/>Phòng LAB</span><span><i className="class"/>Phòng học</span><span><i className="stair"/>CT1 / CT2</span><span><i className="lift"/>Thang máy</span><span><i className="wc"/>WC Nam / Nữ</span><span><i className="selected"/>Điểm đến</span><span><i className="route"/>Tuyến đường di chuyển</span></div>
       </aside>
-      <div className="map-stage"><div className="stage-tools"><button className={showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(true);setLedSelection({mode:"ambient",floor:0})}}><Building2/>Toàn bộ tòa nhà</button><button className={!showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(false)}}><Route/>Tầng của tuyến</button><span><Rotate3D/> Một ngón: dịch chuyển · Hai ngón: xoay / thu phóng</span></div><div ref={host} className="three-host"/><nav className="floor-rail">{FLOOR_LABELS.map((f,i)=><button key={f} className={oneFloor===i?'active':''} onClick={()=>{setOneFloor(i);setShowAll(false);setLedSelection({mode:"spotlight",floor:i===0?8:i})}}>{f}</button>)}</nav></div>
+      <div className="map-stage"><div className="stage-tools"><button className={showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(true);chooseManualFloor(null)}}><Building2/>Toàn bộ tòa nhà</button><button className={!showAll&&oneFloor===null?'active':''} onClick={()=>{setOneFloor(null);setShowAll(false)}}><Route/>Tầng của tuyến</button><span><Rotate3D/> Một ngón: dịch chuyển · Hai ngón: xoay / thu phóng</span></div><div ref={host} className="three-host"/><nav className="floor-rail">{FLOOR_LABELS.map((f,i)=><button key={f} className={oneFloor===i?'active':''} onClick={()=>{setOneFloor(i);setShowAll(false);chooseManualFloor(i)}}>{f}</button>)}</nav></div>
       <aside className="panel side-panel" aria-label="Chỉ đường và mặt bằng">
         <button className="tour-launch" disabled={!destId} onClick={()=>setTourId(destId)}><Rotate3D/><strong>Tham quan 3D</strong><span>{destId?'Đi vào '+displayId(dest.id)+' cùng nhân vật':'Chọn phòng để bắt đầu'}</span></button>
         <section className="route-section"><div className="panel-title"><Route/> Chỉ đường</div>{hasRoute?<><div className="route-ends"><div><small>Từ</small><b>{start.id==='ENTRY'?'Cổng vào':displayId(start.id.replace('ROOM-',''))}</b><span>{start.id==='ENTRY'?'Tầng trệt':roomGroups[start.floor].label}</span></div><ChevronRight aria-hidden="true"/><div className="to"><small>Đến</small><b>{displayId(dest.id)}</b><span>{roomGroups[dest.floor].label}</span></div></div><div className="route-mode"><Navigation/>{route.mode==='LIFT'?'Đi thang máy':route.mode==='WALK'?'Cùng tầng · đi bộ':`Cầu thang ${route.mode}`}</div><ol>{route.steps.map((s,i)=><li key={s}><b>{i+1}</b><span>{s}</span></li>)}</ol></>:<p className="plan-placeholder">Chọn vị trí hiện tại và phòng cần đến, các bước đi sẽ hiện ở đây. Bạn cũng có thể chạm thẳng vào một phòng trên mô hình.</p>}</section>
         {destId&&<section className="plan-section"><div className="mini-head"><Map/> Mặt bằng {roomGroups[dest.floor].label.toLowerCase()}<button className="plan-open" onClick={()=>setDetailId(dest.id)}><Maximize2 aria-hidden="true"/>Phóng to</button></div><button className="plan-thumb" onClick={()=>setDetailId(dest.id)} aria-label="Mở mặt bằng và thông tin phòng"><MiniPlan floor={dest.floor} dest={dest.id} route={route}/></button></section>}
       </aside>
     </section>
-    </>}
     {tourId&&<section className="tour-screen"><header><button className="journey-back nav-emphasis tour-back" onClick={()=>setTourId(null)}><ArrowLeft aria-hidden="true"/><span>Trở về chỉ đường</span></button><div className="tour-title"><small>Tham quan 3D · {roomGroups[ROOMS.find(r=>r.id===tourId)!.floor].label}</small><strong><b>{displayId(tourId)}</b>{ROOMS.find(r=>r.id===tourId)!.name}</strong></div></header><RoomPreview room={ROOMS.find(r=>r.id===tourId)!}/></section>}
     {detailId&&<RoomDetail room={ROOMS.find(r=>r.id===detailId)!} route={route} onClose={()=>setDetailId(null)}/>}
     <footer><Footprints/> Tuyến chỉ mang tính định hướng; không thay thế sơ đồ thoát hiểm hoặc chỉ dẫn an toàn tại công trình.</footer>
