@@ -5,6 +5,7 @@ on:
     branches: [feature/campus-e-led-sync]
     paths:
       - '.github/workflows/campus-e-led-static-export.yml'
+      - 'Campus-E-Wayfinding/components/**'
 permissions:
   contents: write
 jobs:
