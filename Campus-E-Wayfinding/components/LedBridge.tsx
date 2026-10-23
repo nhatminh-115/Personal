@@ -186,7 +186,7 @@ export default function LedBridge({ selection }: LedBridgeProps) {
     <section id="led-pairing" aria-label="Ghép nối LED với ESP32" style={{ marginTop: 18, scrollMarginTop: 24, padding: 14, border: '1px solid #547f8b', borderRadius: 12, background: '#102731', color: '#eefaff' }}>
       <strong style={{ display: 'block', marginBottom: 6 }}>Ghép nối LED · ESP32</strong>
       <small style={{ display: 'block', opacity: 0.85, marginBottom: 11 }}>
-        Chọn F1–F7 hoặc GF sẽ bật Spotlight. “Toàn bộ tòa nhà” sẽ trở lại Sparse Ambient.
+        Tầng đến trong tìm đường luôn được ưu tiên. Thoát tìm đường sẽ về tầng bạn chọn ngoài mô hình; sau 60 giây không thao tác, đèn tự trở lại Sparse Ambient.
       </small>
       <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Device ID</label>
       <input value={device} disabled={connected} onChange={e => setDevice(e.target.value.trim().toLowerCase())}
