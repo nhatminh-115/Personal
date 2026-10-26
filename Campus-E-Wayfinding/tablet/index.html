@@ -51,10 +51,10 @@ a{color:#9ae3d3}
 <label class="field" for="secret">Pairing key</label>
 <input id="secret" type="password" placeholder="Mã bí mật trên ESP32" autocomplete="off">
 <div class="row"><button id="connect" class="btn selected">Kết nối ESP32</button><button id="resend" class="btn" disabled>Gửi lại</button></div>
-<p class="note muted">Tablet và ESP32 phải có Internet để liên lạc qua broker MQTT bảo mật. Device ID phải trùng với firmware; pairing key không được lưu trên web.</p>
+<p class="note muted">Tablet và ESP32 phải có Internet để liên lạc qua broker MQTT công cộng (mã HMAC ký lệnh, ESP32 TCP/1883 chưa mã hóa). Device ID phải trùng với firmware; pairing key không được lưu trên web.</p>
 </div><div class="card">
 <h2>Hướng dẫn sử dụng</h2>
-<p class="note muted">1. Nạp bản firmware mới có MQTT TLS vào ESP32, đặt Device ID và pairing key riêng.</p>
+<p class="note muted">1. Nạp bản firmware mới có MQTT vào ESP32, đặt Device ID và pairing key riêng.</p>
 <p class="note muted">2. ESP32 kết nối Wi-Fi 2.4 GHz có Internet; có thể giữ AP riêng để cấu hình Pixel Mapping.</p>
 <p class="note muted">3. Mở trang này trên tablet, ghép nối một lần và chạm vào F1–F7 hoặc GF.</p>
 <p class="note warning">Broker thử nghiệm có thể gián đoạn. “Đã nối broker” không có nghĩa LED đã sáng: chỉ xác nhận <strong>ESP32 đã áp dụng</strong> mới là ACK từ thiết bị.</p>
@@ -126,8 +126,8 @@ if(secret.length<16){note('Pairing key cần ít nhất 16 ký tự');return}
 try{
 stop();privateKey=await crypto.subtle.importKey('raw',enc.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign','verify']);
 $('secret').value='';try{localStorage.setItem('campus-e-led-id',device)}catch(_){}
-status('Đang kết nối…',false);note('Kết nối WSS → test.mosquitto.org:8081');
-const ws=new WebSocket('wss://test.mosquitto.org:8081/mqtt','mqtt');
+status('Đang kết nối…',false);note('Kết nối WSS → broker.hivemq.com:8884');
+const ws=new WebSocket('wss://broker.hivemq.com:8884/mqtt','mqtt');
 socket=ws;ws.binaryType='arraybuffer';
 ws.onopen=()=>{const id='ce-web-'+crypto.randomUUID().replaceAll('-','').slice(0,20);ws.send(packet(0x10,field('MQTT').concat([4,2,0,30],field(id))))};
 ws.onmessage=e=>receiveData(new Uint8Array(e.data));
