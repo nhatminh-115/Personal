@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 type Selection = { mode: 'ambient' | 'spotlight'; floor: number };
 type LedBridgeProps = { selection: Selection };
-const BROKER = 'wss://test.mosquitto.org:8081/mqtt';
+const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 
 const enc = new TextEncoder();
 const utf = (s: string) => Array.from(enc.encode(s));
