@@ -29,7 +29,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed on PR #344: an approved delegated child failing during graph resume now persists the child/delegation terminal state, clears stale approval linkage, and resumes the matching root interrupt with the failure result.
 - Completed on PR #345: cancellation during root finalization now marks active descendant runs and delegations cancelled, records child cancellation events, and prevents matching approval/routing-confirmation retries from resuming terminal runs.
 - Completed on PR #346: cancellation now holds the root and existing child resume locks before persisting `cancel_requested_at`; approval and routing-confirmation endpoints reject resume attempts after cancellation is acknowledged.
-- Current milestone (branch 104): make cancellation-requested chat turns recoverable when their in-flight executor exits before finalization. An active executor owns a per-run execution lock; a repeated stop or idempotent chat retry finalizes the persisted request only after it can claim that lock. A deterministic integration regression simulates a lost executor. Local pytest is unavailable because the active Python environment lacks `aiosqlite` and `pytest`; static parse and diff checks pass. Remote CI verification is pending.
+- Current milestone (branch 104): make cancellation-requested chat turns recoverable when their in-flight executor exits before finalization. The executor owns a per-run execution lock; a repeated stop or idempotent chat retry finalizes the persisted request only after it can claim that lock. PR #347 is open, but CI runs #909–#911 were cancelled before completion. Run #911 showed the new recovery cases passing, then stalled in `test_chat_stop_racing_terminalization_is_linearized`: the recovery helper refreshed the run before checking whether its executor was active, triggering the test's deliberate refresh pause. The latest local fix checks the execution lock first, so active work returns without refreshing; a rerun is pending. Local pytest is unavailable because the active Python environment lacks `aiosqlite` and `pytest`.
 
 ## Recent verified milestones
 
@@ -51,10 +51,9 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Immediate next steps
 
-1. Check the recovery lock/finalization paths for regression risks and confirm the lost-executor integration test shape.
-2. Commit this milestone to branch 104, push it, and open a PR.
-3. Wait for GitHub Actions; merge only when all required checks are green.
-4. Start the next highest-value non-blocked root/child durability audit while quota allows; CodeGraph setup remains pending external setup and is not a blocker.
+1. Push the execution-lock ordering fix and rerun CI on PR #347.
+2. Merge only after all required checks are green, then create a fresh branch from canonical `main`.
+3. Start the next highest-value non-blocked root/child durability audit while quota allows; CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
 

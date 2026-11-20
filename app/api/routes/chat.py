@@ -249,10 +249,6 @@ async def _finalize_cancelled_chat_turn_if_idle(
         for run_id in sorted({run.id, *child_run_ids}):
             await lock_stack.enter_async_context(lock_run_resume(db, run_id))
 
-        await db.refresh(run)
-        if run.status != RunStatus.RUNNING.value or run.cancel_requested_at is None:
-            return run.status == RunStatus.CANCELLED.value
-
         async with try_lock_run_execution(db, run.id) as acquired:
             if not acquired:
                 return False
