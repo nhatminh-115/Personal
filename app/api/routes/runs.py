@@ -67,13 +67,14 @@ async def request_chat_turn_cancellation(
     # The request flag is durable now and resume locks are released. If the
     # original chat executor disappeared before it could observe the flag,
     # this retry can safely claim the idle execution lock and finalize it.
-    from app.api.routes.chat import _finalize_cancelled_chat_turn_if_idle
+    if already_requested:
+        from app.api.routes.chat import _finalize_cancelled_chat_turn_if_idle
 
-    await _finalize_cancelled_chat_turn_if_idle(
-        db,
-        run,
-        trace_service=TraceService(db),
-    )
+        await _finalize_cancelled_chat_turn_if_idle(
+            db,
+            run,
+            trace_service=TraceService(db),
+        )
     return CancelChatTurnResponse(
         run_id=run.id,
         status="cancellation_requested",

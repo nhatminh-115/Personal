@@ -118,41 +118,41 @@ async def lock_run_execution(db: AsyncSession, run_id: str) -> AsyncIterator[Non
 async def try_lock_run_execution(db: AsyncSession, run_id: str) -> AsyncIterator[bool]:
     """Try to claim an execution thread for cancellation recovery without waiting."""
     process_lock = await _get_process_lock(f"execution:{run_id}")
-    if db.get_bind().dialect.name == "postgresql":
-        bind = db.bind
-        if not isinstance(bind, AsyncEngine):
-            raise RuntimeError("Run execution coordination requires an async PostgreSQL engine.")
-
-        lock_params = {"run_id": run_id}
-        acquire = text("SELECT pg_try_advisory_lock(hashtext('aura:run-execution'), hashtext(:run_id))")
-        release = text("SELECT pg_advisory_unlock(hashtext('aura:run-execution'), hashtext(:run_id))")
-        async with bind.connect() as connection:
-            acquired = False
-            try:
-                try:
-                    result = await connection.execute(acquire, lock_params)
-                    acquired = bool(result.scalar_one())
-                    await connection.commit()
-                except BaseException:
-                    await connection.invalidate()
-                    raise
-                yield acquired
-            finally:
-                if acquired:
-                    try:
-                        await connection.execute(release, lock_params)
-                        await connection.commit()
-                    except BaseException:
-                        await connection.invalidate()
-                        raise
-        return
-
     if process_lock.locked():
         yield False
         return
 
     await process_lock.acquire()
     try:
+        if db.get_bind().dialect.name == "postgresql":
+            bind = db.bind
+            if not isinstance(bind, AsyncEngine):
+                raise RuntimeError("Run execution coordination requires an async PostgreSQL engine.")
+
+            lock_params = {"run_id": run_id}
+            acquire = text("SELECT pg_try_advisory_lock(hashtext('aura:run-execution'), hashtext(:run_id))")
+            release = text("SELECT pg_advisory_unlock(hashtext('aura:run-execution'), hashtext(:run_id))")
+            async with bind.connect() as connection:
+                acquired = False
+                try:
+                    try:
+                        result = await connection.execute(acquire, lock_params)
+                        acquired = bool(result.scalar_one())
+                        await connection.commit()
+                    except BaseException:
+                        await connection.invalidate()
+                        raise
+                    yield acquired
+                finally:
+                    if acquired:
+                        try:
+                            await connection.execute(release, lock_params)
+                            await connection.commit()
+                        except BaseException:
+                            await connection.invalidate()
+                            raise
+            return
+
         yield True
     finally:
         process_lock.release()
