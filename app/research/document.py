@@ -162,7 +162,7 @@ class ResearchDocumentFetcher:
         if address is not None:
             return [address]  # Literal addresses were checked by _validate_url.
 
-        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme.lower() == "https" else 80)
         try:
             addresses = await self._resolve_host_addresses(
                 hostname.encode("idna").decode("ascii"), port
@@ -206,6 +206,7 @@ class ResearchDocumentFetcher:
                 last_connect_error: Optional[httpx.HTTPError] = None
 
                 for address in addresses:
+                    pdf_bytes.clear()
                     pinned_url, request_headers, extensions = self._pinned_request_target(
                         current_url, address
                     )
