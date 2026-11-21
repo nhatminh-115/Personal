@@ -82,6 +82,12 @@ async def test_root_orchestrator_delegates_to_research_specialist_end_to_end(
     assert child_run.parent_run_id == parent_run_id
     assert child_run.status == "completed"
 
+    research_inspector = await async_client.get(f"/v1/runs/{parent_run_id}/research")
+    assert research_inspector.status_code == 200
+    research_state = research_inspector.json()
+    assert research_state["child_run_id"] == child_run_id
+    assert research_state["status"] in {"completed", "insufficient_evidence"}
+
     # 3. Verify Project Memory persistence
     mem_svc = SQLMemoryService(test_db_session)
     project_memories = await mem_svc.get_project_memories("Atlas_Architecture")
