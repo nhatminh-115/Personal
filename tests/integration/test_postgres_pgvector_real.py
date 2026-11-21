@@ -3,13 +3,17 @@
 import asyncio
 import os
 import uuid
+from unittest.mock import AsyncMock
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import delete, func as sa_func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.db.models import MemoryModel, RunModel, SessionModel
+from app.db.models import DelegationModel, MemoryModel, RunModel, SessionModel
+from app.delegation.registry import SpecialistRegistry
+from app.delegation.runtime import DelegationRuntime
+from app.delegation.types import DelegationRequest, SpecialistDefinition
 from app.memory.base import MemoryType
 from app.memory.service import SQLMemoryService
 from app.api.routes.memory import _set_memory_active
@@ -242,6 +246,72 @@ async def test_postgres_concurrent_memory_restores_reject_second_active_version(
     finally:
         async with session_factory() as session:
             await session.execute(delete(MemoryModel).where(MemoryModel.id.in_(ids)))
+            await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_postgres_delegation_inserts_child_run_before_delegation_fk(pg_session, monkeypatch):
+    """A child run must exist before Postgres enforces the delegation child_run_id FK."""
+    engine = pg_session.bind
+    session_factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    session_id = str(uuid.uuid4())
+    parent_run_id = str(uuid.uuid4())
+    parent_tool_call_id = f"call-{uuid.uuid4().hex}"
+
+    async with session_factory() as session:
+        session.add(SessionModel(id=session_id, title="Delegation FK regression"))
+        await session.commit()
+        session.add(RunModel(
+            id=parent_run_id,
+            session_id=session_id,
+            user_message="Delegate to a specialist",
+            status="running",
+        ))
+        await session.commit()
+
+    registry = SpecialistRegistry()
+    registry.register(SpecialistDefinition(
+        name="postgres_coder",
+        description="PostgreSQL delegation regression specialist",
+        system_prompt_template="Return the deterministic test result.",
+        allowed_tools=[],
+    ))
+    graph = AsyncMock()
+    graph.aget_state.return_value = type("Snapshot", (), {"next": (), "tasks": (), "values": {}})()
+    graph.ainvoke.return_value = {
+        "execution_status": "completed",
+        "final_response": "Delegated successfully.",
+        "step_number": 1,
+    }
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=graph))
+
+    try:
+        async with session_factory() as session:
+            result = await DelegationRuntime(registry=registry).delegate(
+                request=DelegationRequest(
+                    specialist_name="postgres_coder",
+                    task_description="Complete the deterministic regression task.",
+                    parent_run_id=parent_run_id,
+                    parent_tool_call_id=parent_tool_call_id,
+                    session_id=session_id,
+                ),
+                db=session,
+            )
+
+        assert result.status == "completed"
+        async with session_factory() as session:
+            child_run = await session.get(RunModel, result.child_run_id)
+            delegation = await session.scalar(
+                select(DelegationModel).where(DelegationModel.child_run_id == result.child_run_id)
+            )
+            assert child_run is not None
+            assert child_run.parent_run_id == parent_run_id
+            assert delegation is not None
+            assert delegation.parent_tool_call_id == parent_tool_call_id
+            assert delegation.status == "completed"
+    finally:
+        async with session_factory() as session:
+            await session.execute(delete(SessionModel).where(SessionModel.id == session_id))
             await session.commit()
 
 

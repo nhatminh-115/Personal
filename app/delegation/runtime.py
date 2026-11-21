@@ -208,6 +208,11 @@ class DelegationRuntime:
                         }
                     )
                     db.add(child_run)
+                    # PostgreSQL enforces the child_run_id foreign key when the
+                    # delegation row is inserted. Flush the referenced run first;
+                    # without an ORM relationship SQLAlchemy may otherwise emit
+                    # the delegation insert before this row.
+                    await db.flush([child_run])
 
                     delegation_rec = DelegationModel(
                         parent_run_id=request.parent_run_id,
