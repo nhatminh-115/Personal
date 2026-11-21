@@ -19,7 +19,10 @@ const BACKEND_MESSAGE = {
   run_id: 'hydrated-run-1',
   context_manifest: {
     estimated_tokens: 96,
-    objects: [{ object_id: 'hydrated-research-source', object_type: 'research_source', selected_by_user: true, source_object_ids: [] }],
+    objects: [
+      { object_id: 'hydrated-research-source', object_type: 'research_source', selected_by_user: true, source_object_ids: [] },
+      { object_id: 'linked-provenance-source', object_type: 'research_source', selected_by_user: false, source_object_ids: [] },
+    ],
   },
   routing_provenance: { provider: 'ollama', model: 'local-chat', role: 'root', reasoning_effort: 'medium' },
 };
@@ -34,6 +37,16 @@ describe('Session Hydration', () => {
       }
       if (url.includes('/v1/memory')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      }
+      if (url.includes('/v1/workspace/projects/Stateful%20Architecture/graph')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({
+          objects: [{
+            id: 'hydrated-research-source', project_name: 'Stateful Architecture', object_type: 'research_source',
+            created_by: 'user', title: 'Hydrated research source', content: 'Saved evidence for this conversation.',
+            metadata_json: {}, revision: 1, created_at: '2024-01-01', updated_at: '2024-01-01',
+          }],
+          objects_next_cursor: null,
+        }) });
       }
       if (url.includes('/v1/sessions?')) {
         return Promise.resolve({
@@ -105,6 +118,14 @@ describe('Session Hydration', () => {
     expect(screen.getByText('Reasoning · Medium')).toBeInTheDocument();
     expect(await screen.findByTestId('approval-banner')).toBeInTheDocument();
 
+    // A backend-restored thread has no browser-only context selection, so use
+    // the latest persisted turn's explicit selections to restore thread context.
+    expect(screen.getByText(/1 selected · open Context to inspect/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Context.*Project objects/ }));
+    expect(await screen.findByText('1 objects included')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Hydrated research source/ })[0]).toHaveAttribute('aria-pressed', 'true');
+    expect(document.querySelectorAll('.ai-context-item')).toHaveLength(1);
+
     // /v1/sessions/live-sess-1 was called
     // Fix 1: use type-safe call[0] extraction instead of tuple destructure
     const fetchCalls = (global.fetch as ReturnType<typeof vi.fn>).mock.calls.map(
@@ -112,6 +133,28 @@ describe('Session Hydration', () => {
     );
     const sessionDetailCalls = fetchCalls.filter((url: string) => url.includes('/v1/sessions/live-sess-1'));
     expect(sessionDetailCalls.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('preserves a deliberately empty local context selection over backend history', async () => {
+    const liveThread = {
+      id: 'stateful-live-empty-context', projectId: 'stateful', title: 'Empty context thread',
+      summary: 'The user cleared selected context', updated: 'now', messages: [],
+      sessionId: 'live-sess-1', source: 'live', pinned: false, initialContextObjectIds: [],
+    };
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([liveThread, ...initialChatThreads]));
+
+    await act(async () => { render(<App />); });
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    await act(async () => { fireEvent.click(projectButton); });
+    const chatsButton = (await screen.findByText(/Open project chats/i)).closest('button')!;
+    await act(async () => { fireEvent.click(chatsButton); });
+    await act(async () => { fireEvent.click(screen.getByText('Empty context thread')); });
+
+    await screen.findByRole('button', { name: /Research source.*hydrated-research-source/i });
+    fireEvent.click(screen.getByRole('button', { name: /Context.*Project objects/ }));
+    expect(await screen.findByText('0 objects included')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /Hydrated research source/ })[0]).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('polls a live running turn and hydrates its canonical messages after completion', async () => {
@@ -271,11 +314,18 @@ describe('Session Hydration', () => {
       });
       if (url.includes('/v1/sessions/source-session-1')) return Promise.resolve({ ok: true, json: () => Promise.resolve({
         id: 'source-session-1', title: 'Originating chat', project_name: 'Stateful Architecture',
-        created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:01Z', messages: [],
+        created_at: '2026-10-04T00:00:00Z', updated_at: '2026-10-04T00:00:01Z', messages: [BACKEND_MESSAGE],
       }) });
       if (url.includes('/v1/sessions/source-session-1/state')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'source-session-1', run_id: null, run_status: null, approval: null }) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
+
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([{
+      id: 'session-source-session-1', projectId: 'stateful', title: 'Originating chat',
+      summary: 'Saved live conversation', updated: 'now', messages: [],
+      sessionId: 'source-session-1', source: 'live', pinned: false,
+    }, ...initialChatThreads]));
 
     await act(async () => { render(<App />); });
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
@@ -288,6 +338,7 @@ describe('Session Hydration', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open source run' })); });
 
     expect(await screen.findByTestId('inspector-execution')).toBeInTheDocument();
+    expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument();
     expect(screen.getByText(/Run ID: source-run-1/)).toBeInTheDocument();
     expect(screen.getByText('model_selected')).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/runs/source-run-1?page_size=100'));

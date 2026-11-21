@@ -39,7 +39,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR [#361](https://github.com/nhatminh-115/Personal/pull/361) replaces raw scheduler/outbox supervisor tracebacks with safe failure categories and exception types. It merged as `1c8423f83e470ea089e7a9d43d2ffc6f3bc0adbe`. CI #947 (`44870503239`), job `136743725054`, passed: backend 709 tests in 51.91s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.20s.
 - PR [#362](https://github.com/nhatminh-115/Personal/pull/362) redacts raw database diagnostics from outbox lease-renewal logs. It merged as `093ad21adebfcac280b3b6e70a771cf76f358395`. CI #949 (`44871092257`), job `136745581096`, passed: backend 710 tests in 54.55s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.31s.
 - PR [#363](https://github.com/nhatminh-115/Personal/pull/363) removes raw non-provider exception text and tracebacks from immediate and queued event-handler logs while preserving event failure records. It merged as `7cdade160feffdcc0fbca07117beb0c1e1b273fa`. CI #951 (`44871678087`), job `136747366264`, passed: backend 711 tests in 64.00s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 9.91s.
-- Active branch: `codex/aura-next-milestone-20261121-16`, freshly created from canonical `main` at `7cdade160feffdcc0fbca07117beb0c1e1b273fa`.
+- PR [#364](https://github.com/nhatminh-115/Personal/pull/364) preserves saved Board branch context when a live chat sends its first prompt before opening Context. It merged as `1afa378e6fbdf3203d0becc2d67dedaee796ccea`. CI #953 (`44875042854`), job `136757786995`, passed: backend 711 tests in 60.64s; Phases 1/2.1/3/4 passed; frontend 47 files / 319 tests; Vite build 9.46s.
+- Active branch: `codex/aura-next-milestone-20261121-17`, freshly created from canonical `main` at `1afa378e6fbdf3203d0becc2d67dedaee796ccea`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -64,7 +65,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #362 / branch 14): keep outbox lease-renewal failures from writing raw DB diagnostics to logs.
 - Completed milestone (PR #363 / branch 15): keep immediate EventBus and queued outbox handler logs from exposing raw exception details.
 - Completed audit (branch 16): Routing Studio v2 A–H are already implemented on `main`; their current tests cover default profile, zero-provider preview, validation, unavailable model preservation, demo controls, structured errors, child overrides, and frontend flows.
-- Current milestone (branch 16): preserve a saved Board branch's selected context when the user starts a live chat and sends its first prompt without opening the Context panel. The send path now merges thread-pinned object/file selections with current composer selections, and the composer reports those selections before its object catalog is loaded.
+- Completed milestone (PR #364 / branch 16): preserve a saved Board branch's selected context when the user starts a live chat and sends its first prompt without opening the Context panel. The send path merges thread-pinned object/file selections with current composer selections, and the composer reports those selections before its object catalog is loaded.
+- Current milestone (branch 17): hydrate the transcript and restore the latest explicitly selected workspace context when a live session is recovered or opened from project-memory provenance, including when a summary-only session thread already exists locally. Preserve a locally saved empty selection, do not infer file-text attachment state from sanitized manifests, and keep provenance-only linked sources out of the selected set. Local frontend verification passes; remote Actions remains the merge gate.
 
 ## Recent verified milestones
 
@@ -100,10 +102,11 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #361: redact automation runtime loop tracebacks | Merged as `1c8423f`; CI #947 (`44870503239`), backend 709 passed in 51.91s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.20s |
 | PR #362: redact outbox lease heartbeat diagnostics | Merged as `093ad21`; CI #949 (`44871092257`), backend 710 passed in 54.55s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.31s |
 | PR #363: redact event handler failure diagnostics | Merged as `7cdade1`; CI #951 (`44871678087`), backend 711 passed in 64.00s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 9.91s |
+| PR #364: preserve saved Board branch context on the first live chat turn | Merged as `1afa378`; CI #953 (`44875042854`), backend 711 passed in 60.64s, Phases 1/2.1/3/4 passed, frontend 47 files / 319 tests, Vite build 9.46s |
 
 ## Immediate next steps
 
-1. Run frontend regression tests and build for saved-branch first-turn context preservation, then open a PR and wait for the complete GitHub Actions workflow.
+1. Finish backend-session context rehydration, open a PR from branch 17, and wait for the complete GitHub Actions workflow.
 2. Merge only the exact green head SHA, create a fresh branch from canonical `main`, and continue the next highest-value non-blocked workspace/runtime gap.
 3. CodeGraph setup remains pending external setup and is not a blocker.
 
@@ -116,6 +119,6 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 ## Verification constraints
 
 - Local `pytest` is present, but its test run currently stops during fixture loading because `aiosqlite` is missing from the host Python environment. Python AST parsing and `git diff --check` run locally; GitHub Actions runs the backend suite and integration scenarios.
-- For the current first-turn context change, all 47 frontend test files pass (319 tests), TypeScript passes, and Vite builds successfully to a fresh temporary output directory. The standard `npm run build` cleanup step cannot remove the existing `web/public/ocr` and `web/dist/assets` directories in this sandbox (`EPERM`); CI will run the standard build path.
+- For the current session-context rehydration change, all 47 frontend test files pass (320 tests), TypeScript passes, and Vite builds successfully to a fresh temporary output directory (14.79s). The standard `npm run build` cleanup step cannot remove the existing `web/public/ocr` and `web/dist/assets` directories in this sandbox (`EPERM`); CI will run the standard build path.
 - No paid/hosted model is required for CI.
 - Keep changes isolated on a fresh branch from canonical `main`, then report exact merge SHA and remote CI evidence.
