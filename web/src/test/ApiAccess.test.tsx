@@ -70,9 +70,24 @@ describe('API access', () => {
 });
 
 describe('ApiAccessDialog', () => {
+  it('shows a forget action for a saved token and invokes it', () => {
+    const onForgetToken = vi.fn();
+    render(<ApiAccessDialog open tokenConfigured onClose={vi.fn()} onSave={vi.fn()} onForgetToken={onForgetToken} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Forget token' }));
+
+    expect(onForgetToken).toHaveBeenCalledOnce();
+  });
+
+  it('does not show a forget action when no token is saved', () => {
+    render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={vi.fn()} onForgetToken={vi.fn()} />);
+
+    expect(screen.queryByRole('button', { name: 'Forget token' })).toBeNull();
+  });
+
   it('closes with Escape', () => {
     const onClose = vi.fn();
-    render(<ApiAccessDialog open tokenConfigured={false} onClose={onClose} onSave={vi.fn()} />);
+    render(<ApiAccessDialog open tokenConfigured={false} onClose={onClose} onSave={vi.fn()} onForgetToken={vi.fn()} />);
 
     fireEvent.keyDown(window, { key: 'Escape' });
 
@@ -81,7 +96,7 @@ describe('ApiAccessDialog', () => {
 
   it('rejects a short token without passing it to the app', () => {
     const onSave = vi.fn();
-    render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={onSave} />);
+    render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={onSave} onForgetToken={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Bearer token'), { target: { value: 'too-short' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save and reload' }));
@@ -93,7 +108,7 @@ describe('ApiAccessDialog', () => {
   it('passes a valid token to the app without rendering it as text', () => {
     const token = 'aura-browser-token-' + 'y'.repeat(32);
     const onSave = vi.fn();
-    render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={onSave} />);
+    render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={onSave} onForgetToken={vi.fn()} />);
 
     fireEvent.change(screen.getByLabelText('Bearer token'), { target: { value: token } });
     fireEvent.click(screen.getByRole('button', { name: 'Save and reload' }));
