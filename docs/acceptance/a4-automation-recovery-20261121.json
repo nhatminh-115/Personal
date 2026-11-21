@@ -1,0 +1,127 @@
+{
+  "assertions": [
+    {
+      "name": "webhook_secret_returned_once_at_creation",
+      "result": "PASS"
+    },
+    {
+      "name": "webhook_delivery_queued_with_traceable_event_id",
+      "result": "PASS"
+    },
+    {
+      "name": "duplicate_webhook_delivery_reuses_original_event",
+      "result": "PASS"
+    },
+    {
+      "name": "consequential_workspace_write_waits_for_approval",
+      "result": "PASS"
+    },
+    {
+      "name": "approval_paused_run_and_history_survive_api_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "approved_run_resumes_and_completes_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "queued_automation_run_can_be_cancelled_and_retained_in_history",
+      "result": "PASS"
+    },
+    {
+      "name": "approved_write_is_present_in_isolated_workspace",
+      "result": "PASS"
+    },
+    {
+      "name": "webhook_secret_is_persisted_as_digest_only",
+      "result": "PASS"
+    },
+    {
+      "name": "webhook_body_is_ignored_and_not_persisted",
+      "result": "PASS"
+    },
+    {
+      "name": "duplicate_delivery_creates_no_second_outbox_event",
+      "result": "PASS"
+    },
+    {
+      "name": "persisted_run_trace_and_event_identity_are_consistent",
+      "result": "PASS"
+    }
+  ],
+  "cancellation": {
+    "automation_id": "27d26d4f-9348-4dc8-b498-acee1c1cadb1",
+    "event_id": "fbcee782-70c2-45bc-950f-f58f969a19b4",
+    "request_status": "cancelled",
+    "run_id": "4ce8b539-837a-588d-923b-7fcb18cd206c",
+    "status": "cancelled"
+  },
+  "completed_at": "2026-11-21T14:50:52.231084+00:00",
+  "entities": {
+    "approval_id": "39567cb2-dc78-462b-b9d7-305bdf5d757c",
+    "automation_id": "068fdb2f-b64d-471d-8807-2e3908d34c12",
+    "event_id": "86344c04-e7ed-4959-8d97-35d937ac1595",
+    "external_event_id": "a4-611d6abf77b8",
+    "run_id": "25161eb3-cf73-58a5-9057-0a3afe5ce5dd",
+    "session_id": "7b88a6c0-31ab-57b5-91e6-7295514549f7"
+  },
+  "events": [
+    {
+      "event_id": "069ff0c3-0948-466a-bcbe-349286e0f6d3",
+      "event_type": "routing_profile_resolved"
+    },
+    {
+      "event_id": "485b1a8f-7f95-47d5-88e8-1117b6510a9f",
+      "event_type": "automation_triggered"
+    },
+    {
+      "event_id": "6a205dca-4ea1-41fd-9936-1fc546bfc88a",
+      "event_type": "model_selected"
+    },
+    {
+      "event_id": "0a54edd0-06b7-4024-bedd-95d512bcc133",
+      "event_type": "approval_requested"
+    },
+    {
+      "event_id": "544bb3a4-d73e-4860-b667-3b39a18fd837",
+      "event_type": "approval_granted"
+    },
+    {
+      "event_id": "7d1caafb-824e-4dc7-9c15-e8d03b901c40",
+      "event_type": "model_selected"
+    },
+    {
+      "event_id": "b97e0ddf-4b71-4e1b-af05-301f2e6a2af2",
+      "event_type": "run_completed"
+    },
+    {
+      "event_id": "86344c04-e7ed-4959-8d97-35d937ac1595",
+      "event_type": "outbox_event_processed"
+    }
+  ],
+  "execution": {
+    "live_inference_claim": false,
+    "mode": "isolated_local_api_processes",
+    "model_provider": "mock",
+    "service_restart_count": 1,
+    "webhook_secret_returned_at_creation": true
+  },
+  "outcome": "PASS",
+  "report_file": "a4-automation-recovery-20261121.json",
+  "route": {
+    "fallback_policy": "local_only",
+    "model": "mock-default",
+    "privacy_policy": "local_only",
+    "profile_id": "system-balanced",
+    "profile_version": 1,
+    "provider": "mock",
+    "winning_scope": "system"
+  },
+  "scenario": "A4_automation_recovery",
+  "schema_version": 1,
+  "source": {
+    "base_commit_sha": "8647e5ac208c3076a559bdd5e34c20050d1590e1",
+    "runner_sha256": "2160534481c340f52141d3d9624aacd0a2d2fa6ffe0581167c4bdc5f7df839fd"
+  },
+  "started_at": "2026-11-21T14:50:35.571452+00:00"
+}

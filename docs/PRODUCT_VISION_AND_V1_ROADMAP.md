@@ -190,7 +190,7 @@ Current implementation includes a transactional event outbox, persistent schedul
 - A user can inspect, cancel, retry, and understand the state and limitations of an automation run.
 - Webhook request bodies do not become untrusted prompt instructions; webhook secrets are returned only at creation and stored as digests.
 
-**Baseline status:** The automation runtime and associated tests are implemented. A complete real-deployment automation recovery scenario remains a v1 acceptance task.
+**Baseline status:** The automation runtime and associated tests are implemented. A4 passed on 2026-11-21 using two isolated local API processes: duplicate authenticated webhook delivery, approval-gated write, restart while approval-paused, resume, queued cancellation, digest-only secret storage, and persisted trace were verified. The sanitized report is [`docs/acceptance/a4-automation-recovery-20261121.json`](acceptance/a4-automation-recovery-20261121.json). This deterministic run does not claim live inference.
 
 ### O6 — Security, privacy, and recoverability
 
