@@ -486,6 +486,19 @@ async def chat_endpoint(
         # 5. Invoke LangGraph orchestrator with durable checkpointer
         graph = await get_compiled_graph()
         async with lock_run_execution(db, run_id):
+            await db.refresh(run_record)
+            if run_record.status != RunStatus.RUNNING.value:
+                return await _existing_chat_response(
+                    db,
+                    run_record,
+                    request_fingerprint=request_fingerprint or "",
+                )
+            await trace_service.record_event(
+                run_id=run_id,
+                session_id=req.session_id,
+                event_type="run_executor_started",
+                payload={"source": "chat"},
+            )
             result_state = await graph.ainvoke(initial_state, config=config)
 
             await db.refresh(run_record)

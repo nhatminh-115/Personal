@@ -92,6 +92,12 @@ def _safe_event_payload(event_type: str, payload: object) -> dict:
 
     if event_type == "request_received":
         return pick(payload, ("session_id", "parent_run_id", "specialist", "trigger_event_id"))
+    if event_type == "run_executor_started":
+        return pick(payload, ("source",))
+    if event_type == "run_recovered":
+        return pick(payload, ("recovery_action", "source"))
+    if event_type == "run_interrupted":
+        return pick(payload, ("recovery_action", "error_category"))
     if event_type == "routing_profile_resolved":
         return pick(payload, (
             "profile_id", "profile_version", "winning_scope", "role", "is_lock_all",

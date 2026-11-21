@@ -1,6 +1,7 @@
 """FastAPI server application initialization."""
 
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -26,6 +27,22 @@ async def lifespan(app: FastAPI):
     await init_db()
     # Ensure persistent checkpointer is initialized
     await init_checkpointer()
+
+    # Reconcile idle chat turns before serving requests. Ambiguous checkpoints
+    # are closed as interrupted instead of replaying tools or memory writes.
+    recovery_task = None
+    try:
+        from app.api.run_recovery import recover_running_chat_runs, run_chat_recovery_loop
+
+        recovery_task = asyncio.create_task(run_chat_recovery_loop())
+        recovery_counts = await recover_running_chat_runs()
+        if any(recovery_counts.get(key, 0) for key in ("waiting", "terminal", "interrupted")):
+            logger.info("Startup chat-run recovery completed.", extra=recovery_counts)
+    except Exception as exc:
+        logger.error(
+            "Startup chat-run recovery failed (error type: %s); continuing with API startup.",
+            type(exc).__name__,
+        )
 
     # Discover and register local and cloud model providers dynamically
     try:
@@ -58,6 +75,10 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         logger.info(f"Shutting down {settings.APP_NAME}")
+        if recovery_task is not None:
+            recovery_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await recovery_task
         await stop_automation_runtime()
         try:
             from app.mcp.manager import mcp_manager
