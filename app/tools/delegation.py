@@ -38,6 +38,7 @@ class DelegateTaskTool(Tool):
             "Delegate a scoped, specialized sub-task to an authorized specialist agent "
             "(e.g., 'coding' for inspecting code, running tests, diagnosing, and editing; "
             "'research' for literature review, finding prior art, reading paper methods, and extracting grounded evidence). "
+            "Project scope and effective privacy/fallback policy are inherited from the active root run, not tool arguments. "
             "Only available to the Personal Orchestrator."
         )
 
