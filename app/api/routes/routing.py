@@ -3,7 +3,7 @@
 import uuid
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete as sa_delete, select, text, update
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +19,7 @@ from app.models.routing_resolver import (
 )
 from app.models.router import ModelRouter
 from app.models.base import RoutingContext
+from app.core.logging import logger
 
 router = APIRouter(prefix="/v1/routing", tags=["Routing"])
 
@@ -352,8 +353,26 @@ async def validate_routing_profile(profile_id: str, db: AsyncSession = Depends(g
             raise HTTPException(status_code=404, detail="Routing profile not found")
         try:
             profile = model_to_routing_profile(db_profile)
-        except Exception as e:
-            return {"valid": False, "profile_id": profile_id, "errors": [str(e)]}
+        except (ValidationError, ValueError) as exc:
+            logger.warning(
+                "Persisted routing profile is invalid.",
+                extra={"details": {"exception_type": type(exc).__name__}},
+            )
+            return {
+                "valid": False,
+                "profile_id": profile_id,
+                "errors": ["Stored routing profile is invalid; review its configuration."],
+            }
+        except Exception as exc:
+            logger.error(
+                "Routing profile validation failed unexpectedly.",
+                extra={"details": {"exception_type": type(exc).__name__}},
+            )
+            return {
+                "valid": False,
+                "profile_id": profile_id,
+                "errors": ["Profile validation failed because an internal error occurred."],
+            }
 
     errors = []
     for r_name, r_cfg in profile.routes.items():
@@ -569,3 +588,4 @@ async def get_session_assignment(session_id: str, db: AsyncSession = Depends(get
         raise HTTPException(status_code=404, detail="Session not found")
         
     return {"session_id": session_id, "routing_profile_id": session_obj.routing_profile_id, "revision": session_obj.routing_revision}
+
