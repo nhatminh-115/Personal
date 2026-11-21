@@ -60,8 +60,12 @@ class OutboxWorker:
                     await lease_db.commit()
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("Failed to renew outbox worker lease", extra={"worker_id": self.worker_id})
+            except Exception as exc:
+                logger.error(
+                    "Failed to renew outbox worker lease (error type: %s).",
+                    type(exc).__name__,
+                    extra={"worker_id": self.worker_id},
+                )
 
     async def process_outbox_batch(self, db: AsyncSession, batch_size: int = 10) -> int:
         """Claim and process a single batch of pending outbox events."""
