@@ -506,13 +506,22 @@ async def recover_running_root_runs(
     *,
     graph: Any = None,
 ) -> dict[str, int]:
-    """Reconcile idle root runs with a user turn or a started event executor."""
+    """Reconcile lost chat executors and event executors that durably started."""
     if db is None:
         from app.db import session as db_session
 
         async with db_session.async_session_factory() as startup_session:
             return await recover_running_root_runs(startup_session, graph=graph)
 
+    chat_executor_started = (
+        select(RunEventModel.id)
+        .where(
+            RunEventModel.run_id == RunModel.id,
+            RunEventModel.event_type == "run_executor_started",
+            RunEventModel.payload["source"].as_string() == "chat",
+        )
+        .exists()
+    )
     event_executor_started = (
         select(RunEventModel.id)
         .where(
@@ -527,7 +536,11 @@ async def recover_running_root_runs(
         select(RunModel.id)
         .where(
             RunModel.parent_run_id.is_(None),
-            or_(RunModel.client_turn_id.is_not(None), event_executor_started),
+            or_(
+                RunModel.client_turn_id.is_not(None),
+                chat_executor_started,
+                event_executor_started,
+            ),
             RunModel.status == RunStatus.RUNNING.value,
         )
         .order_by(RunModel.created_at, RunModel.id)

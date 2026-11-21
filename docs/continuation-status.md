@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `52aef72b56ca04b79e79da7fb2fa2cc921876d50`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), and [#351](https://github.com/nhatminh-115/Personal/pull/351) are merged.
+- Canonical `main`: `d44211521aab266f5666f4e9a4f861ff1b1c518c`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), and [#352](https://github.com/nhatminh-115/Personal/pull/352) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -27,7 +27,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR [#349](https://github.com/nhatminh-115/Personal/pull/349) serializes event-triggered graph execution with the shared process-local/PostgreSQL run lock and rechecks persisted status after acquiring the lock. It merged as `2018bc99ec8ef0aa1a8aa43f86bb0a67754dff19`. CI #919 (`44856121787`), job `136698640237`, passed: backend 690 tests in 79.62s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.09s.
 - PR [#350](https://github.com/nhatminh-115/Personal/pull/350) extends conservative executor-loss recovery to event-triggered root runs. Event runs persist a safe executor-start marker; outbox retry no longer replays a started graph, and startup/periodic recovery reconciles waits/terminal checkpoints or closes ambiguous checkpoints. It merged as `b387bfb6c8a6a004bfc934414f05604ae38d2776`. CI #922 (`44858233341`), job `136705342344`, passed: backend 693 tests in 59.81s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 10.02s.
 - PR [#351](https://github.com/nhatminh-115/Personal/pull/351) finalizes persisted automation cancellation after root executor loss. Recovery waits for shared run locks, closes active root/child runs and stale decisions, and atomically commits the terminal transcript and run state. It merged as `52aef72b56ca04b79e79da7fb2fa2cc921876d50`. CI #924 (`44860093542`), job `136711265720`, passed: backend 696 tests in 52.54s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 7.82s.
-- Active branch: `codex/aura-next-milestone-20261121-04`, freshly created from canonical `main` at `52aef72b56ca04b79e79da7fb2fa2cc921876d50`.
+- PR [#352](https://github.com/nhatminh-115/Personal/pull/352) replaces the strong per-run asyncio lock map with weak-value storage so unused coordination locks can be collected while active holders/waiters retain shared lock identity. It merged as `d44211521aab266f5666f4e9a4f861ff1b1c518c`. CI #926 (`44860931163`), job `136713896394`, passed: backend 697 tests in 71.54s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 10.65s.
+- Active branch: `codex/aura-next-milestone-20261121-05`, freshly created from canonical `main` at `d44211521aab266f5666f4e9a4f861ff1b1c518c`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -39,7 +40,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #349 / branch 01): serialize event-triggered LangGraph execution against duplicate outbox delivery. If an event lease expires while the original handler is still running, a second handler can reach the same deterministic run without the chat/recovery execution lock. The shared lock and post-lock status refresh prevent overlapping graph invocations; the regression test passes in CI.
 - Completed milestone (PR #350 / branch 02): extend conservative executor-loss recovery to event-triggered/automation root runs. Event runs persist a safe executor-start marker; outbox redelivery does not replay a started graph, and recovery reconciles waits/terminal checkpoints or closes ambiguous checkpoints. Pre-execution runs remain retryable.
 - Completed milestone (PR #351 / branch 03): finalize persisted cancellation after a root executor disappears. Recovery waits for root/child resume and execution locks, then cancels active runs and stale decisions, updates automation history, and commits terminal state with its visible transcript without replaying graph nodes.
-- Current milestone (branch 04): bound the lifetime of process-local run coordination locks. AURA currently stores two `asyncio.Lock` objects per run ID in a module-level strong dictionary; use weak references so inactive locks can be collected while active holders and waiters continue to share one lock.
+- Completed milestone (PR #352 / branch 04): replace the strong per-run process lock registry with weak values so inactive locks are collectible; active holder/waiter behavior remains covered.
+- Current milestone (branch 05): include id-less legacy chat runs in executor-loss recovery when a persisted `run_executor_started(source="chat")` marker proves the graph executor began. Preserve outbox retry for event runs without a persisted event executor-start marker and keep legacy chat requests non-idempotent.
 
 ## Recent verified milestones
 
@@ -63,11 +65,13 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #349: serialize duplicate event run execution | Merged as `2018bc9`; CI #919 (`44856121787`), backend 690 passed in 79.62s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.09s |
 | PR #350: recover interrupted event-triggered runs safely | Merged as `b387bfb`; CI #922 (`44858233341`), backend 693 passed in 59.81s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 10.02s |
 | PR #351: finalize lost automation cancellations safely | Merged as `52aef72`; CI #924 (`44860093542`), backend 696 passed in 52.54s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 7.82s |
+| PR #352: collect inactive process run locks | Merged as `d442115`; CI #926 (`44860931163`), backend 697 passed in 71.54s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 10.65s |
 
 ## Immediate next steps
 
-1. Verify inactive lock collection and preserve nonblocking lock behavior for active holders and waiters.
-2. Run the full GitHub Actions workflow, merge only the exact green head SHA, then continue. CodeGraph setup remains pending external setup and is not a blocker.
+1. Recover id-less chat runs with a persisted chat executor-start marker after executor loss.
+2. Retain outbox retry behavior for event runs with no persisted event executor-start marker.
+3. Run the full GitHub Actions workflow, merge only the exact green head SHA, then continue. CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
 
