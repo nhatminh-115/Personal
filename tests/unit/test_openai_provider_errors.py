@@ -39,3 +39,38 @@ async def test_transport_failure_does_not_log_or_raise_raw_diagnostic(monkeypatc
     assert str(error.value) == "Connection to provider ollama failed."
     assert error.value.__cause__ is None
     assert diagnostic not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_http_failure_does_not_raise_provider_response_body(monkeypatch):
+    diagnostic = "private provider response body"
+
+    class FailingResponse:
+        def __init__(self):
+            self.status_code = 503
+            self.text = diagnostic
+
+    class FailingAsyncClient:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+        async def post(self, *_args, **_kwargs):
+            return FailingResponse()
+
+    monkeypatch.setattr("app.models.openai_provider.httpx.AsyncClient", FailingAsyncClient)
+    provider = OpenAICompatibleProvider(provider_name="ollama")
+    request = ModelRequest(messages=[ChatMessage(role=ModelRole.USER, content="hello")])
+
+    with pytest.raises(ProviderError) as error:
+        await provider.generate(request)
+
+    assert str(error.value) == "Provider ollama returned status 503."
+    assert error.value.details == {"status_code": 503}
+    assert diagnostic not in str(error.value.details)
+
