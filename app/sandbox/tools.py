@@ -105,8 +105,8 @@ class SandboxShellExecuteTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Sandbox execution error: {str(e)}",
-                metadata={"error_category": "sandbox_error"},
+                error="Sandbox execution failed because the isolated runtime returned an internal error.",
+                metadata={"error_category": "sandbox_error", "error_type": type(e).__name__},
             )
 
 
@@ -195,6 +195,6 @@ class SandboxPythonExecuteTool(Tool):
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Sandbox execution error: {str(e)}",
-                metadata={"error_category": "sandbox_error"},
+                error="Sandbox execution failed because the isolated runtime returned an internal error.",
+                metadata={"error_category": "sandbox_error", "error_type": type(e).__name__},
             )
