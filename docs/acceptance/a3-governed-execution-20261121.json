@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "scenario": "A3_governed_agent_execution",
+  "outcome": "BLOCKED",
+  "recorded_at": "2026-11-21T14:51:12+00:00",
+  "source": {
+    "base_commit_sha": "8647e5ac208c3076a559bdd5e34c20050d1590e1",
+    "verification_script": "scripts/verify_phase3.py",
+    "verification_script_sha256": "1f2a66af53aee5e04ef56dd57ad3043973351da573e8882b6908ff9d5f481bdd"
+  },
+  "execution": {
+    "mode": "not_run",
+    "docker_engine_accessible": false,
+    "mock_sandbox_substitution": false,
+    "live_inference_claim": false,
+    "service_restart_count": 0
+  },
+  "blocker": {
+    "category": "docker_engine_unavailable",
+    "required_prerequisite": "AURA process access to the Docker Desktop Linux engine and a locally built aura-coding-sandbox:latest image.",
+    "observations": [
+      "Docker API endpoint was unavailable after a bounded Docker Desktop startup attempt.",
+      "The current session could not inspect WSL or service state because the environment denied access."
+    ]
+  },
+  "entities": {},
+  "events": [],
+  "assertions": [
+    {
+      "name": "docker_engine_available_for_real_sandbox_execution",
+      "result": "BLOCKED"
+    },
+    {
+      "name": "approval_gated_specialist_write_and_sandbox_trace",
+      "result": "NOT RUN"
+    }
+  ]
+}
