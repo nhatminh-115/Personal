@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "scenario": "A8_everyday_workspace_continuity",
+  "outcome": "PASS",
+  "started_at": "2026-11-21T16:35:22.839299+00:00",
+  "completed_at": "2026-11-21T16:35:31.538770+00:00",
+  "execution": {
+    "mode": "docker_compose_api_restart",
+    "compose_project": "aura-a8-dogfood",
+    "model_provider": "mock",
+    "live_inference_claim": false,
+    "external_provider_invocations": 0
+  },
+  "source_commit_sha": "ed9a46047b32c0b79ee3f947aad9ef8ce200508e",
+  "workspace_project_id": "56dbee65-4c14-478b-9a22-74ea13d0bbe3",
+  "note_ids": [
+    "fdc2be9b-7920-4bb1-a7ac-401cb1b60e8c",
+    "c39f1437-395a-4261-afbc-df2aedeca3ac",
+    "76b6de16-7c10-48ab-923c-e40ca342d7da"
+  ],
+  "library_reference_ids": [
+    "415deda9-58f5-4399-8225-63d1bc470627",
+    "d459261f-ee87-4a2b-ab89-0b1633624132"
+  ],
+  "study_session_id": "39cb345a-f786-4343-901a-2e0ff113a3d5",
+  "study_card_ids": [
+    "0e87a8a8-6e88-44f2-b647-5cee554a253e",
+    "8e43b6ee-28b6-48bb-a7bd-fb26971cf3f1"
+  ],
+  "automation_ids": [
+    "d5a1ba16-514f-43e3-9ae5-ed7b4dfa7b53",
+    "ae8b1274-8bc4-4c4d-b39f-37c35dfdf75e"
+  ],
+  "assertions": [
+    {
+      "name": "automation_pagination",
+      "result": "PASS"
+    },
+    {
+      "name": "automation_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "automation_revision_conflict",
+      "result": "PASS"
+    },
+    {
+      "name": "layout_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "library_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "library_revision_conflict",
+      "result": "PASS"
+    },
+    {
+      "name": "library_search_and_pagination",
+      "result": "PASS"
+    },
+    {
+      "name": "note_revision_conflict",
+      "result": "PASS"
+    },
+    {
+      "name": "notes_pagination",
+      "result": "PASS"
+    },
+    {
+      "name": "notes_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "project_graph_link_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "project_layout_and_archive_restore",
+      "result": "PASS"
+    },
+    {
+      "name": "project_layout_revision_conflict",
+      "result": "PASS"
+    },
+    {
+      "name": "project_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "search_recovery_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "study_pagination",
+      "result": "PASS"
+    },
+    {
+      "name": "study_persistence_after_restart",
+      "result": "PASS"
+    },
+    {
+      "name": "study_review_persistence",
+      "result": "PASS"
+    },
+    {
+      "name": "study_revision_conflict",
+      "result": "PASS"
+    },
+    {
+      "name": "workspace_search",
+      "result": "PASS"
+    }
+  ]
+}

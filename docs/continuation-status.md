@@ -9,7 +9,10 @@ Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_
 ## Current repository state (2026-11-21)
 
 - Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
-- Canonical `main`: `8647e5ac208c3076a559bdd5e34c20050d1590e1` (A1 acceptance PR [#390](https://github.com/nhatminh-115/Personal/pull/390) merged after PR #388 and the PR #389 product contract).
+- Canonical `main` before A8: `19b52e49ee98d150759a12597a2bc3ad7ead0a4b` (A6 acceptance PR [#394](https://github.com/nhatminh-115/Personal/pull/394)); A8 work is based directly on this SHA.
+- PR [#392](https://github.com/nhatminh-115/Personal/pull/392) closed the Docker sandbox temporary-storage gap; exact-head Actions run [#44920179781](https://github.com/nhatminh-115/Personal/actions/runs/44920179781), job `136894288628`, passed.
+- PR [#393](https://github.com/nhatminh-115/Personal/pull/393) closed the explicit-provider privacy bypass; exact-head Actions run [#44921277243](https://github.com/nhatminh-115/Personal/actions/runs/44921277243), job `136897630752`, passed.
+- PR #394 verified clean-volume backup restoration; exact-head Actions run [#44923216657](https://github.com/nhatminh-115/Personal/actions/runs/44923216657), job `136903540122`, passed.
 - PR #390's exact green head was `34749fb1bc3c5e29590c5a383cccfcdd9715bbd3`; full Actions run [#44913776814](https://github.com/nhatminh-115/Personal/actions/runs/44913776814), job `136874905650`, passed before merge.
 - That run completed 770 backend tests in 67.76s with four warnings; Phase 1, 2.1, 3, and 4 passed; frontend 48 files / 328 tests passed; Vite build completed in 9.74s.
 - PR #388's exact green head was `44789f6372d9185fe99157338af2cd5f0698a9d4`; full Actions run [#44911360621](https://github.com/nhatminh-115/Personal/actions/runs/44911360621), job `136867681622`, passed before merge.
@@ -47,7 +50,7 @@ CodeGraph remains optional and pending external setup. It must not be installed 
 | A5 Privacy boundary | **PASS** | 17 targeted checks passed on 2026-11-21. Cloud model, embedding, research, and capability paths were blocked before invocation; selected file text entered checkpoint context but stayed out of traces; the cloud route paused for durable confirmation and rejection made zero provider calls. Sanitized report [`docs/acceptance/a5-privacy-boundary-20261121.json`](acceptance/a5-privacy-boundary-20261121.json), run `1fb9065a-2406-476a-a66a-72ade85d5140`, confirmation `bf203875-3d03-4707-a109-2d7653485b70`. Uses provider spies; no live inference. |
 | A6 Backup and restore | **PASS** | Real Docker Compose restore on 2026-11-21 into newly created empty volumes. The verified format-v2 archive restored the completed PostgreSQL run, all 10 LangGraph checkpoint rows for that run, and the workspace file byte-for-byte; all three were confirmed absent before restore. Run `6fa0268e-7ef1-42f8-b795-15f1983ba669`; sanitized report [`docs/acceptance/a6-clean-restore-20261121.json`](acceptance/a6-clean-restore-20261121.json). Uses mock inference and makes no live-inference claim. |
 | A7 Fresh install and live inference | **BLOCKED** | PR #388 adds the Compose UI/app launch path. A live model still needs a configured provider. No OpenAI key or dogfood model override is configured, and Ollama/LM Studio loopback endpoints did not respond at the current environment check. |
-| A8 Everyday workspace use | **NOT RUN** | Use saved Notes, Library, Study, Projects, and Automations across reloads; verify pagination/search/conflict/recovery states. Include the carried Routing Studio session-refresh fix. |
+| A8 Everyday workspace use | **PASS** | Real isolated Docker Compose acceptance on 2026-11-21 created and reopened Projects, Notes, Library references, Study session/cards, and Automations across an API restart. Twenty assertions passed across pagination, search, revision conflicts, review state, archive/restore, project graph, layout, and recovery. Uses mock providers and made zero external provider calls. Sanitized report [`docs/acceptance/a8-everyday-workspace-20261121.json`](acceptance/a8-everyday-workspace-20261121.json), source commit `ed9a46047b32c0b79ee3f947aad9ef8ce200508e`. The carried Routing Studio session-refresh regression passed 28/28 targeted frontend tests. |
 
 The live dogfood documents record earlier project-memory and Research Context Bridge passes. Preserve those as their own evidence; do not upgrade them to A1 or A2 passes.
 
@@ -61,7 +64,7 @@ PR #388 packages the production React UI in Docker Compose and serves it from th
 2. A2 remains BLOCKED by live model and Research-provider/network setup.
 3. A3 passed on 2026-11-21 using the real Docker sandbox. The first run exposed that read-only rootfs lacked writable temporary storage for pytest capture; a bounded `/tmp` tmpfs fixed it, and the script now asserts the post-patch sandbox test exits 0.
 4. A4 is PASS with duplicate webhook delivery, approval pause/resume across an API process restart, and cancellation evidence.
-5. A5 and A6 passed on 2026-11-21. Continue with A8 while A2 and A7 live-provider prerequisites remain unavailable.
+5. A5, A6, and A8 passed on 2026-11-21. A2 and A7 still require live-provider evidence before P3 release readiness.
 6. For every demonstrated release-blocking gap, add regression coverage, run targeted checks and the full relevant workflow, open one focused PR, wait for Actions on its exact head, and merge only that tested head.
 7. At P3, verify all A1–A8 evidence against one release candidate, complete clean-environment restore, update the docs, and tag AURA Personal v1. Stop there.
 
