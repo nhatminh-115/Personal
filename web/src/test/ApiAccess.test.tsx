@@ -40,7 +40,7 @@ describe('API access', () => {
 
     await api.fetchModels();
 
-    expect(fetchMock).toHaveBeenCalledWith('/v1/models', undefined);
+    expect(fetchMock).toHaveBeenCalledWith('/v1/models');
     expect(getApiToken()).toBeNull();
   });
 
