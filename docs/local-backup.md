@@ -13,7 +13,11 @@ creating or restoring an archive. The command requires `--api-stopped` as an
 explicit confirmation. It snapshots both SQLite databases through SQLite's
 online backup API, archives regular workspace files and directories, and
 verifies the finished archive. Symbolic links and special files are rejected.
-Choose a backup path outside the database, checkpoint, and workspace paths.
+Verification bounds the archive to four entries, 10 GiB per payload, and 20 GiB
+total. The workspace snapshot is limited to 100,000 entries, 2 GiB per file,
+and 8 GiB expanded total. The same limits apply before restore writes current
+state. Choose a backup path outside the database, checkpoint, and workspace
+paths.
 
 ```powershell
 python scripts/backup_local.py .\backups\aura-local.tar.gz --api-stopped
