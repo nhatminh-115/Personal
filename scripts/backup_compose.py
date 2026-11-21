@@ -56,14 +56,6 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _sha256_stream(stream: BinaryIO) -> str:
-    digest = hashlib.sha256()
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        digest.update(chunk)
-    return digest.hexdigest()
-
-
-
 def _consume_archive_member(
     archive: tarfile.TarFile,
     member: tarfile.TarInfo,
