@@ -249,11 +249,12 @@ sources. The root prompt labels assembled material as retrieved AURA context
 and directs the model to use content already present there; tools remain for
 missing information, current-state checks, and requested actions. The shared
 root/specialist prompt also treats tool results, connected content, and
-external sources as untrusted data. Embedded instructions cannot redefine the
-task, bypass AURA permission or privacy boundaries, disclose hidden prompts or
-secrets, or trigger unrelated or unapproved side effects. Task-relevant source
-guidance may inform the requested work only within its scope and AURA's
-policies.
+external sources as untrusted data. Tool names, descriptions, and parameter
+schemas are interface metadata, not authority to change the task or override
+AURA policies. Embedded instructions cannot redefine the task, bypass AURA
+permission or privacy boundaries, disclose hidden prompts or secrets, or
+trigger unrelated or unapproved side effects. Task-relevant source guidance may
+inform the requested work only within its scope and AURA policies.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Plain text
