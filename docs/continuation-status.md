@@ -6,10 +6,10 @@ Updated: 2026-11-22
 
 Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_VISION_AND_V1_ROADMAP.md). Work only on O1–O7, A1–A8, or a release-blocking defect demonstrated by those scenarios. Stop when P3 passes, publish the v1 evidence report, and tag the accepted commit. After that, use a separately prioritized maintenance/v1.1 backlog; do not keep v1 open for speculative or cosmetic work.
 
-## Current repository state (2026-11-22)
+## Repository state at start of A2 closeout (2026-11-22)
 
 - Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
-- Canonical `main`: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Personal/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`).
+- Canonical `main` at the start of this closeout: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Personal/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`). PR #400 is the current release-candidate change from that base.
 - PR [#397](https://github.com/nhatminh-115/Personal/pull/397) made empty model responses fail truthfully; exact-head Actions run [#44930471247](https://github.com/nhatminh-115/Personal/actions/runs/44930471247), job `136925752700`, passed; merged before PR #398.
 - PR #398 fixed PostgreSQL delegation insertion ordering and added a real-PostgreSQL regression. Exact tested head `ff0c025ca9aeb1123e4bc92dcd853f34857760e9`; Actions run [#44931924075](https://github.com/nhatminh-115/Personal/actions/runs/44931924075), job `136930207418`, passed; merged as `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`.
 - PR [#392](https://github.com/nhatminh-115/Personal/pull/392) closed the Docker sandbox temporary-storage gap; exact-head Actions run [#44920179781](https://github.com/nhatminh-115/Personal/actions/runs/44920179781), job `136894288628`, passed.
@@ -25,7 +25,7 @@ Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_
 
 ## P0 — Trustworthy baseline
 
-PRs #2–#10 were compared with current `main`; all were 551 commits behind and not mergeable. They are closed without merging their stale branches.
+At this review, PRs #2–#10 were compared with the canonical `main` above; all were 551 commits behind and not mergeable. They are closed without merging their stale branches.
 
 | PR | Disposition |
 | --- | --- |
@@ -34,7 +34,7 @@ PRs #2–#10 were compared with current `main`; all were 551 commits behind and 
 | #4 system-edge deletion protection | Superseded by the current atomic batch deletion endpoint and system-edge regression coverage. |
 | #5 Study sessions | Superseded by the current graph-backed Study API and tests; the old standalone migration branch is stale. |
 | #6 Automations | Superseded by the current persisted Automations API, outbox/runtime behavior, and `tests/unit/test_automations.py`. |
-| #7 Routing Studio semantic coverage | Closed as stale. Current `RoutingStudio.tsx` still needs the session ID/availability effect-dependency fix; carry it into A8 with a prop-change regression. |
+| #7 Routing Studio semantic coverage | Closed as stale. The remaining session ID/availability prop-change coverage is deferred to v1.1 unless a concrete v1 routing or privacy failure is demonstrated; A8 is already accepted. |
 | #8 context-compile provenance | Superseded by the current safe `context_compiled` projection and workspace/execution-graph coverage. |
 | #9 routing provenance | Superseded by persisted reasoning/fallback events and current execution-graph coverage. |
 | #10 system-edge batch deletion | Superseded by current API/UI protections and atomic batch-delete coverage. |
@@ -86,6 +86,6 @@ README, Compose backup/restore, and local backup/restore instructions were check
 ## Live setup constraints
 
 - Docker Engine is healthy. Ollama responds locally and has the installed `aura-qwen3-coding:4b-8k` model; A7 confirmed exact local selection for root and Coding Specialist. No hosted key or model download was used.
-- Live Research requires `RESEARCH_PROVIDER_MODE=live` and reachable configured sources. Crossref/arXiv responded during prior checks; Semantic Scholar was rate-limited with HTTP 429. Retry the full Research-to-learning scenario using available sources; do not silently substitute a hosted model for the local route.
+- A2 passed with live arXiv research and exact local Ollama model routing. Semantic Scholar was rate-limited during earlier checks, but the accepted workflow used reachable sources and made no hosted model calls. One later replay returned `empty_model_response`; it is recorded as a failed non-acceptance attempt, and no further retry is needed for v1.
 - CodeGraph is not installed/configured and is not a v1 blocker.
 - CI is deterministic and must not require paid model access, Ollama, LM Studio, or CodeGraph.
