@@ -179,6 +179,7 @@ class EventToAgentBridge:
                         logger.warning("Stored event run routing context is invalid; using current profile resolution", extra={"run_id": run_id})
             routing_context_dict = routing_context.model_dump(mode="json")
             routing_snapshot = {
+                "execution_source": "event",
                 "profile_id": profile_id,
                 "profile_version": profile_version,
                 "winning_scope": routing_context.winning_scope,

@@ -531,6 +531,7 @@ async def recover_running_root_runs(
         )
         .exists()
     )
+    chat_root_created = RunModel.routing_snapshot_json["execution_source"].as_string() == "chat"
 
     root_ids = list((await db.scalars(
         select(RunModel.id)
@@ -538,6 +539,7 @@ async def recover_running_root_runs(
             RunModel.parent_run_id.is_(None),
             or_(
                 RunModel.client_turn_id.is_not(None),
+                chat_root_created,
                 chat_executor_started,
                 event_executor_started,
             ),

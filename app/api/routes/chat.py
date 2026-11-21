@@ -387,6 +387,7 @@ async def chat_endpoint(
         status=RunStatus.RUNNING.value,
         user_message=req.message,
         routing_snapshot_json={
+            "execution_source": "chat",
             "profile_id": profile.id,
             "profile_version": profile.version,
             "winning_scope": root_context.winning_scope,

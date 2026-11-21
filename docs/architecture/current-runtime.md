@@ -73,9 +73,13 @@ cooperative cancellation: it cannot interrupt an in-flight provider/tool call
 or undo a side effect that already completed. The run then persists a cancelled
 terminal status and trace. Session execution-state hydration returns the active
 turn key so the Stop action remains available after the UI reloads.
-Legacy chat callers may omit `client_turn_id`; once their executor-start marker
-is persisted, root recovery can still reconcile a lost executor without making
-those requests idempotent.
+Legacy chat callers may omit `client_turn_id` and remain non-idempotent. New
+chat runs persist their execution source with the root record, so recovery can
+also find an old-style chat request interrupted before its executor-start
+marker was written. A two-minute grace period leaves newly created runs alone
+while their request handler is starting. Event runs remain eligible for
+recovery only after their executor-start marker is persisted, so an event that
+crashes before execution remains available for outbox retry.
 Automation history can also request cooperative cancellation after an outbox
 worker claims the event and creates its active run. A claimed event whose run is
 still starting returns a retryable conflict; once active, the run records the
