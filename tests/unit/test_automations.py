@@ -984,6 +984,79 @@ async def test_event_bridge_does_not_replay_after_started_executor_loses_first_c
 
 
 @pytest.mark.asyncio
+async def test_event_retry_backfills_legacy_provenance_before_graph_compilation(test_db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from app.api.run_recovery import _INTERRUPTED_RESPONSE, recover_running_root_runs
+
+    event_id = str(uuid.uuid4())
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    session_id = str(uuid.uuid4())
+    event = AURAEvent(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        payload={"session_id": session_id, "message": "Retry the legacy event run."},
+    )
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(EventRecordModel(
+        id=event_id,
+        event_type=event.event_type,
+        source="unit_test",
+        payload_json=event.payload,
+        status=EventStatus.PROCESSING.value,
+        occurred_at=utc_now() - timedelta(minutes=4),
+        retry_count=2,
+        max_attempts=3,
+    ))
+    test_db_session.add(RunModel(
+        id=run_id,
+        session_id=session_id,
+        status=RunStatus.RUNNING.value,
+        user_message="Retry the legacy event run.",
+        created_at=utc_now() - timedelta(minutes=3),
+        routing_snapshot_json={
+            "legacy_metadata": "preserve",
+            "routing_context": {"session_id": session_id, "run_id": run_id},
+        },
+    ))
+    await test_db_session.commit()
+
+    # A compile failure happens before an executor-start marker can be written.
+    # The provenance must already be durable so dead-letter recovery can find
+    # this pre-existing event run.
+    monkeypatch.setattr(
+        "app.events.dispatcher.get_compiled_graph",
+        AsyncMock(side_effect=RuntimeError("graph compilation failed")),
+    )
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    with pytest.raises(RuntimeError, match="graph compilation failed"):
+        await EventToAgentBridge(session_factory=factory).handle_event(event)
+
+    persisted = await test_db_session.get(RunModel, run_id)
+    await test_db_session.refresh(persisted)
+    assert persisted.routing_snapshot_json["source_event_id"] == event_id
+    assert persisted.routing_snapshot_json["execution_source"] == "event"
+    assert persisted.routing_snapshot_json["legacy_metadata"] == "preserve"
+    assert persisted.routing_snapshot_json["routing_context"] == {"session_id": session_id, "run_id": run_id}
+
+    event_record = await test_db_session.get(EventRecordModel, event_id)
+    event_record.status = EventStatus.DEAD_LETTER.value
+    event_record.retry_count = event_record.max_attempts
+    await test_db_session.commit()
+
+    class EmptyCheckpointGraph:
+        async def aget_state(self, _config):
+            return SimpleNamespace(values={}, next=(), tasks=())
+
+    recovery = await recover_running_root_runs(test_db_session, graph=EmptyCheckpointGraph())
+    await test_db_session.refresh(persisted)
+    assert recovery["interrupted"] == 1
+    assert persisted.status == RunStatus.FAILED.value
+    assert persisted.final_response == _INTERRUPTED_RESPONSE
+
+
+@pytest.mark.asyncio
 async def test_automation_history_reports_interrupted_event_run(async_client, test_db_session):
     from types import SimpleNamespace
     from app.api.run_recovery import recover_running_root_runs

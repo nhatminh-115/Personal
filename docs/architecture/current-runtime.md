@@ -82,6 +82,10 @@ recovery only after their executor-start marker is persisted, so an event that
 crashes before execution remains available for outbox retry. Event roots retain
 their source event ID; if that event exhausts its outbox retries before graph
 execution starts, recovery closes the stale root after the same grace period.
+When a retry finds a pre-existing event run created before event provenance was
+stored, the bridge backfills the source event ID before compiling the graph,
+preserving the saved routing snapshot so a later dead-letter can still recover
+that run.
 The chat handler refreshes the run status under its execution lock before
 invoking the graph, so a delayed request cannot execute after recovery has
 already closed that run.
