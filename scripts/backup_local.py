@@ -147,7 +147,9 @@ def verify_backup(archive_path: Path) -> dict:
                     raise ValueError("Local backup contains missing, duplicate, or unexpected files")
                 if not member.isfile() or member.issparse():
                     raise ValueError("Local backup entries must be regular files")
-                if member.size < 0 or member.size > MAX_BACKUP_MEMBER_BYTES:
+                if member.size < 0:
+                    raise ValueError("Local backup entry has an invalid size")
+                if name != MANIFEST_FILE and member.size > MAX_BACKUP_MEMBER_BYTES:
                     raise ValueError("Local backup entry exceeds the size limit")
                 total_bytes += member.size
                 if total_bytes > MAX_BACKUP_TOTAL_BYTES:
