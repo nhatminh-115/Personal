@@ -193,6 +193,7 @@ async def test_outbox_provider_failure_is_redacted_from_logs_and_event_record(
     assert await worker.process_outbox_batch(test_db_session) == 0
     record = await test_db_session.get(EventRecordModel, event.id)
     assert record is not None
+    await test_db_session.refresh(record)
     assert record.status == EventStatus.FAILED.value
     assert record.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
     assert private_diagnostic not in record.error_message
