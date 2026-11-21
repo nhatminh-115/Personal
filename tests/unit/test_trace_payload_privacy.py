@@ -191,3 +191,47 @@ async def test_context_loaded_trace_keeps_tiered_memory_ids_without_memory_text(
         "memory_privacy_sources": [{"memory_id": "project-memory", "privacy_policy": "confidential"}],
     }
     assert "private remembered content" not in str(event.payload)
+
+
+@pytest.mark.asyncio
+async def test_run_recovery_trace_keeps_only_safe_lifecycle_metadata(test_db_session):
+    trace = TraceService(test_db_session)
+    test_db_session.add(SessionModel(id="recovery-trace-session"))
+    test_db_session.add(RunModel(
+        id="recovery-trace-run",
+        session_id="recovery-trace-session",
+        user_message="private prompt",
+    ))
+    await test_db_session.commit()
+
+    started = await trace.record_event(
+        run_id="recovery-trace-run",
+        session_id="recovery-trace-session",
+        event_type="run_executor_started",
+        payload={"source": "event", "message": "private prompt"},
+    )
+    recovered = await trace.record_event(
+        run_id="recovery-trace-run",
+        session_id="recovery-trace-session",
+        event_type="run_recovered",
+        payload={
+            "recovery_action": "completed",
+            "source": "terminal_checkpoint",
+            "decision_id": "private-decision-id",
+        },
+    )
+    interrupted = await trace.record_event(
+        run_id="recovery-trace-run",
+        session_id="recovery-trace-session",
+        event_type="run_interrupted",
+        payload={
+            "recovery_action": "failed_safe",
+            "error_category": "executor_lost",
+            "details": "private tool input",
+        },
+    )
+
+    assert started.payload == {"source": "event"}
+    assert recovered.payload == {"recovery_action": "completed", "source": "terminal_checkpoint"}
+    assert interrupted.payload == {"recovery_action": "failed_safe", "error_category": "executor_lost"}
+    assert "private" not in str([started.payload, recovered.payload, interrupted.payload])

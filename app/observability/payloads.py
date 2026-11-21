@@ -35,6 +35,27 @@ def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
 
     if event_type == "request_received":
         return pick(payload, ("session_id", "parent_run_id", "specialist", "trigger_event_id"))
+    if event_type == "run_executor_started":
+        source = payload.get("source")
+        return {"source": source} if source in {"chat", "event"} else {}
+    if event_type == "run_recovered":
+        safe: dict[str, Any] = {}
+        action = payload.get("recovery_action")
+        if action in {
+            "waiting_for_approval", "waiting_for_routing_confirmation",
+            "completed", "failed", "cancelled",
+        }:
+            safe["recovery_action"] = action
+        source = payload.get("source")
+        if source == "terminal_checkpoint":
+            safe["source"] = source
+        return safe
+    if event_type == "run_interrupted":
+        safe = {"recovery_action": "failed_safe"} if payload.get("recovery_action") == "failed_safe" else {}
+        error_category = payload.get("error_category")
+        if error_category in {"executor_lost", "orphaned_child"}:
+            safe["error_category"] = error_category
+        return safe
     if event_type == "routing_profile_resolved":
         return pick(payload, (
             "profile_id", "profile_version", "winning_scope", "role", "is_lock_all",
