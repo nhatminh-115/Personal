@@ -157,3 +157,15 @@ def test_compose_backup_verification_rejects_oversized_payload(tmp_path, monkeyp
     with pytest.raises(ValueError, match="entry exceeds the size limit"):
         backup_compose.verify_backup(archive)
 
+
+def test_restore_rejects_resource_exhaustion_archive_before_stopping_services(tmp_path, monkeypatch):
+    archive = _make_backup(tmp_path / "many.tar.gz")
+    calls = []
+    monkeypatch.setattr(backup_compose, "MAX_BACKUP_ARCHIVE_ENTRIES", 4)
+    monkeypatch.setattr(restore_compose, "_compose", lambda *args, **kwargs: calls.append(args))
+
+    with pytest.raises(ValueError, match="too many archive entries"):
+        restore_compose.restore_backup(archive, replace_current_data=True)
+
+    assert calls == []
+
