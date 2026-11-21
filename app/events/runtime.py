@@ -30,8 +30,11 @@ async def start_automation_runtime() -> Callable[[], Awaitable[None]]:
                     await persistent_scheduler.tick(db, dispatch_immediate=False)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("Persistent scheduler tick failed")
+            except Exception as exc:
+                logger.error(
+                    "Persistent scheduler tick failed (error type: %s).",
+                    type(exc).__name__,
+                )
             try:
                 await asyncio.wait_for(stopped.wait(), timeout=POLL_INTERVAL_SECONDS)
             except TimeoutError:
@@ -44,8 +47,11 @@ async def start_automation_runtime() -> Callable[[], Awaitable[None]]:
                     processed = await worker.process_outbox_batch(db)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("Automation outbox processing failed")
+            except Exception as exc:
+                logger.error(
+                    "Automation outbox processing failed (error type: %s).",
+                    type(exc).__name__,
+                )
                 processed = 0
             if processed == 0:
                 try:
