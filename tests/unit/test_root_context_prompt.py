@@ -6,7 +6,7 @@ import pytest
 
 from app.models.base import ChatMessage, ModelRequest, ModelRole, ToolDefinition
 from app.models.openai_provider import OpenAICompatibleProvider
-from app.orchestrator.nodes import _build_model_messages, _root_system_instruction
+from app.orchestrator.nodes import _build_model_messages, _retrieved_context_message, _root_system_instruction
 
 
 def test_root_policy_uses_present_context_without_refetching_it():
@@ -21,11 +21,8 @@ def test_root_policy_uses_present_context_without_refetching_it():
     assert "Project memory: release requires two reviewers." not in instruction
 
 
-def test_root_prompt_has_no_context_content_when_context_is_empty():
-    instruction = _root_system_instruction()
-
-    assert "Use retrieved context directly" in instruction
-    assert "Retrieved AURA context:" not in instruction
+def test_empty_retrieved_context_does_not_add_reference_message():
+    assert _retrieved_context_message([]) is None
 
 
 def test_retrieved_context_stays_out_of_system_role_and_precedes_current_request():
@@ -50,8 +47,9 @@ def test_retrieved_context_stays_out_of_system_role_and_precedes_current_request
         index for index, message in enumerate(messages)
         if message.content and message.content.startswith("AURA reference material")
     )
-    current_request_index = next(
-        index for index, message in enumerate(messages)
+    current_request_index = max(
+        index
+        for index, message in enumerate(messages)
         if message.role == ModelRole.USER and message.content == state["user_message"]
     )
     context_message = messages[context_index]
