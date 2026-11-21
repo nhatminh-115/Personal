@@ -96,7 +96,12 @@ class ListWorkspaceFilesTool(Tool):
         except WorkspaceEscapeError as e:
             return ToolResult(success=False, output="", error=str(e))
         except Exception as e:
-            return ToolResult(success=False, output="", error=f"Failed to list directory: {e}")
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to list directory because the workspace filesystem returned an internal error.",
+                metadata={"error_category": "filesystem_error", "error_type": type(e).__name__},
+            )
 
 
 class ReadWorkspaceFileTool(Tool):
@@ -175,7 +180,12 @@ class ReadWorkspaceFileTool(Tool):
         except WorkspaceEscapeError as e:
             return ToolResult(success=False, output="", error=str(e))
         except Exception as e:
-            return ToolResult(success=False, output="", error=f"Failed to read file: {e}")
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to read the workspace file because the filesystem returned an internal error.",
+                metadata={"error_category": "filesystem_error", "error_type": type(e).__name__},
+            )
 
 
 class WriteWorkspaceFileTool(Tool):
@@ -249,4 +259,9 @@ class WriteWorkspaceFileTool(Tool):
         except WorkspaceEscapeError as e:
             return ToolResult(success=False, output="", error=str(e))
         except Exception as e:
-            return ToolResult(success=False, output="", error=f"Failed to write file: {e}")
+            return ToolResult(
+                success=False,
+                output="",
+                error="Failed to write the workspace file because the filesystem returned an internal error.",
+                metadata={"error_category": "filesystem_error", "error_type": type(e).__name__},
+            )
