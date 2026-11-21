@@ -7,7 +7,7 @@ import re
 import socket
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 from pydantic import BaseModel, Field
 import pypdf
