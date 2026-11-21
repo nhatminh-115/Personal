@@ -72,3 +72,28 @@ async def test_chat_rejects_overlong_session_id_before_creating_a_session(async_
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_chat_validation_response_does_not_echo_private_request_content(async_client):
+    response = await async_client.post(
+        "/v1/chat",
+        json={
+            "session_id": "privacy-validation-session",
+            "message": "private-message-marker",
+            "context_attachments": [
+                {"object_id": "private-object", "text": "private-attachment-marker"},
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "private-message-marker" not in response.text
+    assert "private-attachment-marker" not in response.text
+    detail = response.json()["detail"]
+    assert detail == [{
+        "loc": ["body"],
+        "msg": "Value error, Each context attachment must also be selected in context_object_ids.",
+        "type": "value_error",
+    }]
+
