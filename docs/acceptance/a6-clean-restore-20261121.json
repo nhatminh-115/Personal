@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "scenario": "A6_clean_compose_backup_restore",
+  "outcome": "PASS",
+  "started_at": "2026-11-21T16:09:11.076296+00:00",
+  "completed_at": "2026-11-21T16:09:44.979856+00:00",
+  "execution": {
+    "mode": "docker_compose_fresh_volumes",
+    "live_inference_claim": false,
+    "model_provider": "mock",
+    "external_provider_invocations": 0,
+    "compose_project": "aura-a6-dogfood"
+  },
+  "source_commit_sha": "2442707036f618e0a7209664f9d7e4adb2384ca4",
+  "run_id": "6fa0268e-7ef1-42f8-b795-15f1983ba669",
+  "backup": {
+    "format_version": 2,
+    "created_at": "2026-11-21T16:09:14.497320+00:00",
+    "archive_sha256": "a2e6e167615e0ae426ab13b46e5ca179cb82645ef61f8376dd51e563ddfffc66",
+    "archive_size_bytes": 19587,
+    "verified_payloads": [
+      "checkpoint/aura_checkpoints.db",
+      "postgres.dump",
+      "workspace.tar.gz"
+    ]
+  },
+  "stores": {
+    "postgresql_run_record": {
+      "source_status": "completed",
+      "absent_from_fresh_target_before_restore": true,
+      "restored_status": "completed"
+    },
+    "langgraph_checkpoint": {
+      "source_rows_for_run": 10,
+      "absent_from_fresh_target_before_restore": true,
+      "restored_rows_for_run": 10
+    },
+    "workspace_file": {
+      "path": "aura-compose-smoke.txt",
+      "content_matches_expected_before_backup": true,
+      "absent_from_fresh_target_before_restore": true,
+      "restored_bytes_match_source": true,
+      "sha256": "2898abb5082b38dddec7b51d7d060e723e4bd62268d0f3beba70f339fc74825d"
+    }
+  }
+}
