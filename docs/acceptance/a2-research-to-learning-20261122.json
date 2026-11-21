@@ -1,0 +1,129 @@
+{
+  "acceptance_scenario": "A2",
+  "completed_at": "2026-11-21T18:38:09Z",
+  "outcome": "PASS",
+  "source_commit": "aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36",
+  "environment": {
+    "compose_project": "aura-a7-v1-clean",
+    "api_sidecar": "aura-a2-live-app-20261122",
+    "database": "PostgreSQL 16 persistent Compose volume",
+    "research_provider_mode": "live",
+    "model_provider": "ollama",
+    "model": "aura-qwen3-coding:4b-8k",
+    "hosted_model_calls": 0
+  },
+  "assertions": [
+    { "name": "root_and_research_child_completed", "result": "PASS" },
+    { "name": "exact_local_model_route_persisted_for_root_and_child", "result": "PASS" },
+    { "name": "live_search_read_evidence_and_verified_claim_tools_succeeded", "result": "PASS" },
+    { "name": "source_evidence_claim_provenance_edges_persisted", "result": "PASS" },
+    { "name": "study_session_created_from_verified_claim", "result": "PASS" },
+    { "name": "reviewed_card_schedule_and_claim_link_survived_api_restart", "result": "PASS" }
+  ],
+  "entities": {
+    "project_name": "a2-single-source-4238b05c",
+    "session_id": "7aed6aba-19b5-4597-9f04-fc58396d20c2",
+    "root_run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263",
+    "research_child_run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde",
+    "delegation_id": "48bb85c0-d7eb-49f7-9009-0c2a9b393bcf",
+    "research_source_object_ids": [
+      "3374cf45-5749-54f9-87e0-382afec8095b",
+      "118b86b7-0b11-5de2-a927-da87798ce810"
+    ],
+    "research_evidence_object_id": "9f048167-3bb6-53ca-b34b-1aa542fef377",
+    "verified_claim_object_id": "75a8d67c-af60-5868-a525-269bc770ed5f",
+    "study_session_id": "553a13d2-9c08-4e4d-af60-707b26fa6549",
+    "study_card_id": "35cc32e1-f64a-40c7-85c8-ff31c4b31f52"
+  },
+  "research_result": {
+    "child_run_status": "completed",
+    "result_status": "insufficient_evidence",
+    "verified_claim_count": 1,
+    "claim_evidence_object_ids": [
+      "9f048167-3bb6-53ca-b34b-1aa542fef377"
+    ],
+    "inspector_checkpoint_status_at_run_time": "running",
+    "inspector_status_correction_pr": 400
+  },
+  "provenance_edges": [
+    {
+      "id": "7d7616aa-1763-5d67-a977-fd4d191f933f",
+      "source": "3374cf45-5749-54f9-87e0-382afec8095b",
+      "target": "9f048167-3bb6-53ca-b34b-1aa542fef377",
+      "relation": "contains_evidence"
+    },
+    {
+      "id": "a5b430a6-897a-5d96-8538-99729e2f197e",
+      "source": "9f048167-3bb6-53ca-b34b-1aa542fef377",
+      "target": "75a8d67c-af60-5868-a525-269bc770ed5f",
+      "relation": "supports_claim"
+    },
+    {
+      "id": "04587184-be8f-4dc8-acdf-4dac13ab43b0",
+      "source": "75a8d67c-af60-5868-a525-269bc770ed5f",
+      "target": "553a13d2-9c08-4e4d-af60-707b26fa6549",
+      "relation": "studied_in"
+    },
+    {
+      "id": "f20b2a50-b3ee-4f70-9302-915eccdb79d9",
+      "source": "553a13d2-9c08-4e4d-af60-707b26fa6549",
+      "target": "35cc32e1-f64a-40c7-85c8-ff31c4b31f52",
+      "relation": "contains_card"
+    }
+  ],
+  "study_review": {
+    "status_after_api_restart": "in_progress",
+    "review_count": 1,
+    "revision": 2,
+    "next_review_at": "2026-11-24T18:18:17.705292Z"
+  },
+  "routing_decisions": [
+    {
+      "event_id": "efe3860c-6085-43df-9928-368e4777320e",
+      "run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263",
+      "agent_role": "root",
+      "provider": "ollama",
+      "model": "aura-qwen3-coding:4b-8k",
+      "winning_scope": "message"
+    },
+    {
+      "event_id": "7e6ff7e7-d587-4e8a-a608-e8e457dde793",
+      "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde",
+      "agent_role": "research",
+      "provider": "ollama",
+      "model": "aura-qwen3-coding:4b-8k",
+      "winning_scope": "message"
+    }
+  ],
+  "events": [
+    { "event_id": "92a3c17d-b794-4b8a-83ae-3d43e2867aba", "run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263", "event_type": "routing_profile_resolved" },
+    { "event_id": "33028d7a-9927-46e1-89e8-fbaf393a0953", "run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263", "event_type": "delegation_started" },
+    { "event_id": "953d6250-a6b4-4362-9e0b-354a7c1b3afc", "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde", "event_type": "tool_executed", "tool": "research_search", "success": true },
+    { "event_id": "be900f9f-1d84-486e-840b-8c6e3ed05a8c", "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde", "event_type": "tool_executed", "tool": "read_document_section", "success": true },
+    { "event_id": "4f342166-7130-4b05-b455-72395f5c37ea", "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde", "event_type": "tool_executed", "tool": "extract_evidence", "success": true },
+    { "event_id": "1893c9b2-1eab-41d2-832b-1eeedfedc3e7", "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde", "event_type": "tool_executed", "tool": "record_research_claim", "success": true },
+    { "event_id": "6bac8a69-0625-4372-9e00-fe0807fd5010", "run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263", "event_type": "delegation_completed" },
+    { "event_id": "50cee2fb-0e21-4f3c-ba12-5b75098c6315", "run_id": "0a7220ef-4f9e-4f24-9fc9-515d3988a263", "event_type": "run_completed" },
+    { "event_id": "e9692be1-94fd-48e0-846f-2c354ee57298", "run_id": "a2536102-ab5a-4bd2-815d-c6cbaed32dde", "event_type": "run_completed" }
+  ],
+  "follow_up_attempts": [
+    {
+      "run_id": "18fa2880-741a-433f-9f15-a64b82cc20b4",
+      "child_run_id": "06f49309-9843-43c5-9db8-6adfe1eec5b8",
+      "result": "NOT_ACCEPTED",
+      "failure_code": "empty_model_response",
+      "failure_event_id": "fdd856b6-709e-447f-a706-b4c4ad1bc1df",
+      "model": "ollama:aura-qwen3-coding:4b-8k",
+      "counted_as_acceptance": false
+    }
+  ],
+  "implementation_regression": {
+    "pull_request": 400,
+    "commit": "abf8e1355679047f68683226bd957591b3ec8fff",
+    "targeted_test": "test_root_orchestrator_delegates_to_research_specialist_end_to_end",
+    "targeted_test_result": "1 passed",
+    "workflow_run_id": 44935743242,
+    "job_id": 136941847025,
+    "result": "PASS"
+  }
+}

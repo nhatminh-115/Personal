@@ -222,7 +222,7 @@ Current implementation includes capability permissions, approval gates, a constr
 - The user can inspect what AURA used, what it changed, what it did not do, and what still requires approval.
 - No release-blocking data-loss, privacy-boundary, authorization, or duplicate-execution defect remains open.
 
-**Baseline status:** A1, A3–A8 have recorded acceptance passes. A7 passed on 2026-11-22 with a fresh Compose PostgreSQL volume, served production UI, and completed local root-to-specialist inference. A2 remains the outstanding workflow before the product-level release review.
+**Baseline status:** A1–A8 have recorded acceptance passes. A7 passed on 2026-11-22 with a fresh Compose PostgreSQL volume, served production UI, and completed local root-to-specialist inference. A2 passed with live Research-to-Study provenance using the same installed local Ollama model. See the sanitized A2 report for the evidence boundary and the follow-up Research Inspector status correction.
 
 ---
 
@@ -233,7 +233,7 @@ These scenarios are the release evidence. A green CI run is necessary but not su
 | ID | Scenario | Required evidence | Current outcome |
 | --- | --- | --- |
 | A1 | Project continuity | Create a project, link a Note, start a chat with selected context, inspect the preview/provenance, restart the service, reopen the project, and verify persisted state and scope. | **PASS** — [`a1-project-continuity-20261121.json`](acceptance/a1-project-continuity-20261121.json) |
-| A2 | Research to learning | Run live Research, inspect source/evidence/claim lineage, confirm verification gates, start Study from a verified claim, create/review a card, and verify its persisted schedule and source link. | **INCOMPLETE** — full live Research-to-Study/card/review flow still needs acceptance evidence. |
+| A2 | Research to learning | Run live Research, inspect source/evidence/claim lineage, confirm verification gates, start Study from a verified claim, create/review a card, and verify its persisted schedule and source link. | **PASS** — [`a2-research-to-learning-20261122.json`](acceptance/a2-research-to-learning-20261122.json). One source-backed claim was verified and studied. The overall research result remains `insufficient_evidence`, so no broad research-gap conclusion is claimed. |
 | A3 | Governed agent execution | Run a bounded specialist task in the sandbox, request a consequential write, verify approval is required, approve or reject it, and inspect the persisted result and safe execution trace. | **PASS** — [`a3-governed-execution-20261121.json`](acceptance/a3-governed-execution-20261121.json) |
 | A4 | Automation recovery | Trigger a scheduled or webhook routine, exercise duplicate delivery, approval, cancellation or retry, restart at a meaningful boundary, and verify that history and event/run identity remain consistent. | **PASS** — [`a4-automation-recovery-20261121.json`](acceptance/a4-automation-recovery-20261121.json) |
 | A5 | Privacy boundary | Attempt representative local-only/confidential workflows and verify disallowed cloud model, embedding, research, and tool calls are blocked before invocation. Verify explicit file-text transfer and cloud confirmation behavior. | **PASS** — [`a5-privacy-boundary-20261121.json`](acceptance/a5-privacy-boundary-20261121.json) |
@@ -251,7 +251,7 @@ The current [Live Dogfooding](dogfooding.md) report records:
 - **Research Context Bridge merge — passed:** a local Ollama run delegated to Research, persisted a verified claim, created a durable Context Bridge, and compiled a fresh chat using that Bridge as its only selected object.
 - **Fresh installation and live inference (A7) — passed:** a fresh Docker Compose project migrated a new PostgreSQL volume, served the production UI, and completed a root-to-Coding-Specialist workflow. Both runs persisted the exact local Ollama model selection; no hosted provider was called. See [`docs/acceptance/a7-fresh-install-20261122.json`](acceptance/a7-fresh-install-20261122.json).
 - **Routing constraints preview — passed:** local-only/cloud-allowed preview policies were preserved and the preview made zero model calls. This is policy-preview evidence, not live inference evidence.
-- **Research to learning (A2) — incomplete:** earlier live Research/Context Bridge dogfood proves a verified claim can be created, but the complete Study session, learning card, review schedule, and source-link chain still need one end-to-end report.
+- **Research to learning (A2) — passed:** the live Research child completed source search, reading, evidence extraction, and verified-claim recording. Study was started from that claim; its card was reviewed, its next-review schedule persisted across an API restart, and the workspace graph retained the source/evidence/claim/Study/card lineage. See [`docs/acceptance/a2-research-to-learning-20261122.json`](acceptance/a2-research-to-learning-20261122.json). The research result was `insufficient_evidence` for a broad gap conclusion, while the individual cited claim remained verified.
 - **Coding impact / CodeGraph — not run:** the optional CodeGraph provider is not installed or configured. It must not be installed automatically and is not a v1 blocker.
 
 Do not convert “script exists,” “preflight succeeded,” “CI passed,” or “scenario did not run” into a live acceptance pass.

@@ -493,7 +493,6 @@ class DelegationRuntime:
                 from app.research.provenance import CitationValidator, validate_research_state
 
                 r_state = ResearchState.from_dict(final_state["research_state"])
-                artifacts_dict["research_state"] = r_state.to_dict()
 
                 # Filter and rank closest valid sources
                 valid_sources = [s for s in r_state.sources.values() if s.status != SourceStatus.REJECTED]
@@ -510,6 +509,9 @@ class DelegationRuntime:
                     for c in r_state.claims
                 )
                 r_status = ResearchStatus.COMPLETED if (citation_eval["is_valid"] and has_validated_gap) else ResearchStatus.INSUFFICIENT_EVIDENCE
+                r_state.status = r_status
+                await graph.aupdate_state(child_config, {"research_state": r_state.to_dict()})
+                artifacts_dict["research_state"] = r_state.to_dict()
                 status = "completed"
 
                 uncertainties = [c.claim_text for c in r_state.claims if c.claim_type == ClaimType.HYPOTHESIS]

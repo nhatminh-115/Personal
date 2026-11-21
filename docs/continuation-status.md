@@ -6,10 +6,10 @@ Updated: 2026-11-22
 
 Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_VISION_AND_V1_ROADMAP.md). Work only on O1–O7, A1–A8, or a release-blocking defect demonstrated by those scenarios. Stop when P3 passes, publish the v1 evidence report, and tag the accepted commit. After that, use a separately prioritized maintenance/v1.1 backlog; do not keep v1 open for speculative or cosmetic work.
 
-## Current repository state (2026-11-22)
+## Repository state at start of A2 closeout (2026-11-22)
 
 - Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
-- Canonical `main`: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Personal/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`).
+- Canonical `main` at the start of this closeout: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Personal/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`). PR #400 is the current release-candidate change from that base.
 - PR [#397](https://github.com/nhatminh-115/Personal/pull/397) made empty model responses fail truthfully; exact-head Actions run [#44930471247](https://github.com/nhatminh-115/Personal/actions/runs/44930471247), job `136925752700`, passed; merged before PR #398.
 - PR #398 fixed PostgreSQL delegation insertion ordering and added a real-PostgreSQL regression. Exact tested head `ff0c025ca9aeb1123e4bc92dcd853f34857760e9`; Actions run [#44931924075](https://github.com/nhatminh-115/Personal/actions/runs/44931924075), job `136930207418`, passed; merged as `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`.
 - PR [#392](https://github.com/nhatminh-115/Personal/pull/392) closed the Docker sandbox temporary-storage gap; exact-head Actions run [#44920179781](https://github.com/nhatminh-115/Personal/actions/runs/44920179781), job `136894288628`, passed.
@@ -25,7 +25,7 @@ Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_
 
 ## P0 — Trustworthy baseline
 
-PRs #2–#10 were compared with current `main`; all were 551 commits behind and not mergeable. They are closed without merging their stale branches.
+At this review, PRs #2–#10 were compared with the canonical `main` above; all were 551 commits behind and not mergeable. They are closed without merging their stale branches.
 
 | PR | Disposition |
 | --- | --- |
@@ -34,7 +34,7 @@ PRs #2–#10 were compared with current `main`; all were 551 commits behind and 
 | #4 system-edge deletion protection | Superseded by the current atomic batch deletion endpoint and system-edge regression coverage. |
 | #5 Study sessions | Superseded by the current graph-backed Study API and tests; the old standalone migration branch is stale. |
 | #6 Automations | Superseded by the current persisted Automations API, outbox/runtime behavior, and `tests/unit/test_automations.py`. |
-| #7 Routing Studio semantic coverage | Closed as stale. Current `RoutingStudio.tsx` still needs the session ID/availability effect-dependency fix; carry it into A8 with a prop-change regression. |
+| #7 Routing Studio semantic coverage | Closed as stale. The remaining session ID/availability prop-change coverage is deferred to v1.1 unless a concrete v1 routing or privacy failure is demonstrated; A8 is already accepted. |
 | #8 context-compile provenance | Superseded by the current safe `context_compiled` projection and workspace/execution-graph coverage. |
 | #9 routing provenance | Superseded by persisted reasoning/fallback events and current execution-graph coverage. |
 | #10 system-edge batch deletion | Superseded by current API/UI protections and atomic batch-delete coverage. |
@@ -48,7 +48,7 @@ CodeGraph remains optional and pending external setup. It must not be installed 
 | Scenario | Status | Current evidence / next proof |
 | --- | --- | --- |
 | A1 Project continuity | **PASS** | Local isolated API-process acceptance on 2026-11-21: created a project and linked Note, previewed and chatted with only that Note selected, stopped and restarted the API, then verified project/Note/transcript/context provenance and foreign-project exclusion. Run `ce21710c-fedd-4da5-a8db-55c28550cbbb`; sanitized report [`docs/acceptance/a1-project-continuity-20261121.json`](acceptance/a1-project-continuity-20261121.json). Used `mock-default`; this is not live-inference evidence. |
-| A2 Research to learning | **INCOMPLETE — NEXT** | The machine now has working Docker and local Ollama; `aura-qwen3-coding:4b-8k` completed real root-to-specialist inference under A7. Crossref and arXiv were reachable during prior checks; Semantic Scholar returned HTTP 429. Earlier live Context Bridge evidence proves part of Research, but the full Research → verified claim → Study → card review and persisted source-link flow is still not recorded. Continue with local Ollama and available live sources; this is not waiting on user setup. |
+| A2 Research to learning | **PASS** | Live root-to-Research run `0a7220ef-4f9e-4f24-9fc9-515d3988a263` and child `a2536102-ab5a-4bd2-815d-c6cbaed32dde` completed with exact Ollama routing. Search, read, evidence extraction, and verified-claim tools succeeded. Study session `553a13d2-9c08-4e4d-af60-707b26fa6549` and reviewed card `35cc32e1-f64a-40c7-85c8-ff31c4b31f52` were linked to that claim and survived an API restart. The result correctly reports `insufficient_evidence` for a broad gap conclusion while retaining one source-backed verified claim. Sanitized report [`docs/acceptance/a2-research-to-learning-20261122.json`](acceptance/a2-research-to-learning-20261122.json). |
 | A3 Governed agent execution | **PASS** | Real Docker acceptance on 2026-11-21: bounded failure control, routing/capability checks, specialist recursion guard, three persisted approvals, expected test failure before the patch, passing sandbox test after the patch, workspace mutation, and parent-child lineage verified. Root run `939dc360-4fe6-4213-8257-c9d09b0160eb`; coding child `bf3fbd25-9422-4b7f-8902-8ea728cf1f64`. Sanitized run/event IDs and route metadata: [`docs/acceptance/a3-governed-execution-20261121.json`](acceptance/a3-governed-execution-20261121.json). Uses mock inference and real Docker sandbox; no live-inference claim. |
 | A4 Automation recovery | **PASS** | Two-process local acceptance on 2026-11-21 exercised authenticated webhook delivery and duplicate idempotency, approval-gated write, restart while approval-paused, approval resume, queued cancellation, secret digest storage, and sanitized persisted trace. Report [`docs/acceptance/a4-automation-recovery-20261121.json`](acceptance/a4-automation-recovery-20261121.json), run `25161eb3-cf73-58a5-9057-0a3afe5ce5dd`, event `86344c04-e7ed-4959-8d97-35d937ac1595`; mock provider, no live-inference claim. |
 | A5 Privacy boundary | **PASS** | 17 targeted checks passed on 2026-11-21. Cloud model, embedding, research, and capability paths were blocked before invocation; selected file text entered checkpoint context but stayed out of traces; the cloud route paused for durable confirmation and rejection made zero provider calls. Sanitized report [`docs/acceptance/a5-privacy-boundary-20261121.json`](acceptance/a5-privacy-boundary-20261121.json), run `1fb9065a-2406-476a-a66a-72ade85d5140`, confirmation `bf203875-3d03-4707-a109-2d7653485b70`. Uses provider spies; no live inference. |
@@ -66,26 +66,26 @@ PR #388 packages the production React UI in Docker Compose and serves it from th
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| Required CI on the latest merged implementation | **PASS** | PR #398 exact head `ff0c025ca9aeb1123e4bc92dcd853f34857760e9`, run `44931924075`, job `136930207418`; full backend, PostgreSQL, Phase 1/2.1/3/4, frontend, and Docker workflow passed. The acceptance-report documentation update is a new candidate and must also pass CI. This is not a final release tag. |
+| Required CI on the release candidate | **PR #400 CHECKS REQUIRED BEFORE MERGE** | The Research Inspector terminal-status fix passed the full workflow on exact code head `abf8e1355679047f68683226bd957591b3ec8fff`, run `44935743242`, job `136941847025`. The A2 evidence/docs update is on [PR #400](https://github.com/nhatminh-115/Personal/pull/400), and its final exact head must pass the same workflow before merge. |
 | Clean-environment backup and restore | **PASS** | A6 restored PostgreSQL, LangGraph checkpoints, and workspace files into empty volumes; the same Compose restore ran again in PR #395 CI. |
 | Security, privacy, provider, migration, and network configuration review | **REVIEWED** | Compose publishes API/Postgres only on loopback; credentials are passed to the API container, not the web bundle; defaults remain mock/deterministic; Compose startup migrates to Alembic head; backup restore requires an explicit replace flag and documents rollback/failure behavior. No additional P3 blocker found in this review. |
-| Live provider acceptance | **A7 PASS; A2 INCOMPLETE** | A7 passed with local Ollama on a clean Compose/PostgreSQL install. Continue A2 against the same installed local model and reachable live research sources. Do not tag v1 or claim release readiness until the complete Research-to-learning path passes. |
+| Live provider acceptance | **A1–A8 PASS** | A2 and A7 both passed with the exact installed local Ollama model and no hosted model calls. A2’s broad research result remains `insufficient_evidence`; its verified claim is explicitly source-backed and eligible for Study. |
 
 README, Compose backup/restore, and local backup/restore instructions were checked against current behavior. For Docker-based Ollama, the documented host endpoint is `host.docker.internal`; keep provider credentials in local environment/secret storage and out of chat and Git.
 
 ## Execution order
 
 1. A1 is complete with the committed runner, integration test, and sanitized report.
-2. A2 is the next release acceptance task. Docker and Ollama are running; use the installed `aura-qwen3-coding:4b-8k` model and live sources that respond, then complete Study from the persisted verified claim and review a card. Do not mark A2 passed until the full chain and report are verified.
+2. A2 passed on the persisted live chain recorded in [`docs/acceptance/a2-research-to-learning-20261122.json`](acceptance/a2-research-to-learning-20261122.json). A follow-up replay after the Inspector fix returned `empty_model_response`; it is recorded as a non-acceptance attempt and does not replace the earlier complete pass.
 3. A3 passed on 2026-11-21 using the real Docker sandbox. The first run exposed that read-only rootfs lacked writable temporary storage for pytest capture; a bounded `/tmp` tmpfs fixed it, and the script now asserts the post-patch sandbox test exits 0.
 4. A4 is PASS with duplicate webhook delivery, approval pause/resume across an API process restart, and cancellation evidence.
 5. A5, A6, and A8 passed on 2026-11-21. PR #395 merged as `240001a8615a65a6846205249e2b5038875a5b7c` after exact-head CI passed. A7 passed on 2026-11-22 from a fresh Compose/PostgreSQL install using local Ollama.
-6. The P3 documentation/configuration audit and clean restore are complete. A2 is the remaining unpassed acceptance scenario; no further user setup is currently required.
-7. After A2 passes, run the final candidate CI, review all A1–A8 evidence, tag AURA Personal v1, and stop there.
+6. The P3 documentation/configuration audit and clean restore are complete. The only remaining release action is to wait for PR #400’s final exact-head CI, merge that tested head, and tag the accepted main commit `aura-personal-v1`.
+7. Once that tag is created, stop v1 work. Put any later maintenance or v1.1 ideas in a separate backlog.
 
 ## Live setup constraints
 
 - Docker Engine is healthy. Ollama responds locally and has the installed `aura-qwen3-coding:4b-8k` model; A7 confirmed exact local selection for root and Coding Specialist. No hosted key or model download was used.
-- Live Research requires `RESEARCH_PROVIDER_MODE=live` and reachable configured sources. Crossref/arXiv responded during prior checks; Semantic Scholar was rate-limited with HTTP 429. Retry the full Research-to-learning scenario using available sources; do not silently substitute a hosted model for the local route.
+- A2 passed with live arXiv research and exact local Ollama model routing. Semantic Scholar was rate-limited during earlier checks, but the accepted workflow used reachable sources and made no hosted model calls. One later replay returned `empty_model_response`; it is recorded as a failed non-acceptance attempt, and no further retry is needed for v1.
 - CodeGraph is not installed/configured and is not a v1 blocker.
 - CI is deterministic and must not require paid model access, Ollama, LM Studio, or CodeGraph.
