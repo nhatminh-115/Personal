@@ -76,6 +76,32 @@ class RequestBodyLimitMiddleware:
         await response(scope, receive, send)
 
 
+class ApiNoStoreMiddleware:
+    """Prevent HTTP caches from retaining private AURA API responses."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict[str, Any], receive, send) -> None:
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not (path == "/v1" or path.startswith("/v1/")):
+            await self.app(scope, receive, send)
+            return
+
+        async def no_store_send(message: dict[str, Any]) -> None:
+            if message["type"] == "http.response.start":
+                response_message = dict(message)
+                response_message["headers"] = [
+                    (name, value)
+                    for name, value in message.get("headers", [])
+                    if name.lower() != b"cache-control"
+                ] + [(b"cache-control", b"no-store")]
+                message = response_message
+            await send(message)
+
+        await self.app(scope, receive, no_store_send)
+
+
 class ApiTokenAuthenticationMiddleware:
     """Require a configured shared bearer token on every non-probe HTTP route."""
 
