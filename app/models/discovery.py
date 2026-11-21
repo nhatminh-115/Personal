@@ -28,6 +28,7 @@ MAX_PROVIDER_JSON_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_CAPABILITY_PROBE_RESPONSE_BYTES = 256 * 1024
 MAX_DISCOVERED_MODELS = 256
 MAX_RUNTIME_CAPABILITIES = 64
+MAX_RUNTIME_CAPABILITY_CHARS = 128
 MAX_MODEL_ID_CHARS = 256
 
 
@@ -106,38 +107,32 @@ def public_provider_base_url(base_url: str) -> str:
 
 def extract_runtime_tool_capability(raw_model: Dict[str, Any]) -> Optional[Literal["supported", "unsupported"]]:
     """Extract explicit tool capability metadata reported by local runtime, when available."""
-    # 1. Direct capabilities list or dict
-    caps = raw_model.get("capabilities")
-    if isinstance(caps, list):
-        caps_lower = [str(c).lower() for c in caps]
-        if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
-            return "supported"
-    elif isinstance(caps, dict):
-        if any(caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
-            return "supported"
-        if any(caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
-            return "unsupported"
+    recognized = ("tools", "tool_calls", "function_calling", "functions")
 
-    # 2. Direct boolean fields on raw_model
+    def classify(value: Any) -> Optional[Literal["supported", "unsupported"]]:
+        if isinstance(value, list):
+            values = {str(item).lower() for item in value[:MAX_RUNTIME_CAPABILITIES]}
+            if any(name in values for name in recognized):
+                return "supported"
+        elif isinstance(value, dict):
+            if any(value.get(name) is True for name in recognized):
+                return "supported"
+            if any(value.get(name) is False for name in recognized):
+                return "unsupported"
+        return None
+
+    explicit = classify(raw_model.get("capabilities"))
+    if explicit is not None:
+        return explicit
+
     if raw_model.get("tools") is True or raw_model.get("tool_calls") is True:
         return "supported"
     if raw_model.get("tools") is False or raw_model.get("tool_calls") is False:
         return "unsupported"
 
-    # 3. Nested in details dictionary
     details = raw_model.get("details")
     if isinstance(details, dict):
-        det_caps = details.get("capabilities")
-        if isinstance(det_caps, list):
-            caps_lower = [str(c).lower() for c in det_caps]
-            if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
-                return "supported"
-        elif isinstance(det_caps, dict):
-            if any(det_caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
-                return "supported"
-            if any(det_caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
-                return "unsupported"
-
+        return classify(details.get("capabilities"))
     return None
 
 
@@ -147,19 +142,35 @@ def infer_tool_support(model_id: str) -> Literal["supported", "unsupported", "un
 
 
 def extract_runtime_capabilities(raw_model: Dict[str, Any]) -> List[str]:
-    """Return only capabilities explicitly reported by the provider runtime."""
+    """Return a bounded list of capability names explicitly reported by the provider."""
     value = raw_model.get("capabilities")
     if isinstance(value, list):
-        return [str(item) for item in value]
+        return [
+            item[:MAX_RUNTIME_CAPABILITY_CHARS]
+            for item in value[:MAX_RUNTIME_CAPABILITIES]
+            if isinstance(item, str)
+        ]
     if isinstance(value, dict):
-        return [str(key) for key, enabled in value.items() if enabled is True]
+        return [
+            key[:MAX_RUNTIME_CAPABILITY_CHARS]
+            for key, enabled in list(value.items())[:MAX_RUNTIME_CAPABILITIES]
+            if isinstance(key, str) and enabled is True
+        ]
     details = raw_model.get("details")
     if isinstance(details, dict):
         nested = details.get("capabilities")
         if isinstance(nested, list):
-            return [str(item) for item in nested]
+            return [
+                item[:MAX_RUNTIME_CAPABILITY_CHARS]
+                for item in nested[:MAX_RUNTIME_CAPABILITIES]
+                if isinstance(item, str)
+            ]
         if isinstance(nested, dict):
-            return [str(key) for key, enabled in nested.items() if enabled is True]
+            return [
+                key[:MAX_RUNTIME_CAPABILITY_CHARS]
+                for key, enabled in list(nested.items())[:MAX_RUNTIME_CAPABILITIES]
+                if isinstance(key, str) and enabled is True
+            ]
     return []
 
 
@@ -185,7 +196,7 @@ async def _request_bounded_json(
 
         try:
             return status_code, json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError):
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
             return status_code, None
 
 
