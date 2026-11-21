@@ -78,3 +78,22 @@ def test_local_restore_requires_both_confirmation_flags_before_writing(tmp_path,
     with pytest.raises(ValueError, match="--api-stopped"):
         backup_local.restore_backup(archive, replace_current_data=True)
     assert database.read_bytes() == before
+
+
+def test_local_backup_verification_rejects_too_many_archive_entries(tmp_path, monkeypatch):
+    _configure_local_stores(monkeypatch, tmp_path)
+    archive = backup_local.create_backup(tmp_path / "backup.tar.gz", api_stopped=True)
+    monkeypatch.setattr(backup_local, "MAX_LOCAL_BACKUP_ARCHIVE_ENTRIES", 3)
+
+    with pytest.raises(ValueError, match="too many archive entries"):
+        backup_local.verify_backup(archive)
+
+
+def test_local_backup_verification_rejects_oversized_payload(tmp_path, monkeypatch):
+    _configure_local_stores(monkeypatch, tmp_path)
+    archive = backup_local.create_backup(tmp_path / "backup.tar.gz", api_stopped=True)
+    monkeypatch.setattr(backup_local, "MAX_BACKUP_MEMBER_BYTES", 1)
+
+    with pytest.raises(ValueError, match="entry exceeds the size limit"):
+        backup_local.verify_backup(archive)
+
