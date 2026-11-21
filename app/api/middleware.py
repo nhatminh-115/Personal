@@ -105,9 +105,15 @@ class ApiNoStoreMiddleware:
 class ApiTokenAuthenticationMiddleware:
     """Require a configured shared bearer token on every non-probe HTTP route."""
 
-    def __init__(self, app: ASGIApp, token_getter: Callable[[], SecretStr | str | None]) -> None:
+    def __init__(
+        self,
+        app: ASGIApp,
+        token_getter: Callable[[], SecretStr | str | None],
+        public_web_enabled: bool = False,
+    ) -> None:
         self.app = app
         self.token_getter = token_getter
+        self.public_web_enabled = public_web_enabled
 
     async def __call__(self, scope: dict[str, Any], receive, send) -> None:
         if scope["type"] != "http":
@@ -116,6 +122,20 @@ class ApiTokenAuthenticationMiddleware:
 
         path = scope.get("path", "")
         if path in {"/health", "/ready"}:
+            await self.app(scope, receive, send)
+            return
+
+        is_public_web_asset = (
+            self.public_web_enabled
+            and scope.get("method") in {"GET", "HEAD"}
+            and (
+                path in {"/", "/index.html"}
+                or path.startswith(("/assets/", "/ocr/", "/mock-files/"))
+            )
+        )
+        if is_public_web_asset:
+            # The packaged UI shell and assets must load before a user can enter
+            # the shared API token. API, docs, and all other paths stay protected.
             await self.app(scope, receive, send)
             return
 
