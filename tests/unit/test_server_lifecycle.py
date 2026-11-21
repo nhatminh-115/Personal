@@ -25,7 +25,7 @@ async def test_lifecycle_logs_do_not_expose_startup_or_shutdown_exception_detail
     async def wait_for_recovery_shutdown():
         await asyncio.Event().wait()
 
-    async def fail_loading_mcp_config(_path):
+    def fail_loading_mcp_config(_path):
         raise RuntimeError(mcp_secret)
 
     monkeypatch.setattr(server, "init_db", AsyncMock())
