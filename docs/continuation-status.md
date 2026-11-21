@@ -95,7 +95,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #381 / branch 33): pin scholarly PDF fetches to the public IP addresses validated for each URL hop while preserving HTTP Host and TLS SNI identity. Merged as `b9415ff831ec2d5117faebca5638b61168bc0497`. Final CI #996 (`44895348664`), job `136819696309`, passed: backend 741 tests in 54.48s; both PDF destination regressions passed; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.17s. Initial CI #995 failed on a missing import; corrected before the final green run.
 - Completed milestone (PR #382 / branch 34): bound model-discovery and capability-probe response sizes and metadata. It merged as `82e6301f7eee170e58bb73c8a723b22af5e210c5`. CI #999 (`44897046351`), job `136824833739`, passed: backend 744 tests in 87.72s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 12.47s. Three response-bound regressions passed.
 - Completed milestone (PR #383 / branch 35): stream and bound Compose/local backup archive verification, and cap workspace archive entries and expanded sizes before restore writes. It merged as `c867e1293f7e0c32a10a5c53a47156fef07b186b`. CI #1002 (`44898967897`), job `136830578813`, passed: backend 753 tests in 56.95s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.31s. Nine new archive-boundary regressions passed.
-- Current branch (branch 36, based on `c867e1293f7e0c32a10a5c53a47156fef07b186b`): add an opt-in shared bearer-token gate for API deployments while preserving local development, CORS preflights, health probes, and a usable browser UI.
+- Current branch (branch 36, based on `c867e1293f7e0c32a10a5c53a47156fef07b186b`): add an opt-in shared bearer-token gate for API deployments while preserving local development, CORS preflights, health probes, a usable browser UI, and each automation webhook's dedicated bearer secret.
 
 ## Recent verified milestones
 
@@ -153,8 +153,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #383: bound backup archive verification and restoration | Merged as `c867e12`; CI #1002 (`44898967897`), backend 753 passed in 56.95s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.31s |
 
 ## Immediate next steps
-1. Add optional `AURA_API_TOKEN` bearer authentication for non-local API access, protecting every application/documentation route while leaving health/readiness probes and CORS preflight usable.
-2. Integrate browser-session token entry and regression coverage for configured/unconfigured API behavior, CORS, and the login prompt.
+1. Add optional `AURA_API_TOKEN` bearer authentication for non-local API access, protecting application/documentation routes while leaving health/readiness probes, CORS preflights, and independently signed automation webhook calls usable.
+2. Integrate browser-session token entry and regression coverage for API auth, CORS, the login prompt, and the existing per-automation webhook secret boundary.
 3. Open a PR from branch 36, wait for full remote Actions, merge only the exact tested head, then continue from canonical `main`. CodeGraph dogfood remains pending external setup.
 
 ## Dogfood and external setup
