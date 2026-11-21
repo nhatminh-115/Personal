@@ -2079,3 +2079,73 @@ def test_prompt_token_estimate_includes_tool_call_arguments():
     )
 
     assert _estimate_prompt_tokens([tool_call], []) > _estimate_prompt_tokens([plain], []) + 1_900
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("global_privacy_policy", "routes_json"),
+    [
+        ("private-profile-marker", {}),
+        ("public", {"root": {"reasoning": {"policy": "private-profile-marker"}}}),
+    ],
+)
+async def test_routing_profile_validation_redacts_invalid_persisted_values(
+    async_client: AsyncClient,
+    test_db_session: AsyncSession,
+    global_privacy_policy: str,
+    routes_json: dict,
+):
+    profile_id = f"invalid-profile-{uuid.uuid4()}"
+    test_db_session.add(RoutingProfileModel(
+        id=profile_id,
+        name="Corrupt profile",
+        global_privacy_policy=global_privacy_policy,
+        routes_json=routes_json,
+    ))
+    await test_db_session.commit()
+
+    response = await async_client.post(f"/v1/routing/profiles/{profile_id}/validate")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": False,
+        "profile_id": profile_id,
+        "errors": ["Stored routing profile is invalid; review its configuration."],
+    }
+    assert "private-profile-marker" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_routing_profile_validation_redacts_unexpected_exception(
+    async_client: AsyncClient,
+    test_db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    profile_id = f"profile-validation-{uuid.uuid4()}"
+    test_db_session.add(RoutingProfileModel(id=profile_id, name="Valid profile", routes_json={}))
+    await test_db_session.commit()
+
+    secret = "private-profile-validation-marker"
+    logged = []
+    monkeypatch.setattr(
+        "app.api.routes.routing.logger.error",
+        lambda *args, **kwargs: logged.append((args, kwargs)),
+    )
+
+    def fail_validation(_profile):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr("app.api.routes.routing.model_to_routing_profile", fail_validation)
+    response = await async_client.post(f"/v1/routing/profiles/{profile_id}/validate")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "valid": False,
+        "profile_id": profile_id,
+        "errors": ["Profile validation failed because an internal error occurred."],
+    }
+    assert secret not in response.text
+    assert logged
+    assert secret not in str(logged)
+    assert logged[0][1]["extra"]["details"] == {"exception_type": "RuntimeError"}
+
