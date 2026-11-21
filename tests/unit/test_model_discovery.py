@@ -141,7 +141,7 @@ async def test_lmstudio_unavailable():
     """LM Studio being offline returns available=False without crashing."""
     svc = ModelDiscoveryService()
 
-    with patch(undefined("Timed out")):
+    with patch("httpx.AsyncClient.stream", side_effect=httpx.ConnectTimeout("Timed out")):
         res = await svc.discover_lmstudio()
 
     assert res.id == "lmstudio"
