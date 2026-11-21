@@ -1,5 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 import uuid
+import json
 
 import pytest
 from sqlalchemy import select
@@ -52,3 +53,57 @@ async def test_terminal_research_child_with_partial_state_keeps_its_status(test_
     assert child is not None and child.status == terminal_status
     assert delegation is not None and delegation.status == terminal_status
     assert child.error_message == "provider request failed"
+
+
+@pytest.mark.asyncio
+async def test_unexpected_child_failure_is_redacted_from_result_storage_and_logs(
+    test_db_session,
+    monkeypatch,
+):
+    session_id = str(uuid.uuid4())
+    parent_run_id = str(uuid.uuid4())
+    diagnostic = "private database endpoint postgres://user:secret@db.internal/aura"
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(id=parent_run_id, session_id=session_id, user_message="Inspect the workspace"))
+    await test_db_session.commit()
+
+    graph = AsyncMock()
+    graph.aget_state.return_value = MagicMock(next=None, values={})
+    graph.ainvoke.side_effect = RuntimeError(diagnostic)
+    monkeypatch.setattr("app.delegation.runtime.get_compiled_graph", AsyncMock(return_value=graph))
+    log_error = MagicMock()
+    monkeypatch.setattr("app.delegation.runtime.logger.error", log_error)
+    trace_service = AsyncMock()
+
+    result = await DelegationRuntime().delegate(
+        DelegationRequest(
+            specialist_name="coding",
+            task_description="Inspect the workspace",
+            parent_run_id=parent_run_id,
+            session_id=session_id,
+        ),
+        db=test_db_session,
+        services={"trace_service": trace_service},
+    )
+
+    child = await test_db_session.get(RunModel, result.child_run_id)
+    delegation = await test_db_session.scalar(
+        select(DelegationModel).where(DelegationModel.child_run_id == result.child_run_id)
+    )
+    persisted = {
+        "result": result.model_dump(),
+        "child_error": child.error_message if child else None,
+        "delegation_summary": delegation.result_summary if delegation else None,
+        "trace": trace_service.record_event.call_args_list,
+        "logs": log_error.call_args_list,
+    }
+
+    assert result.status == RunStatus.FAILED.value
+    assert result.summary == "Specialist failed due to an execution error."
+    assert result.error == "Specialist failed due to an execution error."
+    assert child is not None and child.error_message == "Specialist execution failed."
+    assert delegation is not None and delegation.result_summary == result.error
+    assert not log_error.call_args.kwargs.get("exc_info", False)
+    assert log_error.call_args.kwargs["extra"]["details"]["exception_type"] == "RuntimeError"
+    assert diagnostic not in json.dumps(persisted, default=str)
+
