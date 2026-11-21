@@ -66,7 +66,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #363 / branch 15): keep immediate EventBus and queued outbox handler logs from exposing raw exception details.
 - Completed audit (branch 16): Routing Studio v2 A–H are already implemented on `main`; their current tests cover default profile, zero-provider preview, validation, unavailable model preservation, demo controls, structured errors, child overrides, and frontend flows.
 - Completed milestone (PR #364 / branch 16): preserve a saved Board branch's selected context when the user starts a live chat and sends its first prompt without opening the Context panel. The send path merges thread-pinned object/file selections with current composer selections, and the composer reports those selections before its object catalog is loaded.
-- Current milestone (branch 17): restore the latest explicitly selected workspace context when a live session is recovered from backend history or opened from project-memory provenance. Preserve a locally saved empty selection, do not infer file-text attachment state from sanitized manifests, and keep provenance-only linked sources out of the selected set. Local frontend verification passes; remote Actions remains the merge gate.
+- Current milestone (branch 17): hydrate the transcript and restore the latest explicitly selected workspace context when a live session is recovered or opened from project-memory provenance, including when a summary-only session thread already exists locally. Preserve a locally saved empty selection, do not infer file-text attachment state from sanitized manifests, and keep provenance-only linked sources out of the selected set. Local frontend verification passes; remote Actions remains the merge gate.
 
 ## Recent verified milestones
 
@@ -119,6 +119,6 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 ## Verification constraints
 
 - Local `pytest` is present, but its test run currently stops during fixture loading because `aiosqlite` is missing from the host Python environment. Python AST parsing and `git diff --check` run locally; GitHub Actions runs the backend suite and integration scenarios.
-- For the current session-context rehydration change, all 47 frontend test files pass (320 tests), TypeScript passes, and Vite builds successfully to a fresh temporary output directory (13.56s). The standard `npm run build` cleanup step cannot remove the existing `web/public/ocr` and `web/dist/assets` directories in this sandbox (`EPERM`); CI will run the standard build path.
+- For the current session-context rehydration change, all 47 frontend test files pass (320 tests), TypeScript passes, and Vite builds successfully to a fresh temporary output directory (14.79s). The standard `npm run build` cleanup step cannot remove the existing `web/public/ocr` and `web/dist/assets` directories in this sandbox (`EPERM`); CI will run the standard build path.
 - No paid/hosted model is required for CI.
 - Keep changes isolated on a fresh branch from canonical `main`, then report exact merge SHA and remote CI evidence.
