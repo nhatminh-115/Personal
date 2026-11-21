@@ -8,17 +8,17 @@ import tarfile
 
 import pytest
 
-from scripts import restore_compose
+from scripts import backup_compose, restore_compose
 
 
-def _make_backup(path, *, valid=True, include_wal=True, include_workspace=True):
+def _make_backup(path, *, valid=True, include_wal=True, include_workspace=True, postgres_dump=b"postgres-dump"):
     workspace = io.BytesIO()
     with tarfile.open(fileobj=workspace, mode="w:gz") as workspace_tar:
         info = tarfile.TarInfo("restored.txt")
         info.size = len(b"restored workspace")
         workspace_tar.addfile(info, io.BytesIO(b"restored workspace"))
     files = {
-        "postgres.dump": b"postgres-dump",
+        "postgres.dump": postgres_dump,
         "checkpoint/aura_checkpoints.db": b"sqlite-checkpoint",
     }
     if include_workspace:
@@ -140,3 +140,20 @@ def test_legacy_backup_restores_database_and_checkpoint_without_replacing_worksp
 
     assert any(call[0] == "exec" and "pg_restore" in call for call in calls)
     assert not any(call[0] == "cp" and "/app/workspace/" in call[-1] for call in calls)
+
+
+def test_compose_backup_verification_rejects_too_many_archive_entries(tmp_path, monkeypatch):
+    archive = _make_backup(tmp_path / "many.tar.gz")
+    monkeypatch.setattr(backup_compose, "MAX_BACKUP_ARCHIVE_ENTRIES", 4)
+
+    with pytest.raises(ValueError, match="too many archive entries"):
+        backup_compose.verify_backup(archive)
+
+
+def test_compose_backup_verification_rejects_oversized_payload(tmp_path, monkeypatch):
+    archive = _make_backup(tmp_path / "large.tar.gz", postgres_dump=b"x" * 101)
+    monkeypatch.setattr(backup_compose, "MAX_BACKUP_MEMBER_BYTES", 100)
+
+    with pytest.raises(ValueError, match="entry exceeds the size limit"):
+        backup_compose.verify_backup(archive)
+
