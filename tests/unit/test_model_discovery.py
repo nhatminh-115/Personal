@@ -1,9 +1,29 @@
 """Unit tests for dynamic model discovery, provider generalization, and routing policies."""
 
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import json
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+
+
+class FakeStreamingResponse:
+    def __init__(self, status_code, payload):
+        self.status_code = status_code
+        self.body = payload if isinstance(payload, bytes) else json.dumps(payload).encode("utf-8")
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def aiter_bytes(self, chunk_size=65536):
+        for offset in range(0, len(self.body), chunk_size):
+            yield self.body[offset : offset + chunk_size]
+
 
 from app.api.server import create_app
 from app.core.settings import settings
@@ -37,11 +57,9 @@ async def test_ollama_discovery_conservative_classification():
         ]
     }
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = fake_tags
+    mock_resp = FakeStreamingResponse(200, fake_tags)
 
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("httpx.AsyncClient.stream", return_value=mock_resp):
         res = await svc.discover_ollama()
 
     assert res.id == "ollama"
@@ -57,11 +75,37 @@ async def test_ollama_discovery_conservative_classification():
 
 
 @pytest.mark.asyncio
+async def test_lmstudio_discovery_bounds_provider_json(monkeypatch):
+    monkeypatch.setattr("app.models.discovery.MAX_PROVIDER_JSON_RESPONSE_BYTES", 8)
+    response = FakeStreamingResponse(200, {"data": [{"id": "too-large"}]})
+
+    with patch("httpx.AsyncClient.stream", return_value=response):
+        result = await ModelDiscoveryService().discover_lmstudio()
+
+    assert result.available is False
+    assert result.models == []
+
+
+@pytest.mark.asyncio
+async def test_lmstudio_discovery_caps_models_exposed(monkeypatch):
+    monkeypatch.setattr("app.models.discovery.MAX_DISCOVERED_MODELS", 2)
+    response = FakeStreamingResponse(
+        200,
+        {"data": [{"id": "one"}, {"id": "two"}, {"id": "three"}]},
+    )
+
+    with patch("httpx.AsyncClient.stream", return_value=response):
+        result = await ModelDiscoveryService().discover_lmstudio()
+
+    assert [model.id for model in result.models] == ["one", "two"]
+
+
+@pytest.mark.asyncio
 async def test_ollama_unavailable():
     """Ollama being offline returns available=False without raising an exception."""
     svc = ModelDiscoveryService()
 
-    with patch("httpx.AsyncClient.get", side_effect=httpx.ConnectError("Connection refused")):
+    with patch("httpx.AsyncClient.stream", side_effect=httpx.ConnectError("Connection refused")):
         res = await svc.discover_ollama()
 
     assert res.id == "ollama"
@@ -81,11 +125,9 @@ async def test_lmstudio_discovery_conservative_classification():
         ]
     }
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 200
-    mock_resp.json.return_value = fake_models
+    mock_resp = FakeStreamingResponse(200, fake_models)
 
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_resp):
+    with patch("httpx.AsyncClient.stream", return_value=mock_resp):
         res = await svc.discover_lmstudio()
 
     assert res.id == "lmstudio"
@@ -101,7 +143,7 @@ async def test_lmstudio_unavailable():
     """LM Studio being offline returns available=False without crashing."""
     svc = ModelDiscoveryService()
 
-    with patch("httpx.AsyncClient.get", side_effect=httpx.ConnectTimeout("Timed out")):
+    with patch(undefined("Timed out")):
         res = await svc.discover_lmstudio()
 
     assert res.id == "lmstudio"
@@ -306,25 +348,18 @@ async def test_models_api_redacts_credentials_embedded_in_provider_base_urls(mon
 
 @pytest.mark.asyncio
 async def test_capability_probe_endpoint(monkeypatch):
-    """POST /v1/models/probe tests tool-calling behavior."""
     app = create_app()
     transport = ASGITransport(app=app)
 
-    # Cloud/Mock providers return supported by default
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        resp = await client.post(
+        cloud = await client.post(
             "/v1/models/probe",
             json={"provider_id": "openai", "model_id": "gpt-4o"},
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["tool_support"] == "supported"
+        assert cloud.status_code == 200
+        assert cloud.json()["tool_support"] == "supported"
 
         private_diagnostic = "private runtime body token=probe-secret"
-        rejected_response = MagicMock()
-        rejected_response.status_code = 400
-        rejected_response.json.return_value = {"error": {"message": private_diagnostic}}
-        rejected_response.text = private_diagnostic
 
         class FakeProviderClient:
             def __init__(self, **_kwargs):
@@ -336,8 +371,8 @@ async def test_capability_probe_endpoint(monkeypatch):
             async def __aexit__(self, *_args):
                 return None
 
-            async def post(self, *_args, **_kwargs):
-                return rejected_response
+            def stream(self, *_args, **_kwargs):
+                return FakeStreamingResponse(400, {"error": {"message": private_diagnostic}})
 
         monkeypatch.setattr("app.models.discovery.httpx.AsyncClient", FakeProviderClient)
         rejected = await client.post(
@@ -351,13 +386,27 @@ async def test_capability_probe_endpoint(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_probe_oversized_response_remains_unknown(monkeypatch):
+    monkeypatch.setattr("app.models.discovery.MAX_CAPABILITY_PROBE_RESPONSE_BYTES", 8)
+    response = FakeStreamingResponse(
+        200,
+        {"choices": [{"message": {"tool_calls": [{"id": "call"}]}}]},
+    )
+
+    with patch("httpx.AsyncClient.stream", return_value=response):
+        result = await ModelDiscoveryService().probe_model_capability("ollama", "test-model")
+
+    assert result.tool_support == "unknown"
+    assert "oversized" in result.details.lower()
+
+
+@pytest.mark.asyncio
 async def test_probe_connection_failure_yields_unknown_not_unsupported():
-    """Failed connection or timeout during probe must yield 'unknown' / provider unavailable, NOT 'unsupported'."""
     svc = ModelDiscoveryService()
     private_diagnostic = "https://local.example/models?token=probe-secret"
 
     with patch(
-        "httpx.AsyncClient.post",
+        "httpx.AsyncClient.stream",
         side_effect=httpx.ConnectTimeout(f"Connection timed out: {private_diagnostic}"),
     ):
         res = await svc.probe_model_capability("ollama", "test-model")
@@ -365,7 +414,6 @@ async def test_probe_connection_failure_yields_unknown_not_unsupported():
     assert res.tool_support == "unknown"
     assert "timed out" in res.details.lower() or "connection" in res.details.lower()
     assert private_diagnostic not in res.details
-    # Cache must reflect unknown, not unsupported
     assert svc._probed_cache.get("ollama:test-model") == "unknown"
 
 
@@ -373,12 +421,9 @@ async def test_probe_connection_failure_yields_unknown_not_unsupported():
 async def test_probe_http_400_is_ambiguous_and_does_not_expose_provider_body():
     svc = ModelDiscoveryService()
     private_diagnostic = "private runtime body token=probe-secret"
-    fake_resp = MagicMock()
-    fake_resp.status_code = 400
-    fake_resp.json.return_value = {"error": {"message": private_diagnostic}}
-    fake_resp.text = private_diagnostic
+    fake_resp = FakeStreamingResponse(400, {"error": {"message": private_diagnostic}})
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+    with patch("httpx.AsyncClient.stream", return_value=fake_resp):
         result = await svc.probe_model_capability("ollama", "test-model")
 
     assert result.tool_support == "unknown"
@@ -392,7 +437,7 @@ async def test_unexpected_probe_failure_does_not_expose_exception_text():
     svc = ModelDiscoveryService()
     private_diagnostic = "unexpected private provider diagnostic"
 
-    with patch("httpx.AsyncClient.post", side_effect=RuntimeError(private_diagnostic)):
+    with patch("httpx.AsyncClient.stream", side_effect=RuntimeError(private_diagnostic)):
         result = await svc.probe_model_capability("ollama", "test-model")
 
     assert result.tool_support == "unknown"
@@ -402,23 +447,22 @@ async def test_unexpected_probe_failure_does_not_expose_exception_text():
 
 @pytest.mark.asyncio
 async def test_probe_success_without_tool_calls_remains_unknown():
-    """A successful response without a tool call does not prove the model lacks tool support."""
     svc = ModelDiscoveryService()
-
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
-    fake_resp.json.return_value = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": "I cannot call functions.",
+    fake_resp = FakeStreamingResponse(
+        200,
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "I cannot call functions.",
+                    }
                 }
-            }
-        ]
-    }
+            ]
+        },
+    )
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+    with patch("httpx.AsyncClient.stream", return_value=fake_resp):
         res = await svc.probe_model_capability("ollama", "chat-only-model")
 
     assert res.tool_support == "unknown"
@@ -428,29 +472,28 @@ async def test_probe_success_without_tool_calls_remains_unknown():
 
 @pytest.mark.asyncio
 async def test_probe_success_with_tool_calls_yields_supported():
-    """When runtime responds 200 and model emits tool calls, marks 'supported'."""
     svc = ModelDiscoveryService()
-
-    fake_resp = MagicMock()
-    fake_resp.status_code = 200
-    fake_resp.json.return_value = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "tool_calls": [
-                        {
-                            "id": "call_123",
-                            "type": "function",
-                            "function": {"name": "probe_test", "arguments": '{"status":"ok"}'},
-                        }
-                    ],
+    fake_resp = FakeStreamingResponse(
+        200,
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "id": "call_123",
+                                "type": "function",
+                                "function": {"name": "probe_test", "arguments": '{"status":"ok"}'},
+                            }
+                        ],
+                    }
                 }
-            }
-        ]
-    }
+            ]
+        },
+    )
 
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+    with patch("httpx.AsyncClient.stream", return_value=fake_resp):
         res = await svc.probe_model_capability("ollama", "tool-capable-model")
 
     assert res.tool_support == "supported"
