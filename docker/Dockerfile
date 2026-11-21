@@ -1,4 +1,12 @@
 # syntax=docker/dockerfile:1
+FROM node:24-slim AS web-builder
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
@@ -34,6 +42,7 @@ COPY app/ /app/app/
 COPY migrations/ /app/migrations/
 COPY alembic.ini /app/alembic.ini
 COPY README.md /app/README.md
+COPY --from=web-builder /web/dist /app/web/dist
 
 # Workspace directory with proper permissions
 RUN mkdir -p /app/workspace /app/checkpoints && useradd -m -u 1001 aurauser && chown -R aurauser:aurauser /app
