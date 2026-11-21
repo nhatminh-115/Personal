@@ -93,7 +93,6 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #379 / branch 31): prior assistant messages and persisted plans remain conversation history, not authorization for new actions. Merged as `fea8b0469489ed04e367664c51b9f81d364451d8`. CI #991 (`44892382388`), job `136810791569`, passed: backend 739 tests in 55.12s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.24s.
 - Completed milestone (PR #380 / branch 32): prevent model-supplied delegation arguments from overriding trusted root project scope and privacy/fallback routing boundaries. Merged as `3374bd0da4eddafd4ee6e7654e6f7a3e3a04b60b`. CI #993 (`44893591919`), job `136814425832`, passed: backend 740 tests in 70.46s; targeted delegation-boundary regression passed; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 10.18s.
 - Current milestone (branch 33, based on `3374bd0da4eddafd4ee6e7654e6f7a3e3a04b60b`): pin scholarly PDF fetches to the public IP addresses validated for each hop, preserving the original HTTP Host and TLS SNI names to close the DNS-rebinding gap.
-- Current milestone (branch 31): make clear that prior assistant messages and persisted plans help interpret the current request but do not authorize new tool actions.
 
 ## Recent verified milestones
 
