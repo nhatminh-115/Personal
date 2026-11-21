@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
+import { ApiAccessDialog } from './components/global/ApiAccessDialog';
 import type { FilePreviewRecord } from './components/global/FilePreviewView';
 import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
@@ -52,7 +53,7 @@ import {
   type DirectoryConnection,
   type IndexedFolderFile,
 } from './lib/folderConnections';
-import { ApiError, api, createClientTurnId } from './services/api';
+import { API_AUTH_REQUIRED_EVENT, ApiError, api, createClientTurnId, getApiToken, setApiToken } from './services/api';
 import { mapRunEventsToExecutionSteps } from './lib/executionEvents';
 import type {
   ApprovalDetail,
@@ -312,6 +313,7 @@ export default function App() {
   const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
   const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
+  const [apiAccessOpen, setApiAccessOpen] = useState(false);
     const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
   const [inspectorFocusRunId, setInspectorFocusRunId] = useState<string | null>(null);
@@ -321,6 +323,11 @@ export default function App() {
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef(new Map<number, number>());
+  useEffect(() => {
+    const requestApiAccess = () => setApiAccessOpen(true);
+    window.addEventListener(API_AUTH_REQUIRED_EVENT, requestApiAccess);
+    return () => window.removeEventListener(API_AUTH_REQUIRED_EVENT, requestApiAccess);
+  }, []);
   const [workspaceSearch, setWorkspaceSearch] = useState<{ query: string; projectName: string | null; results: WorkspaceSearchResult[]; nextCursor: string | null; loading: boolean; loadingMore: boolean; error: string | null }>({ query: '', projectName: null, results: [], nextCursor: null, loading: false, loadingMore: false, error: null });
   const [focusedWorkspaceNoteId, setFocusedWorkspaceNoteId] = useState<string | null>(null);
   const [focusedLibraryItemId, setFocusedLibraryItemId] = useState<string | null>(null);
@@ -3106,6 +3113,21 @@ export default function App() {
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((value) => !value)}
         onOpenAura={() => setAuraOpen(true)}
+        apiTokenConfigured={Boolean(getApiToken())}
+        onOpenApiAccess={() => setApiAccessOpen(true)}
+      />
+      <ApiAccessDialog
+        open={apiAccessOpen}
+        tokenConfigured={Boolean(getApiToken())}
+        onClose={() => setApiAccessOpen(false)}
+        onSave={(token) => {
+          if (!setApiToken(token)) {
+            pushToast('Could not save API token', 'This browser does not allow session storage.');
+            return;
+          }
+          setApiAccessOpen(false);
+          window.location.reload();
+        }}
       />
       {routingStudioLoaded ? <Suspense fallback={null}>
         <RoutingStudio
