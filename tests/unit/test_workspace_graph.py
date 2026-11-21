@@ -11,10 +11,10 @@ from app.db.models import MessageModel, RunEventModel, RunModel, SessionModel, W
 from app.core.errors import ContextSelectionError
 from app.memory.context_compiler import MAX_COMPILED_OBJECTS, WorkspaceContextCompiler
 from app.api.schemas import MAX_WORKSPACE_LAYOUT_BYTES, MAX_WORKSPACE_METADATA_BYTES, WorkspaceLayoutWrite, WorkspaceObjectCreate
+from app.models.base import ModelRole
 
 
 def _reference_context_content(request) -> str:
-
     reference = next(
         message
         for message in request.messages
