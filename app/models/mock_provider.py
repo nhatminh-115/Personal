@@ -309,7 +309,6 @@ class MockModelProvider(ModelProvider):
                                 arguments={
                                     "specialist_name": "coding",
                                     "task_description": content,
-                                    "context": {"project_name": "Atlas"},
                                 },
                             )
                         ],
@@ -331,7 +330,6 @@ class MockModelProvider(ModelProvider):
                                 arguments={
                                     "specialist_name": "research",
                                     "task_description": content,
-                                    "context": {"project_name": "Atlas_Architecture"},
                                 },
                             )
                         ],
