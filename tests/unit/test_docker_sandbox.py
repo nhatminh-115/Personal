@@ -6,10 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 from app.core.errors import AURAError
+import app.sandbox.docker_runtime as docker_runtime_module
 from app.sandbox.docker_runtime import DockerSandboxRuntime
 from app.sandbox.mock_runtime import MockSandboxRuntime
 from app.sandbox.spec import ExecutionResult, SandboxConfig
-from app.sandbox.tools import _get_default_runtime
+from app.sandbox.tools import SandboxPythonExecuteTool, SandboxShellExecuteTool, _get_default_runtime
 
 
 def test_sandbox_config_hardened_defaults():
@@ -137,6 +138,97 @@ def test_docker_runtime_preserves_private_workspace_permissions(tmp_path, monkey
 
     assert result.exit_code == 0
     assert stat.S_IMODE(workspace.stat().st_mode) == before_mode == 0o700
+
+
+def test_docker_runtime_does_not_log_daemon_or_container_exception_text(tmp_path, monkeypatch):
+    daemon_diagnostic = "private docker endpoint /run/user/1000/docker.sock"
+    wait_diagnostic = "private wait response with workspace token"
+    cleanup_diagnostic = "private container cleanup path"
+    runtime = DockerSandboxRuntime()
+    logger = MagicMock()
+    monkeypatch.setattr(docker_runtime_module, "logger", logger)
+    client = MagicMock()
+    client.ping.side_effect = RuntimeError(daemon_diagnostic)
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    assert runtime.is_available() is False
+    daemon_log = repr(logger.debug.call_args)
+    assert "RuntimeError" in daemon_log
+    assert daemon_diagnostic not in daemon_log
+
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.side_effect = RuntimeError(wait_diagnostic)
+    container.logs.side_effect = [b"", b""]
+    container.remove.side_effect = RuntimeError(cleanup_diagnostic)
+    client.containers.create.return_value = container
+
+    result = runtime._execute_sync(["true"], SandboxConfig(workspace_dir=str(tmp_path)))
+    container_log = repr(logger.warning.call_args_list)
+
+    assert result.timed_out is True
+    assert "RuntimeError" in container_log
+    assert wait_diagnostic not in container_log
+    assert cleanup_diagnostic not in container_log
+
+
+def test_docker_runtime_does_not_log_workspace_owner_exception_text(monkeypatch):
+    if os.name == "nt":
+        pytest.skip("Workspace owner inspection is not used on Windows")
+
+    diagnostic = "private workspace mount /srv/customer-data"
+    runtime = DockerSandboxRuntime()
+    logger = MagicMock()
+    monkeypatch.setattr(docker_runtime_module, "logger", logger)
+    client = MagicMock()
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = b""
+    client.containers.create.return_value = container
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+    monkeypatch.setattr("app.sandbox.docker_runtime.os.makedirs", lambda *args, **kwargs: None)
+
+    def fail_stat(path):
+        raise PermissionError(diagnostic)
+
+    monkeypatch.setattr("app.sandbox.docker_runtime.os.stat", fail_stat)
+
+    result = runtime._execute_sync(["true"], SandboxConfig(workspace_dir="/private/workspace"))
+    workspace_log = repr(logger.debug.call_args)
+
+    assert result.exit_code == 0
+    assert "PermissionError" in workspace_log
+    assert diagnostic not in workspace_log
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("tool_type", "input_data"),
+    [
+        (SandboxShellExecuteTool, {"command": "echo safe"}),
+        (SandboxPythonExecuteTool, {"code": "print('safe')"}),
+    ],
+)
+async def test_sandbox_tools_redact_runtime_exception_text(tool_type, input_data):
+    diagnostic = "private docker socket /run/user/1000/docker.sock"
+
+    class FailingRuntime:
+        def is_available(self):
+            return True
+
+        async def run_command(self, command, config=None):
+            raise RuntimeError(diagnostic)
+
+        async def run_python(self, code, config=None):
+            raise RuntimeError(diagnostic)
+
+    result = await tool_type(runtime=FailingRuntime()).execute(input_data)
+
+    assert result.success is False
+    assert result.error == "Sandbox execution failed because the isolated runtime returned an internal error."
+    assert diagnostic not in result.error
+    assert result.metadata == {"error_category": "sandbox_error", "error_type": "RuntimeError"}
 
 
 def test_docker_runtime_creates_workspace_with_private_permissions(tmp_path, monkeypatch):

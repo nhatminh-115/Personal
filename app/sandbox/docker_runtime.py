@@ -44,7 +44,7 @@ class DockerSandboxRuntime(SandboxRuntime):
             client = self._get_client()
             return bool(client.ping())
         except Exception as e:
-            logger.debug(f"Docker daemon ping failed: {e}")
+            logger.debug("Docker daemon ping failed (error type: %s).", type(e).__name__)
             return False
 
     @staticmethod
@@ -90,7 +90,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 if host_uid != 0 and (cfg.user is None or cfg.user == "1000:1000"):
                     container_user = f"{host_uid}:{host_gid}"
             except Exception as e:
-                logger.debug(f"Could not inspect host workspace owner UID/GID: {e}")
+                logger.debug("Could not inspect host workspace owner UID/GID (error type: %s).", type(e).__name__)
 
         volumes = {
             os.path.abspath(cfg.workspace_dir): {
@@ -141,7 +141,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 wait_res = container.wait(timeout=cfg.timeout_seconds)
                 exit_code = wait_res.get("StatusCode", 0) if isinstance(wait_res, dict) else int(wait_res)
             except Exception as wait_err:
-                logger.warning(f"Container wait exceeded timeout or failed: {wait_err}")
+                logger.warning("Container wait exceeded timeout or failed (error type: %s).", type(wait_err).__name__)
                 timed_out = True
                 try:
                     container.kill()
@@ -184,7 +184,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 try:
                     container.remove(force=True)
                 except Exception as rem_err:
-                    logger.warning(f"Error cleaning up ephemeral container: {rem_err}")
+                    logger.warning("Error cleaning up ephemeral container (error type: %s).", type(rem_err).__name__)
 
     async def run_command(self, command: str, config: Optional[SandboxConfig] = None) -> ExecutionResult:
         """Execute shell command inside container."""
