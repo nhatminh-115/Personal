@@ -2,10 +2,12 @@
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from pathlib import Path
 from fastapi import Depends, FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,9 @@ from app.db.session import get_db, init_db
 
 
 from app.orchestrator.graph import close_checkpointer, init_checkpointer, is_checkpointer_available
+
+
+WEB_DIST_DIR = Path(__file__).resolve().parents[2] / "web" / "dist"
 
 
 @asynccontextmanager
@@ -108,13 +113,18 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    web_is_built = (WEB_DIST_DIR / "index.html").is_file()
     allowed_origins = [
         origin.strip()
         for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
         if origin.strip()
     ]
     app.add_middleware(RequestBodyLimitMiddleware)
-    app.add_middleware(ApiTokenAuthenticationMiddleware, token_getter=lambda: settings.AURA_API_TOKEN)
+    app.add_middleware(
+        ApiTokenAuthenticationMiddleware,
+        token_getter=lambda: settings.AURA_API_TOKEN,
+        public_web_enabled=web_is_built,
+    )
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
@@ -139,6 +149,17 @@ def create_app() -> FastAPI:
     app.include_router(study.router)
     app.include_router(automations.router)
     app.include_router(capabilities.router)
+
+    # Keep unknown API paths from falling through to the single-page web app.
+    unmatched_api_methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+
+    @app.api_route("/v1", methods=unmatched_api_methods, include_in_schema=False)
+    async def unmatched_v1_root():
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
+
+    @app.api_route("/v1/{api_path:path}", methods=unmatched_api_methods, include_in_schema=False)
+    async def unmatched_v1_path(api_path: str):
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(request: Request, exc: RequestValidationError):
@@ -218,6 +239,9 @@ def create_app() -> FastAPI:
         ready = all(value == "healthy" for value in checks.values())
         response.status_code = 200 if ready else 503
         return {"status": "ready" if ready else "not_ready", "checks": checks}
+
+    if web_is_built:
+        app.mount("/", StaticFiles(directory=str(WEB_DIST_DIR), html=True), name="web")
 
     return app
 
