@@ -42,6 +42,34 @@ async def test_docker_security_read_only_rootfs(docker_runtime: DockerSandboxRun
 
 
 @pytest.mark.asyncio
+async def test_docker_security_readonly_rootfs_supports_pytest_capture(
+    docker_runtime: DockerSandboxRuntime,
+    temp_workspace: str,
+):
+    """Pytest's temporary capture files work without making the container root writable."""
+    from pathlib import Path
+
+    workspace = Path(temp_workspace)
+    (workspace / "calculator.py").write_text(
+        "def add(a, b):\n    return a + b\n",
+        encoding="utf-8",
+    )
+    (workspace / "test_calculator.py").write_text(
+        "from calculator import add\n\n"
+        "def test_add():\n    assert add(1, 2) == 3\n",
+        encoding="utf-8",
+    )
+
+    result = await docker_runtime.run_command(
+        "pytest",
+        config=SandboxConfig(workspace_dir=temp_workspace),
+    )
+
+    assert result.exit_code == 0
+    assert "1 passed" in result.stdout
+
+
+@pytest.mark.asyncio
 async def test_docker_security_network_isolated(docker_runtime: DockerSandboxRuntime, temp_workspace: str):
     """Verify that network access is completely disabled (network_mode='none')."""
     cfg = SandboxConfig(workspace_dir=temp_workspace, timeout_seconds=10.0)

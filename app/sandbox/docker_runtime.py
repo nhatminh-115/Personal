@@ -125,6 +125,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 working_dir=cfg.workdir,
                 user=container_user,
                 read_only=cfg.read_only_root,
+                tmpfs={"/tmp": "rw,noexec,nosuid,nodev,size=64m"},
                 network_mode="none" if cfg.network_disabled else "bridge",
                 mem_limit=cfg.memory_limit,
                 nano_cpus=nano_cpus,

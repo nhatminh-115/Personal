@@ -345,10 +345,24 @@ async def run_phase3_verification():
                     assert "delegation_completed" in p_ev_types
 
                     child_events_res = await db.execute(select(RunEventModel).where(RunEventModel.run_id == child.id))
-                    c_ev_types = [e.event_type for e in child_events_res.scalars().all()]
+                    child_events = list(child_events_res.scalars().all())
+                    c_ev_types = [e.event_type for e in child_events]
                     assert "request_received" in c_ev_types
                     assert "step_completed" in c_ev_types
                     assert "approval_requested" in c_ev_types
+
+                    sandbox_results = [
+                        event.payload.get("result", {})
+                        for event in child_events
+                        if event.event_type == "tool_executed"
+                        and event.payload.get("tool") == "sandbox_shell_execute"
+                    ]
+                    assert len(sandbox_results) == 2
+                    first_test, verification_test = sandbox_results
+                    assert first_test.get("success") is False
+                    assert (first_test.get("metadata") or {}).get("exit_code") == 1
+                    assert verification_test.get("success") is True
+                    assert (verification_test.get("metadata") or {}).get("exit_code") == 0
 
                     print(f" -> DB Lineage & Audit Trail verified: Parent Run '{parent.id}' <-> Child Run '{child.id}', Delegation Record intact", flush=True)
 
