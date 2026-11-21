@@ -1401,6 +1401,31 @@ export default function App() {
         setChatThreads((current) => current.some((thread) => thread.sessionId === session.id)
           ? current.map((thread) => thread.sessionId === session.id ? { ...thread, ...restoredThread } : thread)
           : [...current, restoredThread]);
+      } else if (sourceThread.messages.length === 0 || sourceThread.initialContextObjectIds === undefined) {
+        // The session rail stores summaries only. Opening a recovered session
+        // from Memory must hydrate it directly; no thread-rail click occurs to
+        // trigger selectThread's normal hydration path.
+        const session = await api.fetchSession(sessionId);
+        const hydratedMessages = session.messages.map(hydrateSessionMessage);
+        const restoredContextObjectIds = latestSelectedContextObjectIds(session.messages);
+        const currentThread = sourceThread;
+        const contextObjectIds = currentThread.initialContextObjectIds ?? restoredContextObjectIds;
+        sourceThread = {
+          ...currentThread,
+          messages: currentThread.messages.length > 0 ? currentThread.messages : hydratedMessages,
+          messagesNextCursor: currentThread.messagesNextCursor ?? session.messages_next_cursor ?? null,
+          ...(contextObjectIds !== undefined ? { initialContextObjectIds: contextObjectIds } : {}),
+        };
+        setChatThreads((current) => current.map((thread) => {
+          if (thread.sessionId !== session.id) return thread;
+          const latestContextObjectIds = thread.initialContextObjectIds ?? restoredContextObjectIds;
+          return {
+            ...thread,
+            ...(thread.messages.length === 0 ? { messages: hydratedMessages } : {}),
+            messagesNextCursor: thread.messagesNextCursor ?? session.messages_next_cursor ?? null,
+            ...(latestContextObjectIds !== undefined ? { initialContextObjectIds: latestContextObjectIds } : {}),
+          };
+        }));
       }
 
       const resolvedThread = sourceThread;

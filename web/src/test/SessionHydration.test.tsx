@@ -320,6 +320,13 @@ describe('Session Hydration', () => {
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
 
+    const { initialChatThreads } = await import('../data/workspaceData');
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([{
+      id: 'session-source-session-1', projectId: 'stateful', title: 'Originating chat',
+      summary: 'Saved live conversation', updated: 'now', messages: [],
+      sessionId: 'source-session-1', source: 'live', pinned: false,
+    }, ...initialChatThreads]));
+
     await act(async () => { render(<App />); });
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
