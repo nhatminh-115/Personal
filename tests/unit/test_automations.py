@@ -982,6 +982,53 @@ async def test_event_bridge_retries_run_when_crash_happened_before_first_checkpo
 
 
 @pytest.mark.asyncio
+async def test_event_bridge_serializes_duplicate_delivery_while_executor_is_active(test_db_session, monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    event_id = str(uuid.uuid4())
+    session_id = str(uuid.uuid4())
+    event = AURAEvent(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        payload={"session_id": session_id, "message": "Run this event once."},
+    )
+    graph = AsyncMock()
+    first_invocation_started = asyncio.Event()
+    release_first_invocation = asyncio.Event()
+    invocation_count = 0
+
+    async def invoke(initial_state, config):
+        nonlocal invocation_count
+        invocation_count += 1
+        if invocation_count == 1:
+            first_invocation_started.set()
+            await release_first_invocation.wait()
+        return {"execution_status": RunStatus.COMPLETED.value, "final_response": "Done."}
+
+    graph.ainvoke.side_effect = invoke
+    graph.aget_state.return_value = SimpleNamespace(values={}, next=())
+    monkeypatch.setattr("app.events.dispatcher.get_compiled_graph", AsyncMock(return_value=graph))
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    bridge = EventToAgentBridge(session_factory=factory)
+
+    first = asyncio.create_task(bridge.handle_event(event))
+    await asyncio.wait_for(first_invocation_started.wait(), timeout=2)
+    second = asyncio.create_task(bridge.handle_event(event))
+    try:
+        await asyncio.sleep(0.05)
+        assert graph.ainvoke.await_count == 1
+    finally:
+        release_first_invocation.set()
+
+    first_result, second_result = await asyncio.gather(first, second)
+    assert first_result["execution_status"] == RunStatus.COMPLETED.value
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    assert second_result == {"run_id": run_id, "execution_status": RunStatus.COMPLETED.value}
+    assert graph.ainvoke.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_event_bridge_resumes_persisted_graph_checkpoint(test_db_session, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
