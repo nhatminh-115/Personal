@@ -6,10 +6,10 @@ Updated: 2026-11-21
 
 Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_VISION_AND_V1_ROADMAP.md). Work only on O1–O7, A1–A8, or a release-blocking defect demonstrated by those scenarios. Stop when P3 passes, publish the v1 evidence report, and tag the accepted commit. After that, use a separately prioritized maintenance/v1.1 backlog; do not keep v1 open for speculative or cosmetic work.
 
-## Canonical repository and CI baseline
+## Baseline at the start of this handoff (2026-11-21)
 
 - Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
-- Current canonical `main`: `7a0b198585599e7196e3129c599e1611178219d5`.
+- Canonical `main` when this handoff began: `7a0b198585599e7196e3129c599e1611178219d5`.
 - PR [#389](https://github.com/nhatminh-115/Personal/pull/389), which establishes the product contract, is merged at this SHA.
 - The latest full CI baseline is run [#1014](https://github.com/nhatminh-115/Personal/actions/runs/44906302886) on `cf64f3435b03210f72c40a70ca3158d41362bfcb`: 767 backend tests passed, Phase 2.1/3/4 passed, 48 frontend files / 328 tests passed, and the Vite build passed. The run reported four backend warnings.
 - The only change from that code baseline to current `main` is the documentation-only PR #389. No full CI run is recorded on `7a0b198`; do not describe the baseline run as if it tested later code.
@@ -49,13 +49,13 @@ CodeGraph remains optional and pending external setup. It must not be installed 
 
 The live dogfood documents record earlier project-memory and Research Context Bridge passes. Preserve those as their own evidence; do not upgrade them to A1 or A2 passes.
 
-## Current implementation milestone
+## Implementation PR at this handoff
 
-PR [#388](https://github.com/nhatminh-115/Personal/pull/388) packages the production React UI in Docker Compose and serves it from the API origin, with regression coverage for public static assets and protected API/docs routes. The prior head `44ea7afe0674a0061ce55fa9f1ffe2ba648925cb` passed CI run [#44908527314](https://github.com/nhatminh-115/Personal/actions/runs/44908527314). This handoff update changes the PR head, so require a new full green run on the updated exact head before merge. A7 is still blocked until live inference is exercised with a configured provider.
+PR [#388](https://github.com/nhatminh-115/Personal/pull/388) packages the production React UI in Docker Compose and serves it from the API origin, with regression coverage for public static assets and protected API/docs routes. At this handoff, its exact head `91ca0f9ef00e787e3036af11a1e9a9d60bc21553` passed the full required workflow: run [#44910710594](https://github.com/nhatminh-115/Personal/actions/runs/44910710594), job `136865721899`. A7 remains blocked until live inference is exercised with a configured provider. After the PR merges, verify and record the new canonical `main` SHA before starting the next branch.
 
 ## Execution order
 
-1. Finish PR #388 on its updated head; merge only after its complete required Actions run is green and the exact head has been reviewed.
+1. Confirm PR #388 is merged at its exact green head; record the resulting `main` SHA, then start A1 from canonical `main`.
 2. Execute A1 first. Inspect the existing persistence/context implementation and tests; extend an existing dogfood harness only where its assertions cannot express the full restart-and-reopen workflow.
 3. Continue through the remaining scenarios in the roadmap’s P1 order. Work on independent deterministic scenarios while live-provider scenarios are blocked.
 4. For every discovered release-blocking gap, add regression coverage, run targeted checks and the full relevant workflow, open one focused PR, wait for Actions on its exact head, and merge only that tested head.
