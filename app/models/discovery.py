@@ -2,7 +2,7 @@
 
 import json
 import re
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from pydantic import BaseModel, Field
@@ -23,6 +23,13 @@ _SENSITIVE_PROVIDER_URL_QUERY_PARTS = {
     "token", "secret", "password", "passwd", "authorization", "credential", "credentials",
     "bearer", "jwt", "sig", "signature", "ticket", "session",
 }
+
+MAX_PROVIDER_JSON_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_CAPABILITY_PROBE_RESPONSE_BYTES = 256 * 1024
+MAX_DISCOVERED_MODELS = 256
+MAX_RUNTIME_CAPABILITIES = 64
+MAX_RUNTIME_CAPABILITY_CHARS = 128
+MAX_MODEL_ID_CHARS = 256
 
 
 class ModelEntry(BaseModel):
@@ -100,38 +107,32 @@ def public_provider_base_url(base_url: str) -> str:
 
 def extract_runtime_tool_capability(raw_model: Dict[str, Any]) -> Optional[Literal["supported", "unsupported"]]:
     """Extract explicit tool capability metadata reported by local runtime, when available."""
-    # 1. Direct capabilities list or dict
-    caps = raw_model.get("capabilities")
-    if isinstance(caps, list):
-        caps_lower = [str(c).lower() for c in caps]
-        if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
-            return "supported"
-    elif isinstance(caps, dict):
-        if any(caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
-            return "supported"
-        if any(caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
-            return "unsupported"
+    recognized = ("tools", "tool_calls", "function_calling", "functions")
 
-    # 2. Direct boolean fields on raw_model
+    def classify(value: Any) -> Optional[Literal["supported", "unsupported"]]:
+        if isinstance(value, list):
+            values = {str(item).lower() for item in value[:MAX_RUNTIME_CAPABILITIES]}
+            if any(name in values for name in recognized):
+                return "supported"
+        elif isinstance(value, dict):
+            if any(value.get(name) is True for name in recognized):
+                return "supported"
+            if any(value.get(name) is False for name in recognized):
+                return "unsupported"
+        return None
+
+    explicit = classify(raw_model.get("capabilities"))
+    if explicit is not None:
+        return explicit
+
     if raw_model.get("tools") is True or raw_model.get("tool_calls") is True:
         return "supported"
     if raw_model.get("tools") is False or raw_model.get("tool_calls") is False:
         return "unsupported"
 
-    # 3. Nested in details dictionary
     details = raw_model.get("details")
     if isinstance(details, dict):
-        det_caps = details.get("capabilities")
-        if isinstance(det_caps, list):
-            caps_lower = [str(c).lower() for c in det_caps]
-            if any(c in caps_lower for c in ("tools", "tool_calls", "function_calling", "functions")):
-                return "supported"
-        elif isinstance(det_caps, dict):
-            if any(det_caps.get(k) is True for k in ("tools", "tool_calls", "function_calling", "functions")):
-                return "supported"
-            if any(det_caps.get(k) is False for k in ("tools", "tool_calls", "function_calling", "functions")):
-                return "unsupported"
-
+        return classify(details.get("capabilities"))
     return None
 
 
@@ -141,20 +142,62 @@ def infer_tool_support(model_id: str) -> Literal["supported", "unsupported", "un
 
 
 def extract_runtime_capabilities(raw_model: Dict[str, Any]) -> List[str]:
-    """Return only capabilities explicitly reported by the provider runtime."""
+    """Return a bounded list of capability names explicitly reported by the provider."""
     value = raw_model.get("capabilities")
     if isinstance(value, list):
-        return [str(item) for item in value]
+        return [
+            item[:MAX_RUNTIME_CAPABILITY_CHARS]
+            for item in value[:MAX_RUNTIME_CAPABILITIES]
+            if isinstance(item, str)
+        ]
     if isinstance(value, dict):
-        return [str(key) for key, enabled in value.items() if enabled is True]
+        return [
+            key[:MAX_RUNTIME_CAPABILITY_CHARS]
+            for key, enabled in list(value.items())[:MAX_RUNTIME_CAPABILITIES]
+            if isinstance(key, str) and enabled is True
+        ]
     details = raw_model.get("details")
     if isinstance(details, dict):
         nested = details.get("capabilities")
         if isinstance(nested, list):
-            return [str(item) for item in nested]
+            return [
+                item[:MAX_RUNTIME_CAPABILITY_CHARS]
+                for item in nested[:MAX_RUNTIME_CAPABILITIES]
+                if isinstance(item, str)
+            ]
         if isinstance(nested, dict):
-            return [str(key) for key, enabled in nested.items() if enabled is True]
+            return [
+                key[:MAX_RUNTIME_CAPABILITY_CHARS]
+                for key, enabled in list(nested.items())[:MAX_RUNTIME_CAPABILITIES]
+                if isinstance(key, str) and enabled is True
+            ]
     return []
+
+
+async def _request_bounded_json(
+    client: httpx.AsyncClient,
+    method: str,
+    url: str,
+    *,
+    max_bytes: int,
+    **kwargs: Any,
+) -> Tuple[int, Any | None]:
+    """Read a provider JSON response with a decoded-body byte limit."""
+    async with client.stream(method, url, **kwargs) as response:
+        status_code = response.status_code
+        if status_code != 200:
+            return status_code, None
+
+        body = bytearray()
+        async for chunk in response.aiter_bytes(chunk_size=65536):
+            if len(body) + len(chunk) > max_bytes:
+                return status_code, None
+            body.extend(chunk)
+
+        try:
+            return status_code, json.loads(body)
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError):
+            return status_code, None
 
 
 class ModelDiscoveryService:
@@ -188,55 +231,52 @@ class ModelDiscoveryService:
         base_url: Optional[str] = None,
         timeout: float = 1.0,
     ) -> ProviderEntry:
-        """Probe local Ollama runtime safely."""
+        """Probe the configured Ollama runtime without buffering an unbounded catalog."""
         target_v1 = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
-        # Derive native base url for /api/tags
         native_base = target_v1[:-3] if target_v1.endswith("/v1") else target_v1
         models: List[ModelEntry] = []
         is_available = False
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                # 1. Try native tags endpoint
-                resp = await client.get(f"{native_base}/api/tags")
-                if resp.status_code == 200:
-                    data = resp.json()
+                status_code, data = await _request_bounded_json(
+                    client,
+                    "GET",
+                    f"{native_base}/api/tags",
+                    max_bytes=MAX_PROVIDER_JSON_RESPONSE_BYTES,
+                )
+                if status_code != 200:
+                    status_code, data = await _request_bounded_json(
+                        client,
+                        "GET",
+                        f"{target_v1}/models",
+                        max_bytes=MAX_PROVIDER_JSON_RESPONSE_BYTES,
+                    )
+
+                if status_code == 200 and isinstance(data, dict):
                     is_available = True
-                    for m in data.get("models", []):
-                        m_name = m.get("name") or m.get("model", "")
-                        if m_name:
-                            cache_key = f"ollama:{m_name}"
-                            tool_sup = self._resolve_tool_support(cache_key, m)
+                    raw_models = data.get("models", []) if "models" in data else data.get("data", [])
+                    if isinstance(raw_models, list):
+                        for raw_model in raw_models[:MAX_DISCOVERED_MODELS]:
+                            if not isinstance(raw_model, dict):
+                                continue
+                            model_id = raw_model.get("name") or raw_model.get("model") or raw_model.get("id")
+                            if not isinstance(model_id, str) or not model_id or len(model_id) > MAX_MODEL_ID_CHARS:
+                                continue
+                            cache_key = f"ollama:{model_id}"
                             models.append(
                                 ModelEntry(
-                                    id=m_name,
-                                    label=m_name,
-                                    capabilities=extract_runtime_capabilities(m),
-                                    tool_support=tool_sup,
+                                    id=model_id,
+                                    label=model_id,
+                                    capabilities=extract_runtime_capabilities(raw_model),
+                                    tool_support=self._resolve_tool_support(cache_key, raw_model),
                                 )
                             )
-                else:
-                    # Fallback to /v1/models
-                    resp_v1 = await client.get(f"{target_v1}/models")
-                    if resp_v1.status_code == 200:
-                        is_available = True
-                        data_v1 = resp_v1.json()
-                        for m in data_v1.get("data", []):
-                            m_id = m.get("id", "")
-                            if m_id:
-                                cache_key = f"ollama:{m_id}"
-                                tool_sup = self._resolve_tool_support(cache_key, m)
-                                models.append(
-                                    ModelEntry(
-                                        id=m_id,
-                                        label=m_id,
-                                        capabilities=extract_runtime_capabilities(m),
-                                        tool_support=tool_sup,
-                                    )
-                                )
-        except (httpx.RequestError, httpx.HTTPError, OSError) as e:
-            logger.debug("Ollama local discovery probe failed (expected if not running; error type: %s).", type(e).__name__)
-            is_available = False
+        except (httpx.RequestError, httpx.HTTPError, OSError) as exc:
+            logger.debug(
+                "Ollama local discovery probe failed (expected if not running; error type: %s).",
+                type(exc).__name__,
+            )
 
         return ProviderEntry(
             id="ollama",
@@ -253,33 +293,43 @@ class ModelDiscoveryService:
         base_url: Optional[str] = None,
         timeout: float = 1.0,
     ) -> ProviderEntry:
-        """Probe local LM Studio runtime safely."""
+        """Probe configured LM Studio without buffering an unbounded catalog."""
         target_v1 = (base_url or settings.LMSTUDIO_BASE_URL).rstrip("/")
         models: List[ModelEntry] = []
         is_available = False
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.get(f"{target_v1}/models")
-                if resp.status_code == 200:
+                status_code, data = await _request_bounded_json(
+                    client,
+                    "GET",
+                    f"{target_v1}/models",
+                    max_bytes=MAX_PROVIDER_JSON_RESPONSE_BYTES,
+                )
+                if status_code == 200 and isinstance(data, dict):
                     is_available = True
-                    data = resp.json()
-                    for m in data.get("data", []):
-                        m_id = m.get("id", "")
-                        if m_id:
-                            cache_key = f"lmstudio:{m_id}"
-                            tool_sup = self._resolve_tool_support(cache_key, m)
+                    raw_models = data.get("data", [])
+                    if isinstance(raw_models, list):
+                        for raw_model in raw_models[:MAX_DISCOVERED_MODELS]:
+                            if not isinstance(raw_model, dict):
+                                continue
+                            model_id = raw_model.get("id")
+                            if not isinstance(model_id, str) or not model_id or len(model_id) > MAX_MODEL_ID_CHARS:
+                                continue
+                            cache_key = f"lmstudio:{model_id}"
                             models.append(
                                 ModelEntry(
-                                    id=m_id,
-                                    label=m_id,
-                                    capabilities=extract_runtime_capabilities(m),
-                                    tool_support=tool_sup,
+                                    id=model_id,
+                                    label=model_id,
+                                    capabilities=extract_runtime_capabilities(raw_model),
+                                    tool_support=self._resolve_tool_support(cache_key, raw_model),
                                 )
                             )
-        except (httpx.RequestError, httpx.HTTPError, OSError) as e:
-            logger.debug("LM Studio local discovery probe failed (expected if not running; error type: %s).", type(e).__name__)
-            is_available = False
+        except (httpx.RequestError, httpx.HTTPError, OSError) as exc:
+            logger.debug(
+                "LM Studio local discovery probe failed (expected if not running; error type: %s).",
+                type(exc).__name__,
+            )
 
         return ProviderEntry(
             id="lmstudio",
@@ -453,10 +503,8 @@ class ModelDiscoveryService:
     ) -> CapabilityProbeResult:
         """
         Explicitly test a model's ability to emit structured tool calls.
-        For local runtime probes, report support only after observing a tool
-        call. Non-observation remains unknown; one response cannot establish
-        that a model lacks tool support. Cloud/mock entries use their registered
-        provider capability without invoking a model.
+        Local provider responses are byte-bounded; non-observation remains
+        unknown because a model may choose not to call a tool.
         """
         if provider_id not in {"ollama", "lmstudio"}:
             return CapabilityProbeResult(
@@ -470,9 +518,7 @@ class ModelDiscoveryService:
             base_url
             or (settings.OLLAMA_BASE_URL if provider_id == "ollama" else settings.LMSTUDIO_BASE_URL)
         ).rstrip("/")
-
         cache_key = f"{provider_id}:{model_id}"
-
         probe_payload = {
             "model": model_id,
             "messages": [
@@ -502,27 +548,41 @@ class ModelDiscoveryService:
 
         try:
             async with httpx.AsyncClient(timeout=10.0) as client:
-                resp = await client.post(
+                status_code, data = await _request_bounded_json(
+                    client,
+                    "POST",
                     f"{target_url}/chat/completions",
+                    max_bytes=MAX_CAPABILITY_PROBE_RESPONSE_BYTES,
                     json=probe_payload,
-                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {provider_id}"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {provider_id}",
+                    },
                 )
-                if resp.status_code == 200:
-                    data = resp.json()
+                if status_code == 200 and not isinstance(data, dict):
+                    self._probed_cache[cache_key] = "unknown"
+                    return CapabilityProbeResult(
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        tool_support="unknown",
+                        details="Provider returned an invalid or oversized probe response; tool support remains unknown.",
+                    )
+
+                if status_code == 200:
                     choices = data.get("choices", [])
-                    if choices:
-                        msg = choices[0].get("message", {})
-                        if msg.get("tool_calls"):
-                            self._probed_cache[cache_key] = "supported"
-                            return CapabilityProbeResult(
-                                provider_id=provider_id,
-                                model_id=model_id,
-                                tool_support="supported",
-                                details="Model successfully emitted structured tool call.",
-                            )
-                    # A model can choose not to call a tool even when it
-                    # supports tools, so one response without a call is not
-                    # sufficient evidence to classify it as unsupported.
+                    message = (
+                        choices[0].get("message", {})
+                        if isinstance(choices, list) and choices and isinstance(choices[0], dict)
+                        else {}
+                    )
+                    if isinstance(message, dict) and message.get("tool_calls"):
+                        self._probed_cache[cache_key] = "supported"
+                        return CapabilityProbeResult(
+                            provider_id=provider_id,
+                            model_id=model_id,
+                            tool_support="supported",
+                            details="Model successfully emitted structured tool call.",
+                        )
                     self._probed_cache[cache_key] = "unknown"
                     return CapabilityProbeResult(
                         provider_id=provider_id,
@@ -530,11 +590,8 @@ class ModelDiscoveryService:
                         tool_support="unknown",
                         details="Model responded without a tool call; tool support remains unknown.",
                     )
-                elif resp.status_code == 400:
-                    # A bad request can indicate a malformed request, auth
-                    # issue, or unsupported tools. Without a provider-neutral
-                    # capability signal, do not classify it as unsupported or
-                    # return the provider's potentially sensitive error body.
+
+                if status_code == 400:
                     self._probed_cache[cache_key] = "unknown"
                     return CapabilityProbeResult(
                         provider_id=provider_id,
@@ -545,17 +602,15 @@ class ModelDiscoveryService:
                             "tool support remains unknown."
                         ),
                     )
-                else:
-                    # 5xx or other status: provider unavailable or error, NOT unsupported
-                    self._probed_cache[cache_key] = "unknown"
-                    return CapabilityProbeResult(
-                        provider_id=provider_id,
-                        model_id=model_id,
-                        tool_support="unknown",
-                        details=f"Provider returned HTTP {resp.status_code}. Status unknown or provider unavailable.",
-                    )
+
+                self._probed_cache[cache_key] = "unknown"
+                return CapabilityProbeResult(
+                    provider_id=provider_id,
+                    model_id=model_id,
+                    tool_support="unknown",
+                    details=f"Provider returned HTTP {status_code}. Status unknown or provider unavailable.",
+                )
         except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RequestError, OSError):
-            # Failed connection/timeout: unknown or provider unavailable, NOT unsupported!
             self._probed_cache[cache_key] = "unknown"
             return CapabilityProbeResult(
                 provider_id=provider_id,
