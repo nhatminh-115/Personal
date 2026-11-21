@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.errors import MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
 from app.core.logging import logger
 from app.db.models import EventRecordModel, EventStatus, utc_now
 from app.events.types import AURAEvent
@@ -109,18 +110,31 @@ class EventBus:
             try:
                 await handler(event)
             except Exception as e:
-                logger.error(
-                    f"Error in event handler '{handler.__name__}' for event '{event.event_type}': {e}",
-                    exc_info=True,
-                    extra={"event_id": event.id, "event_type": event.event_type},
-                )
+                if isinstance(e, ProviderError):
+                    # Provider messages may contain response bodies or other
+                    # private diagnostics. Do not include the exception or its
+                    # traceback in operational logs.
+                    logger.error(
+                        f"Event handler '{handler.__name__}' failed with a model provider error.",
+                        extra={"event_id": event.id, "event_type": event.event_type},
+                    )
+                else:
+                    logger.error(
+                        f"Error in event handler '{handler.__name__}' for event '{event.event_type}': {e}",
+                        exc_info=True,
+                        extra={"event_id": event.id, "event_type": event.event_type},
+                    )
                 dispatch_error = e
 
         if db is not None and db_record is not None:
             if dispatch_error:
                 db_record.status = EventStatus.FAILED.value
                 db_record.retry_count += 1
-                db_record.error_message = str(dispatch_error)
+                db_record.error_message = (
+                    MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+                    if isinstance(dispatch_error, ProviderError)
+                    else str(dispatch_error)
+                )
                 event.status = EventStatus.FAILED
             else:
                 db_record.status = EventStatus.PROCESSED.value

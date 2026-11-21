@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.errors import MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
 from app.core.logging import logger
 from app.db.models import EventRecordModel, EventStatus, utc_now
 from app.events.bus import EventBus, event_bus
@@ -167,11 +168,17 @@ class OutboxWorker:
                             if asyncio.iscoroutine(res):
                                 await res
                     except Exception as e:
-                        logger.error(
-                            f"OutboxWorker handler error on event '{event.id}' ({event.event_type}): {e}",
-                            exc_info=True,
-                            extra={"event_id": event.id, "worker_id": self.worker_id},
-                        )
+                        if isinstance(e, ProviderError):
+                            logger.error(
+                                f"OutboxWorker handler failed with a model provider error for event '{event.id}'.",
+                                extra={"event_id": event.id, "worker_id": self.worker_id},
+                            )
+                        else:
+                            logger.error(
+                                f"OutboxWorker handler error on event '{event.id}' ({event.event_type}): {e}",
+                                exc_info=True,
+                                extra={"event_id": event.id, "worker_id": self.worker_id},
+                            )
                         handler_error = e
                         break
 
@@ -203,7 +210,11 @@ class OutboxWorker:
                     completion_values = {
                         "status": next_status,
                         "retry_count": EventRecordModel.retry_count + 1,
-                        "error_message": str(handler_error),
+                        "error_message": (
+                            MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+                            if isinstance(handler_error, ProviderError)
+                            else str(handler_error)
+                        ),
                         "next_attempt_at": next_attempt_at,
                         "locked_at": None,
                         "locked_by": None,

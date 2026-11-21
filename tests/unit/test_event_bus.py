@@ -88,3 +88,37 @@ async def test_event_bus_handler_failure_isolation(test_db_session):
     assert db_record.status == EventStatus.FAILED.value
     assert db_record.retry_count == 1
     assert "Simulated listener exception" in db_record.error_message
+
+
+@pytest.mark.asyncio
+async def test_event_bus_redacts_provider_failure_from_logs_and_event_record(test_db_session, monkeypatch):
+    from unittest.mock import Mock
+
+    from app.core.errors import MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
+
+    bus = EventBus()
+    private_diagnostic = "private immediate provider body sk-test-sensitive"
+    log_error = Mock()
+    monkeypatch.setattr("app.events.bus.logger.error", log_error)
+
+    async def failing_handler(_: AURAEvent):
+        raise ProviderError(
+            f"Provider returned 500: {private_diagnostic}",
+            details={"body": private_diagnostic},
+        )
+
+    bus.subscribe("immediate-provider-failure.event", failing_handler)
+    event = AURAEvent(event_type="immediate-provider-failure.event")
+
+    published = await bus.publish(event, db=test_db_session, dispatch_immediate=True)
+
+    assert published.status == EventStatus.FAILED
+    record = await test_db_session.get(EventRecordModel, event.id)
+    assert record is not None
+    assert record.status == EventStatus.FAILED.value
+    assert record.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    assert private_diagnostic not in record.error_message
+    assert log_error.call_count == 1
+    assert "model provider error" in log_error.call_args.args[0]
+    assert private_diagnostic not in repr(log_error.call_args)
+    assert "exc_info" not in log_error.call_args.kwargs

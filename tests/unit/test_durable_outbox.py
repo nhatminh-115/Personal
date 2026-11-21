@@ -167,6 +167,42 @@ async def test_outbox_retry_and_dead_letter_queue(test_db_session: AsyncSession)
 
 
 @pytest.mark.asyncio
+async def test_outbox_provider_failure_is_redacted_from_logs_and_event_record(
+    test_db_session: AsyncSession, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from app.core.errors import MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE, ProviderError
+
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="provider-failure-worker")
+    private_diagnostic = "private provider body sk-test-sensitive"
+    log_error = Mock()
+    monkeypatch.setattr("app.events.worker.logger.error", log_error)
+
+    async def failing_handler(_: AURAEvent):
+        raise ProviderError(
+            f"Provider returned 500: {private_diagnostic}",
+            details={"body": private_diagnostic},
+        )
+
+    bus.subscribe("provider-failure.event", failing_handler)
+    event = AURAEvent(event_type="provider-failure.event", max_attempts=3)
+    await bus.publish(event, db=test_db_session)
+
+    assert await worker.process_outbox_batch(test_db_session) == 0
+    record = await test_db_session.get(EventRecordModel, event.id)
+    assert record is not None
+    assert record.status == EventStatus.FAILED.value
+    assert record.error_message == MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+    assert private_diagnostic not in record.error_message
+    assert log_error.call_count == 1
+    assert "model provider error" in log_error.call_args.args[0]
+    assert private_diagnostic not in repr(log_error.call_args)
+    assert "exc_info" not in log_error.call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_db_session: AsyncSession):
     bus = EventBus()
     worker = OutboxWorker(bus=bus, worker_id="recovery-worker", lease_duration_seconds=60)
