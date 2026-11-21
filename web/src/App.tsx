@@ -3128,6 +3128,14 @@ export default function App() {
           setApiAccessOpen(false);
           window.location.reload();
         }}
+        onForgetToken={() => {
+          if (!setApiToken(null)) {
+            pushToast('Could not remove API token', 'This browser does not allow session storage.');
+            return;
+          }
+          setApiAccessOpen(false);
+          window.location.reload();
+        }}
       />
       {routingStudioLoaded ? <Suspense fallback={null}>
         <RoutingStudio
