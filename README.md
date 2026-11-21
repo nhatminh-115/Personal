@@ -172,6 +172,12 @@ Interactive OpenAPI documentation is available at:
 
 ## Running Tests
 
+The test suite uses the development dependencies declared in `pyproject.toml`. In the active Python 3.12 environment, install that extra before running pytest:
+
+```powershell
+pip install -e ".[dev]"
+```
+
 Run the complete test suite:
 ```powershell
 pytest -v
