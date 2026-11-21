@@ -2,6 +2,8 @@
 
 > **Production-grade personal AI agent runtime with persistent memory, capability-based security, durable LangGraph orchestration, and native human-in-the-loop authorization.**
 
+The product vision, v1 objectives, release acceptance criteria, and finite roadmap are defined in [AURA Product Vision and AURA Personal v1 Roadmap](docs/PRODUCT_VISION_AND_V1_ROADMAP.md).
+
 ---
 
 ## Architecture Overview
