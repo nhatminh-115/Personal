@@ -86,6 +86,10 @@ When a retry finds a pre-existing event run created before event provenance was
 stored, the bridge backfills the source event ID before compiling the graph,
 preserving the saved routing snapshot so a later dead-letter can still recover
 that run.
+Provider failures raised by event handlers are logged and stored with the
+generic `Model provider request failed.` message; the raw provider response and
+traceback are omitted. Non-provider handler failures keep their existing
+diagnostics.
 The chat handler refreshes the run status under its execution lock before
 invoking the graph, so a delayed request cannot execute after recovery has
 already closed that run.
