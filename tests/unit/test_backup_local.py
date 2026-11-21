@@ -97,3 +97,19 @@ def test_local_backup_verification_rejects_oversized_payload(tmp_path, monkeypat
     with pytest.raises(ValueError, match="entry exceeds the size limit"):
         backup_local.verify_backup(archive)
 
+
+def test_local_restore_rejects_oversized_archive_before_replacing_stores(tmp_path, monkeypatch):
+    database, _, _ = _configure_local_stores(monkeypatch, tmp_path)
+    archive = backup_local.create_backup(tmp_path / "backup.tar.gz", api_stopped=True)
+    before = database.read_bytes()
+    monkeypatch.setattr(backup_local, "MAX_BACKUP_MEMBER_BYTES", 1)
+
+    with pytest.raises(ValueError, match="entry exceeds the size limit"):
+        backup_local.restore_backup(
+            archive,
+            replace_current_data=True,
+            api_stopped=True,
+        )
+
+    assert database.read_bytes() == before
+
