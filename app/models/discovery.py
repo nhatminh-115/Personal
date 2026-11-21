@@ -1,7 +1,9 @@
 """Dynamic model and local provider discovery service for AURA."""
 
 import json
+import re
 from typing import Any, Dict, List, Literal, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 import httpx
 from pydantic import BaseModel, Field
 
@@ -10,6 +12,17 @@ from app.core.settings import settings
 from app.models.openai_provider import OpenAICompatibleProvider
 from app.models.router import ModelRouter, model_router
 from app.models.routing_policy import ProviderMetadata
+
+_SENSITIVE_PROVIDER_URL_QUERY_NAMES = {
+    "key", "apikey", "xapikey", "accesskey", "clientkey", "privatekey", "secretkey",
+    "token", "accesstoken", "refreshtoken", "auth", "authorization", "password", "passwd",
+    "secret", "clientsecret", "credential", "credentials", "bearer", "jwt", "sig", "signature",
+    "code", "ticket", "session", "sessionid",
+}
+_SENSITIVE_PROVIDER_URL_QUERY_PARTS = {
+    "token", "secret", "password", "passwd", "authorization", "credential", "credentials",
+    "bearer", "jwt", "sig", "signature", "ticket", "session",
+}
 
 
 class ModelEntry(BaseModel):
@@ -50,6 +63,39 @@ class CapabilityProbeResult(BaseModel):
     model_id: str
     tool_support: Literal["supported", "unsupported", "unknown"]
     details: str
+
+
+def public_provider_base_url(base_url: str) -> str:
+    """Hide URL credentials in public model-catalog metadata without changing router config."""
+    if not isinstance(base_url, str) or not base_url:
+        return ""
+
+    try:
+        parsed = urlsplit(base_url)
+    except ValueError:
+        return ""
+
+    # Provider endpoints are expected to be absolute URLs. Fail closed for malformed
+    # or non-URL values rather than reflecting an opaque credential-bearing string.
+    if not parsed.netloc:
+        return ""
+
+    safe_netloc = parsed.netloc.rsplit("@", 1)[-1]
+    if not safe_netloc:
+        return ""
+
+    safe_query = []
+    for name, value in parse_qsl(parsed.query, keep_blank_values=True):
+        parts = re.findall(r"[a-z0-9]+", name.lower())
+        normalized = "".join(parts)
+        sensitive = (
+            normalized in _SENSITIVE_PROVIDER_URL_QUERY_NAMES
+            or any(part in _SENSITIVE_PROVIDER_URL_QUERY_PARTS for part in parts)
+            or (len(parts) > 1 and parts[-1] == "key")
+        )
+        safe_query.append((name, "[REDACTED]" if sensitive else value))
+
+    return urlunsplit((parsed.scheme, safe_netloc, parsed.path, urlencode(safe_query), ""))
 
 
 def extract_runtime_tool_capability(raw_model: Dict[str, Any]) -> Optional[Literal["supported", "unsupported"]]:
@@ -189,7 +235,7 @@ class ModelDiscoveryService:
                                     )
                                 )
         except (httpx.RequestError, httpx.HTTPError, OSError) as e:
-            logger.debug(f"Ollama local discovery probe failed (expected if not running): {e}")
+            logger.debug("Ollama local discovery probe failed (expected if not running; error type: %s).", type(e).__name__)
             is_available = False
 
         return ProviderEntry(
@@ -232,7 +278,7 @@ class ModelDiscoveryService:
                                 )
                             )
         except (httpx.RequestError, httpx.HTTPError, OSError) as e:
-            logger.debug(f"LM Studio local discovery probe failed (expected if not running): {e}")
+            logger.debug("LM Studio local discovery probe failed (expected if not running; error type: %s).", type(e).__name__)
             is_available = False
 
         return ProviderEntry(
