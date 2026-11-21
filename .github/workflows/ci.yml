@@ -79,6 +79,7 @@ jobs:
           export COMPOSE_PROJECT_NAME=aura-ci
           export AURA_POSTGRES_PORT=15432
           export AURA_API_PORT=18000
+          export AURA_API_TOKEN=ci-compose-token-0123456789abcdef
           cleanup() {
             docker compose logs --no-color aura-app || true
             docker compose down --volumes --remove-orphans
@@ -89,7 +90,30 @@ jobs:
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness.json
           python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
 
+          curl --fail --silent --show-error http://127.0.0.1:${AURA_API_PORT}/ > web-index.html
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          index = Path('web-index.html').read_text()
+          assert '<div id="root"></div>' in index, index
+          asset = re.search(r'<script[^>]+src="(/assets/[^" ]+\.js)"', index)
+          assert asset, 'built JavaScript bundle is missing from the served index'
+          Path('web-asset-path.txt').write_text(asset.group(1))
+          PY
+          web_asset=$(cat web-asset-path.txt)
+          curl --fail --silent --show-error "http://127.0.0.1:${AURA_API_PORT}${web_asset}" > web-app.js
+          test -s web-app.js
+
+          docs_status=$(curl --silent --show-error --output docs-unauthorized.json --write-out '%{http_code}' http://127.0.0.1:${AURA_API_PORT}/docs)
+          test "$docs_status" = "401"
+          unknown_api_status=$(curl --silent --show-error --output unknown-api.json --write-out '%{http_code}' \
+            -H "Authorization: Bearer ${AURA_API_TOKEN}" \
+            http://127.0.0.1:${AURA_API_PORT}/v1/compose-smoke-not-found)
+          test "$unknown_api_status" = "404"
+          python -c "import json, pathlib; data=json.loads(pathlib.Path('unknown-api.json').read_text()); assert data == {'detail': 'Not Found'}, data"
+
           curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${AURA_API_TOKEN}" \
             -H 'Content-Type: application/json' \
             -d '{"session_id":"aura-compose-restart-smoke","message":"Write persistent test to aura-compose-smoke.txt"}' \
             http://127.0.0.1:${AURA_API_PORT}/v1/chat > chat-before-restart.json
@@ -104,6 +128,7 @@ jobs:
           python -c "import json, pathlib; data=json.loads(pathlib.Path('readiness-after-restart.json').read_text()); assert data == {'status': 'ready', 'checks': {'database': 'healthy', 'checkpointer': 'healthy'}}, data; print(data)"
 
           curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${AURA_API_TOKEN}" \
             -H 'Content-Type: application/json' \
             -d '{"decision":"approved","decision_notes":"Compose restart durability smoke"}' \
             "http://127.0.0.1:${AURA_API_PORT}/v1/approvals/${approval_id}/decision" > approval-after-restart.json
@@ -121,6 +146,7 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-all-errors --retry-delay 2 \
             http://127.0.0.1:${AURA_API_PORT}/ready > readiness-after-restore.json
           curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${AURA_API_TOKEN}" \
             "http://127.0.0.1:${AURA_API_PORT}/v1/runs/${run_id}" > run-after-restore.json
           python -c "import json, pathlib; data=json.loads(pathlib.Path('run-after-restore.json').read_text()); assert data['id'] == '${run_id}' and data['status'] == 'completed', data; print({'restored_run_id': data['id'], 'status': data['status']})"
           docker compose exec -T aura-app sh -c 'test "$(cat /app/workspace/aura-compose-smoke.txt)" = "persistent test"'
