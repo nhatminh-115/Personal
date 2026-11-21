@@ -192,7 +192,9 @@ def verify_backup(archive_path: Path) -> dict:
                     raise ValueError("Backup contains duplicate or unexpected archive paths")
                 if not member.isfile() or member.issparse():
                     raise ValueError("Backup entries must be regular files")
-                if member.size < 0 or member.size > MAX_BACKUP_MEMBER_BYTES:
+                if member.size < 0:
+                    raise ValueError("Backup archive entry has an invalid size")
+                if name != "manifest.json" and member.size > MAX_BACKUP_MEMBER_BYTES:
                     raise ValueError("Backup archive entry exceeds the size limit")
                 total_bytes += member.size
                 if total_bytes > MAX_BACKUP_TOTAL_BYTES:
