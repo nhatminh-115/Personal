@@ -114,8 +114,8 @@ class OpenAICompatibleProvider(ModelProvider):
                 response = await client.post(url, headers=headers, json=payload)
                 if response.status_code >= 400:
                     raise ProviderError(
-                        f"Provider {self._name} returned status {response.status_code}: {response.text}",
-                        details={"status_code": response.status_code, "body": response.text},
+                        f"Provider {self._name} returned status {response.status_code}.",
+                        details={"status_code": response.status_code},
                     )
 
                 data = response.json()
@@ -155,3 +155,4 @@ class OpenAICompatibleProvider(ModelProvider):
         except httpx.RequestError:
             logger.error("HTTP request to model provider '%s' failed.", self._name)
             raise ProviderError(f"Connection to provider {self._name} failed.") from None
+
