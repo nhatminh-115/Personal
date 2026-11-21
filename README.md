@@ -161,7 +161,9 @@ secrets. `/health`, `/ready`, and CORS preflight remain available for probes
 and browser setup. The web app asks for the token and keeps it in the current
 tab's session storage. The shared token is an access gate, not separate user
 identity or project isolation. Requests with bodies larger than 10 MiB are
-rejected with HTTP 413 before endpoint parsing.
+rejected with HTTP 413 before endpoint parsing. Responses under `/v1/` send
+`Cache-Control: no-store`, including authorization and validation errors, so
+browser and intermediary caches do not retain personal API responses.
 
 Before using sandbox execution, build the trusted local image once:
 ```powershell
