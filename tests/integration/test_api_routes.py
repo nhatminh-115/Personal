@@ -743,3 +743,12 @@ async def test_api_authentication_allows_cors_preflight_without_token(async_clie
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
+
+@pytest.mark.asyncio
+async def test_api_authentication_requires_token_for_non_preflight_options(async_client: AsyncClient, monkeypatch):
+    monkeypatch.setattr(settings, "AURA_API_TOKEN", SecretStr("aura-test-token-" + "x" * 32))
+
+    response = await async_client.options("/v1/not-a-route")
+
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "api_auth_required"
