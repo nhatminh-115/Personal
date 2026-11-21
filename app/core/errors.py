@@ -26,6 +26,9 @@ MODEL_PROVIDER_FAILURE_MESSAGE = (
 )
 MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE = "Model provider request failed."
 
+INTERNAL_EXECUTION_FAILURE_MESSAGE = "The run failed because an internal execution error occurred."
+INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE = "Internal execution error."
+
 
 class MalformedModelOutputError(AuraError):
     """Raised when model response cannot be parsed or lacks expected structure."""
@@ -122,3 +125,4 @@ class PrivacyBoundaryViolation(AuraError):
 class InvalidRoutingProfile(AuraError):
     """Raised when a RoutingProfile configuration is semantically invalid or bounds are contradictory."""
     pass
+

@@ -1,6 +1,7 @@
 """Durable ask-before-cloud confirmation lifecycle tests."""
 
 from datetime import datetime, timedelta, timezone
+from unittest.mock import MagicMock
 
 import pytest
 from sqlalchemy import select
@@ -304,6 +305,66 @@ async def test_provider_failure_after_routing_confirmation_is_redacted(
 
 
 @pytest.mark.asyncio
+async def test_unexpected_failure_after_routing_confirmation_is_redacted(
+    async_client,
+    test_db_session,
+    monkeypatch,
+):
+    mock_provider = model_router.get_provider("mock")
+    diagnostic = "private database endpoint postgres://user:secret@db.internal/aura"
+
+    def require_confirmation(context):
+        if not context or not context.explicit_model_override:
+            raise RoutingConfirmationRequired(
+                "Cloud fallback requires confirmation.",
+                {"proposed_provider": "openai", "proposed_model": "gpt-4o-mini"},
+            )
+        return mock_provider, ModelSelection(
+            provider_name="mock",
+            model_name="mock-default",
+            reason="confirmed test route",
+        )
+
+    async def fail_provider(*_args, **_kwargs):
+        raise RuntimeError(diagnostic)
+
+    log_error = MagicMock()
+    monkeypatch.setattr(model_router, "select_model_for_task", require_confirmation)
+    monkeypatch.setattr(model_router, "route", fail_provider)
+    monkeypatch.setattr("app.api.routes.routing_confirmations.logger.error", log_error)
+    started = await async_client.post("/v1/chat", json={
+        "session_id": "routing-confirm-internal-failure",
+        "message": "Summarize this test.",
+    })
+
+    assert started.status_code == 200
+    assert started.json()["status"] == "waiting_for_routing_confirmation"
+    confirmation_id = started.json()["routing_confirmation_id"]
+    confirmation = await test_db_session.get(RoutingConfirmationModel, confirmation_id)
+    assert confirmation is not None
+
+    resumed = await async_client.post(
+        f"/v1/routing-confirmations/{confirmation_id}/decision",
+        json={"decision": "approved"},
+    )
+    assert resumed.status_code == 500
+    assert resumed.json()["detail"] == "The run failed while resuming after routing confirmation."
+    assert diagnostic not in resumed.text
+
+    run = await test_db_session.get(RunModel, confirmation.root_run_id)
+    assert run is not None and run.status == "failed"
+    assert run.error_message == "Internal execution error."
+    events = await test_db_session.scalars(select(RunEventModel).where(
+        RunEventModel.run_id == run.id,
+        RunEventModel.event_type == "run_failed",
+    ))
+    assert events.one().payload == {"error_category": "routing_confirmation_resume"}
+    assert diagnostic not in str(log_error.call_args)
+    assert log_error.call_args.kwargs["extra"]["details"]["exception_type"] == "RuntimeError"
+    assert not log_error.call_args.kwargs.get("exc_info", False)
+
+
+@pytest.mark.asyncio
 async def test_rejected_specialist_routing_confirmation_cancels_child_without_cloud_call(
     async_client, test_db_session, monkeypatch
 ):
@@ -566,3 +627,4 @@ async def test_root_then_child_routing_confirmations_resume_sequentially(
     assert child_run.status == "completed"
     assert root_confirmation.status == "approved"
     assert child_confirmation.status == "approved"
+

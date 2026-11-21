@@ -1,7 +1,7 @@
 """Integration tests for crash-safe and idempotent approval resumption."""
 
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 import pytest
 from httpx import ASGITransport, AsyncClient
 from langgraph.checkpoint.memory import MemorySaver
@@ -170,6 +170,56 @@ async def test_provider_failure_during_resume_marks_run_failed_cleanly(async_cli
 
 
 @pytest.mark.asyncio
+async def test_unexpected_failure_during_approval_resume_is_redacted(
+    async_client: AsyncClient,
+    test_db_session,
+    clean_workspace,
+    in_memory_checkpointer,
+    monkeypatch,
+):
+    diagnostic = "private database endpoint postgres://user:secret@db.internal/aura"
+    started = await async_client.post(
+        "/v1/chat",
+        json={"session_id": "session-internal-resume-failure", "message": "Write Failure Test to fail.txt"},
+    )
+    approval_id = started.json()["approval_id"]
+    run_id = started.json()["run_id"]
+
+    async def failing_route(
+        request: ModelRequest,
+        provider_name: str | None = None,
+        routing_context=None,
+    ):
+        raise RuntimeError(diagnostic)
+
+    log_error = MagicMock()
+    monkeypatch.setattr(model_router, "route", failing_route)
+    monkeypatch.setattr("app.api.routes.approvals.logger.error", log_error)
+
+    response = await async_client.post(
+        f"/v1/approvals/{approval_id}/decision",
+        json={"decision": "approved"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["execution_status"] == "failed"
+    assert response.json()["final_response"] == "The run failed because an internal execution error occurred."
+    assert diagnostic not in response.text
+
+    run = await test_db_session.get(RunModel, run_id)
+    assert run is not None and run.status == "failed"
+    assert run.error_message == "Internal execution error."
+    events = await test_db_session.scalars(select(RunEventModel).where(
+        RunEventModel.run_id == run_id,
+        RunEventModel.event_type == "run_failed",
+    ))
+    assert events.one().payload == {"error_category": "graph_failure"}
+    assert diagnostic not in str(log_error.call_args)
+    assert log_error.call_args.kwargs["extra"]["details"]["exception_type"] == "RuntimeError"
+    assert not log_error.call_args.kwargs.get("exc_info", False)
+
+
+@pytest.mark.asyncio
 async def test_provider_failure_resuming_parent_after_specialist_is_redacted(caplog):
     parent = RunModel(id="parent-run", session_id="session-parent", user_message="Run specialist task")
     trace_service = AsyncMock()
@@ -193,13 +243,18 @@ async def test_provider_failure_resuming_parent_after_specialist_is_redacted(cap
 
 
 @pytest.mark.asyncio
-async def test_non_provider_parent_failure_does_not_persist_raw_error():
+async def test_non_provider_parent_failure_does_not_persist_or_log_raw_error(monkeypatch):
     parent = RunModel(id="parent-run", session_id="session-parent", user_message="Run specialist task")
     trace_service = AsyncMock()
+    log_error = MagicMock()
+    monkeypatch.setattr("app.api.routes.approvals.logger.error", log_error)
 
     await _record_parent_resume_failure(parent, RuntimeError("internal graph detail"), trace_service)
 
     assert parent.status == RunStatus.FAILED.value
     assert parent.error_message is None
     assert parent.final_response is None
+    assert "internal graph detail" not in str(log_error.call_args)
+    assert log_error.call_args.kwargs["extra"]["details"]["exception_type"] == "RuntimeError"
     trace_service.record_event.assert_not_awaited()
+

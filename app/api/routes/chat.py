@@ -39,6 +39,8 @@ from app.models.router import ModelRouter
 from app.core.errors import (
     AuraError,
     ContextSelectionError,
+    INTERNAL_EXECUTION_FAILURE_MESSAGE,
+    INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE,
     MODEL_PROVIDER_FAILURE_CODE,
     MODEL_PROVIDER_FAILURE_MESSAGE,
     MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
@@ -602,7 +604,13 @@ async def chat_endpoint(
         if provider_failure:
             logger.error("Model provider failed while executing run '%s'.", run_id)
         else:
-            logger.error(f"Error executing run '{run_id}': {e}", exc_info=True)
+            logger.error(
+                "Chat run failed.",
+                extra={
+                    "run_id": run_id,
+                    "details": {"exception_type": type(e).__name__},
+                },
+            )
         await db.refresh(run_record)
         if run_record.cancel_requested_at is not None:
             async with lock_run_execution(db, run_id):
@@ -622,7 +630,12 @@ async def chat_endpoint(
                         result_state={},
                     )
         run_record.status = RunStatus.FAILED.value
-        run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(e)
+        if provider_failure:
+            run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+        elif isinstance(e, AuraError):
+            run_record.error_message = str(e)
+        else:
+            run_record.error_message = INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE
         await db.commit()
         await trace_service.record_event(
             run_id=run_id,
@@ -660,5 +673,6 @@ async def chat_endpoint(
             return JSONResponse(status_code=http_status, content={"error": code, "code": code, "message": e.message, "details": e.details})
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Agent execution failed: {str(e)}",
+            detail="Agent execution failed because an internal error occurred.",
         )
+
