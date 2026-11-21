@@ -3,12 +3,13 @@
 import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+from weakref import WeakValueDictionary
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 
-_run_locks: dict[str, asyncio.Lock] = {}
+_run_locks: WeakValueDictionary[str, asyncio.Lock] = WeakValueDictionary()
 _locks_guard = asyncio.Lock()
 
 
