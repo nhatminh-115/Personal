@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `20926b41949f32b93eb67952fcf6c87381276ce2`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), and [#347](https://github.com/nhatminh-115/Personal/pull/347) are merged.
+- Canonical `main`: `29bef8152e338adbe12735a0e842f53cc844ef4d`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347) and [#348](https://github.com/nhatminh-115/Personal/pull/348) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -23,7 +23,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR #345 fixed parent cancellation leaving delegated child runs and approval links waiting. It merged as `e6d7001b5f2a03a0c705f456c35bd372de21a80b`. Final CI run #903 (`37341654963`), job `111869946318`, passed: backend 680 tests in 52.58s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 9.24s. CI #902 found one repeated-decision status-code compatibility regression (400 expected); it was corrected and the full CI rerun passed.
 - PR #346 serialized cancellation requests with run resumes and prevented approval/routing-confirmation resumes after cancellation is acknowledged. It merged as `ef5578f6173f2f51c4d3972029e3938101cd26b3`. Final CI run #907 (`37344410275`), job `111879258794`, passed: backend 680 tests in 77.91s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.08s. Earlier CI attempts exposed a test variable typo and a repeatable test-hook wait; both were fixed before the green run.
 - PR #347 added recovery for persisted cancellation requests after the executor disappears, preserves first-stop semantics, and protects recovery with process-local plus PostgreSQL advisory execution locks. It merged as `20926b41949f32b93eb67952fcf6c87381276ce2`. CI #914 (`44748711106`), job `136330651420`, passed: backend 682 tests in 61.60s; Phases 1/2.1/3/4 passed; frontend 47 test files; Vite build 9.89s.
-- Active branch: `codex/aura-next-milestone-20261120-105`, freshly created from that canonical SHA.
+- PR [#348](https://github.com/nhatminh-115/Personal/pull/348) reconciles root chat turns left `running` after executor loss. It restores durable decision waits and terminal checkpoints, and ends ambiguous checkpoints safely without replaying model/tool/memory work. It merged as `29bef8152e338adbe12735a0e842f53cc844ef4d`. CI #917 (`44854787579`), job `136694332458`, passed: backend 689 tests in 53.05s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 7.86s.
+- Active branch: `codex/aura-next-milestone-20261121-01`, freshly created from canonical `main` at `29bef8152e338adbe12735a0e842f53cc844ef4d`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -31,7 +32,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed on PR #345: cancellation during root finalization now marks active descendant runs and delegations cancelled, records child cancellation events, and prevents matching approval/routing-confirmation retries from resuming terminal runs.
 - Completed on PR #346: cancellation now holds the root and existing child resume locks before persisting `cancel_requested_at`; approval and routing-confirmation endpoints reject resume attempts after cancellation is acknowledged.
 - Completed on branch 104 / PR #347: cancellation requests left behind by a lost chat executor can be finalized on repeated stop or idempotent chat retry. The first stop still only persists the request and leaves pending decisions available for the active graph to settle. The execution lock uses process-local coordination and a PostgreSQL advisory lock; the recovery path returns immediately while the executor is active.
-- Current milestone (branch 105): reconcile root chat turns left `running` after executor loss. Startup and a periodic scan inspect durable checkpoints under the existing run locks; active decision interrupts restore waiting status, terminal checkpoints reconcile the final state, and ambiguous checkpoints fail clearly without replaying model, tool, or memory nodes. A `run_executor_started` trace marker and a two-minute legacy grace period avoid claiming a newly created request before its executor starts. Targeted recovery tests are in place; remote CI is pending.
+- Completed milestone (PR #348 / branch 105): reconcile root chat turns left `running` after executor loss. Startup and a periodic scan inspect durable checkpoints under the existing run locks; active decision interrupts restore waiting status, terminal checkpoints reconcile the final state, and ambiguous checkpoints fail clearly without replaying model, tool, or memory nodes. A `run_executor_started` trace marker and a two-minute legacy grace period avoid claiming a newly created request before its executor starts. Six recovery tests pass in CI.
+- Current milestone (branch 01): serialize event-triggered LangGraph execution against duplicate outbox delivery. If an event lease expires while the original handler is still running, a second handler can reach the same deterministic run without the chat/recovery execution lock. A regression test now models the overlapping deliveries; remote CI will verify it.
 
 ## Recent verified milestones
 
@@ -51,12 +53,13 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #345: cancel delegated child runs with parent turn | Merged as `e6d7001`; CI #903 (`37341654963`), backend 680 passed in 52.58s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 9.24s |
 | PR #346: serialize cancellation and run resume | Merged as `ef5578f`; CI #907 (`37344410275`), backend 680 passed in 77.91s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.08s |
 | PR #347: recover cancellation after lost chat executor | Merged as `20926b4`; CI #914 (`44748711106`), backend 682 passed in 61.60s, Phases 1/2.1/3/4 passed, frontend 47 test files, Vite build 9.89s |
+| PR #348: recover interrupted root chat runs safely | Merged as `29bef81`; CI #917 (`44854787579`), backend 689 passed in 53.05s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 7.86s |
 
 ## Immediate next steps
 
-1. Review the recovery diff and targeted tests, then push branch 105 and wait for required GitHub Actions checks.
-2. Fix any CI failures and rerun the full workflow; merge only the exact green head SHA.
-3. Create a fresh branch from canonical `main` and continue the next non-blocked durability audit. CodeGraph setup remains pending external setup and is not a blocker.
+1. Confirm the event-run execution lock prevents overlapping graph invocations without blocking retries after a process exit or changing approval/cancellation behavior.
+2. Run the full GitHub Actions workflow and fix any regressions.
+3. Merge only the exact green head SHA, then continue the next non-blocked durability audit. CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
 

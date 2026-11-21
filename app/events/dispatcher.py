@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.run_resume_lock import lock_run_execution
 from app.approvals.service import ApprovalService
 from app.core.logging import logger
 from app.db.models import ApprovalModel, MessageModel, RoutingConfirmationModel, RunEventModel, RunModel, RunStatus, ScheduledJobModel, SessionModel, utc_now
@@ -255,75 +256,80 @@ class EventToAgentBridge:
                 }
             }
 
-            if existing_run is None:
-                final_state = await compiled_graph.ainvoke(initial_state, config=config)
-            else:
-                checkpoint = await compiled_graph.aget_state(config)
-                if checkpoint and checkpoint.next:
-                    final_state = await compiled_graph.ainvoke(None, config=config)
-                elif checkpoint and checkpoint.values:
-                    final_state = checkpoint.values
-                else:
-                    # The process may have stopped after committing the run but
-                    # before LangGraph wrote its first checkpoint.
+            async with lock_run_execution(db, run_id):
+                if existing_run is not None:
+                    await db.refresh(existing_run)
+                    if existing_run.status != RunStatus.RUNNING.value:
+                        return {"run_id": run_id, "execution_status": existing_run.status}
+                if existing_run is None:
                     final_state = await compiled_graph.ainvoke(initial_state, config=config)
-
-            # Update run record in DB
-            db_run = await db.get(RunModel, run_id)
-            if db_run:
-                await db.refresh(db_run)
-                if db_run.cancel_requested_at is not None:
-                    await _finalize_cancelled_run(
-                        db,
-                        run=db_run,
-                        run_id=run_id,
-                        session_id=session_id,
-                        trace_service=trace_service,
-                        final_state=final_state,
-                    )
-                elif "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
-                    interrupt_val = final_state["__interrupt__"][0].value
-                    approval_id = interrupt_val.get("approval_id")
-                    tool_name = interrupt_val.get("tool_name")
-                    risk_level = interrupt_val.get("risk_level")
-                    next_status = RunStatus.WAITING_FOR_APPROVAL.value
-                    next_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
                 else:
-                    next_status = final_state.get("execution_status", RunStatus.COMPLETED.value)
-                    next_response = final_state.get("final_response")
-
-                if db_run.cancel_requested_at is None:
-                    finalized = await db.execute(
-                        update(RunModel)
-                        .where(
-                            RunModel.id == run_id,
-                            RunModel.status == RunStatus.RUNNING.value,
-                            RunModel.cancel_requested_at.is_(None),
-                        )
-                        .values(status=next_status, final_response=next_response)
-                        .execution_options(synchronize_session=False)
-                    )
-                    if finalized.rowcount == 1:
-                        db_run.status = next_status
-                        db_run.final_response = next_response
+                    checkpoint = await compiled_graph.aget_state(config)
+                    if checkpoint and checkpoint.next:
+                        final_state = await compiled_graph.ainvoke(None, config=config)
+                    elif checkpoint and checkpoint.values:
+                        final_state = checkpoint.values
                     else:
-                        # Cancellation and terminalization race on this row.
-                        # The conditional update is the linearization point: if
-                        # cancellation committed first, it wins; otherwise the
-                        # API sees a terminal run and rejects the stop request.
-                        await db.refresh(db_run)
-                        if db_run.cancel_requested_at is not None:
-                            await _finalize_cancelled_run(
-                                db,
-                                run=db_run,
-                                run_id=run_id,
-                                session_id=session_id,
-                                trace_service=trace_service,
-                                final_state=final_state,
-                            )
-                        else:
-                            final_state["execution_status"] = db_run.status
-                            final_state["final_response"] = db_run.final_response
-                await db.commit()
+                        # The process may have stopped after committing the run but
+                        # before LangGraph wrote its first checkpoint.
+                        final_state = await compiled_graph.ainvoke(initial_state, config=config)
 
-            return final_state
+                # Update run record in DB
+                db_run = await db.get(RunModel, run_id)
+                if db_run:
+                    await db.refresh(db_run)
+                    if db_run.cancel_requested_at is not None:
+                        await _finalize_cancelled_run(
+                            db,
+                            run=db_run,
+                            run_id=run_id,
+                            session_id=session_id,
+                            trace_service=trace_service,
+                            final_state=final_state,
+                        )
+                    elif "__interrupt__" in final_state and len(final_state["__interrupt__"]) > 0:
+                        interrupt_val = final_state["__interrupt__"][0].value
+                        approval_id = interrupt_val.get("approval_id")
+                        tool_name = interrupt_val.get("tool_name")
+                        risk_level = interrupt_val.get("risk_level")
+                        next_status = RunStatus.WAITING_FOR_APPROVAL.value
+                        next_response = f"Action requires human approval: Tool '{tool_name}' has risk level '{risk_level}'. Approval ID: {approval_id}"
+                    else:
+                        next_status = final_state.get("execution_status", RunStatus.COMPLETED.value)
+                        next_response = final_state.get("final_response")
+
+                    if db_run.cancel_requested_at is None:
+                        finalized = await db.execute(
+                            update(RunModel)
+                            .where(
+                                RunModel.id == run_id,
+                                RunModel.status == RunStatus.RUNNING.value,
+                                RunModel.cancel_requested_at.is_(None),
+                            )
+                            .values(status=next_status, final_response=next_response)
+                            .execution_options(synchronize_session=False)
+                        )
+                        if finalized.rowcount == 1:
+                            db_run.status = next_status
+                            db_run.final_response = next_response
+                        else:
+                            # Cancellation and terminalization race on this row.
+                            # The conditional update is the linearization point: if
+                            # cancellation committed first, it wins; otherwise the
+                            # API sees a terminal run and rejects the stop request.
+                            await db.refresh(db_run)
+                            if db_run.cancel_requested_at is not None:
+                                await _finalize_cancelled_run(
+                                    db,
+                                    run=db_run,
+                                    run_id=run_id,
+                                    session_id=session_id,
+                                    trace_service=trace_service,
+                                    final_state=final_state,
+                                )
+                            else:
+                                final_state["execution_status"] = db_run.status
+                                final_state["final_response"] = db_run.final_response
+                    await db.commit()
+
+                return final_state
