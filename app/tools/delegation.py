@@ -2,8 +2,17 @@
 
 from typing import Any, Dict, List, Optional
 from langgraph.errors import GraphInterrupt
+from app.core.errors import (
+    MODEL_PROVIDER_FAILURE_MESSAGE,
+    PermissionError,
+    ProviderError,
+    ToolError,
+)
+from app.core.logging import logger
 from app.delegation.types import DelegationRequest
 from app.tools.base import RiskLevel, Tool, ToolResult
+
+_DELEGATION_INTERNAL_FAILURE_MESSAGE = "Delegation failed because an internal error occurred."
 
 
 class DelegateTaskTool(Tool):
@@ -118,9 +127,36 @@ class DelegateTaskTool(Tool):
         except GraphInterrupt:
             raise
         except Exception as exc:
+            error_type = type(exc).__name__
+            if isinstance(exc, ProviderError):
+                error_message = MODEL_PROVIDER_FAILURE_MESSAGE
+                error_category = "provider_failure"
+            elif isinstance(exc, (ToolError, PermissionError)):
+                # These errors are raised by preflight validation with actionable,
+                # application-authored messages before a child run is started.
+                error_message = exc.message
+                error_category = "delegation_rejected"
+            else:
+                error_message = _DELEGATION_INTERNAL_FAILURE_MESSAGE
+                error_category = "internal_error"
+            logger.error(
+                "Delegation failed before a result was returned.",
+                extra={
+                    "run_id": ctx.get("run_id"),
+                    "details": {
+                        "error_category": error_category,
+                        "exception_type": error_type,
+                    },
+                },
+            )
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Delegation failed: {exc}",
-                metadata={"specialist_name": specialist_name},
+                error=error_message,
+                metadata={
+                    "specialist_name": specialist_name,
+                    "error_category": error_category,
+                    "error_type": error_type,
+                },
             )
+
