@@ -12,6 +12,8 @@ from app.core.logging import logger
 from app.db.models import (
     ApprovalModel,
     DelegationModel,
+    EventRecordModel,
+    EventStatus,
     MessageModel,
     RoutingConfirmationModel,
     RunEventModel,
@@ -506,7 +508,7 @@ async def recover_running_root_runs(
     *,
     graph: Any = None,
 ) -> dict[str, int]:
-    """Reconcile lost chat executors and event executors that durably started."""
+    """Reconcile lost chat roots, dead-lettered event roots, and started event executors."""
     if db is None:
         from app.db import session as db_session
 
@@ -531,6 +533,15 @@ async def recover_running_root_runs(
         )
         .exists()
     )
+    # An unstarted event run stays out of recovery while its outbox row can retry.
+    dead_lettered_event_root = (
+        select(EventRecordModel.id)
+        .where(
+            EventRecordModel.id == RunModel.routing_snapshot_json["source_event_id"].as_string(),
+            EventRecordModel.status == EventStatus.DEAD_LETTER.value,
+        )
+        .exists()
+    )
     chat_root_created = RunModel.routing_snapshot_json["execution_source"].as_string() == "chat"
 
     root_ids = list((await db.scalars(
@@ -542,6 +553,7 @@ async def recover_running_root_runs(
                 chat_root_created,
                 chat_executor_started,
                 event_executor_started,
+                dead_lettered_event_root,
             ),
             RunModel.status == RunStatus.RUNNING.value,
         )

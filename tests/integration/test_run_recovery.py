@@ -1,5 +1,6 @@
 """Startup reconciliation for root runs whose executor disappeared."""
 
+import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -11,6 +12,8 @@ from app.api.run_resume_lock import lock_run_execution
 from app.db.models import (
     ApprovalModel,
     DelegationModel,
+    EventRecordModel,
+    EventStatus,
     MessageModel,
     RoutingConfirmationModel,
     RunEventModel,
@@ -374,6 +377,61 @@ async def test_fails_ambiguous_checkpoint_without_reexecuting_it(test_db_session
     assert len(messages) == 2
     assert {message.role for message in messages} == {"user", "assistant"}
     assert next(message.content for message in messages if message.role == "assistant") == _INTERRUPTED_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_recovers_unstarted_event_run_only_after_its_outbox_event_dead_letters(test_db_session):
+    dead_letter_event = EventRecordModel(
+        id=str(uuid.uuid4()),
+        event_type="recovery.dead-letter",
+        source="unit_test",
+        payload_json={"message": "This event exhausted delivery attempts."},
+        status=EventStatus.DEAD_LETTER.value,
+        occurred_at=utc_now() - timedelta(minutes=4),
+        retry_count=3,
+        max_attempts=3,
+    )
+    retryable_event = EventRecordModel(
+        id=str(uuid.uuid4()),
+        event_type="recovery.retryable",
+        source="unit_test",
+        payload_json={"message": "This event remains available for outbox retry."},
+        status=EventStatus.PENDING.value,
+        occurred_at=utc_now() - timedelta(minutes=4),
+    )
+    test_db_session.add_all([dead_letter_event, retryable_event])
+
+    def make_event_run(event: EventRecordModel, *, label: str) -> RunModel:
+        run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event.id}"))
+        session_id = f"recover-{label}-session"
+        test_db_session.add(SessionModel(id=session_id, title=label, metadata_json={}))
+        run = RunModel(
+            id=run_id,
+            session_id=session_id,
+            user_message="Recover this event run if its delivery is exhausted.",
+            status=RunStatus.RUNNING.value,
+            created_at=utc_now() - timedelta(minutes=3),
+            routing_snapshot_json={
+                "execution_source": "event",
+                "source_event_id": event.id,
+                "privacy_policy": "local_only",
+            },
+        )
+        test_db_session.add(run)
+        return run
+
+    dead_letter_run = make_event_run(dead_letter_event, label="dead-letter-event")
+    retryable_run = make_event_run(retryable_event, label="pending-event")
+    await test_db_session.commit()
+
+    result = await recover_running_root_runs(test_db_session, graph=SnapshotGraph({}))
+
+    await test_db_session.refresh(dead_letter_run)
+    await test_db_session.refresh(retryable_run)
+    assert result["interrupted"] == 1
+    assert dead_letter_run.status == RunStatus.FAILED.value
+    assert dead_letter_run.final_response == _INTERRUPTED_RESPONSE
+    assert retryable_run.status == RunStatus.RUNNING.value
 
 
 @pytest.mark.asyncio
