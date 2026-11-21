@@ -7,7 +7,7 @@ import re
 import socket
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpx
 from pydantic import BaseModel, Field
 import pypdf
@@ -119,24 +119,59 @@ class ResearchDocumentFetcher:
                 continue
         return addresses
 
-    async def _validate_public_destination(self, url: str) -> None:
-        """Reject hostnames resolving to loopback, private, link-local, or reserved IPs."""
+    @staticmethod
+    def _pinned_request_target(
+        url: str, address: ipaddress.IPv4Address | ipaddress.IPv6Address
+    ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+        """Build a request to a validated IP while preserving HTTP host and TLS identity."""
+        parsed = urlsplit(url)
+        hostname = parsed.hostname or ""
+        address_host = f"[{address.compressed}]" if address.version == 6 else address.compressed
+        origin_host = hostname.encode("idna").decode("ascii")
+        try:
+            origin_address = ipaddress.ip_address(hostname)
+        except ValueError:
+            origin_address = None
+        if origin_address is not None and origin_address.version == 6:
+            host_header = f"[{origin_address.compressed}]"
+        else:
+            host_header = origin_host
+        if parsed.port is not None:
+            address_host = f"{address_host}:{parsed.port}"
+            host_header = f"{host_header}:{parsed.port}"
+
+        pinned_url = urlunsplit(
+            (parsed.scheme, address_host, parsed.path or "/", parsed.query, "")
+        )
+        extensions: Dict[str, Any] = {}
+        if parsed.scheme.lower() == "https" and origin_address is None:
+            extensions["sni_hostname"] = origin_host
+        return pinned_url, {"Host": host_header}, extensions
+
+    async def _validate_public_destination(
+        self, url: str
+    ) -> List[ipaddress.IPv4Address | ipaddress.IPv6Address]:
+        """Validate a destination and return the public IPs that the request must use."""
         self._validate_url(url)
         parsed = urlsplit(url)
         hostname = parsed.hostname or ""
         try:
-            ipaddress.ip_address(hostname)
-            return  # Literal addresses were checked by _validate_url.
+            address = ipaddress.ip_address(hostname)
         except ValueError:
-            pass
+            address = None
+        if address is not None:
+            return [address]  # Literal addresses were checked by _validate_url.
 
-        port = parsed.port or (443 if parsed.scheme.lower() == "https" else 80)
+        port = parsed.port if parsed.port is not None else (443 if parsed.scheme.lower() == "https" else 80)
         try:
-            addresses = await self._resolve_host_addresses(hostname.encode("idna").decode("ascii"), port)
+            addresses = await self._resolve_host_addresses(
+                hostname.encode("idna").decode("ascii"), port
+            )
         except (OSError, UnicodeError) as exc:
             raise ValueError("Document host could not be resolved safely.") from exc
-        if not addresses or any(not address.is_global for address in addresses):
+        if not addresses or any(not candidate.is_global for candidate in addresses):
             raise ValueError("Document host resolves to a non-public network address.")
+        return sorted(addresses, key=lambda candidate: (candidate.version, int(candidate)))
 
     async def fetch_and_parse(self, doc_url: str, canonical_id: Optional[str] = None) -> ParsedDocument:
         """Download and extract scholarly text from a PDF with resource bounding."""
@@ -164,47 +199,81 @@ class ResearchDocumentFetcher:
         pdf_bytes = bytearray()
         current_url = doc_url
         try:
-            async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
-                for redirect_count in range(self.MAX_REDIRECTS + 1):
-                    await self._validate_public_destination(current_url)
-                    async with client.stream("GET", current_url) as response:
-                        if response.is_redirect:
-                            location = response.headers.get("location")
-                            if not location or redirect_count >= self.MAX_REDIRECTS:
-                                return ParsedDocument(
-                                    doc_url=doc_url,
-                                    canonical_id=canonical_id,
-                                    status=FullTextStatus.FETCH_FAILED,
-                                    error_message="Document redirect limit exceeded or redirect location was missing.",
-                                )
-                            current_url = urljoin(current_url, location)
-                            continue
+            for redirect_count in range(self.MAX_REDIRECTS + 1):
+                addresses = await self._validate_public_destination(current_url)
+                redirect_url: Optional[str] = None
+                downloaded = False
+                last_connect_error: Optional[httpx.HTTPError] = None
 
-                        if response.status_code != 200:
-                            return ParsedDocument(
-                                doc_url=doc_url,
-                                canonical_id=canonical_id,
-                                status=FullTextStatus.FETCH_FAILED,
-                                error_message=f"HTTP status {response.status_code} fetching document.",
-                            )
-
-                        async for chunk in response.aiter_bytes(chunk_size=65536):
-                            pdf_bytes.extend(chunk)
-                            if len(pdf_bytes) > self.max_bytes:
-                                return ParsedDocument(
-                                    doc_url=doc_url,
-                                    canonical_id=canonical_id,
-                                    status=FullTextStatus.FETCH_FAILED,
-                                    error_message=f"Document exceeded maximum allowed size ({self.max_bytes} bytes).",
-                                )
-                        break
-                else:
-                    return ParsedDocument(
-                        doc_url=doc_url,
-                        canonical_id=canonical_id,
-                        status=FullTextStatus.FETCH_FAILED,
-                        error_message="Document redirect limit exceeded.",
+                for address in addresses:
+                    pdf_bytes.clear()
+                    pinned_url, request_headers, extensions = self._pinned_request_target(
+                        current_url, address
                     )
+                    try:
+                        async with httpx.AsyncClient(
+                            timeout=self.timeout_seconds, follow_redirects=False
+                        ) as client:
+                            async with client.stream(
+                                "GET",
+                                pinned_url,
+                                headers=request_headers,
+                                extensions=extensions,
+                            ) as response:
+                                if response.is_redirect:
+                                    location = response.headers.get("location")
+                                    if not location or redirect_count >= self.MAX_REDIRECTS:
+                                        return ParsedDocument(
+                                            doc_url=doc_url,
+                                            canonical_id=canonical_id,
+                                            status=FullTextStatus.FETCH_FAILED,
+                                            error_message="Document redirect limit exceeded or redirect location was missing.",
+                                        )
+                                    redirect_url = urljoin(current_url, location)
+                                    break
+
+                                if response.status_code != 200:
+                                    return ParsedDocument(
+                                        doc_url=doc_url,
+                                        canonical_id=canonical_id,
+                                        status=FullTextStatus.FETCH_FAILED,
+                                        error_message=f"HTTP status {response.status_code} fetching document.",
+                                    )
+
+                                async for chunk in response.aiter_bytes(chunk_size=65536):
+                                    pdf_bytes.extend(chunk)
+                                    if len(pdf_bytes) > self.max_bytes:
+                                        return ParsedDocument(
+                                            doc_url=doc_url,
+                                            canonical_id=canonical_id,
+                                            status=FullTextStatus.FETCH_FAILED,
+                                            error_message=f"Document exceeded maximum allowed size ({self.max_bytes} bytes).",
+                                        )
+                                downloaded = True
+                                break
+                    except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
+                        last_connect_error = exc
+
+                if redirect_url is not None:
+                    current_url = redirect_url
+                    continue
+                if downloaded:
+                    break
+                if last_connect_error is not None:
+                    raise last_connect_error
+                return ParsedDocument(
+                    doc_url=doc_url,
+                    canonical_id=canonical_id,
+                    status=FullTextStatus.FETCH_FAILED,
+                    error_message="Document download failed due to a network or transport error.",
+                )
+            else:
+                return ParsedDocument(
+                    doc_url=doc_url,
+                    canonical_id=canonical_id,
+                    status=FullTextStatus.FETCH_FAILED,
+                    error_message="Document redirect limit exceeded.",
+                )
         except ValueError:
             return ParsedDocument(
                 doc_url=doc_url,
