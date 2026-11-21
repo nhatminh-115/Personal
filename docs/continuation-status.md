@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `6bf9b6262856109f31f72433b59ac733886ffd9d`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), [#352](https://github.com/nhatminh-115/Personal/pull/352), [#353](https://github.com/nhatminh-115/Personal/pull/353), and [#354](https://github.com/nhatminh-115/Personal/pull/354) are merged.
+- Canonical `main`: `3313eb8ed8aa38deaa975e1cfedd60569bf164d1`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), [#352](https://github.com/nhatminh-115/Personal/pull/352), [#353](https://github.com/nhatminh-115/Personal/pull/353), [#354](https://github.com/nhatminh-115/Personal/pull/354), and [#355](https://github.com/nhatminh-115/Personal/pull/355) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -30,7 +30,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR [#352](https://github.com/nhatminh-115/Personal/pull/352) replaces the strong per-run asyncio lock map with weak-value storage so unused coordination locks can be collected while active holders/waiters retain shared lock identity. It merged as `d44211521aab266f5666f4e9a4f861ff1b1c518c`. CI #926 (`44860931163`), job `136713896394`, passed: backend 697 tests in 71.54s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 10.65s.
 - PR [#353](https://github.com/nhatminh-115/Personal/pull/353) recovers id-less legacy chat runs when a persisted `run_executor_started(source="chat")` marker proves execution began, while keeping pre-execution event runs retryable through the outbox. It merged as `6ca645e071c183e4ee3b4141891c424a6686b89c`. CI #928 (`44861847498`), job `136716757599`, passed: backend 698 tests in 52.53s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.26s.
 - PR [#354](https://github.com/nhatminh-115/Personal/pull/354) closes the legacy chat crash window before executor-start by persisting the chat/event source on each run. It merged as `6bf9b6262856109f31f72433b59ac733886ffd9d`. CI #930 (`44862911967`), job `136720073626`, passed: backend 698 tests in 51.60s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 7.72s.
-- Active branch: `codex/aura-next-milestone-20261121-07`, freshly created from canonical `main` at `6bf9b6262856109f31f72433b59ac733886ffd9d`.
+- PR [#355](https://github.com/nhatminh-115/Personal/pull/355) rechecks chat status under the execution lock before graph invocation, preventing a delayed request from executing after recovery finalizes its run. It merged as `3313eb8ed8aa38deaa975e1cfedd60569bf164d1`. CI #933 (`44864235664`), job `136724207623`, passed: backend 700 tests in 83.84s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 12.44s.
+- Active branch: `codex/aura-next-milestone-20261121-08`, freshly created from canonical `main` at `3313eb8ed8aa38deaa975e1cfedd60569bf164d1`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -45,7 +46,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #352 / branch 04): replace the strong per-run process lock registry with weak values so inactive locks are collectible; active holder/waiter behavior remains covered.
 - Completed milestone (PR #353 / branch 05): include id-less legacy chat runs in executor-loss recovery when a persisted `run_executor_started(source="chat")` marker proves the graph executor began. Preserve outbox retry for event runs without a persisted event executor-start marker and keep legacy chat requests non-idempotent.
 - Completed milestone (PR #354 / branch 06): close the pre-marker crash window for legacy chat by persisting chat/event execution provenance with each root run. Recovery can discover old-style chat roots after the two-minute startup grace; event roots still require their executor-start marker before recovery.
-- Current milestone (branch 07): revalidate a chat run's persisted status under its execution lock before graph invocation, so a handler delayed during setup cannot execute after recovery has already closed the run. Return the saved terminal response for idempotent and legacy requests alike.
+- Completed milestone (PR #355 / branch 07): revalidate a chat run's persisted status under its execution lock before graph invocation, so a handler delayed during setup cannot execute after recovery has already closed the run. Return the saved terminal response for idempotent and legacy requests alike.
+- Current milestone (branch 08): retain the source outbox event ID on event roots and recover unstarted roots only after their event is dead-lettered, while leaving pending/failed events available for retry.
 
 ## Recent verified milestones
 
@@ -72,11 +74,12 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #352: collect inactive process run locks | Merged as `d442115`; CI #926 (`44860931163`), backend 697 passed in 71.54s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 10.65s |
 | PR #353: recover id-less legacy chat after executor start | Merged as `6ca645e`; CI #928 (`44861847498`), backend 698 passed in 52.53s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.26s |
 | PR #354: recover legacy chat interrupted before executor start | Merged as `6bf9b62`; CI #930 (`44862911967`), backend 698 passed in 51.60s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 7.72s |
+| PR #355: prevent chat execution after recovery closes a run | Merged as `3313eb8`; CI #933 (`44864235664`), backend 700 passed in 83.84s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 12.44s |
 
 ## Immediate next steps
 
-1. Revalidate chat status after acquiring its execution lock and skip graph invocation after recovery has finalized it.
-2. Preserve outbox retry for event runs with no persisted event executor-start marker.
+1. Close pre-execution event roots when their outbox records have exhausted delivery attempts.
+2. Preserve outbox retry for pending or failed events without a persisted event executor-start marker.
 3. Run the full GitHub Actions workflow, merge only the exact green head SHA, then continue. CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
