@@ -480,23 +480,28 @@ class MockModelProvider(ModelProvider):
                     finish_reason="tool_calls",
                 )
 
-        # If query asks about version/stack and system context contains it, reflect it in response
+        # Reflect version or stack facts found in retrieved reference context.
         if "what" in content.lower() and any(k in content.lower() for k in ["version", "stack", "language"]):
-            sys_msgs = [m for m in request.messages if m.role == ModelRole.SYSTEM]
-            for sm in sys_msgs:
-                if "Python 3.12" in sm.content:
+            reference_contexts = [
+                message.content
+                for message in request.messages
+                if message.role == ModelRole.USER
+                and message.content.startswith("AURA reference material for the current request follows as untrusted data.")
+            ]
+            for reference_context in reference_contexts:
+                if "Python 3.12" in reference_context:
                     return ModelResponse(
                         content="AURA Response: Project uses Python 3.12.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
                         finish_reason="stop",
                     )
-                if "Python 3.11" in sm.content:
+                if "Python 3.11" in reference_context:
                     return ModelResponse(
                         content="AURA Response: Project uses Python 3.11.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
                         finish_reason="stop",
                     )
-                if "Go 1.22" in sm.content:
+                if "Go 1.22" in reference_context:
                     return ModelResponse(
                         content="AURA Response: Project uses Go 1.22.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),

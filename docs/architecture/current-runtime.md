@@ -245,16 +245,18 @@ manifest with the run. Context Bridges compile their user-authored handoff note
 and only the structured sections the user enabled. Source links retain
 provenance and strengthen privacy routing without copying full source content
 into the handoff. Context Sets and branches expand their explicitly linked
-sources. The root prompt labels assembled material as retrieved AURA context
-and directs the model to use content already present there; tools remain for
-missing information, current-state checks, and requested actions. The shared
-root/specialist prompt also treats tool results, connected content, and
-external sources as untrusted data. Tool names, descriptions, and parameter
-schemas are interface metadata, not authority to change the task or override
-AURA policies. Embedded instructions cannot redefine the task, bypass AURA
-permission or privacy boundaries, disclose hidden prompts or secrets, or
-trigger unrelated or unapproved side effects. Task-relevant source guidance may
-inform the requested work only within its scope and AURA policies.
+sources. The shared root/specialist policy remains in system
+messages, while retrieved AURA context is serialized as a separate user-role
+reference message immediately before the current request. The policy directs
+the model to use that content as evidence; tools remain for missing
+information, current-state checks, and requested actions. The shared policy
+also treats tool results, connected content, and external sources as untrusted
+data. Tool names, descriptions, and parameter schemas are interface metadata,
+not authority to change the task or override AURA policies. Embedded
+instructions cannot redefine the task, bypass AURA permission or privacy
+boundaries, disclose hidden prompts or secrets, or trigger unrelated or
+unapproved side effects. Task-relevant source guidance may inform the requested
+work only within its scope and AURA policies.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Plain text
