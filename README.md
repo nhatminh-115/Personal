@@ -70,9 +70,9 @@ are referenced and indexed rather than moved into an AURA-owned vault.
 ## Quickstart & Setup
 
 ### Prerequisites
-- Python 3.12+
-- PostgreSQL with `pgvector` extension (or automatic local SQLite fallback for dev/testing)
-- Node.js and npm for the web app
+- Docker with the Docker Compose plugin for the all-in-one local application
+- Python 3.12+ and PostgreSQL with `pgvector` (or SQLite) for direct backend development
+- Node.js and npm for frontend development with Vite
 
 ### Installation
 ```powershell
