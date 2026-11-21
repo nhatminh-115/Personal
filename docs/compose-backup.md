@@ -6,9 +6,12 @@ volume. A recoverable installation needs all three from the same point in time.
 The backup command stops `aura-app` while it captures them,
 then restarts it if it was running before the backup.
 Before reporting success, the command reopens the completed archive and checks
-its manifest and payload hashes. If capture, verification, or API shutdown
-fails, it removes any partial output and attempts to restore the API's original
-running state.
+its manifest and payload hashes. Verification accepts at most five top-level
+entries, limits each payload to 10 GiB and the archive payload total to 20 GiB,
+and bounds a workspace snapshot to 100,000 entries, 2 GiB per file, and 8 GiB
+expanded total. These bounds also apply before restore stops services. If
+capture, verification, or API shutdown fails, it removes any partial output and
+attempts to restore the API's original running state.
 
 From the repository root, create a new archive:
 
