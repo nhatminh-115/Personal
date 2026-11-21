@@ -146,6 +146,10 @@ jobs:
             --expected-workspace-content "persistent test" \
             --report "${RUNNER_TEMP}/aura-a6-clean-restore.json"
 
+          python scripts/dogfood_workspace_use.py \
+            --api-base-url "http://127.0.0.1:${AURA_API_PORT}" \
+            --report "${RUNNER_TEMP}/aura-a8-everyday-workspace.json"
+
       - name: Wait for PostgreSQL asyncpg connection
         run: |
           python -c "
