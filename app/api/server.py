@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from fastapi import Depends, FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -136,6 +137,36 @@ def create_app() -> FastAPI:
     app.include_router(automations.router)
     app.include_router(capabilities.router)
 
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_handler(request: Request, exc: RequestValidationError):
+        """Keep Pydantic's validation details without echoing submitted values."""
+        safe_errors = []
+        for error in exc.errors():
+            if not isinstance(error, dict):
+                continue
+            raw_location = error.get("loc")
+            location = []
+            if isinstance(raw_location, (list, tuple)):
+                location = [
+                    part for part in raw_location
+                    if isinstance(part, (str, int)) and not isinstance(part, bool)
+                ][:16]
+            safe_errors.append(
+                {
+                    "loc": location,
+                    "msg": error.get("msg") if isinstance(error.get("msg"), str) else "Invalid request.",
+                    "type": error.get("type") if isinstance(error.get("type"), str) else "request_validation_error",
+                }
+            )
+
+        if not safe_errors:
+            safe_errors.append({
+                "loc": ["request"],
+                "msg": "Request validation failed.",
+                "type": "request_validation_error",
+            })
+        return JSONResponse(status_code=422, content={"detail": safe_errors})
+
     # Global Domain Exception Handlers
     @app.exception_handler(WorkspaceEscapeError)
     async def workspace_escape_handler(request: Request, exc: WorkspaceEscapeError):
@@ -189,3 +220,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+
