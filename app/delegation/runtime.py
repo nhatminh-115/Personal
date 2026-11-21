@@ -26,6 +26,9 @@ from app.orchestrator.state import AgentState
 from app.tools.registry import ToolRegistry, tool_registry
 from app.tools.scoped import ScopedToolRegistry
 
+SPECIALIST_EXECUTION_FAILURE_MESSAGE = "Specialist failed due to an execution error."
+SPECIALIST_EXECUTION_FAILURE_STORAGE_MESSAGE = "Specialist execution failed."
+
 
 class DelegationRuntime:
     """Manages the lifecycle of specialist child runs delegated by the Root Orchestrator."""
@@ -622,13 +625,36 @@ class DelegationRuntime:
             raise
         except Exception as exc:
             provider_failure = isinstance(exc, ProviderError)
-            safe_error = MODEL_PROVIDER_FAILURE_MESSAGE if provider_failure else str(exc)
+            safe_error = (
+                MODEL_PROVIDER_FAILURE_MESSAGE
+                if provider_failure
+                else SPECIALIST_EXECUTION_FAILURE_MESSAGE
+            )
             if provider_failure:
-                logger.error("Model provider failed during specialist child run '%s'.", child_run_id)
+                logger.error(
+                    "Model provider failed during specialist child run.",
+                    extra={
+                        "run_id": child_run_id,
+                        "details": {"failure_category": "provider_failure"},
+                    },
+                )
             else:
-                logger.error(f"Specialist child run '{child_run_id}' failed: {exc}", exc_info=True)
+                logger.error(
+                    "Specialist child run failed.",
+                    extra={
+                        "run_id": child_run_id,
+                        "details": {
+                            "failure_category": "graph_failure",
+                            "exception_type": type(exc).__name__,
+                        },
+                    },
+                )
             child_run.status = RunStatus.FAILED.value
-            child_run.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
+            child_run.error_message = (
+                MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+                if provider_failure
+                else SPECIALIST_EXECUTION_FAILURE_STORAGE_MESSAGE
+            )
 
             del_stmt = select(DelegationModel).where(DelegationModel.child_run_id == child_run_id)
             del_res = await db.execute(del_stmt)
@@ -654,11 +680,7 @@ class DelegationRuntime:
                 specialist_name=spec.name,
                 child_run_id=child_run_id,
                 status="failed",
-                summary=(
-                    MODEL_PROVIDER_FAILURE_MESSAGE
-                    if provider_failure
-                    else "Specialist failed due to an execution error."
-                ),
+                summary=safe_error,
                 steps_taken=0,
                 error=safe_error,
             )
@@ -666,3 +688,4 @@ class DelegationRuntime:
 
 # Global singleton runtime
 delegation_runtime = DelegationRuntime()
+
