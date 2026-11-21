@@ -6413,4 +6413,5 @@ html {
   gap: 8px;
   margin-top: 18px;
 }
+.api-access-dialog__forget { margin-right: auto; }
 
