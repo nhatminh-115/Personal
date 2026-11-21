@@ -205,7 +205,42 @@ async def test_pdf_security_rechecks_redirect_before_requesting_private_destinat
 
     assert parsed.status == FullTextStatus.FETCH_FAILED
     assert "public HTTP/HTTPS" in (parsed.error_message or "")
-    client.stream.assert_called_once_with("GET", "https://papers.example/paper.pdf")
+    client.stream.assert_called_once_with(
+        "GET",
+        "https://8.8.8.8/paper.pdf",
+        headers={"Host": "papers.example"},
+        extensions={"sni_hostname": "papers.example"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_pdf_fetch_pins_validated_address_and_preserves_hostname(monkeypatch):
+    fetcher = ResearchDocumentFetcher(cache=MagicMock(get_document=MagicMock(return_value=None)))
+    resolver = AsyncMock(return_value={ipaddress.ip_address("8.8.8.8")})
+    monkeypatch.setattr(fetcher, "_resolve_host_addresses", resolver)
+
+    response = MagicMock()
+    response.status_code = 503
+    response.is_redirect = False
+    response.headers = {}
+    response.__aenter__ = AsyncMock(return_value=response)
+    response.__aexit__ = AsyncMock(return_value=None)
+    client = MagicMock()
+    client.stream = MagicMock(return_value=response)
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("app.research.document.httpx.AsyncClient", return_value=client):
+        parsed = await fetcher.fetch_and_parse("https://papers.example/paper.pdf")
+
+    assert parsed.status == FullTextStatus.FETCH_FAILED
+    resolver.assert_awaited_once_with("papers.example", 443)
+    client.stream.assert_called_once_with(
+        "GET",
+        "https://8.8.8.8/paper.pdf",
+        headers={"Host": "papers.example"},
+        extensions={"sni_hostname": "papers.example"},
+    )
 
 
 @pytest.mark.asyncio
