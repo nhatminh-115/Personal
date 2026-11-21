@@ -1,10 +1,10 @@
-"""Conservative startup reconciliation for interrupted root chat turns."""
+"""Conservative startup reconciliation for interrupted root agent runs."""
 
 from contextlib import AsyncExitStack
 from datetime import timedelta
 from typing import Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.run_resume_lock import try_lock_run_execution, try_lock_run_resume
@@ -42,7 +42,7 @@ _INTERRUPTED_RESPONSE = (
     "Run interrupted because its executor stopped before AURA reached a safe recovery point. "
     "Review the run history before retrying."
 )
-_INTERRUPTED_ERROR = "The chat executor stopped before the run could be safely recovered."
+_INTERRUPTED_ERROR = "The run executor stopped before the run could be safely recovered."
 _LEGACY_RECOVERY_GRACE = timedelta(minutes=2)
 RECOVERY_SCAN_INTERVAL_SECONDS = 60
 
@@ -166,7 +166,7 @@ async def _resolve_checkpoint_interrupt(
     return None, {}, None
 
 
-async def _persist_interrupted_chat_messages(db: AsyncSession, run: RunModel) -> None:
+async def _persist_interrupted_run_messages(db: AsyncSession, run: RunModel) -> None:
     result = await db.execute(
         select(MessageModel)
         .where(
@@ -256,7 +256,7 @@ async def _mark_interrupted(
             )
         )
 
-    await _persist_interrupted_chat_messages(db, root)
+    await _persist_interrupted_run_messages(db, root)
     for run in interrupted_runs:
         await trace_service.record_event(
             run_id=run.id,
@@ -426,23 +426,33 @@ async def _recover_one_root(db: AsyncSession, graph: Any, root: RunModel) -> str
         return "interrupted"
 
 
-async def recover_running_chat_runs(
+async def recover_running_root_runs(
     db: Optional[AsyncSession] = None,
     *,
     graph: Any = None,
 ) -> dict[str, int]:
-    """Reconcile idle root chat runs without replaying an ambiguous checkpoint."""
+    """Reconcile idle root runs with a user turn or a started event executor."""
     if db is None:
         from app.db import session as db_session
 
         async with db_session.async_session_factory() as startup_session:
-            return await recover_running_chat_runs(startup_session, graph=graph)
+            return await recover_running_root_runs(startup_session, graph=graph)
+
+    event_executor_started = (
+        select(RunEventModel.id)
+        .where(
+            RunEventModel.run_id == RunModel.id,
+            RunEventModel.event_type == "run_executor_started",
+            RunEventModel.payload["source"].as_string() == "event",
+        )
+        .exists()
+    )
 
     root_ids = list((await db.scalars(
         select(RunModel.id)
         .where(
             RunModel.parent_run_id.is_(None),
-            RunModel.client_turn_id.is_not(None),
+            or_(RunModel.client_turn_id.is_not(None), event_executor_started),
             RunModel.status == RunStatus.RUNNING.value,
             RunModel.cancel_requested_at.is_(None),
         )
@@ -484,20 +494,20 @@ async def recover_running_chat_runs(
     return counts
 
 
-async def run_chat_recovery_loop() -> None:
-    """Periodically recover executors lost while this API process is running."""
+async def run_root_recovery_loop() -> None:
+    """Periodically recover root executors lost while this API process is running."""
     import asyncio
 
     while True:
         await asyncio.sleep(RECOVERY_SCAN_INTERVAL_SECONDS)
         try:
-            counts = await recover_running_chat_runs()
+            counts = await recover_running_root_runs()
             if any(counts.get(key, 0) for key in ("waiting", "terminal", "interrupted")):
-                logger.info("Periodic chat-run recovery completed.", extra=counts)
+                logger.info("Periodic root-run recovery completed.", extra=counts)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.error(
-                "Periodic chat-run recovery failed (error type: %s); it will retry on the next scan.",
+                "Periodic root-run recovery failed (error type: %s); it will retry on the next scan.",
                 type(exc).__name__,
             )

@@ -28,19 +28,19 @@ async def lifespan(app: FastAPI):
     # Ensure persistent checkpointer is initialized
     await init_checkpointer()
 
-    # Reconcile idle chat turns before serving requests. Ambiguous checkpoints
+    # Reconcile idle root runs before serving requests. Ambiguous checkpoints
     # are closed as interrupted instead of replaying tools or memory writes.
     recovery_task = None
     try:
-        from app.api.run_recovery import recover_running_chat_runs, run_chat_recovery_loop
+        from app.api.run_recovery import recover_running_root_runs, run_root_recovery_loop
 
-        recovery_task = asyncio.create_task(run_chat_recovery_loop())
-        recovery_counts = await recover_running_chat_runs()
+        recovery_task = asyncio.create_task(run_root_recovery_loop())
+        recovery_counts = await recover_running_root_runs()
         if any(recovery_counts.get(key, 0) for key in ("waiting", "terminal", "interrupted")):
-            logger.info("Startup chat-run recovery completed.", extra=recovery_counts)
+            logger.info("Startup root-run recovery completed.", extra=recovery_counts)
     except Exception as exc:
         logger.error(
-            "Startup chat-run recovery failed (error type: %s); continuing with API startup.",
+            "Startup root-run recovery failed (error type: %s); continuing with API startup.",
             type(exc).__name__,
         )
 

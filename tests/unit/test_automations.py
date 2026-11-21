@@ -944,7 +944,7 @@ async def test_event_bridge_skips_duplicate_delivery_for_existing_run(test_db_se
 
 
 @pytest.mark.asyncio
-async def test_event_bridge_retries_run_when_crash_happened_before_first_checkpoint(test_db_session, monkeypatch):
+async def test_event_bridge_does_not_replay_after_started_executor_loses_first_checkpoint(test_db_session, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -957,10 +957,7 @@ async def test_event_bridge_retries_run_when_crash_happened_before_first_checkpo
     )
     graph = AsyncMock()
     graph.aget_state.return_value = SimpleNamespace(values={}, next=())
-    graph.ainvoke.side_effect = [
-        RuntimeError("process interrupted before first checkpoint"),
-        {"execution_status": RunStatus.COMPLETED.value, "final_response": "Recovered."},
-    ]
+    graph.ainvoke.side_effect = RuntimeError("process interrupted before first checkpoint")
     monkeypatch.setattr("app.events.dispatcher.get_compiled_graph", AsyncMock(return_value=graph))
 
     factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
@@ -972,13 +969,77 @@ async def test_event_bridge_retries_run_when_crash_happened_before_first_checkpo
     stuck = await test_db_session.get(RunModel, run_id)
     assert stuck is not None and stuck.status == RunStatus.RUNNING.value
 
-    recovered = await bridge.handle_event(event)
-    assert recovered["execution_status"] == RunStatus.COMPLETED.value
-    assert graph.ainvoke.await_count == 2
-    assert graph.ainvoke.await_args_list[1].args[0]["user_message"] == "Persist this scheduled task."
-    assert graph.aget_state.await_count == 1
+    retry = await bridge.handle_event(event)
+    assert retry == {"run_id": run_id, "execution_status": RunStatus.RUNNING.value}
+    assert graph.ainvoke.await_count == 1
+    assert graph.aget_state.await_count == 0
+
+    from app.api.run_recovery import _INTERRUPTED_RESPONSE, recover_running_root_runs
+
+    recovery = await recover_running_root_runs(test_db_session, graph=graph)
     await test_db_session.refresh(stuck)
-    assert stuck.status == RunStatus.COMPLETED.value
+    assert recovery["interrupted"] == 1
+    assert stuck.status == RunStatus.FAILED.value
+    assert stuck.final_response == _INTERRUPTED_RESPONSE
+
+
+@pytest.mark.asyncio
+async def test_automation_history_reports_interrupted_event_run(async_client, test_db_session):
+    from types import SimpleNamespace
+    from app.api.run_recovery import recover_running_root_runs
+
+    automation_id = "recovery-history-automation"
+    event_id = "recovery-history-event"
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    session_id = "recovery-history-session"
+    test_db_session.add(ScheduledJobModel(
+        id=automation_id,
+        name="Recovery history",
+        job_type=JobType.RECURRING.value,
+        schedule_expression="3600",
+        payload_json={"message": "Check recovery history."},
+        is_active=True,
+        next_run_at=utc_now() + timedelta(hours=1),
+        metadata_json={"kind": "automation"},
+    ))
+    test_db_session.add(EventRecordModel(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        source="automation",
+        payload_json={"message": "Check recovery history."},
+        status=EventStatus.PROCESSED.value,
+        correlation_id=automation_id,
+        idempotency_key="recovery-history-key",
+    ))
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(
+        id=run_id,
+        session_id=session_id,
+        status=RunStatus.RUNNING.value,
+        user_message="Check recovery history.",
+    ))
+    test_db_session.add(RunEventModel(
+        run_id=run_id,
+        event_type="run_executor_started",
+        payload={"source": "event"},
+    ))
+    await test_db_session.commit()
+
+    class AmbiguousCheckpointGraph:
+        async def aget_state(self, _config):
+            return SimpleNamespace(
+                values={"execution_status": RunStatus.RUNNING.value},
+                next=("execute_tool",),
+                tasks=(),
+            )
+
+    result = await recover_running_root_runs(test_db_session, graph=AmbiguousCheckpointGraph())
+    assert result["interrupted"] == 1
+
+    history = await async_client.get(f"/v1/automations/{automation_id}/runs")
+    assert history.status_code == 200
+    assert history.json()[0]["run_id"] == run_id
+    assert history.json()[0]["status"] == RunStatus.FAILED.value
 
 
 @pytest.mark.asyncio
@@ -1026,6 +1087,14 @@ async def test_event_bridge_serializes_duplicate_delivery_while_executor_is_acti
     run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
     assert second_result == {"run_id": run_id, "execution_status": RunStatus.COMPLETED.value}
     assert graph.ainvoke.await_count == 1
+    executor_markers = list((await test_db_session.scalars(
+        select(RunEventModel).where(
+            RunEventModel.run_id == run_id,
+            RunEventModel.event_type == "run_executor_started",
+        )
+    )).all())
+    assert len(executor_markers) == 1
+    assert executor_markers[0].payload == {"source": "event"}
 
 
 @pytest.mark.asyncio
