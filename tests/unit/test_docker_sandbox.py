@@ -140,6 +140,24 @@ def test_docker_runtime_preserves_private_workspace_permissions(tmp_path, monkey
     assert stat.S_IMODE(workspace.stat().st_mode) == before_mode == 0o700
 
 
+def test_docker_runtime_mounts_bounded_tmpfs_for_readonly_rootfs(tmp_path, monkeypatch):
+    container = MagicMock()
+    container.id = "fake-container-id"
+    container.wait.return_value = {"StatusCode": 0}
+    container.logs.return_value = b""
+    client = MagicMock()
+    client.containers.create.return_value = container
+    runtime = DockerSandboxRuntime()
+    monkeypatch.setattr(runtime, "_get_client", lambda: client)
+
+    result = runtime._execute_sync(["true"], SandboxConfig(workspace_dir=str(tmp_path)))
+
+    assert result.exit_code == 0
+    create_kwargs = client.containers.create.call_args.kwargs
+    assert create_kwargs["read_only"] is True
+    assert create_kwargs["tmpfs"] == {"/tmp": "rw,noexec,nosuid,nodev,size=64m"}
+
+
 def test_docker_runtime_does_not_log_daemon_or_container_exception_text(tmp_path, monkeypatch):
     daemon_diagnostic = "private docker endpoint /run/user/1000/docker.sock"
     wait_diagnostic = "private wait response with workspace token"
