@@ -163,6 +163,8 @@ class SQLMemoryService(MemoryService):
         content: str,
         token_count: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        *,
+        commit: bool = True,
     ) -> MessageModel:
         # Ensure session exists first. Live project chat is indexed as typed
         # workspace objects in the same transaction as its canonical message.
@@ -266,8 +268,11 @@ class SQLMemoryService(MemoryService):
                             metadata_json={},
                         ))
                         break
-        await self.db.commit()
-        await self.db.refresh(msg)
+        if commit:
+            await self.db.commit()
+            await self.db.refresh(msg)
+        else:
+            await self.db.flush()
         return msg
 
     async def get_session_messages(self, session_id: str, limit: int = 50) -> List[MessageModel]:

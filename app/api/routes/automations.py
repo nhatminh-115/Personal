@@ -5,6 +5,7 @@ import hmac
 import re
 import secrets
 import uuid
+from contextlib import AsyncExitStack
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -18,6 +19,7 @@ from app.api.pagination import (
     decode_timestamp_id_cursor,
     set_next_cursor_header,
 )
+from app.api.run_resume_lock import lock_run_resume
 from app.db.models import EventRecordModel, EventStatus, JobType, RunEventModel, RunModel, RunStatus, ScheduledJobModel, utc_now
 from app.db.session import get_db
 from app.events.bus import event_bus
@@ -805,33 +807,48 @@ async def cancel_automation_run(
             return _automation_execution_response(event, run_id, "cancelled")
 
     if event.status == EventStatus.PROCESSING.value:
-        cancellation_requested_at = utc_now()
-        cancelled = await db.execute(
-            update(RunModel)
-            .where(
-                RunModel.id == run_id,
-                RunModel.status == RunStatus.RUNNING.value,
-                RunModel.cancel_requested_at.is_(None),
-            )
-            .values(cancel_requested_at=cancellation_requested_at)
+        child_run_ids = list(
+            (await db.scalars(select(RunModel.id).where(RunModel.parent_run_id == run_id))).all()
         )
-        if cancelled.rowcount:
-            db.add(RunEventModel(
-                run_id=run_id,
-                event_type="run_cancellation_requested",
-                payload={"source": "user", "trigger": "automation"},
-            ))
-            await db.commit()
-            return _automation_execution_response(event, run_id, "cancellation_requested")
+        cancellation_requested = False
+        async with AsyncExitStack() as lock_stack:
+            for locked_run_id in sorted({run_id, *child_run_ids}):
+                await lock_stack.enter_async_context(lock_run_resume(db, locked_run_id))
 
-        run = await db.get(RunModel, run_id, populate_existing=True)
-        if run is not None and run.status == RunStatus.RUNNING.value and run.cancel_requested_at is not None:
+            cancellation_requested_at = utc_now()
+            cancelled = await db.execute(
+                update(RunModel)
+                .where(
+                    RunModel.id == run_id,
+                    RunModel.status == RunStatus.RUNNING.value,
+                    RunModel.cancel_requested_at.is_(None),
+                )
+                .values(cancel_requested_at=cancellation_requested_at)
+            )
+            if cancelled.rowcount:
+                db.add(RunEventModel(
+                    run_id=run_id,
+                    event_type="run_cancellation_requested",
+                    payload={"source": "user", "trigger": "automation"},
+                ))
+                await db.commit()
+                cancellation_requested = True
+            else:
+                run = await db.get(RunModel, run_id, populate_existing=True)
+                if (
+                    run is not None
+                    and run.status == RunStatus.RUNNING.value
+                    and run.cancel_requested_at is not None
+                ):
+                    return _automation_execution_response(event, run_id, "cancellation_requested")
+                if run is None:
+                    raise HTTPException(status_code=409, detail="Automation run is starting. Refresh history and try again.")
+                if run.status == RunStatus.CANCELLED.value and run.cancel_requested_at is not None:
+                    return _automation_execution_response(event, run_id, "cancelled")
+                raise HTTPException(status_code=409, detail="Automation run is no longer running.")
+
+        if cancellation_requested:
             return _automation_execution_response(event, run_id, "cancellation_requested")
-        if run is None:
-            raise HTTPException(status_code=409, detail="Automation run is starting. Refresh history and try again.")
-        if run.status == RunStatus.CANCELLED.value and run.cancel_requested_at is not None:
-            return _automation_execution_response(event, run_id, "cancelled")
-        raise HTTPException(status_code=409, detail="Automation run is no longer running.")
 
     raise HTTPException(status_code=409, detail="Only queued or running automation runs can be cancelled.")
 

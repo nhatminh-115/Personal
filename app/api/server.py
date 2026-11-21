@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
 
         recovery_task = asyncio.create_task(run_root_recovery_loop())
         recovery_counts = await recover_running_root_runs()
-        if any(recovery_counts.get(key, 0) for key in ("waiting", "terminal", "interrupted")):
+        if any(recovery_counts.get(key, 0) for key in ("waiting", "terminal", "interrupted", "cancelled")):
             logger.info("Startup root-run recovery completed.", extra=recovery_counts)
     except Exception as exc:
         logger.error(

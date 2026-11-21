@@ -43,6 +43,11 @@ _INTERRUPTED_RESPONSE = (
     "Review the run history before retrying."
 )
 _INTERRUPTED_ERROR = "The run executor stopped before the run could be safely recovered."
+_CANCELLED_RESPONSE = (
+    "Run cancelled. An operation already in progress may have completed "
+    "before AURA observed the request."
+)
+_CHILD_CANCELLED_RESPONSE = "Run cancelled with its parent agent turn."
 _LEGACY_RECOVERY_GRACE = timedelta(minutes=2)
 RECOVERY_SCAN_INTERVAL_SECONDS = 60
 
@@ -166,7 +171,9 @@ async def _resolve_checkpoint_interrupt(
     return None, {}, None
 
 
-async def _persist_interrupted_run_messages(db: AsyncSession, run: RunModel) -> None:
+async def _persist_run_messages(db: AsyncSession, run: RunModel, response: str) -> None:
+    # Keep transcript writes in the caller's transaction so the terminal run
+    # state cannot commit without its user-visible response.
     result = await db.execute(
         select(MessageModel)
         .where(
@@ -187,25 +194,26 @@ async def _persist_interrupted_run_messages(db: AsyncSession, run: RunModel) -> 
             role="user",
             content=run.user_message,
             metadata={"run_id": run.id, "privacy_policy": privacy_policy},
+            commit=False,
         )
 
     assistant_messages = [message for message in messages if message.role == "assistant"]
     if assistant_messages:
         message_ids = [message.id for message in assistant_messages]
         for message in assistant_messages:
-            message.content = _INTERRUPTED_RESPONSE
+            message.content = response
         await db.execute(
             update(WorkspaceObjectModel)
             .where(WorkspaceObjectModel.source_message_id.in_(message_ids))
-            .values(content=_INTERRUPTED_RESPONSE, title=_INTERRUPTED_RESPONSE[:255])
+            .values(content=response, title=response[:255])
         )
-        await db.commit()
     else:
         await memory.save_message(
             run.session_id,
             role="assistant",
-            content=_INTERRUPTED_RESPONSE,
+            content=response,
             metadata={"run_id": run.id, "privacy_policy": privacy_policy},
+            commit=False,
         )
 
 
@@ -256,7 +264,7 @@ async def _mark_interrupted(
             )
         )
 
-    await _persist_interrupted_run_messages(db, root)
+    await _persist_run_messages(db, root, _INTERRUPTED_RESPONSE)
     for run in interrupted_runs:
         await trace_service.record_event(
             run_id=run.id,
@@ -264,6 +272,70 @@ async def _mark_interrupted(
             event_type="run_interrupted",
             payload={"recovery_action": "failed_safe", "error_category": "executor_lost"},
         )
+
+
+async def _finalize_lost_cancellation(
+    db: AsyncSession,
+    root: RunModel,
+    runs: list[RunModel],
+    trace_service: TraceService,
+) -> None:
+    cancelled_runs = [run for run in runs if run.status in _ACTIVE_STATUSES]
+    for run in cancelled_runs:
+        run.status = RunStatus.CANCELLED.value
+        run.error_message = None
+        run.final_response = _CANCELLED_RESPONSE if run.id == root.id else _CHILD_CANCELLED_RESPONSE
+
+    run_ids = [run.id for run in runs]
+    await db.execute(
+        update(ApprovalModel)
+        .where(ApprovalModel.run_id.in_(run_ids), ApprovalModel.status == "pending")
+        .values(
+            status="rejected",
+            decision_notes="Run cancelled before approval.",
+            decided_at=utc_now(),
+        )
+    )
+    await db.execute(
+        update(RoutingConfirmationModel)
+        .where(
+            RoutingConfirmationModel.root_run_id == root.id,
+            RoutingConfirmationModel.status == "pending",
+        )
+        .values(
+            status="rejected",
+            decision_notes="Run cancelled before routing confirmation.",
+            decided_at=utc_now(),
+        )
+    )
+
+    child_ids = [run.id for run in cancelled_runs if run.parent_run_id == root.id]
+    if child_ids:
+        await db.execute(
+            update(DelegationModel)
+            .where(DelegationModel.child_run_id.in_(child_ids))
+            .values(
+                status=RunStatus.CANCELLED.value,
+                result_summary=_CHILD_CANCELLED_RESPONSE,
+                pending_approval_id=None,
+            )
+        )
+
+    await _persist_run_messages(db, root, _CANCELLED_RESPONSE)
+    await db.commit()
+    for run in cancelled_runs:
+        await trace_service.record_event(
+            run_id=run.id,
+            session_id=run.session_id,
+            event_type="run_cancelled",
+            payload={"status": RunStatus.CANCELLED.value},
+        )
+    await trace_service.record_event(
+        run_id=root.id,
+        session_id=root.session_id,
+        event_type="run_recovered",
+        payload={"recovery_action": RunStatus.CANCELLED.value, "source": "cancel_request"},
+    )
 
 
 async def _sync_terminal_run(
@@ -364,8 +436,11 @@ async def _recover_one_root(db: AsyncSession, graph: Any, root: RunModel) -> str
 
         for run in runs:
             await db.refresh(run)
-        if root.status != RunStatus.RUNNING.value or root.cancel_requested_at is not None:
+        if root.status != RunStatus.RUNNING.value:
             return "changed"
+        if root.cancel_requested_at is not None:
+            await _finalize_lost_cancellation(db, root, runs, trace_service)
+            return "cancelled"
 
         for run in runs:
             snapshots[run.id] = await graph.aget_state({"configurable": {"thread_id": run.id}})
@@ -454,17 +529,16 @@ async def recover_running_root_runs(
             RunModel.parent_run_id.is_(None),
             or_(RunModel.client_turn_id.is_not(None), event_executor_started),
             RunModel.status == RunStatus.RUNNING.value,
-            RunModel.cancel_requested_at.is_(None),
         )
         .order_by(RunModel.created_at, RunModel.id)
     )).all())
     if not root_ids:
-        return {"waiting": 0, "terminal": 0, "interrupted": 0, "busy": 0, "skipped": 0}
+        return {"waiting": 0, "terminal": 0, "interrupted": 0, "cancelled": 0, "busy": 0, "skipped": 0}
 
     if graph is None:
         graph = await get_compiled_graph()
 
-    counts = {"waiting": 0, "terminal": 0, "interrupted": 0, "busy": 0, "skipped": 0}
+    counts = {"waiting": 0, "terminal": 0, "interrupted": 0, "cancelled": 0, "busy": 0, "skipped": 0}
     legacy_cutoff = utc_now() - _LEGACY_RECOVERY_GRACE
     for root_id in root_ids:
         root = await db.get(RunModel, root_id)
@@ -485,7 +559,7 @@ async def recover_running_root_runs(
         except Exception as exc:
             await db.rollback()
             logger.error(
-                "Could not reconcile interrupted chat run '%s' (error type: %s).",
+                "Could not reconcile interrupted root run '%s' (error type: %s).",
                 root_id,
                 type(exc).__name__,
             )
@@ -502,7 +576,7 @@ async def run_root_recovery_loop() -> None:
         await asyncio.sleep(RECOVERY_SCAN_INTERVAL_SECONDS)
         try:
             counts = await recover_running_root_runs()
-            if any(counts.get(key, 0) for key in ("waiting", "terminal", "interrupted")):
+            if any(counts.get(key, 0) for key in ("waiting", "terminal", "interrupted", "cancelled")):
                 logger.info("Periodic root-run recovery completed.", extra=counts)
         except asyncio.CancelledError:
             raise

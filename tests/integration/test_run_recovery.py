@@ -16,6 +16,7 @@ from app.db.models import (
     RunModel,
     RunStatus,
     SessionModel,
+    utc_now,
 )
 
 
@@ -208,6 +209,83 @@ async def test_restores_waiting_routing_confirmation(test_db_session):
     await test_db_session.refresh(run)
     assert result["waiting"] == 1
     assert run.status == RunStatus.WAITING_FOR_ROUTING_CONFIRMATION.value
+
+
+@pytest.mark.asyncio
+async def test_finalizes_persisted_cancellation_after_root_executor_is_lost(test_db_session):
+    root = await _create_running_chat(
+        test_db_session,
+        run_id="recover-cancelled-root",
+        session_id="recover-cancelled-session",
+    )
+    root.cancel_requested_at = utc_now()
+    child = RunModel(
+        id="recover-cancelled-child",
+        session_id=root.session_id,
+        user_message="[Specialist: research] Find supporting evidence.",
+        parent_run_id=root.id,
+        status=RunStatus.WAITING_FOR_APPROVAL.value,
+    )
+    delegation = DelegationModel(
+        parent_run_id=root.id,
+        parent_tool_call_id="recover-cancelled-call",
+        child_run_id=child.id,
+        specialist_name="research",
+        status=RunStatus.WAITING_FOR_APPROVAL.value,
+        pending_approval_id="recover-cancelled-approval",
+    )
+    approval = ApprovalModel(
+        id="recover-cancelled-approval",
+        run_id=child.id,
+        session_id=root.session_id,
+        tool_name="write_file",
+        tool_input={"path": "result.txt"},
+        status="pending",
+    )
+    confirmation = RoutingConfirmationModel(
+        id="recover-cancelled-confirmation",
+        root_run_id=root.id,
+        execution_run_id=child.id,
+        session_id=root.session_id,
+        proposed_provider="cloud-provider",
+        proposed_model="model-name",
+        status="pending",
+    )
+    test_db_session.add_all([child, delegation, approval, confirmation])
+    await test_db_session.commit()
+
+    class NoCheckpointReadGraph:
+        async def aget_state(self, _config):
+            raise AssertionError("a cancelled run must not resume or inspect its graph")
+
+    result = await recover_running_root_runs(test_db_session, graph=NoCheckpointReadGraph())
+
+    await test_db_session.refresh(root)
+    await test_db_session.refresh(child)
+    await test_db_session.refresh(delegation)
+    await test_db_session.refresh(approval)
+    await test_db_session.refresh(confirmation)
+    assert result["cancelled"] == 1
+    assert root.status == RunStatus.CANCELLED.value
+    assert root.final_response.startswith("Run cancelled.")
+    assert root.error_message is None
+    assert child.status == RunStatus.CANCELLED.value
+    assert delegation.status == RunStatus.CANCELLED.value
+    assert delegation.pending_approval_id is None
+    assert approval.status == "rejected"
+    assert confirmation.status == "rejected"
+    messages = list((await test_db_session.scalars(
+        select(MessageModel).where(MessageModel.session_id == root.session_id)
+    )).all())
+    assert {message.role for message in messages} == {"user", "assistant"}
+    assert next(message.content for message in messages if message.role == "assistant") == root.final_response
+    recovery_event = await test_db_session.scalar(
+        select(RunEventModel).where(
+            RunEventModel.run_id == root.id,
+            RunEventModel.event_type == "run_recovered",
+        )
+    )
+    assert recovery_event.payload == {"recovery_action": "cancelled", "source": "cancel_request"}
 
 
 @pytest.mark.asyncio
