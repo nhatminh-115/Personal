@@ -21,6 +21,14 @@ CHECKPOINT_DIRECTORY = "checkpoint"
 CHECKPOINT_DATABASE = "aura_checkpoints.db"
 WORKSPACE_ARCHIVE = "workspace.tar.gz"
 
+MAX_WORKSPACE_ARCHIVE_ENTRIES = 100_000
+MAX_WORKSPACE_MEMBER_BYTES = 2 * 1024**3
+MAX_WORKSPACE_TOTAL_BYTES = 8 * 1024**3
+MAX_BACKUP_ARCHIVE_ENTRIES = 5
+MAX_BACKUP_MEMBER_BYTES = 10 * 1024**3
+MAX_BACKUP_TOTAL_BYTES = 20 * 1024**3
+MAX_BACKUP_MANIFEST_BYTES = 1024 * 1024
+
 
 def _run_command(command: list[str], **kwargs) -> subprocess.CompletedProcess:
     return subprocess.run(command, **kwargs)
@@ -48,18 +56,44 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _sha256_stream(stream: BinaryIO) -> str:
+def _consume_archive_member(
+    archive: tarfile.TarFile,
+    member: tarfile.TarInfo,
+    *,
+    output: BinaryIO | None = None,
+    capture: bool = False,
+) -> tuple[str, bytes | None]:
+    """Read one declared tar member in bounded chunks while optionally hashing/copying it."""
+    source = archive.extractfile(member)
+    if source is None:
+        raise ValueError(f"Backup archive entry cannot be read: {member.name}")
     digest = hashlib.sha256()
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        digest.update(chunk)
-    return digest.hexdigest()
-
+    captured = bytearray() if capture else None
+    remaining = member.size
+    with source:
+        while remaining:
+            chunk = source.read(min(1024 * 1024, remaining))
+            if not chunk:
+                raise ValueError(f"Backup archive entry is truncated: {member.name}")
+            remaining -= len(chunk)
+            digest.update(chunk)
+            if output is not None:
+                output.write(chunk)
+            if captured is not None:
+                captured.extend(chunk)
+    return digest.hexdigest(), bytes(captured) if captured is not None else None
 
 def _validate_workspace_archive(archive_path: Path) -> None:
-    """Reject unsafe or unsupported entries before a workspace archive can be restored."""
-    with tarfile.open(archive_path, "r:gz") as archive:
-        seen: dict[str, bool] = {}
-        for member in archive.getmembers():
+    """Reject unsafe, oversized, or unsupported entries before workspace restore."""
+    seen: dict[str, bool] = {}
+    total_bytes = 0
+    with tarfile.open(archive_path, "r|gz") as archive:
+        while True:
+            member = archive.next()
+            if member is None:
+                break
+            if len(seen) >= MAX_WORKSPACE_ARCHIVE_ENTRIES:
+                raise ValueError("Workspace backup contains too many entries")
             name = member.name
             path = PurePosixPath(name)
             if (
@@ -72,25 +106,36 @@ def _validate_workspace_archive(archive_path: Path) -> None:
                 or name in seen
             ):
                 raise ValueError("Workspace backup contains an unsafe or duplicate path")
-            if not (member.isfile() or member.isdir()):
+            if not (member.isfile() or member.isdir()) or member.issparse():
                 raise ValueError("Workspace backup entries must be regular files or directories")
+            if member.size < 0 or member.size > MAX_WORKSPACE_MEMBER_BYTES:
+                raise ValueError("Workspace backup file exceeds the size limit")
+            if member.isdir() and member.size != 0:
+                raise ValueError("Workspace backup directories cannot contain payload data")
+            if member.isfile():
+                total_bytes += member.size
+                if total_bytes > MAX_WORKSPACE_TOTAL_BYTES:
+                    raise ValueError("Workspace backup exceeds the expanded size limit")
             seen[name] = member.isdir()
 
-        for name in seen:
-            parent = PurePosixPath(name).parent
-            while parent != PurePosixPath("."):
-                parent_name = parent.as_posix()
-                if parent_name in seen and not seen[parent_name]:
-                    raise ValueError("Workspace backup path is nested beneath a regular file")
-                parent = parent.parent
+    for name in seen:
+        parent = PurePosixPath(name).parent
+        while parent != PurePosixPath("."):
+            parent_name = parent.as_posix()
+            if parent_name in seen and not seen[parent_name]:
+                raise ValueError("Workspace backup path is nested beneath a regular file")
+            parent = parent.parent
 
 
 def extract_workspace_archive(archive_path: Path, destination: Path) -> None:
     """Extract a validated workspace archive without tarfile's path-based extraction."""
     _validate_workspace_archive(archive_path)
     destination.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, "r:gz") as archive:
-        for member in archive.getmembers():
+    with tarfile.open(archive_path, "r|gz") as archive:
+        while True:
+            member = archive.next()
+            if member is None:
+                break
             target = destination.joinpath(*PurePosixPath(member.name).parts)
             if member.isdir():
                 target.mkdir(parents=True, exist_ok=True)
@@ -100,68 +145,101 @@ def extract_workspace_archive(archive_path: Path, destination: Path) -> None:
             source = archive.extractfile(member)
             if source is None:
                 raise ValueError(f"Workspace backup file cannot be read: {member.name}")
+            remaining = member.size
             with source, target.open("xb") as output:
-                shutil.copyfileobj(source, output)
+                while remaining:
+                    chunk = source.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError(f"Workspace backup file is truncated: {member.name}")
+                    output.write(chunk)
+                    remaining -= len(chunk)
             target.chmod((member.mode & 0o777) | 0o600)
 
 
 def verify_backup(archive_path: Path) -> dict:
-    """Validate archive structure and every payload checksum without extracting files."""
-    with tarfile.open(archive_path, "r:gz") as archive:
-        members = archive.getmembers()
-        allowed = {
-            "manifest.json",
-            "postgres.dump",
-            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
-            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}-wal",
-            WORKSPACE_ARCHIVE,
-        }
-        by_name = {member.name: member for member in members}
-        if len(by_name) != len(members) or set(by_name) - allowed:
-            raise ValueError("Backup contains duplicate or unexpected archive paths")
-        if "manifest.json" not in by_name:
+    """Validate a bounded backup stream and every payload checksum without extracting files."""
+    allowed = {
+        "manifest.json",
+        "postgres.dump",
+        f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
+        f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}-wal",
+        WORKSPACE_ARCHIVE,
+    }
+    names: set[str] = set()
+    payload_hashes: dict[str, str] = {}
+    total_bytes = 0
+    manifest_bytes: bytes | None = None
+
+    with tempfile.TemporaryDirectory(prefix="aura-workspace-verify-") as temp_name:
+        workspace_path = Path(temp_name) / WORKSPACE_ARCHIVE
+        with tarfile.open(archive_path, "r|gz") as archive:
+            while True:
+                member = archive.next()
+                if member is None:
+                    break
+                if len(names) >= MAX_BACKUP_ARCHIVE_ENTRIES:
+                    raise ValueError("Backup contains too many archive entries")
+                name = member.name
+                if name not in allowed or name in names:
+                    raise ValueError("Backup contains duplicate or unexpected archive paths")
+                if not member.isfile() or member.issparse():
+                    raise ValueError("Backup entries must be regular files")
+                if member.size < 0:
+                    raise ValueError("Backup archive entry has an invalid size")
+                if name != "manifest.json" and member.size > MAX_BACKUP_MEMBER_BYTES:
+                    raise ValueError("Backup archive entry exceeds the size limit")
+                total_bytes += member.size
+                if total_bytes > MAX_BACKUP_TOTAL_BYTES:
+                    raise ValueError("Backup archive exceeds the total size limit")
+                names.add(name)
+
+                if name == "manifest.json":
+                    if member.size > MAX_BACKUP_MANIFEST_BYTES:
+                        raise ValueError("Backup manifest exceeds the size limit")
+                    _, manifest_bytes = _consume_archive_member(archive, member, capture=True)
+                    continue
+
+                output = workspace_path.open("xb") if name == WORKSPACE_ARCHIVE else None
+                try:
+                    if output is None:
+                        digest, _ = _consume_archive_member(archive, member)
+                    else:
+                        with output:
+                            digest, _ = _consume_archive_member(archive, member, output=output)
+                finally:
+                    if output is not None and not output.closed:
+                        output.close()
+                payload_hashes[name] = digest
+
+        if manifest_bytes is None:
             raise ValueError("Backup is missing a manifest")
-        if any(not member.isfile() for member in members):
-            raise ValueError("Backup entries must be regular files")
-        required = {
-            "manifest.json",
-            "postgres.dump",
-            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
-        }
-        manifest_stream = archive.extractfile(by_name["manifest.json"])
-        if manifest_stream is None:
-            raise ValueError("Backup manifest cannot be read")
-        manifest = json.load(manifest_stream)
+        manifest = json.loads(manifest_bytes)
         if not isinstance(manifest, dict):
             raise ValueError("Backup manifest must be a JSON object")
         format_version = manifest.get("format_version")
         if format_version not in {1, 2}:
             raise ValueError("Unsupported AURA backup format")
+        required = {
+            "manifest.json",
+            "postgres.dump",
+            f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_DATABASE}",
+        }
         if format_version == 2:
             required.add(WORKSPACE_ARCHIVE)
-        elif WORKSPACE_ARCHIVE in by_name:
+        elif WORKSPACE_ARCHIVE in names:
             raise ValueError("Workspace backup requires format version 2")
-        if not required <= set(by_name):
+        if not required <= names:
             raise ValueError("Backup is missing a required data store")
+        payload_names = names - {"manifest.json"}
         files = manifest.get("files")
-        payload_names = set(by_name) - {"manifest.json"}
         if not isinstance(files, dict) or set(files) != payload_names:
             raise ValueError("Backup manifest does not match its data files")
         for name in sorted(payload_names):
-            stream = archive.extractfile(by_name[name])
-            if stream is None or _sha256_stream(stream) != files[name]:
+            if payload_hashes.get(name) != files[name]:
                 raise ValueError(f"Backup checksum failed for {name}")
-        if WORKSPACE_ARCHIVE in by_name:
-            workspace_stream = archive.extractfile(by_name[WORKSPACE_ARCHIVE])
-            if workspace_stream is None:
-                raise ValueError("Workspace backup cannot be read")
-            with tempfile.TemporaryDirectory(prefix="aura-workspace-verify-") as temp_name:
-                workspace_path = Path(temp_name) / WORKSPACE_ARCHIVE
-                with workspace_path.open("xb") as workspace_file:
-                    shutil.copyfileobj(workspace_stream, workspace_file)
-                _validate_workspace_archive(workspace_path)
+        if WORKSPACE_ARCHIVE in names:
+            _validate_workspace_archive(workspace_path)
         return manifest
-
 
 def list_backups(directory: Path) -> list[dict[str, str | int | None]]:
     """Inspect direct .tar.gz children without extracting or modifying archives."""

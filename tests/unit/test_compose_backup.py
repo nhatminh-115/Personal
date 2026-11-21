@@ -226,3 +226,39 @@ def test_backup_never_overwrites_an_existing_archive(tmp_path, monkeypatch):
 
     assert destination.read_bytes() == b"keep me"
     assert not calls
+
+
+def _write_workspace_archive(path, entries):
+    with tarfile.open(path, "w:gz") as archive:
+        for name, content in entries:
+            info = tarfile.TarInfo(name)
+            info.size = len(content)
+            archive.addfile(info, io.BytesIO(content))
+
+
+def test_workspace_archive_rejects_too_many_entries_before_extracting(tmp_path, monkeypatch):
+    archive = tmp_path / "many.tar.gz"
+    _write_workspace_archive(archive, [("one.txt", b""), ("two.txt", b"")])
+    monkeypatch.setattr(backup_compose, "MAX_WORKSPACE_ARCHIVE_ENTRIES", 1)
+
+    with pytest.raises(ValueError, match="too many entries"):
+        backup_compose._validate_workspace_archive(archive)
+
+
+def test_workspace_archive_rejects_expanded_payload_above_limit(tmp_path, monkeypatch):
+    archive = tmp_path / "expanded.tar.gz"
+    _write_workspace_archive(archive, [("large.txt", b"123456")])
+    monkeypatch.setattr(backup_compose, "MAX_WORKSPACE_TOTAL_BYTES", 5)
+
+    with pytest.raises(ValueError, match="expanded size limit"):
+        backup_compose._validate_workspace_archive(archive)
+
+
+def test_workspace_archive_rejects_single_oversized_file(tmp_path, monkeypatch):
+    archive = tmp_path / "single-large.tar.gz"
+    _write_workspace_archive(archive, [("large.txt", b"12345")])
+    monkeypatch.setattr(backup_compose, "MAX_WORKSPACE_MEMBER_BYTES", 4)
+
+    with pytest.raises(ValueError, match="file exceeds the size limit"):
+        backup_compose._validate_workspace_archive(archive)
+
