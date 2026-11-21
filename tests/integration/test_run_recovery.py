@@ -96,6 +96,40 @@ async def test_reconciles_terminal_checkpoint_without_replaying_graph(test_db_se
 
 
 @pytest.mark.asyncio
+async def test_recovers_started_legacy_chat_without_client_turn_id(test_db_session):
+    started = await _create_running_chat(
+        test_db_session,
+        run_id="recover-legacy-chat-started",
+        session_id="recover-legacy-chat-started-session",
+    )
+    started.client_turn_id = None
+    unstarted = RunModel(
+        id="recover-legacy-chat-unstarted",
+        session_id="recover-legacy-chat-unstarted-session",
+        user_message="This chat executor never started.",
+        status=RunStatus.RUNNING.value,
+    )
+    test_db_session.add(SessionModel(id=unstarted.session_id, title="Unstarted legacy chat", metadata_json={}))
+    test_db_session.add(unstarted)
+    await test_db_session.commit()
+
+    graph = SnapshotGraph({
+        started.id: SimpleNamespace(
+            values={"execution_status": RunStatus.RUNNING.value},
+            next=("execute_tool",),
+            tasks=(),
+        )
+    })
+    result = await recover_running_root_runs(test_db_session, graph=graph)
+
+    await test_db_session.refresh(started)
+    await test_db_session.refresh(unstarted)
+    assert result["interrupted"] == 1
+    assert started.status == RunStatus.FAILED.value
+    assert unstarted.status == RunStatus.RUNNING.value
+
+
+@pytest.mark.asyncio
 async def test_restores_waiting_approval_from_matching_checkpoint(test_db_session):
     run = await _create_running_chat(test_db_session, run_id="recover-approval", session_id="recover-approval-session")
     approval = ApprovalModel(
