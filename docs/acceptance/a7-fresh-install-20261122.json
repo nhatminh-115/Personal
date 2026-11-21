@@ -1,0 +1,69 @@
+{
+  "acceptance_scenario": "A7",
+  "completed_at": "2026-11-21T18:00:18Z",
+  "outcome": "PASS",
+  "source_commit": "aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36",
+  "environment": {
+    "installation": "Docker Compose from a fresh worktree of canonical main",
+    "compose_project": "aura-a7-v1-clean",
+    "database": "fresh PostgreSQL 16 volume; Alembic upgraded to head",
+    "api_image": "aura-app:ci",
+    "api_base_url": "http://127.0.0.1:18004",
+    "model_provider": "ollama",
+    "model": "aura-qwen3-coding:4b-8k",
+    "hosted_provider_calls": 0
+  },
+  "assertions": [
+    { "name": "fresh_postgres_migrations_and_api_readiness", "result": "PASS" },
+    { "name": "production_ui_shell_and_built_javascript_served", "result": "PASS", "ui_status": 200, "javascript_status": 200 },
+    { "name": "root_run_completed_with_live_local_inference", "result": "PASS" },
+    { "name": "coding_specialist_child_completed", "result": "PASS" },
+    { "name": "root_and_child_persist_exact_ollama_route_without_substitution", "result": "PASS" }
+  ],
+  "entities": {
+    "session_id": "f64b8171-1d2f-4153-b997-6175d4453b2a",
+    "root_run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf",
+    "child_run_id": "44a5d7b5-f402-4449-a88e-0390dda03b4a",
+    "delegation_id": "9e8dfc13-b4f5-491c-b296-cf3296974f04"
+  },
+  "routing_decisions": [
+    {
+      "event_id": "dad6f3dd-252e-4c15-9fbc-ed6d0701f5f5",
+      "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf",
+      "agent_role": "root",
+      "provider": "ollama",
+      "model": "aura-qwen3-coding:4b-8k",
+      "winning_scope": "message"
+    },
+    {
+      "event_id": "89e97d82-8037-443d-8950-0ad8c76f061c",
+      "run_id": "44a5d7b5-f402-4449-a88e-0390dda03b4a",
+      "agent_role": "coding",
+      "provider": "ollama",
+      "model": "aura-qwen3-coding:4b-8k",
+      "winning_scope": "message"
+    },
+    {
+      "event_id": "1208f4cc-862c-4bd7-91c1-b5d6726c55dd",
+      "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf",
+      "agent_role": "root",
+      "provider": "ollama",
+      "model": "aura-qwen3-coding:4b-8k",
+      "winning_scope": "message"
+    }
+  ],
+  "events": [
+    { "event_id": "a2b2ba3f-9116-40c5-bd4d-4505464fdb65", "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf", "event_type": "routing_profile_resolved" },
+    { "event_id": "b40407cf-85c3-4d94-a236-7d8c118d958a", "run_id": "44a5d7b5-f402-4449-a88e-0390dda03b4a", "event_type": "routing_profile_resolved" },
+    { "event_id": "7013fb13-eccc-4386-a273-cc232979930d", "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf", "event_type": "delegation_started" },
+    { "event_id": "a7dd11da-99bd-4b11-b8c2-126e777d6c2b", "run_id": "44a5d7b5-f402-4449-a88e-0390dda03b4a", "event_type": "run_completed" },
+    { "event_id": "2a4e68f3-6f74-4b4f-8688-7496386b7238", "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf", "event_type": "delegation_completed" },
+    { "event_id": "e57e87c7-3ec8-46ca-92a5-be1a68261426", "run_id": "7b47edb9-9879-4899-8e27-82ae72f24eaf", "event_type": "run_completed" }
+  ],
+  "ci": {
+    "workflow_run_id": 44931924075,
+    "job_id": 136930207418,
+    "tested_pull_request_head": "ff0c025ca9aeb1123e4bc92dcd853f34857760e9",
+    "result": "PASS"
+  }
+}

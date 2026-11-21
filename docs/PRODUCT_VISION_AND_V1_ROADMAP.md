@@ -1,8 +1,8 @@
 # AURA Product Vision and AURA Personal v1 Roadmap
 
 **Document status:** Canonical product direction and proposed release contract  
-**Last updated:** 2026-11-21  
-**Repository baseline reviewed:** `main` at `cf64f3435b03210f72c40a70ca3158d41362bfcb`  
+**Last updated:** 2026-11-22
+**Repository baseline reviewed:** `main` at `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`
 **Target:** AURA Personal v1
 
 This document defines what AURA is being built to become, the product objectives that matter, and the finite acceptance criteria for calling the first personal release complete. It is the source of truth for product intent and release scope. It does not replace technical architecture documents, ADRs, API contracts, or the live-dogfooding instructions.
@@ -139,7 +139,7 @@ Current implementation includes a provider-neutral ModelRouter, typed routing co
 - Fallback and cloud transfer behavior follow the user's effective policy and required confirmation flow.
 - At least one user-configured local or hosted inference provider completes a representative root workflow and a specialist workflow without an undocumented fallback.
 
-**Baseline status:** Routing and capability controls are implemented. The routing-constraints live preview has been exercised; a preview that makes zero model calls is not proof of a completed live inference workflow.
+**Baseline status:** Routing and capability controls are implemented. A7 passed on 2026-11-22: a clean Compose deployment completed live root and Coding Specialist runs with persisted `ollama:aura-qwen3-coding:4b-8k` decisions for both roles. The sanitized report is [`docs/acceptance/a7-fresh-install-20261122.json`](acceptance/a7-fresh-install-20261122.json). Privacy-boundary acceptance remains separately recorded under A5.
 
 ### O3 — Unified persistent workspace
 
@@ -222,7 +222,7 @@ Current implementation includes capability permissions, approval gates, a constr
 - The user can inspect what AURA used, what it changed, what it did not do, and what still requires approval.
 - No release-blocking data-loss, privacy-boundary, authorization, or duplicate-execution defect remains open.
 
-**Baseline status:** The main surfaces and substantial automated coverage exist. The product-level end-to-end acceptance pass is not yet complete.
+**Baseline status:** A1, A3–A8 have recorded acceptance passes. A7 passed on 2026-11-22 with a fresh Compose PostgreSQL volume, served production UI, and completed local root-to-specialist inference. A2 remains the outstanding workflow before the product-level release review.
 
 ---
 
@@ -230,16 +230,16 @@ Current implementation includes capability permissions, approval gates, a constr
 
 These scenarios are the release evidence. A green CI run is necessary but not sufficient.
 
-| ID | Scenario | Required evidence |
+| ID | Scenario | Required evidence | Current outcome |
 | --- | --- | --- |
-| A1 | Project continuity | Create a project, link a Note, start a chat with selected context, inspect the preview/provenance, restart the service, reopen the project, and verify persisted state and scope. |
-| A2 | Research to learning | Run live Research, inspect source/evidence/claim lineage, confirm verification gates, start Study from a verified claim, create/review a card, and verify its persisted schedule and source link. |
-| A3 | Governed agent execution | Run a bounded specialist task in the sandbox, request a consequential write, verify approval is required, approve or reject it, and inspect the persisted result and safe execution trace. |
-| A4 | Automation recovery | Trigger a scheduled or webhook routine, exercise duplicate delivery, approval, cancellation or retry, restart at a meaningful boundary, and verify that history and event/run identity remain consistent. |
-| A5 | Privacy boundary | Attempt representative local-only/confidential workflows and verify disallowed cloud model, embedding, research, and tool calls are blocked before invocation. Verify explicit file-text transfer and cloud confirmation behavior. |
-| A6 | Backup and restore | Create a backup using the documented deployment-specific procedure, restore into a clean environment, and verify the database, checkpoints, workspace files, and representative user data. |
-| A7 | Fresh installation and live inference | Follow the documented setup from a clean checkout, verify readiness and UI access, configure one supported provider, and complete one root plus one specialist workflow without silent provider substitution. |
-| A8 | Everyday workspace use | Use Notes, Library, Study, Projects, and Automations with saved data; reload the UI and confirm pagination, search, conflicts, and recovery states remain understandable. |
+| A1 | Project continuity | Create a project, link a Note, start a chat with selected context, inspect the preview/provenance, restart the service, reopen the project, and verify persisted state and scope. | **PASS** — [`a1-project-continuity-20261121.json`](acceptance/a1-project-continuity-20261121.json) |
+| A2 | Research to learning | Run live Research, inspect source/evidence/claim lineage, confirm verification gates, start Study from a verified claim, create/review a card, and verify its persisted schedule and source link. | **INCOMPLETE** — full live Research-to-Study/card/review flow still needs acceptance evidence. |
+| A3 | Governed agent execution | Run a bounded specialist task in the sandbox, request a consequential write, verify approval is required, approve or reject it, and inspect the persisted result and safe execution trace. | **PASS** — [`a3-governed-execution-20261121.json`](acceptance/a3-governed-execution-20261121.json) |
+| A4 | Automation recovery | Trigger a scheduled or webhook routine, exercise duplicate delivery, approval, cancellation or retry, restart at a meaningful boundary, and verify that history and event/run identity remain consistent. | **PASS** — [`a4-automation-recovery-20261121.json`](acceptance/a4-automation-recovery-20261121.json) |
+| A5 | Privacy boundary | Attempt representative local-only/confidential workflows and verify disallowed cloud model, embedding, research, and tool calls are blocked before invocation. Verify explicit file-text transfer and cloud confirmation behavior. | **PASS** — [`a5-privacy-boundary-20261121.json`](acceptance/a5-privacy-boundary-20261121.json) |
+| A6 | Backup and restore | Create a backup using the documented deployment-specific procedure, restore into a clean environment, and verify the database, checkpoints, workspace files, and representative user data. | **PASS** — [`a6-clean-restore-20261121.json`](acceptance/a6-clean-restore-20261121.json) |
+| A7 | Fresh installation and live inference | Follow the documented setup from a clean checkout, verify readiness and UI access, configure one supported provider, and complete one root plus one specialist workflow without silent provider substitution. | **PASS** — [`a7-fresh-install-20261122.json`](acceptance/a7-fresh-install-20261122.json) |
+| A8 | Everyday workspace use | Use Notes, Library, Study, Projects, and Automations with saved data; reload the UI and confirm pagination, search, conflicts, and recovery states remain understandable. | **PASS** — [`a8-everyday-workspace-20261121.json`](acceptance/a8-everyday-workspace-20261121.json) |
 
 For each scenario, retain a sanitized report containing run IDs, event IDs, selected route metadata, acceptance assertions, and outcomes. Do not store prompts, secrets, raw source text, or model responses in the report unless a separate, explicit debugging process requires them and the data is protected.
 
@@ -249,8 +249,9 @@ The current [Live Dogfooding](dogfooding.md) report records:
 
 - **Project memory retrieval — passed:** a local Ollama run retrieved the target project's two-person-review/rollback rule and excluded a foreign-project decoy.
 - **Research Context Bridge merge — passed:** a local Ollama run delegated to Research, persisted a verified claim, created a durable Context Bridge, and compiled a fresh chat using that Bridge as its only selected object.
+- **Fresh installation and live inference (A7) — passed:** a fresh Docker Compose project migrated a new PostgreSQL volume, served the production UI, and completed a root-to-Coding-Specialist workflow. Both runs persisted the exact local Ollama model selection; no hosted provider was called. See [`docs/acceptance/a7-fresh-install-20261122.json`](acceptance/a7-fresh-install-20261122.json).
 - **Routing constraints preview — passed:** local-only/cloud-allowed preview policies were preserved and the preview made zero model calls. This is policy-preview evidence, not live inference evidence.
-- **Research prior-art investigation — not yet recorded as passed:** the live script exists, but requires a configured model and live research providers/network access.
+- **Research to learning (A2) — incomplete:** earlier live Research/Context Bridge dogfood proves a verified claim can be created, but the complete Study session, learning card, review schedule, and source-link chain still need one end-to-end report.
 - **Coding impact / CodeGraph — not run:** the optional CodeGraph provider is not installed or configured. It must not be installed automatically and is not a v1 blocker.
 
 Do not convert “script exists,” “preflight succeeded,” “CI passed,” or “scenario did not run” into a live acceptance pass.
