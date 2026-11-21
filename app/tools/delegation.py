@@ -38,6 +38,7 @@ class DelegateTaskTool(Tool):
             "Delegate a scoped, specialized sub-task to an authorized specialist agent "
             "(e.g., 'coding' for inspecting code, running tests, diagnosing, and editing; "
             "'research' for literature review, finding prior art, reading paper methods, and extracting grounded evidence). "
+            "Project scope and effective privacy/fallback policy are inherited from the active root run, not tool arguments. "
             "Only available to the Personal Orchestrator."
         )
 
@@ -61,12 +62,7 @@ class DelegateTaskTool(Tool):
                 },
                 "task_description": {
                     "type": "string",
-                    "description": "Detailed description of the task for the specialist.",
-                },
-                "context": {
-                    "type": "object",
-                    "description": "Optional additional task parameters or project metadata.",
-                    "default": {},
+                    "description": "Scoped sub-task for the specialist; project scope and routing policy come from the runtime.",
                 },
             },
             "required": ["specialist_name", "task_description"],
@@ -80,8 +76,6 @@ class DelegateTaskTool(Tool):
         """Invoke specialist agent via delegation runtime."""
         specialist_name = input_data.get("specialist_name")
         task_description = input_data.get("task_description")
-        extra_ctx = input_data.get("context") or {}
-
         if not specialist_name or not task_description:
             return ToolResult(
                 success=False,
@@ -98,13 +92,14 @@ class DelegateTaskTool(Tool):
                 error="Database session required for delegation execution.",
             )
 
-        merged_context = dict(ctx.get("metadata") or {})
-        merged_context.update(extra_ctx)
+        # Model-generated tool arguments must never override routing or project scope.
+        delegated_context = dict(ctx.get("metadata") or {})
+        delegated_context["project_name"] = ctx.get("project_name")
 
         req = DelegationRequest(
             specialist_name=specialist_name,
             task_description=task_description,
-            context=merged_context,
+            context=delegated_context,
             parent_run_id=ctx.get("run_id", "unknown-parent"),
             parent_tool_call_id=ctx.get("tool_call_id"),
             session_id=ctx.get("session_id", "unknown-session"),
