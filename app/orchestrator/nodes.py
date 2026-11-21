@@ -1050,6 +1050,9 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                     "research_state": state.get("research_state"),
                     "metadata": state.get("metadata"),
                 }
+                if tool_name == "delegate_task":
+                    # Delegation scope is authoritative runtime context, never a model argument.
+                    tool_context["project_name"] = state.get("project_name")
                 result = await tool.execute(tool_input, context=tool_context)
                 error_cat = None
                 if not result.success:
