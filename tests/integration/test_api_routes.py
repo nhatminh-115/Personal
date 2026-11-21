@@ -162,6 +162,55 @@ async def test_chat_provider_failure_is_classified_and_redacted(
 
 
 @pytest.mark.asyncio
+async def test_chat_unexpected_graph_failure_is_redacted(async_client, test_db_session, monkeypatch):
+    from unittest.mock import MagicMock
+
+    diagnostic = "private database endpoint postgres://user:secret@db.internal/aura"
+
+    class FailingGraph:
+        async def ainvoke(self, *_args, **_kwargs):
+            raise RuntimeError(diagnostic)
+
+    async def get_failing_graph():
+        return FailingGraph()
+
+    log_error = MagicMock()
+    monkeypatch.setattr("app.api.routes.chat.get_compiled_graph", get_failing_graph)
+    monkeypatch.setattr("app.api.routes.chat.logger.error", log_error)
+
+    response = await async_client.post("/v1/chat", json={
+        "session_id": "internal-failure-session",
+        "project_name": "Internal Failure Project",
+        "message": "Test unexpected failure handling.",
+    })
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "detail": "Agent execution failed because an internal error occurred."
+    }
+    assert diagnostic not in response.text
+
+    run = await test_db_session.scalar(
+        select(RunModel)
+        .where(RunModel.session_id == "internal-failure-session")
+        .order_by(RunModel.created_at.desc(), RunModel.id.desc())
+    )
+    assert run is not None and run.status == "failed"
+    assert run.error_message == "Internal execution error."
+    assert diagnostic not in run.error_message
+    event = await test_db_session.scalar(
+        select(RunEventModel).where(
+            RunEventModel.run_id == run.id,
+            RunEventModel.event_type == "run_failed",
+        )
+    )
+    assert event is not None and event.payload == {"error_category": "graph_failure"}
+    assert diagnostic not in str(log_error.call_args)
+    assert log_error.call_args.kwargs["extra"]["details"]["exception_type"] == "RuntimeError"
+    assert not log_error.call_args.kwargs.get("exc_info", False)
+
+
+@pytest.mark.asyncio
 async def test_session_hydration_returns_sanitized_context_manifest(async_client: AsyncClient):
     object_response = await async_client.post("/v1/workspace/projects/aura/objects", json={
         "object_type": "manual_note",
@@ -639,3 +688,4 @@ async def test_run_inspector_rejects_invalid_event_cursor(async_client: AsyncCli
 
     response = await async_client.get(f"/v1/runs/{run_id}?cursor=invalid")
     assert response.status_code == 422
+
