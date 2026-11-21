@@ -22,7 +22,17 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.settings import settings
-from scripts.backup_compose import _validate_workspace_archive, extract_workspace_archive
+from scripts.backup_compose import (
+    MAX_BACKUP_MANIFEST_BYTES,
+    MAX_BACKUP_MEMBER_BYTES,
+    MAX_BACKUP_TOTAL_BYTES,
+    MAX_WORKSPACE_ARCHIVE_ENTRIES,
+    MAX_WORKSPACE_MEMBER_BYTES,
+    MAX_WORKSPACE_TOTAL_BYTES,
+    _consume_archive_member,
+    _validate_workspace_archive,
+    extract_workspace_archive,
+)
 
 
 DATABASE_FILE = "database.sqlite"
@@ -31,6 +41,7 @@ CHECKPOINT_FILE = "aura_checkpoints.db"
 WORKSPACE_FILE = "workspace.tar.gz"
 MANIFEST_FILE = "manifest.json"
 FORMAT_VERSION = 1
+MAX_LOCAL_BACKUP_ARCHIVE_ENTRIES = 4
 
 
 def _sha256(path: Path) -> str:
@@ -87,35 +98,91 @@ def _snapshot_sqlite(source: Path, destination: Path) -> None:
 def _archive_workspace(source: Path, destination: Path) -> None:
     if not source.is_dir():
         raise NotADirectoryError(f"Workspace directory does not exist: {source}")
+    paths: list[Path] = []
+    for path in source.rglob("*"):
+        if len(paths) >= MAX_WORKSPACE_ARCHIVE_ENTRIES:
+            raise ValueError("Workspace backup contains too many entries")
+        paths.append(path)
+
+    total_bytes = 0
     with tarfile.open(destination, "w:gz") as archive:
-        for path in sorted(source.rglob("*"), key=lambda item: item.relative_to(source).as_posix()):
+        for path in sorted(paths, key=lambda item: item.relative_to(source).as_posix()):
             if path.is_symlink():
                 raise ValueError("Local workspace backup does not support symbolic links")
-            if path.is_dir() or path.is_file():
+            if path.is_dir():
+                archive.add(path, arcname=path.relative_to(source).as_posix(), recursive=False)
+            elif path.is_file():
+                size = path.stat().st_size
+                if size > MAX_WORKSPACE_MEMBER_BYTES:
+                    raise ValueError("Workspace backup file exceeds the size limit")
+                total_bytes += size
+                if total_bytes > MAX_WORKSPACE_TOTAL_BYTES:
+                    raise ValueError("Workspace backup exceeds the expanded size limit")
                 archive.add(path, arcname=path.relative_to(source).as_posix(), recursive=False)
             else:
                 raise ValueError("Local workspace contains a non-regular filesystem entry")
     _validate_workspace_archive(destination)
 
-
 def verify_backup(archive_path: Path) -> dict:
-    with tarfile.open(archive_path, "r:gz") as archive:
-        members = archive.getmembers()
+    names: set[str] = set()
+    payload_hashes: dict[str, str] = {}
+    total_bytes = 0
+    manifest_bytes: bytes | None = None
+    with tempfile.TemporaryDirectory(prefix="aura-local-verify-") as temp_name:
+        workspace_path = Path(temp_name) / WORKSPACE_FILE
+        with tarfile.open(archive_path, "r|gz") as archive:
+            while True:
+                member = archive.next()
+                if member is None:
+                    break
+                if len(names) >= MAX_LOCAL_BACKUP_ARCHIVE_ENTRIES:
+                    raise ValueError("Local backup contains too many archive entries")
+                name = member.name
+                if name not in {
+                    MANIFEST_FILE,
+                    DATABASE_FILE,
+                    f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_FILE}",
+                    WORKSPACE_FILE,
+                } or name in names:
+                    raise ValueError("Local backup contains missing, duplicate, or unexpected files")
+                if not member.isfile() or member.issparse():
+                    raise ValueError("Local backup entries must be regular files")
+                if member.size < 0 or member.size > MAX_BACKUP_MEMBER_BYTES:
+                    raise ValueError("Local backup entry exceeds the size limit")
+                total_bytes += member.size
+                if total_bytes > MAX_BACKUP_TOTAL_BYTES:
+                    raise ValueError("Local backup exceeds the total size limit")
+                names.add(name)
+
+                if name == MANIFEST_FILE:
+                    if member.size > MAX_BACKUP_MANIFEST_BYTES:
+                        raise ValueError("Local backup manifest exceeds the size limit")
+                    _, manifest_bytes = _consume_archive_member(archive, member, capture=True)
+                    continue
+
+                output = workspace_path.open("xb") if name == WORKSPACE_FILE else None
+                try:
+                    if output is None:
+                        digest, _ = _consume_archive_member(archive, member)
+                    else:
+                        with output:
+                            digest, _ = _consume_archive_member(archive, member, output=output)
+                finally:
+                    if output is not None and not output.closed:
+                        output.close()
+                payload_hashes[name] = digest
+
+        if manifest_bytes is None:
+            raise ValueError("Local backup contains missing, duplicate, or unexpected files")
+        manifest = json.loads(manifest_bytes)
         allowed = {
             MANIFEST_FILE,
             DATABASE_FILE,
             f"{CHECKPOINT_DIRECTORY}/{CHECKPOINT_FILE}",
             WORKSPACE_FILE,
         }
-        by_name = {member.name: member for member in members}
-        if len(by_name) != len(members) or set(by_name) != allowed:
+        if names != allowed:
             raise ValueError("Local backup contains missing, duplicate, or unexpected files")
-        if any(not member.isfile() for member in members):
-            raise ValueError("Local backup entries must be regular files")
-        manifest_stream = archive.extractfile(by_name[MANIFEST_FILE])
-        if manifest_stream is None:
-            raise ValueError("Local backup manifest cannot be read")
-        manifest = json.load(manifest_stream)
         if not isinstance(manifest, dict) or manifest.get("format_version") != FORMAT_VERSION:
             raise ValueError("Unsupported local AURA backup format")
         payload_names = allowed - {MANIFEST_FILE}
@@ -123,20 +190,10 @@ def verify_backup(archive_path: Path) -> dict:
         if not isinstance(hashes, dict) or set(hashes) != payload_names:
             raise ValueError("Local backup manifest does not match its data files")
         for name in sorted(payload_names):
-            stream = archive.extractfile(by_name[name])
-            if stream is None or _sha256_stream(stream) != hashes[name]:
+            if payload_hashes.get(name) != hashes[name]:
                 raise ValueError(f"Local backup checksum failed for {name}")
-
-        workspace_stream = archive.extractfile(by_name[WORKSPACE_FILE])
-        if workspace_stream is None:
-            raise ValueError("Local workspace snapshot cannot be read")
-        with tempfile.TemporaryDirectory(prefix="aura-local-verify-") as temp_name:
-            workspace_path = Path(temp_name) / WORKSPACE_FILE
-            with workspace_path.open("xb") as output:
-                shutil.copyfileobj(workspace_stream, output)
-            _validate_workspace_archive(workspace_path)
+        _validate_workspace_archive(workspace_path)
         return manifest
-
 
 def create_backup(destination: Path, *, api_stopped: bool = False) -> Path:
     if not api_stopped:
