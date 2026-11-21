@@ -709,6 +709,14 @@ async def test_optional_api_bearer_token_protects_routes_but_leaves_probes_publi
         }
     }
     assert missing.headers["www-authenticate"] == "Bearer"
+    assert missing.headers["cache-control"] == "no-store"
+
+    authorized_missing = await async_client.get(
+        "/v1/not-a-route",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert authorized_missing.status_code == 404
+    assert authorized_missing.headers["cache-control"] == "no-store"
 
     wrong = await async_client.get("/v1/not-a-route", headers={"Authorization": "Bearer wrong"})
     assert wrong.status_code == 401
@@ -742,6 +750,7 @@ async def test_api_authentication_allows_cors_preflight_without_token(async_clie
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import approvals, automations, capabilities, chat, memory, models, runs, sessions, routing, routing_confirmations, study, workspace
-from app.api.middleware import ApiTokenAuthenticationMiddleware, RequestBodyLimitMiddleware
+from app.api.middleware import ApiNoStoreMiddleware, ApiTokenAuthenticationMiddleware, RequestBodyLimitMiddleware
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -123,6 +123,8 @@ def create_app() -> FastAPI:
         allow_headers=["Content-Type", "Authorization", "X-Aura-Event-Id"],
         expose_headers=["X-Next-Cursor"],
     )
+    # Keep this outermost so it also covers auth, CORS, and body-limit responses.
+    app.add_middleware(ApiNoStoreMiddleware)
 
     # Register Routers
     app.include_router(chat.router)
