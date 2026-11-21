@@ -36,6 +36,32 @@ async def test_working_memory_messages(test_db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_save_message_can_join_the_callers_transaction(test_db_session: AsyncSession, monkeypatch):
+    mem_service = SQLMemoryService(test_db_session)
+    await mem_service.get_or_create_session("sess-managed-transaction")
+
+    commit_called = False
+    original_commit = test_db_session.commit
+
+    async def track_commit():
+        nonlocal commit_called
+        commit_called = True
+        await original_commit()
+
+    monkeypatch.setattr(test_db_session, "commit", track_commit)
+    await mem_service.save_message(
+        "sess-managed-transaction",
+        role="assistant",
+        content="A transaction-owned response.",
+        commit=False,
+    )
+
+    assert commit_called is False
+    await test_db_session.rollback()
+    assert await mem_service.get_session_messages("sess-managed-transaction") == []
+
+
+@pytest.mark.asyncio
 async def test_episodic_memory(test_db_session: AsyncSession):
     mem_service = SQLMemoryService(test_db_session)
     session_id = "sess-epi"

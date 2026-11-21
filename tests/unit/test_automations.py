@@ -1043,6 +1043,81 @@ async def test_automation_history_reports_interrupted_event_run(async_client, te
 
 
 @pytest.mark.asyncio
+async def test_lost_event_executor_cancellation_is_finalized_and_visible_in_history(
+    async_client, test_db_session, monkeypatch
+):
+    from unittest.mock import AsyncMock
+    from app.api.run_recovery import recover_running_root_runs
+
+    automation_id = "cancel-recovery-automation"
+    event_id = "cancel-recovery-event"
+    run_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aura-event-run:{event_id}"))
+    session_id = "cancel-recovery-session"
+    message = "Stop the interrupted automation."
+    payload = {"session_id": session_id, "message": message, "automation_id": automation_id}
+    event = AURAEvent(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        source="automation",
+        payload=payload,
+        correlation_id=automation_id,
+    )
+    test_db_session.add(ScheduledJobModel(
+        id=automation_id,
+        name="Cancellation recovery",
+        job_type=JobType.RECURRING.value,
+        schedule_expression="3600",
+        payload_json={"message": message},
+        is_active=True,
+        next_run_at=utc_now() + timedelta(hours=1),
+        metadata_json={"kind": "automation"},
+    ))
+    test_db_session.add(EventRecordModel(
+        id=event_id,
+        event_type=EventType.TIMER_FIRED.value,
+        source="automation",
+        payload_json=payload,
+        status=EventStatus.PROCESSING.value,
+        correlation_id=automation_id,
+        idempotency_key="cancel-recovery-key",
+    ))
+    test_db_session.add(SessionModel(id=session_id))
+    test_db_session.add(RunModel(
+        id=run_id,
+        session_id=session_id,
+        status=RunStatus.RUNNING.value,
+        user_message=message,
+        cancel_requested_at=utc_now(),
+        routing_snapshot_json={"privacy_policy": "local_only"},
+    ))
+    test_db_session.add(RunEventModel(
+        run_id=run_id,
+        event_type="run_executor_started",
+        payload={"source": "event"},
+    ))
+    await test_db_session.commit()
+
+    graph = AsyncMock()
+    monkeypatch.setattr("app.events.dispatcher.get_compiled_graph", AsyncMock(return_value=graph))
+    factory = async_sessionmaker(test_db_session.bind, class_=AsyncSession, expire_on_commit=False)
+    retry = await EventToAgentBridge(session_factory=factory).handle_event(event)
+    assert retry == {"run_id": run_id, "execution_status": RunStatus.RUNNING.value}
+    assert graph.ainvoke.await_count == 0
+
+    class NoCheckpointReadGraph:
+        async def aget_state(self, _config):
+            raise AssertionError("lost cancellation recovery must not resume the graph")
+
+    recovery = await recover_running_root_runs(test_db_session, graph=NoCheckpointReadGraph())
+    assert recovery["cancelled"] == 1
+
+    history = await async_client.get(f"/v1/automations/{automation_id}/runs")
+    assert history.status_code == 200
+    assert history.json()[0]["run_id"] == run_id
+    assert history.json()[0]["status"] == RunStatus.CANCELLED.value
+
+
+@pytest.mark.asyncio
 async def test_event_bridge_serializes_duplicate_delivery_while_executor_is_active(test_db_session, monkeypatch):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock

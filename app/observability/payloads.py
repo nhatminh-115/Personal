@@ -47,7 +47,7 @@ def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
         }:
             safe["recovery_action"] = action
         source = payload.get("source")
-        if source == "terminal_checkpoint":
+        if source in {"terminal_checkpoint", "cancel_request"}:
             safe["source"] = source
         return safe
     if event_type == "run_interrupted":

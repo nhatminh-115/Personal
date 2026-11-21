@@ -48,8 +48,10 @@ class MemoryService(ABC):
         content: str,
         token_count: Optional[int] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        *,
+        commit: bool = True,
     ) -> MessageModel:
-        """Persist a conversation turn message."""
+        """Persist a conversation message, optionally leaving commit to the caller."""
         pass
 
     @abstractmethod

@@ -261,21 +261,20 @@ class EventToAgentBridge:
                     await db.refresh(existing_run)
                     if existing_run.status != RunStatus.RUNNING.value:
                         return {"run_id": run_id, "execution_status": existing_run.status}
-                    if existing_run.cancel_requested_at is None:
-                        executor_started = await db.scalar(
-                            select(RunEventModel.id)
-                            .where(
-                                RunEventModel.run_id == run_id,
-                                RunEventModel.event_type == "run_executor_started",
-                                RunEventModel.payload["source"].as_string() == "event",
-                            )
-                            .limit(1)
+                    executor_started = await db.scalar(
+                        select(RunEventModel.id)
+                        .where(
+                            RunEventModel.run_id == run_id,
+                            RunEventModel.event_type == "run_executor_started",
+                            RunEventModel.payload["source"].as_string() == "event",
                         )
-                        if executor_started is not None:
-                            # A previous executor may have completed a side effect
-                            # before its next graph checkpoint. Let root recovery
-                            # reconcile the saved checkpoint instead of replaying it.
-                            return {"run_id": run_id, "execution_status": existing_run.status}
+                        .limit(1)
+                    )
+                    if executor_started is not None:
+                        # A previous executor may have completed a side effect
+                        # before its next graph checkpoint. Let root recovery
+                        # reconcile the saved checkpoint instead of replaying it.
+                        return {"run_id": run_id, "execution_status": existing_run.status}
                 await trace_service.record_event(
                     run_id=run_id,
                     session_id=session_id,
