@@ -10,7 +10,7 @@ from app.api.schemas import (
     ModelProbeResponse,
     ProviderInfoResponse,
 )
-from app.models.discovery import model_discovery_service
+from app.models.discovery import model_discovery_service, public_provider_base_url
 from app.models.router import ModelRouter
 
 router = APIRouter(prefix="/v1/models", tags=["Models"])
@@ -39,7 +39,7 @@ def _build_catalog_response(catalog: ModelCatalogResponse, router_instance: Mode
                 label=p.label,
                 kind=p.kind,
                 available=p.available,
-                base_url=p.base_url,
+                base_url=public_provider_base_url(p.base_url),
                 models=[
                     ModelInfoResponse(
                         id=m.id,

@@ -9,6 +9,7 @@ from app.api.server import create_app
 from app.core.settings import settings
 from app.models.base import RoutingContext
 from app.models.discovery import (
+    ModelCatalogResponse,
     ModelDiscoveryService,
     ProviderEntry,
     infer_tool_support,
@@ -261,6 +262,46 @@ async def test_models_api_never_exposes_credentials():
                 assert m["tool_support"] in {"supported", "unsupported", "unknown"}
                 assert m.get("reasoning_support", "unknown") in {"instant", "low", "medium", "high", "max", "fixed_by_model", "unsupported", "unknown"}
                 assert "vision_support" in m and "structured_output_support" in m
+
+
+@pytest.mark.asyncio
+async def test_models_api_redacts_credentials_embedded_in_provider_base_urls(monkeypatch):
+    configured_url = (
+        "https://aura-user:private-password@model-host.internal/v1"
+        "?api_key=query-secret&region=us&access_token=access-secret"
+        "&X-Amz-Signature=sig-secret#private-fragment"
+    )
+    catalog = ModelCatalogResponse(providers=[ProviderEntry(
+        id="ollama",
+        label="Ollama",
+        kind="local",
+        available=False,
+        base_url=configured_url,
+        privacy_status="local",
+    )])
+    monkeypatch.setattr(
+        "app.api.routes.models.model_discovery_service.discover_all",
+        AsyncMock(return_value=catalog),
+    )
+    monkeypatch.setattr(
+        "app.api.routes.models.model_discovery_service.register_discovered_providers",
+        AsyncMock(return_value=catalog),
+    )
+
+    app = create_app()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/v1/models")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["providers"][0]["base_url"] == (
+        "https://model-host.internal/v1"
+        "?api_key=%5BREDACTED%5D&region=us&access_token=%5BREDACTED%5D"
+        "&X-Amz-Signature=%5BREDACTED%5D"
+    )
+    for secret in ("aura-user", "private-password", "query-secret", "access-secret", "sig-secret", "private-fragment"):
+        assert secret not in response.text
 
 
 @pytest.mark.asyncio
