@@ -88,7 +88,22 @@ class ApiTokenAuthenticationMiddleware:
             await self.app(scope, receive, send)
             return
 
-        if scope.get("path") in {"/health", "/ready"}:
+        path = scope.get("path", "")
+        if path in {"/health", "/ready"}:
+            await self.app(scope, receive, send)
+            return
+
+        path_parts = path.strip("/").split("/")
+        is_signed_automation_webhook = (
+            scope.get("method") == "POST"
+            and len(path_parts) == 5
+            and path_parts[0] == "v1"
+            and path_parts[1] == "automations"
+            and bool(path_parts[2])
+            and path_parts[3:] == ["webhook", "events"]
+        )
+        if is_signed_automation_webhook:
+            # The webhook handler validates its own per-automation bearer secret.
             await self.app(scope, receive, send)
             return
 
