@@ -1,8 +1,11 @@
 """ASGI middleware for rejecting oversized request bodies before parsing."""
 
 from collections.abc import Awaitable, Callable
+import hmac
 from typing import Any
 
+from pydantic import SecretStr
+from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 
 ASGIApp = Callable[
@@ -71,3 +74,52 @@ class RequestBodyLimitMiddleware:
             content={"detail": f"Request body exceeds the {self.max_body_bytes}-byte limit."},
         )
         await response(scope, receive, send)
+
+
+class ApiTokenAuthenticationMiddleware:
+    """Require a configured shared bearer token on every non-probe HTTP route."""
+
+    def __init__(self, app: ASGIApp, token_getter: Callable[[], SecretStr | str | None]) -> None:
+        self.app = app
+        self.token_getter = token_getter
+
+    async def __call__(self, scope: dict[str, Any], receive, send) -> None:
+        if scope["type"] != "http" or scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+
+        if scope.get("path") in {"/health", "/ready"}:
+            await self.app(scope, receive, send)
+            return
+
+        configured = self.token_getter()
+        expected = configured.get_secret_value() if isinstance(configured, SecretStr) else configured
+        if not isinstance(expected, str) or not expected:
+            await self.app(scope, receive, send)
+            return
+
+        authorization = Headers(scope=scope).get("authorization", "")
+        scheme, separator, supplied = authorization.partition(" ")
+        is_valid = (
+            separator == " "
+            and scheme.casefold() == "bearer"
+            and bool(supplied)
+            and supplied == supplied.strip()
+            and hmac.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8"))
+        )
+        if is_valid:
+            await self.app(scope, receive, send)
+            return
+
+        response = JSONResponse(
+            status_code=401,
+            content={
+                "detail": {
+                    "code": "api_auth_required",
+                    "message": "A valid API bearer token is required.",
+                }
+            },
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        await response(scope, receive, send)
+
