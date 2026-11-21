@@ -480,7 +480,7 @@ class MockModelProvider(ModelProvider):
                     finish_reason="tool_calls",
                 )
 
-        # If query asks about version/stack and system context contains it, reflect it in response
+        # Reflect version or stack facts found in retrieved reference context.
         if "what" in content.lower() and any(k in content.lower() for k in ["version", "stack", "language"]):
             reference_contexts = [
                 message.content
