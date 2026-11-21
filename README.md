@@ -155,11 +155,12 @@ The API and PostgreSQL ports in Docker Compose are also bound to loopback.
 default allows the local Vite origins only. By default, AURA is an unauthenticated
 single-user local service and should stay on loopback. For a deployment that
 accepts network requests, configure a strong shared `AURA_API_TOKEN` (at least
-32 characters) and TLS. When configured, the token protects API, OpenAPI, and
-documentation routes; `/health`, `/ready`, and CORS preflight remain available
-for probes and browser setup. The web app asks for the token and keeps it in the
-current tab's session storage. The shared token is an access gate, not separate
-user identity or project isolation. Requests with bodies larger than 10 MiB are
+32 characters) and TLS. When configured, the token protects API, OpenAPI, and documentation routes,
+except automation webhook URLs, which keep using their own per-automation bearer
+secrets. `/health`, `/ready`, and CORS preflight remain available for probes
+and browser setup. The web app asks for the token and keeps it in the current
+tab's session storage. The shared token is an access gate, not separate user
+identity or project isolation. Requests with bodies larger than 10 MiB are
 rejected with HTTP 413 before endpoint parsing.
 
 Before using sandbox execution, build the trusted local image once:
