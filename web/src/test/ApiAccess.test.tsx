@@ -70,6 +70,15 @@ describe('API access', () => {
 });
 
 describe('ApiAccessDialog', () => {
+  it('closes with Escape', () => {
+    const onClose = vi.fn();
+    render(<ApiAccessDialog open tokenConfigured={false} onClose={onClose} onSave={vi.fn()} />);
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('rejects a short token without passing it to the app', () => {
     const onSave = vi.fn();
     render(<ApiAccessDialog open tokenConfigured={false} onClose={vi.fn()} onSave={onSave} />);
