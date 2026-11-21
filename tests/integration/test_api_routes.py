@@ -253,7 +253,26 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
 async def test_explicit_local_file_text_requires_cloud_confirmation_and_stays_out_of_trace(
     async_client: AsyncClient,
     test_db_session,
+    monkeypatch,
 ):
+    import json
+    import os
+    from pathlib import Path
+
+    from app.models.mock_provider import MockModelProvider
+    from app.models.router import model_router
+
+    class CloudProviderSpy(MockModelProvider):
+        @property
+        def name(self):
+            return "openai"
+
+    cloud_provider = CloudProviderSpy()
+    providers = dict(model_router._providers)
+    providers["openai"] = cloud_provider
+    monkeypatch.setattr(model_router, "_providers", providers)
+    monkeypatch.setattr(model_router, "_default_provider_name", "openai")
+
     object_id = str(uuid.uuid4())
     private_file_text = "private selected file text marker"
     test_db_session.add_all([
@@ -278,11 +297,20 @@ async def test_explicit_local_file_text_requires_cloud_confirmation_and_stays_ou
         "context_attachments": [{"object_id": object_id, "text": private_file_text}],
     })
     assert response.status_code == 200
-    run_id = response.json()["run_id"]
+    response_data = response.json()
+    run_id = response_data["run_id"]
+    confirmation_id = response_data["routing_confirmation_id"]
+    assert response_data["status"] == "waiting_for_routing_confirmation"
+    assert confirmation_id
+    assert cloud_provider.call_history == []
     run = await test_db_session.get(RunModel, run_id)
     assert run is not None
     assert run.routing_snapshot_json["require_cloud_confirmation"] is True
     assert run.routing_snapshot_json["fallback_policy"] == "cloud_allowed"
+    confirmation = await test_db_session.get(RoutingConfirmationModel, confirmation_id)
+    assert confirmation is not None
+    assert confirmation.status == "pending"
+    assert confirmation.proposed_provider == "openai"
 
     graph = await get_compiled_graph()
     snapshot = await graph.aget_state({"configurable": {"thread_id": run_id}})
@@ -292,6 +320,57 @@ async def test_explicit_local_file_text_requires_cloud_confirmation_and_stays_ou
     events = list(event_result.scalars())
     assert any(event.event_type == "context_compiled" for event in events)
     assert all(private_file_text not in str(event.payload) for event in events)
+
+    rejected = await async_client.post(
+        f"/v1/routing-confirmations/{confirmation_id}/decision",
+        json={"decision": "rejected"},
+    )
+    assert rejected.status_code == 200
+    assert rejected.json()["execution_status"] == "cancelled"
+    assert cloud_provider.call_history == []
+
+    event_result = await test_db_session.execute(select(RunEventModel).where(RunEventModel.run_id == run_id))
+    events = list(event_result.scalars())
+    event_ids = [
+        {"event_id": event.id, "event_type": event.event_type}
+        for event in events
+        if event.event_type in {
+            "context_compiled",
+            "routing_confirmation_requested",
+            "routing_confirmation_rejected",
+        }
+    ]
+    assert {event["event_type"] for event in event_ids} >= {
+        "context_compiled",
+        "routing_confirmation_requested",
+        "routing_confirmation_rejected",
+    }
+
+    report_path = os.environ.get("AURA_A5_REPORT_PATH")
+    if report_path:
+        report = {
+            "run_id": run_id,
+            "confirmation_id": confirmation_id,
+            "events": event_ids,
+            "route": {
+                "profile_id": run.routing_snapshot_json.get("profile_id"),
+                "profile_version": run.routing_snapshot_json.get("profile_version"),
+                "winning_scope": run.routing_snapshot_json.get("winning_scope"),
+                "privacy_policy": run.routing_snapshot_json.get("privacy_policy"),
+                "fallback_policy": run.routing_snapshot_json.get("fallback_policy"),
+                "provider": confirmation.proposed_provider,
+                "model": confirmation.proposed_model,
+            },
+            "assertions": [
+                {"name": "selected_file_text_is_in_checkpoint_context", "result": "PASS"},
+                {"name": "selected_file_text_is_absent_from_trace_payloads", "result": "PASS"},
+                {"name": "cloud_route_waits_for_durable_confirmation", "result": "PASS"},
+                {"name": "rejected_cloud_route_never_invokes_provider", "result": "PASS"},
+            ],
+        }
+        output_path = Path(report_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 @pytest.mark.asyncio
