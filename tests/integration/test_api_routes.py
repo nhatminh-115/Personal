@@ -752,3 +752,42 @@ async def test_api_authentication_requires_token_for_non_preflight_options(async
 
     assert response.status_code == 401
     assert response.json()["detail"]["code"] == "api_auth_required"
+
+@pytest.mark.asyncio
+async def test_shared_api_token_preserves_per_automation_webhook_authentication(
+    async_client: AsyncClient,
+    monkeypatch,
+):
+    api_token = "aura-test-token-" + "x" * 32
+    monkeypatch.setattr(settings, "AURA_API_TOKEN", SecretStr(api_token))
+
+    created = await async_client.post(
+        "/v1/automations",
+        headers={"Authorization": f"Bearer {api_token}"},
+        json={
+            "name": "Signed routine",
+            "instruction": "Review the deployment.",
+            "interval_seconds": 3600,
+            "webhook_enabled": True,
+        },
+    )
+    assert created.status_code in {200, 201}
+    record = created.json()
+    webhook_path = record["webhook_path"]
+
+    missing_secret = await async_client.post(
+        webhook_path,
+        headers={"X-Aura-Event-Id": "event-1"},
+    )
+    assert missing_secret.status_code == 401
+    assert missing_secret.json()["detail"] == "Webhook authentication failed."
+
+    valid_webhook_secret = await async_client.post(
+        webhook_path,
+        headers={
+            "Authorization": f"Bearer {record['webhook_secret']}",
+            "X-Aura-Event-Id": "invalid event id",
+        },
+    )
+    assert valid_webhook_secret.status_code == 422
+    assert "X-Aura-Event-Id" in valid_webhook_secret.json()["detail"]
