@@ -35,7 +35,10 @@ describe('API access', () => {
     vi.unstubAllGlobals();
   });
 
-  it('sends API requests without an Authorization header when no token is saved', async () => {
+  it('removes the saved token and sends requests without authorization', async () => {
+    const token = 'aura-browser-token-' + 'z'.repeat(32);
+    expect(setApiToken(token)).toBe(true);
+    expect(getApiToken()).toBe(token);
     expect(setApiToken(null)).toBe(true);
 
     await api.fetchModels();
