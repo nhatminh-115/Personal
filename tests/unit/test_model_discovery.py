@@ -1,12 +1,26 @@
 """Unit tests for dynamic model discovery, provider generalization, and routing policies."""
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import json
 import httpx
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.server import create_app
+from app.core.settings import settings
+from app.models.base import RoutingContext
+from app.models.discovery import (
+    ModelCatalogResponse,
+    ModelDiscoveryService,
+    ProviderEntry,
+    infer_tool_support,
+    model_discovery_service,
+)
+from app.models.mock_provider import MockModelProvider
+from app.models.openai_provider import OpenAICompatibleProvider
+from app.models.router import ModelRouter
+from app.models.routing_policy import DeterministicRoutingPolicy, ProviderMetadata
 
 
 class FakeStreamingResponse:
@@ -23,22 +37,6 @@ class FakeStreamingResponse:
     async def aiter_bytes(self, chunk_size=65536):
         for offset in range(0, len(self.body), chunk_size):
             yield self.body[offset : offset + chunk_size]
-
-
-from app.api.server import create_app
-from app.core.settings import settings
-from app.models.base import RoutingContext
-from app.models.discovery import (
-    ModelCatalogResponse,
-    ModelDiscoveryService,
-    ProviderEntry,
-    infer_tool_support,
-    model_discovery_service,
-)
-from app.models.mock_provider import MockModelProvider
-from app.models.openai_provider import OpenAICompatibleProvider
-from app.models.router import ModelRouter
-from app.models.routing_policy import DeterministicRoutingPolicy, ProviderMetadata
 
 
 @pytest.mark.asyncio
