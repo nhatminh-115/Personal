@@ -57,7 +57,7 @@ def test_retrieved_context_stays_out_of_system_role_and_precedes_current_request
     context_message = messages[context_index]
     assert context_message.role == ModelRole.USER
     assert context_index < current_request_index
-    serialized_context = context_message.content.split("JSON array:\\n", 1)[1]
+    serialized_context = context_message.content.split("JSON array:\n", 1)[1]
     assert json.loads(serialized_context) == context
 
 
