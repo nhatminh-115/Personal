@@ -1,0 +1,108 @@
+{
+  "assertions": [
+    {
+      "name": "project_created",
+      "result": "PASS"
+    },
+    {
+      "name": "note_linked_to_project",
+      "result": "PASS"
+    },
+    {
+      "name": "selected_context_preview_is_scoped",
+      "result": "PASS"
+    },
+    {
+      "name": "chat_completed_in_project_session",
+      "result": "PASS"
+    },
+    {
+      "name": "chat_context_provenance_is_scoped",
+      "result": "PASS"
+    },
+    {
+      "name": "project_and_note_reopened_with_scope",
+      "result": "PASS"
+    },
+    {
+      "name": "session_transcript_and_project_scope_reopened",
+      "result": "PASS"
+    },
+    {
+      "name": "run_and_context_provenance_survived_restart",
+      "result": "PASS"
+    }
+  ],
+  "completed_at": "2026-11-21T14:15:47.548408+00:00",
+  "context_preview": {
+    "foreign_note_excluded": true,
+    "object_types": [
+      "manual_note"
+    ],
+    "selected_object_ids": [
+      "e3acc9b8-5ed7-42bb-bfb8-4a233a3f31cf"
+    ]
+  },
+  "entities": {
+    "foreign_note_id": "bd554651-86a6-4933-8ad4-3b906b6b1fba",
+    "foreign_project_name": "a1-foreign-223dd97532c1",
+    "note_id": "e3acc9b8-5ed7-42bb-bfb8-4a233a3f31cf",
+    "project_name": "a1-continuity-223dd97532c1",
+    "run_id": "ce21710c-fedd-4da5-a8db-55c28550cbbb",
+    "session_id": "0ec3793d-7b07-45a4-814d-0f6b7e825131"
+  },
+  "events": [
+    {
+      "event_id": "616c6f2f-aa3b-45c4-9b2a-0b31a1f7a762",
+      "event_type": "routing_profile_resolved"
+    },
+    {
+      "event_id": "fbab7e1d-62d2-4bb4-81f5-e7b4560b074f",
+      "event_type": "context_compiled"
+    },
+    {
+      "event_id": "e6636b47-633b-4630-91a8-1e15bc4f9dde",
+      "event_type": "model_selected"
+    },
+    {
+      "event_id": "3f6be503-f018-4871-a6a2-b7132e974dc8",
+      "event_type": "run_completed"
+    }
+  ],
+  "execution": {
+    "live_inference_claim": false,
+    "mode": "isolated_local_api_processes",
+    "model_provider": "mock",
+    "service_restart_count": 1
+  },
+  "outcome": "PASS",
+  "persisted_context": {
+    "foreign_note_excluded": true,
+    "selected_object_ids": [
+      "e3acc9b8-5ed7-42bb-bfb8-4a233a3f31cf"
+    ]
+  },
+  "reopened_workspace": {
+    "foreign_note_excluded": true,
+    "linked_note_found": true,
+    "project_found": true,
+    "project_note_count": 1
+  },
+  "report_file": "a1-project-continuity-223dd97532c1.json",
+  "route": {
+    "fallback_policy": "cloud_allowed",
+    "model": "mock-default",
+    "privacy_policy": "public",
+    "profile_id": "system-balanced",
+    "profile_version": 1,
+    "provider": "mock",
+    "winning_scope": "system"
+  },
+  "scenario": "A1_project_continuity",
+  "schema_version": 1,
+  "source": {
+    "base_commit_sha": "a609e8625f2583ce7a492a7040691a7b785a522b",
+    "runner_sha256": "e91471a3c6d6092865962774b75c879c907727a3258367aeef2eb7beb4975381"
+  },
+  "started_at": "2026-11-21T14:15:31.527544+00:00"
+}

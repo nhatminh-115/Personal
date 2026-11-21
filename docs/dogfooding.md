@@ -1,6 +1,6 @@
 # AURA live dogfooding
 
-These scripts exercise the real AURA API/runtime outside deterministic CI. CI tests the harness helpers; a green workflow does not mean a live provider run occurred.
+These scripts exercise AURA API/runtime workflows beyond ordinary unit tests. Some use an isolated in-process lifespan; the project-continuity scenario starts two separate API processes. That scenario uses a deterministic mock provider, while Research and Coding require live provider setup. A green CI workflow or mock-provider report is never evidence of live inference.
 
 ## Prepare the environment
 
@@ -36,10 +36,21 @@ PowerShell example:
 
 Run the scripts from the repository root. They use isolated SQLite databases and LangGraph checkpoints under **.aura_dogfood/**, and write run-addressable JSON reports under **artifacts/dogfood/**. Those generated files are ignored by Git.
 
+Project continuity does not require an external model or service. Run its
+process-restart acceptance check with:
+
+    python scripts/dogfood_project_continuity.py
+
+It starts an isolated local API process, creates a project with a linked Note,
+previews and chats with only that Note selected, restarts the API process, and
+checks the reopened project, transcript, and persisted context provenance. It
+uses `MODEL_PROVIDER=mock` and makes no live-inference claim.
+
 ## Scenarios
 
 | Scenario | Command | Required setup | What the report proves |
 | --- | --- | --- | --- |
+| Project continuity (A1) | **python scripts/dogfood_project_continuity.py** | Python 3.12 and installed repository dependencies; no external provider | **PASS on 2026-11-21** using two local API processes and `mock-default`; the linked Note, project session, selected-only context manifest, and routing/events survived a service restart. Sanitized report: [`docs/acceptance/a1-project-continuity-20261121.json`](acceptance/a1-project-continuity-20261121.json). This does not count as live inference. |
 | Research prior-art investigation | **python scripts/dogfood_research_live.py** | Hosted model credentials or an exact local Ollama override; `RESEARCH_PROVIDER_MODE=live` and network access | Root-to-Research Specialist lineage, real model selection, research tools, checkpointed state, evidence and memory counts |
 | Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Hosted model credentials or an exact local Ollama override | Live run `140a579e-2e21-4709-8237-5621ebc54ec5` retrieved the target project's two-person-review/rollback rule, excluded the foreign-project decoy, printed its acceptance result, and exited 0 using the installed local Ollama model. |
 | Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Hosted model credentials or an exact local Ollama override; `RESEARCH_PROVIDER_MODE=live` and network access | Live run `62c9e83c-4e54-48a5-bf3a-fb2c49712d76` delegated to the Research Specialist, persisted a verified claim from extracted evidence, created a durable Context Bridge, and compiled a fresh chat with that Bridge as its only selected object. It printed acceptance and exited 0 using local Ollama. |
@@ -70,3 +81,7 @@ and safe persisted events; it does not copy the response body or exception text.
 ## Interpreting results
 
 A script prints **ACCEPTANCE RESULT** only when its own live acceptance checks pass. A preflight message or exit code 2 means that scenario did not run or is paused; it is not a pass. A CI pass verifies deterministic behavior only. Cross-session project-memory dogfood has been verified locally with an explicit loopback Ollama override. CodeGraph dogfood remains pending external setup and a capable model; no current-environment provider smoke is claimed.
+
+For A1, the committed report under `docs/acceptance/` is the durable sanitized
+record. Its `mock` route proves persistence and scope only; O7 and A7 still
+require a representative workflow with a real configured provider.
