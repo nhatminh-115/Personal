@@ -1,4 +1,4 @@
-"""ASGI middleware for rejecting oversized request bodies before parsing."""
+"""ASGI middleware for API authentication and bounded request bodies."""
 
 from collections.abc import Awaitable, Callable
 import hmac
