@@ -25,6 +25,8 @@ from app.api.schemas import (
 )
 from app.approvals.service import ApprovalService
 from app.core.errors import (
+    AuraError,
+    INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE,
     MODEL_PROVIDER_FAILURE_CODE,
     MODEL_PROVIDER_FAILURE_MESSAGE,
     MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
@@ -237,11 +239,22 @@ async def decide_routing_confirmation(
         except Exception as exc:
             provider_failure = isinstance(exc, ProviderError)
             if provider_failure:
-                logger.error("Model provider failed while resuming routing confirmation '%s'.", item.id)
+                logger.error(
+                    "Model provider failed while resuming routing confirmation.",
+                    extra={"run_id": root_run.id, "details": {"exception_type": type(exc).__name__}},
+                )
             else:
-                logger.error("Graph failed while resolving routing confirmation.", exc_info=True)
+                logger.error(
+                    "Graph failed while resolving routing confirmation.",
+                    extra={"run_id": root_run.id, "details": {"exception_type": type(exc).__name__}},
+                )
             root_run.status = RunStatus.FAILED.value
-            root_run.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
+            if provider_failure:
+                root_run.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+            elif isinstance(exc, AuraError):
+                root_run.error_message = str(exc)
+            else:
+                root_run.error_message = INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE
             await db.commit()
             await trace_service.record_event(
                 run_id=root_run.id,
@@ -308,3 +321,4 @@ async def decide_routing_confirmation(
             execution_status=root_run.status,
             final_response=root_run.final_response,
         )
+
