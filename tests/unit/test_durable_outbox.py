@@ -204,6 +204,42 @@ async def test_outbox_provider_failure_is_redacted_from_logs_and_event_record(
 
 
 @pytest.mark.asyncio
+async def test_outbox_non_provider_handler_failure_logs_no_exception_text(
+    test_db_session: AsyncSession, monkeypatch
+):
+    from unittest.mock import Mock, call
+
+    bus = EventBus()
+    worker = OutboxWorker(bus=bus, worker_id="private-failure-worker")
+    private_diagnostic = "private queued listener diagnostic token=outbox-secret"
+    log_error = Mock()
+    monkeypatch.setattr("app.events.worker.logger.error", log_error)
+
+    async def failing_handler(_: AURAEvent):
+        raise RuntimeError(private_diagnostic)
+
+    bus.subscribe("private-failure.event", failing_handler)
+    event = AURAEvent(event_type="private-failure.event", max_attempts=3)
+    await bus.publish(event, db=test_db_session)
+
+    assert await worker.process_outbox_batch(test_db_session) == 0
+    record = await test_db_session.get(EventRecordModel, event.id)
+    assert record is not None
+    await test_db_session.refresh(record)
+    assert record.status == EventStatus.FAILED.value
+    assert record.error_message == private_diagnostic
+    assert log_error.call_args_list == [
+        call(
+            "OutboxWorker handler failed (error type: %s).",
+            "RuntimeError",
+            extra={"event_id": event.id, "worker_id": "private-failure-worker"},
+        )
+    ]
+    assert private_diagnostic not in repr(log_error.call_args_list)
+    assert "exc_info" not in log_error.call_args.kwargs
+
+
+@pytest.mark.asyncio
 async def test_outbox_recovers_processing_event_after_worker_lease_expires(test_db_session: AsyncSession):
     bus = EventBus()
     worker = OutboxWorker(bus=bus, worker_id="recovery-worker", lease_duration_seconds=60)

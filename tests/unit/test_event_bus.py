@@ -66,12 +66,17 @@ async def test_event_bus_transactional_outbox_persistence(test_db_session):
 
 
 @pytest.mark.asyncio
-async def test_event_bus_handler_failure_isolation(test_db_session):
+async def test_event_bus_handler_failure_isolation(test_db_session, monkeypatch):
     """Verify handler exceptions are recorded as failures in DB outbox when dispatch_immediate is enabled."""
+    from unittest.mock import Mock, call
+
     bus = EventBus()
+    private_diagnostic = "private listener diagnostic token=event-secret"
+    log_error = Mock()
+    monkeypatch.setattr("app.events.bus.logger.error", log_error)
 
     async def exploding_handler(evt: AURAEvent):
-        raise RuntimeError("Simulated listener exception!")
+        raise RuntimeError(private_diagnostic)
 
     bus.subscribe("crash.event", exploding_handler)
 
@@ -87,7 +92,15 @@ async def test_event_bus_handler_failure_isolation(test_db_session):
     assert db_record is not None
     assert db_record.status == EventStatus.FAILED.value
     assert db_record.retry_count == 1
-    assert "Simulated listener exception" in db_record.error_message
+    assert db_record.error_message == private_diagnostic
+    assert log_error.call_args_list == [
+        call(
+            "Event handler failed (error type: %s).",
+            "RuntimeError",
+            extra={"event_id": failing_event.id, "event_type": "crash.event"},
+        )
+    ]
+    assert private_diagnostic not in repr(log_error.call_args_list)
 
 
 @pytest.mark.asyncio
