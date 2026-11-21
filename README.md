@@ -105,7 +105,8 @@ seconds by default, maximum 600) to accommodate slower local inference when
 needed.
 
 For PostgreSQL, set `DATABASE_URL` to a `postgresql+asyncpg://...` URL. The
-included Docker Compose file starts PostgreSQL and the API service, applies
+included Docker Compose file builds the React frontend into the API image, starts
+PostgreSQL and the API service, serves the frontend from the same origin, applies
 Alembic migrations to `head`, and then starts the API. This automatic migration
 step is scoped to the single-service Compose setup; deployments using the image
 directly should run `python -m alembic upgrade head` as a separate release step.
@@ -121,6 +122,17 @@ Compose persists PostgreSQL data, LangGraph checkpoints, and sandbox workspace
 files in separate named volumes (`postgres_data`, `checkpoint_data`, and
 `workspace_data`). The database and checkpoint are required to restore a
 durable run; include all three volumes to recover the full workspace.
+
+For a production-style local run with the browser interface, start the stack with:
+
+```powershell
+docker compose up -d --build
+```
+
+Then open `http://localhost:8000`. The API container serves both the built AURA UI
+and its `/v1` API, so a separate Vite server is not needed for this setup. Stop the
+services with `docker compose down`; named data volumes remain available for the
+next start.
 
 Create and verify a point-in-time archive of all three stores with
 [`scripts/backup_compose.py`](scripts/backup_compose.py). See
@@ -140,7 +152,7 @@ $env:PYTHONPATH="."
 uvicorn app.api.server:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Start the web app in a second terminal:
+For frontend development with Vite hot reload, start the web app in a second terminal:
 ```powershell
 cd web
 npm ci
@@ -164,7 +176,9 @@ Store the generated value in the environment or a secret manager; do not commit
 it to Git. When configured, the token protects API, OpenAPI, and documentation routes,
 except automation webhook URLs, which keep using their own per-automation bearer
 secrets. `/health`, `/ready`, and CORS preflight remain available for probes
-and browser setup. The web app asks for the token and keeps it in the current
+and browser setup. When the production UI is packaged, its shell and static assets
+remain public so the token-entry dialog can load; the API, OpenAPI, and documentation
+routes stay protected. The web app asks for the token and keeps it in the current
 tab's session storage. The shared token is an access gate, not separate user
 identity or project isolation. Requests with bodies larger than 10 MiB are
 rejected with HTTP 413 before endpoint parsing. Responses under `/v1/` send
