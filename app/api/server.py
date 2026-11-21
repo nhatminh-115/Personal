@@ -48,8 +48,11 @@ async def lifespan(app: FastAPI):
     try:
         from app.models.discovery import model_discovery_service
         await model_discovery_service.register_discovered_providers()
-    except Exception as e:
-        logger.warning(f"Non-fatal error during model discovery: {e}")
+    except Exception as exc:
+        logger.warning(
+            "Non-fatal error during model discovery (error type: %s).",
+            type(exc).__name__,
+        )
 
     # Load and initialize MCP servers from persistent configuration
     try:
@@ -64,8 +67,11 @@ async def lifespan(app: FastAPI):
         for srv in mcp_manager.list_servers():
             if srv.enabled:
                 await mcp_manager.discover_tools(srv.id)
-    except Exception as e:
-        logger.warning(f"Non-fatal error during startup MCP tool loading/discovery: {e}")
+    except Exception as exc:
+        logger.warning(
+            "Non-fatal error during startup MCP tool loading/discovery (error type: %s).",
+            type(exc).__name__,
+        )
 
     from app.events.runtime import start_automation_runtime
 
@@ -83,8 +89,11 @@ async def lifespan(app: FastAPI):
         try:
             from app.mcp.manager import mcp_manager
             await mcp_manager.disconnect_all()
-        except Exception as e:
-            logger.warning(f"Error disconnecting MCP servers on shutdown: {e}")
+        except Exception as exc:
+            logger.warning(
+                "Error disconnecting MCP servers on shutdown (error type: %s).",
+                type(exc).__name__,
+            )
 
         await close_checkpointer()
 
