@@ -77,6 +77,7 @@ import type {
   EffectiveRouting,
   ReasoningEffort,
   RunRoutingDecision,
+  SessionMessage,
 } from './types';
 
 const BoardCanvas = lazy(async () => {
@@ -155,6 +156,29 @@ function workspaceNoteFromRecord(record: WorkspaceNoteRecord, projectCatalog: Pr
     privacyPolicy: record.privacy_policy ?? undefined,
     source: 'live',
   };
+}
+
+function hydrateSessionMessage(message: SessionMessage): ChatMessage {
+  const manifest = message.context_manifest;
+  return {
+    ...message,
+    branch: message.branch ?? 'Root',
+    provenance: contextProvenanceFromManifest(manifest),
+    contextTokens: compiledContextTokenCountFromManifest(manifest),
+    contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
+    ...routingSummaryFromProvenance(message.routing_provenance),
+  };
+}
+
+function latestSelectedContextObjectIds(messages: SessionMessage[]): string[] | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const objects = messages[index]?.context_manifest?.objects;
+    if (!objects) continue;
+    return [...new Set(objects
+      .filter((item) => item.selected_by_user === true && typeof item.object_id === 'string' && item.object_id.trim().length > 0)
+      .map((item) => item.object_id))];
+  }
+  return undefined;
 }
 
 function workspaceNotePayload(note: WorkspaceNote, projectCatalog: ProjectRecord[] = projects): Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'> {
@@ -1198,17 +1222,8 @@ export default function App() {
     if (thread?.source === 'live' && thread.sessionId) {
       void api.fetchSession(thread.sessionId).then((detail) => {
         if (!detail?.messages) return;
-        const hydratedMessages = detail.messages.map((message) => {
-          const manifest = message.context_manifest;
-          return {
-            ...message,
-            branch: message.branch ?? 'Root',
-            provenance: contextProvenanceFromManifest(manifest),
-            contextTokens: compiledContextTokenCountFromManifest(manifest),
-            contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
-            ...routingSummaryFromProvenance(message.routing_provenance),
-          };
-        });
+        const hydratedMessages = detail.messages.map(hydrateSessionMessage);
+        const restoredContextObjectIds = latestSelectedContextObjectIds(detail.messages);
         setChatThreads((current) => current.map((t) => {
           if (t.id !== threadId) return t;
 
@@ -1269,8 +1284,15 @@ export default function App() {
 
           // Only update thread if something actually changed
           const idChanged = hydratedMessages.some((bm, i) => bm.id && t.messages[i]?.id !== bm.id);
-          if (!appended && !idChanged && t.messagesNextCursor === (detail.messages_next_cursor ?? null)) return t;
-          return { ...t, messages: merged, messagesNextCursor: detail.messages_next_cursor ?? null };
+          const contextIds = t.initialContextObjectIds ?? restoredContextObjectIds;
+          const contextSelectionChanged = contextIds !== t.initialContextObjectIds;
+          if (!appended && !idChanged && !contextSelectionChanged && t.messagesNextCursor === (detail.messages_next_cursor ?? null)) return t;
+          return {
+            ...t,
+            messages: merged,
+            messagesNextCursor: detail.messages_next_cursor ?? null,
+            ...(contextIds !== undefined ? { initialContextObjectIds: contextIds } : {}),
+          };
         }));
       }).catch(() => { /* hydration failure is silently ignored */ });
     }
@@ -1360,15 +1382,20 @@ export default function App() {
           : activeProject ?? undefined;
         if (!sourceProject) throw new Error('The source project is not available in this workspace.');
 
+        const restoredContextObjectIds = latestSelectedContextObjectIds(session.messages);
         const restoredThread: ChatThreadRecord = {
           id: `session-${session.id}`,
           projectId: sourceProject.id,
           title: session.title && session.title !== 'New Session' ? session.title : 'Restored chat',
           summary: 'Saved live conversation',
           updated: new Date(session.updated_at).toLocaleDateString(),
-          messages: [],
+          messages: session.messages.map(hydrateSessionMessage),
           sessionId: session.id,
           source: 'live',
+          messagesNextCursor: session.messages_next_cursor ?? null,
+          ...(restoredContextObjectIds !== undefined
+            ? { initialContextObjectIds: restoredContextObjectIds }
+            : {}),
         };
         sourceThread = restoredThread;
         setChatThreads((current) => current.some((thread) => thread.sessionId === session.id)
@@ -1427,17 +1454,7 @@ export default function App() {
     setChatThreads((current) => current.map((item) => item.id === threadId ? { ...item, loadingOlderMessages: true } : item));
     try {
       const detail = await api.fetchSession(thread.sessionId, cursor);
-      const olderMessages: ChatMessage[] = detail.messages.map((message) => {
-        const manifest = message.context_manifest;
-        return {
-          ...message,
-          branch: message.branch ?? 'Root',
-          provenance: contextProvenanceFromManifest(manifest),
-          contextTokens: compiledContextTokenCountFromManifest(manifest),
-          contextObjectIds: manifest?.objects?.filter((item) => item.selected_by_user).map((item) => item.object_id),
-          ...routingSummaryFromProvenance(message.routing_provenance),
-        };
-      });
+      const olderMessages: ChatMessage[] = detail.messages.map(hydrateSessionMessage);
       setChatThreads((current) => current.map((item) => {
         if (item.id !== threadId) return item;
         const existingIds = new Set(item.messages.map((message) => message.id).filter((id): id is string => Boolean(id)));
