@@ -19,6 +19,15 @@ export function ApiAccessDialog({ open, tokenConfigured, onClose, onSave }: ApiA
     }
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [open, onClose]);
+
   if (!open) return null;
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
