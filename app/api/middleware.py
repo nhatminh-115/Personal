@@ -84,7 +84,7 @@ class ApiTokenAuthenticationMiddleware:
         self.token_getter = token_getter
 
     async def __call__(self, scope: dict[str, Any], receive, send) -> None:
-        if scope["type"] != "http" or scope.get("method") == "OPTIONS":
+        if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
 
