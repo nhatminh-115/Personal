@@ -10,7 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.routes import approvals, automations, capabilities, chat, memory, models, runs, sessions, routing, routing_confirmations, study, workspace
-from app.api.middleware import RequestBodyLimitMiddleware
+from app.api.middleware import ApiTokenAuthenticationMiddleware, RequestBodyLimitMiddleware
 from app.core.errors import AuraError, PermissionDeniedError, WorkspaceEscapeError
 from app.core.logging import logger
 from app.core.settings import settings
@@ -114,6 +114,7 @@ def create_app() -> FastAPI:
         if origin.strip()
     ]
     app.add_middleware(RequestBodyLimitMiddleware)
+    app.add_middleware(ApiTokenAuthenticationMiddleware, token_getter=lambda: settings.AURA_API_TOKEN)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,
