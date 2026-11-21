@@ -222,7 +222,11 @@ async def test_chat_stop_racing_terminalization_is_linearized(async_client, tmp_
 
     async def pause_after_status_read(session, instance, *args, **kwargs):
         result = await original_refresh(session, instance, *args, **kwargs)
-        if isinstance(instance, RunModel) and instance.client_turn_id == client_turn_id:
+        if (
+            isinstance(instance, RunModel)
+            and instance.client_turn_id == client_turn_id
+            and model_call_started.is_set()
+        ):
             status_read.set()
             await release_finalization.wait()
         return result
@@ -312,8 +316,16 @@ async def test_cancelled_chat_turn_cancels_waiting_delegated_child(
             and instance.client_turn_id == client_turn_id
             and not finalization_started.is_set()
         ):
-            finalization_started.set()
-            await release_finalization.wait()
+            executor_started = await session.scalar(
+                select(RunEventModel.id).where(
+                    RunEventModel.run_id == instance.id,
+                    RunEventModel.event_type == "run_executor_started",
+                    RunEventModel.payload["source"].as_string() == "chat",
+                ).limit(1)
+            )
+            if executor_started is not None:
+                finalization_started.set()
+                await release_finalization.wait()
         return result
 
     monkeypatch.setattr(AsyncSession, "refresh", pause_before_root_finalization)

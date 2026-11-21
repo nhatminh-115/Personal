@@ -1,5 +1,6 @@
 """Client retries must return durable chat runs without invoking them again."""
 
+import uuid
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -76,7 +77,7 @@ async def test_chat_does_not_start_after_recovery_finishes_run_before_executor_l
 ):
     from app.api.run_recovery import _INTERRUPTED_RESPONSE, recover_running_root_runs
 
-    session_id = f"chat-recovery-before-lock-{client_turn_id or 'legacy'}"
+    session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"chat-recovery-before-lock-{client_turn_id or 'legacy'}"))
 
     class RecoveryGraph:
         async def aget_state(self, _config):
