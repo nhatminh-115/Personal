@@ -14,7 +14,6 @@ import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import BinaryIO
 
 from sqlalchemy.engine import make_url
 
@@ -49,13 +48,6 @@ def _sha256(path: Path) -> str:
     with path.open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _sha256_stream(stream: BinaryIO) -> str:
-    digest = hashlib.sha256()
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        digest.update(chunk)
     return digest.hexdigest()
 
 
