@@ -6,6 +6,9 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+BEARER_TOKEN_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~+/")
+
+
 class Settings(BaseSettings):
     """AURA Application configuration settings."""
 
@@ -32,8 +35,14 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return None
         token = value.get_secret_value() if isinstance(value, SecretStr) else value
-        if not isinstance(token, str) or len(token) < 32 or token.strip() != token or any(char.isspace() for char in token):
-            raise ValueError("AURA_API_TOKEN must be at least 32 non-whitespace characters when configured.")
+        if not isinstance(token, str):
+            raise ValueError("AURA_API_TOKEN must be an ASCII HTTP Bearer token when configured.")
+        token_body = token.rstrip("=")
+        if len(token_body) < 32 or any(char not in BEARER_TOKEN_CHARACTERS for char in token_body):
+            raise ValueError(
+                "AURA_API_TOKEN must contain at least 32 ASCII Bearer token characters; "
+                "only optional trailing '=' padding is allowed."
+            )
         return value
 
     # Database
