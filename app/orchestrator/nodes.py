@@ -720,10 +720,28 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             "metadata": meta,
         }
 
+    # A direct response is only a successful turn when it contains user-visible
+    # content. Providers can return an empty completion after a tool failure or
+    # when their output budget is exhausted; treating that as completed creates
+    # a successful run with no answer.
+    response_text = response.content if isinstance(response.content, str) else ""
+    if not response_text.strip():
+        failure_response = (
+            "The selected model returned an empty response. "
+            "Check the provider and model configuration, then retry."
+        )
+        return {
+            "final_response": failure_response,
+            "execution_status": RunStatus.FAILED.value,
+            "termination_reason": "empty_model_response",
+            "errors": [*state.get("errors", []), "empty_model_response"],
+            "metadata": meta,
+        }
+
     # Direct / Final response
     messages.append({
         "role": "assistant",
-        "content": response.content or "",
+        "content": response_text,
     })
 
     if trace_service:
@@ -731,12 +749,12 @@ async def reason_node(state: AgentState, config: Optional[RunnableConfig] = None
             run_id=state["run_id"],
             session_id=state["session_id"],
             event_type="response_generated",
-            payload={"response_length": len(response.content or ""), "step": state.get("step_number", 1)},
+            payload={"response_length": len(response_text), "step": state.get("step_number", 1)},
         )
 
     return {
         "messages": messages,
-        "final_response": response.content,
+        "final_response": response_text,
         "execution_status": RunStatus.COMPLETED.value,
         "metadata": meta,
     }
@@ -1344,11 +1362,17 @@ async def update_memory_node(state: AgentState, config: Optional[RunnableConfig]
         else:
             terminal_event = "run_failed"
 
+        terminal_payload = {"status": exec_status}
+        if (
+            exec_status == RunStatus.FAILED.value
+            and state.get("termination_reason") == "empty_model_response"
+        ):
+            terminal_payload["error_category"] = "empty_model_response"
         await trace_service.record_event(
             run_id=state["run_id"],
             session_id=state["session_id"],
             event_type=terminal_event,
-            payload={"status": exec_status},
+            payload=terminal_payload,
         )
 
     if persisted_user_message_id:

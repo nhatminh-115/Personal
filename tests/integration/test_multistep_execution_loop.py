@@ -1,10 +1,13 @@
 """Integration tests for Milestone 3A: Iterative Agent Execution Loop & Bounded Controls."""
 
 import time
-import pytest
-from httpx import AsyncClient
 from pathlib import Path
 
+import pytest
+from httpx import AsyncClient
+from sqlalchemy import select
+
+from app.db.models import RunEventModel, RunModel
 from app.models.base import ModelResponse, ToolCallRequest
 from app.models.router import model_router
 from app.models.mock_provider import MockModelProvider
@@ -210,3 +213,52 @@ async def test_bounded_control_wall_clock_deadline(async_client: AsyncClient, se
     data = resp.json()
     assert data["status"] == "failed"
     assert "Wall-clock deadline exceeded" in data["response"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_content", [None, "", " \t\n"])
+async def test_empty_model_response_fails_instead_of_completing(
+    async_client: AsyncClient,
+    test_db_session,
+    empty_content: str | None,
+):
+    """An empty final completion must be an explicit failed run, never a blank success."""
+    mock = model_router.get_provider("mock")
+    assert isinstance(mock, MockModelProvider)
+    mock.clear_queue()
+    mock.queue_response(ModelResponse(content=empty_content, finish_reason="stop"))
+
+    response = await async_client.post(
+        "/v1/chat",
+        json={"session_id": "sess-empty-model-response", "message": "Summarize the result."},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "failed"
+    assert "empty response" in data["response"].lower()
+    assert data.get("assistant_message_id") is None
+
+    run = await test_db_session.get(RunModel, data["run_id"])
+    assert run is not None
+    assert run.status == "failed"
+    assert run.final_response == data["response"]
+
+    events = (
+        await test_db_session.scalars(
+            select(RunEventModel).where(RunEventModel.run_id == data["run_id"])
+        )
+    ).all()
+    event_types = [event.event_type for event in events]
+    assert "run_failed" in event_types
+    assert "run_completed" not in event_types
+    failed = next(event for event in events if event.event_type == "run_failed")
+    assert failed.payload == {"error_category": "empty_model_response"}
+
+    run_detail = await async_client.get(f"/v1/runs/{data['run_id']}")
+    assert run_detail.status_code == 200
+    api_failed_event = next(
+        event for event in run_detail.json()["events"]
+        if event["event_type"] == "run_failed"
+    )
+    assert api_failed_event["payload"] == {"error_category": "empty_model_response"}
