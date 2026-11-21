@@ -79,7 +79,7 @@ export function setApiToken(token: string | null): boolean {
 
 function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   const token = getApiToken();
-  if (!token) return fetch(input, init);
+  if (!token) return init === undefined ? fetch(input) : fetch(input, init);
   const headers = new Headers(init?.headers);
   headers.set('Authorization', 'Bearer ' + token);
   return fetch(input, { ...init, headers });
