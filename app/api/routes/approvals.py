@@ -21,6 +21,9 @@ from app.api.run_resume_lock import lock_run_resume
 from app.approvals.service import ApprovalService
 from app.core.errors import (
     ApprovalNotFoundError,
+    AuraError,
+    INTERNAL_EXECUTION_FAILURE_MESSAGE,
+    INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE,
     MODEL_PROVIDER_FAILURE_MESSAGE,
     MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE,
     ProviderError,
@@ -53,7 +56,10 @@ def _get_active_interrupt(snapshot: Any) -> Optional[Dict[str, Any]]:
 async def _record_parent_resume_failure(parent: RunModel, exc: Exception, trace_service: TraceService) -> None:
     provider_failure = isinstance(exc, ProviderError)
     if provider_failure:
-        logger.error("Model provider failed while resuming parent run '%s'.", parent.id)
+        logger.error(
+            "Model provider failed while resuming parent run.",
+            extra={"run_id": parent.id, "details": {"exception_type": type(exc).__name__}},
+        )
         parent.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
         parent.final_response = MODEL_PROVIDER_FAILURE_MESSAGE
         await trace_service.record_event(
@@ -64,9 +70,8 @@ async def _record_parent_resume_failure(parent: RunModel, exc: Exception, trace_
         )
     else:
         logger.error(
-            "Error resuming parent graph: %s",
-            exc,
-            exc_info=(type(exc), exc, exc.__traceback__) if exc.__traceback__ is not None else False,
+            "Parent graph failed while resuming after specialist completion.",
+            extra={"run_id": parent.id, "details": {"exception_type": type(exc).__name__}},
         )
     parent.status = RunStatus.FAILED.value
 
@@ -312,17 +317,25 @@ async def submit_approval_decision(
         except Exception as exc:
             provider_failure = isinstance(exc, ProviderError)
             if provider_failure:
-                logger.error("Model provider failed while resuming approved run '%s'.", run_record.id)
+                logger.error(
+                    "Model provider failed while resuming approved run.",
+                    extra={"run_id": run_record.id, "details": {"exception_type": type(exc).__name__}},
+                )
             else:
-                logger.error(f"Graph execution failed during resume: {exc}", exc_info=True)
+                logger.error(
+                    "Graph execution failed during approval resume.",
+                    extra={"run_id": run_record.id, "details": {"exception_type": type(exc).__name__}},
+                )
             run_record.status = RunStatus.FAILED.value
-            run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE if provider_failure else str(exc)
-
-            failure_response = (
-                MODEL_PROVIDER_FAILURE_MESSAGE
-                if provider_failure
-                else f"Run failed during execution: {exc}"
-            )
+            if provider_failure:
+                run_record.error_message = MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE
+                failure_response = MODEL_PROVIDER_FAILURE_MESSAGE
+            elif isinstance(exc, AuraError):
+                run_record.error_message = str(exc)
+                failure_response = f"Run failed during execution: {exc}"
+            else:
+                run_record.error_message = INTERNAL_EXECUTION_FAILURE_STORAGE_MESSAGE
+                failure_response = INTERNAL_EXECUTION_FAILURE_MESSAGE
             run_record.final_response = failure_response
             delegation = await db.scalar(
                 select(DelegationModel).where(DelegationModel.child_run_id == run_record.id)
@@ -477,4 +490,5 @@ async def submit_approval_decision(
             execution_status=exec_status,
             final_response=final_response,
         )
+
 
