@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
 import { RoutingConfirmationNotice } from '../components/routing/RoutingConfirmationNotice';
 import { RoutingStudio } from '../components/routing/RoutingStudio';
+import { api } from '../services/api';
 import type { RoutingProfile } from '../types';
 
 const profile: RoutingProfile = {
@@ -195,6 +196,37 @@ describe('Routing Studio v2', () => {
     expect(within(screen.getByLabelText('Scope')).getByRole('option', { name: 'Session' })).toBeDisabled();
     expect(screen.getByText('Session routing becomes available after this live chat has started.')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('/v1/routing/sessions/local-only-session'), expect.objectContaining({ method: 'PUT' }));
+  });
+
+  it('reloads the session assignment when session identity and availability change while open', async () => {
+    const fetchSessionRouting = vi.spyOn(api, 'fetchSessionRouting').mockImplementation(async (sessionId) => ({
+      session_id: sessionId,
+      routing_profile_id: sessionId === 'persisted-live-session' ? 'custom-profile' : null,
+      revision: 7,
+    }));
+    const props = {
+      open: true,
+      projectName: 'Project',
+      demoThread: false,
+      effective: { profile: customProfile, winning_scope: 'project' as const },
+      catalog: { providers: [] },
+      onClose: vi.fn(),
+      onSaved: vi.fn(),
+      onSetModelLock: vi.fn(),
+      onRefreshModels: vi.fn().mockResolvedValue(undefined),
+    };
+    const { rerender } = render(
+      <RoutingStudio {...props} sessionId="local-session" sessionAvailable={false} />,
+    );
+
+    await screen.findByRole('dialog', { name: 'Routing Studio' });
+    expect(fetchSessionRouting).not.toHaveBeenCalled();
+
+    rerender(<RoutingStudio {...props} sessionId="persisted-live-session" sessionAvailable />);
+
+    await waitFor(() => expect(fetchSessionRouting).toHaveBeenCalledWith('persisted-live-session'));
+    fireEvent.change(screen.getByLabelText('Scope'), { target: { value: 'session' } });
+    expect(screen.getByLabelText('Assigned profile')).toHaveValue('custom-profile');
   });
 
   it('persists a session assignment only when a live session is available', async () => {
