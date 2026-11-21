@@ -35,7 +35,7 @@ async def test_local_discovery_logs_only_safe_exception_type(monkeypatch, provid
     monkeypatch.setattr("app.models.discovery.logger", logger)
     service = ModelDiscoveryService()
 
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=httpx.ConnectError(diagnostic)):
+    with patch("httpx.AsyncClient.stream", side_effect=httpx.ConnectError(diagnostic)):
         provider = await getattr(service, provider_method)(base_url=configured_url)
 
     assert provider.available is False
