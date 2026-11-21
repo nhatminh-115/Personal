@@ -8,8 +8,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `093ad21adebfcac280b3b6e70a771cf76f358395`.
-- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), [#352](https://github.com/nhatminh-115/Personal/pull/352), [#353](https://github.com/nhatminh-115/Personal/pull/353), [#354](https://github.com/nhatminh-115/Personal/pull/354), [#355](https://github.com/nhatminh-115/Personal/pull/355), [#356](https://github.com/nhatminh-115/Personal/pull/356), [#357](https://github.com/nhatminh-115/Personal/pull/357), [#358](https://github.com/nhatminh-115/Personal/pull/358), [#359](https://github.com/nhatminh-115/Personal/pull/359), [#360](https://github.com/nhatminh-115/Personal/pull/360), [#361](https://github.com/nhatminh-115/Personal/pull/361), and [#362](https://github.com/nhatminh-115/Personal/pull/362) are merged.
+- Canonical `main`: `7cdade160feffdcc0fbca07117beb0c1e1b273fa`.
+- PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), [#352](https://github.com/nhatminh-115/Personal/pull/352), [#353](https://github.com/nhatminh-115/Personal/pull/353), [#354](https://github.com/nhatminh-115/Personal/pull/354), [#355](https://github.com/nhatminh-115/Personal/pull/355), [#356](https://github.com/nhatminh-115/Personal/pull/356), [#357](https://github.com/nhatminh-115/Personal/pull/357), [#358](https://github.com/nhatminh-115/Personal/pull/358), [#359](https://github.com/nhatminh-115/Personal/pull/359), [#360](https://github.com/nhatminh-115/Personal/pull/360), [#361](https://github.com/nhatminh-115/Personal/pull/361), [#362](https://github.com/nhatminh-115/Personal/pull/362), and [#363](https://github.com/nhatminh-115/Personal/pull/363) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
 - PR [#338](https://github.com/nhatminh-115/Personal/pull/338) is merged. It preserves prior behavior for non-provider parent-resume failures.
@@ -38,7 +38,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR [#360](https://github.com/nhatminh-115/Personal/pull/360) redacts model-discovery, MCP startup, and MCP shutdown exception text from lifecycle logs. It merged as `c5b422c1744d2657f426f3d46a0077a75381a66f`. Final CI #945 (`44869870722`), job `136741751407`, passed: backend 707 tests in 51.50s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.71s. CI #944 found the MCP loader test double was incorrectly asynchronous; that test-only mismatch was fixed before the green run.
 - PR [#361](https://github.com/nhatminh-115/Personal/pull/361) replaces raw scheduler/outbox supervisor tracebacks with safe failure categories and exception types. It merged as `1c8423f83e470ea089e7a9d43d2ffc6f3bc0adbe`. CI #947 (`44870503239`), job `136743725054`, passed: backend 709 tests in 51.91s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.20s.
 - PR [#362](https://github.com/nhatminh-115/Personal/pull/362) redacts raw database diagnostics from outbox lease-renewal logs. It merged as `093ad21adebfcac280b3b6e70a771cf76f358395`. CI #949 (`44871092257`), job `136745581096`, passed: backend 710 tests in 54.55s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 8.31s.
-- Active branch: `codex/aura-next-milestone-20261121-15`, freshly created from canonical `main` at `093ad21adebfcac280b3b6e70a771cf76f358395`.
+- PR [#363](https://github.com/nhatminh-115/Personal/pull/363) removes raw non-provider exception text and tracebacks from immediate and queued event-handler logs while preserving event failure records. It merged as `7cdade160feffdcc0fbca07117beb0c1e1b273fa`. CI #951 (`44871678087`), job `136747366264`, passed: backend 711 tests in 64.00s; Phases 1/2.1/3/4 passed; frontend 47 files / 318 tests; Vite build 9.91s.
+- Active branch: `codex/aura-next-milestone-20261121-16`, freshly created from canonical `main` at `7cdade160feffdcc0fbca07117beb0c1e1b273fa`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -61,7 +62,9 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #360 / branch 12): keep model-discovery, MCP-startup, and MCP-shutdown exception text out of lifecycle logs.
 - Completed milestone (PR #361 / branch 13): prevent scheduler and outbox supervisor loops from logging raw exception messages or tracebacks.
 - Completed milestone (PR #362 / branch 14): keep outbox lease-renewal failures from writing raw DB diagnostics to logs.
-- Current milestone (branch 15): stop EventBus and outbox dispatch logs from exposing raw non-provider handler diagnostics.
+- Completed milestone (PR #363 / branch 15): keep immediate EventBus and queued outbox handler logs from exposing raw exception details.
+- Completed audit (branch 16): Routing Studio v2 A–H are already implemented on `main`; their current tests cover default profile, zero-provider preview, validation, unavailable model preservation, demo controls, structured errors, child overrides, and frontend flows.
+- Current milestone (branch 16): preserve a saved Board branch's selected context when the user starts a live chat and sends its first prompt without opening the Context panel. The send path now merges thread-pinned object/file selections with current composer selections, and the composer reports those selections before its object catalog is loaded.
 
 ## Recent verified milestones
 
@@ -96,11 +99,12 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #360: redact startup and shutdown lifecycle diagnostics | Merged as `c5b422c`; final CI #945 (`44869870722`), backend 707 passed in 51.50s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.71s |
 | PR #361: redact automation runtime loop tracebacks | Merged as `1c8423f`; CI #947 (`44870503239`), backend 709 passed in 51.91s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.20s |
 | PR #362: redact outbox lease heartbeat diagnostics | Merged as `093ad21`; CI #949 (`44871092257`), backend 710 passed in 54.55s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 8.31s |
+| PR #363: redact event handler failure diagnostics | Merged as `7cdade1`; CI #951 (`44871678087`), backend 711 passed in 64.00s, Phases 1/2.1/3/4 passed, frontend 47 files / 318 tests, Vite build 9.91s |
 
 ## Immediate next steps
 
-1. Verify immediate and queued EventBus handler failures keep their existing durable statuses/error messages while logs retain only safe error categories.
-2. Run the full GitHub Actions workflow, merge only the exact green head SHA, then inspect the next reliability gap from fresh `main`.
+1. Run frontend regression tests and build for saved-branch first-turn context preservation, then open a PR and wait for the complete GitHub Actions workflow.
+2. Merge only the exact green head SHA, create a fresh branch from canonical `main`, and continue the next highest-value non-blocked workspace/runtime gap.
 3. CodeGraph setup remains pending external setup and is not a blocker.
 
 ## Dogfood and external setup
@@ -112,5 +116,6 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 ## Verification constraints
 
 - Local `pytest` is present, but its test run currently stops during fixture loading because `aiosqlite` is missing from the host Python environment. Python AST parsing and `git diff --check` run locally; GitHub Actions runs the backend suite and integration scenarios.
+- For the current first-turn context change, all 47 frontend test files pass (319 tests), TypeScript passes, and Vite builds successfully to a fresh temporary output directory. The standard `npm run build` cleanup step cannot remove the existing `web/public/ocr` and `web/dist/assets` directories in this sandbox (`EPERM`); CI will run the standard build path.
 - No paid/hosted model is required for CI.
 - Keep changes isolated on a fresh branch from canonical `main`, then report exact merge SHA and remote CI evidence.

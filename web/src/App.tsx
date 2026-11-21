@@ -1509,8 +1509,11 @@ export default function App() {
 
       const contextAttachments: ChatContextAttachment[] = [];
       let totalAttachmentChars = 0;
+      const uniqueContextFileIds = [...new Set([
+        ...contextFileContentIds,
+        ...(currentThread?.initialContextFileContentIds ?? []),
+      ])];
       try {
-        const uniqueContextFileIds = [...new Set(contextFileContentIds)];
         if (uniqueContextFileIds.length > 5) {
           throw new Error('Choose up to five local files for one message.');
         }
@@ -1551,7 +1554,11 @@ export default function App() {
         pushToast('Could not include file text', executionErrorText(error));
         return;
       }
-      const selectedObjectIds = [...new Set([...contextObjectIds, ...contextFileContentIds])];
+      const selectedObjectIds = [...new Set([
+        ...(currentThread?.initialContextObjectIds ?? []),
+        ...contextObjectIds,
+        ...uniqueContextFileIds,
+      ])];
 
       const sessionId = currentThread?.sessionId || `sess-${activeProjectId}-${activeThreadId}`;
 
