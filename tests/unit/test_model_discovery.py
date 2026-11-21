@@ -264,7 +264,7 @@ async def test_models_api_never_exposes_credentials():
 
 
 @pytest.mark.asyncio
-async def test_capability_probe_endpoint():
+async def test_capability_probe_endpoint(monkeypatch):
     """POST /v1/models/probe tests tool-calling behavior."""
     app = create_app()
     transport = ASGITransport(app=app)
@@ -279,24 +279,89 @@ async def test_capability_probe_endpoint():
         data = resp.json()
         assert data["tool_support"] == "supported"
 
+        private_diagnostic = "private runtime body token=probe-secret"
+        rejected_response = MagicMock()
+        rejected_response.status_code = 400
+        rejected_response.json.return_value = {"error": {"message": private_diagnostic}}
+        rejected_response.text = private_diagnostic
+
+        class FakeProviderClient:
+            def __init__(self, **_kwargs):
+                pass
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_args):
+                return None
+
+            async def post(self, *_args, **_kwargs):
+                return rejected_response
+
+        monkeypatch.setattr("app.models.discovery.httpx.AsyncClient", FakeProviderClient)
+        rejected = await client.post(
+            "/v1/models/probe",
+            json={"provider_id": "ollama", "model_id": "test-model"},
+        )
+
+        assert rejected.status_code == 200
+        assert rejected.json()["tool_support"] == "unknown"
+        assert private_diagnostic not in rejected.text
+
 
 @pytest.mark.asyncio
 async def test_probe_connection_failure_yields_unknown_not_unsupported():
     """Failed connection or timeout during probe must yield 'unknown' / provider unavailable, NOT 'unsupported'."""
     svc = ModelDiscoveryService()
+    private_diagnostic = "https://local.example/models?token=probe-secret"
 
-    with patch("httpx.AsyncClient.post", side_effect=httpx.ConnectTimeout("Connection timed out")):
+    with patch(
+        "httpx.AsyncClient.post",
+        side_effect=httpx.ConnectTimeout(f"Connection timed out: {private_diagnostic}"),
+    ):
         res = await svc.probe_model_capability("ollama", "test-model")
 
     assert res.tool_support == "unknown"
     assert "timed out" in res.details.lower() or "connection" in res.details.lower()
+    assert private_diagnostic not in res.details
     # Cache must reflect unknown, not unsupported
     assert svc._probed_cache.get("ollama:test-model") == "unknown"
 
 
 @pytest.mark.asyncio
-async def test_probe_success_without_tool_calls_yields_unsupported():
-    """When runtime responds 200 but model emits no tool calls, it provides meaningful evidence of 'unsupported'."""
+async def test_probe_http_400_is_ambiguous_and_does_not_expose_provider_body():
+    svc = ModelDiscoveryService()
+    private_diagnostic = "private runtime body token=probe-secret"
+    fake_resp = MagicMock()
+    fake_resp.status_code = 400
+    fake_resp.json.return_value = {"error": {"message": private_diagnostic}}
+    fake_resp.text = private_diagnostic
+
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
+        result = await svc.probe_model_capability("ollama", "test-model")
+
+    assert result.tool_support == "unknown"
+    assert "unknown" in result.details.lower()
+    assert private_diagnostic not in result.details
+    assert svc._probed_cache.get("ollama:test-model") == "unknown"
+
+
+@pytest.mark.asyncio
+async def test_unexpected_probe_failure_does_not_expose_exception_text():
+    svc = ModelDiscoveryService()
+    private_diagnostic = "unexpected private provider diagnostic"
+
+    with patch("httpx.AsyncClient.post", side_effect=RuntimeError(private_diagnostic)):
+        result = await svc.probe_model_capability("ollama", "test-model")
+
+    assert result.tool_support == "unknown"
+    assert "failed unexpectedly" in result.details.lower()
+    assert private_diagnostic not in result.details
+
+
+@pytest.mark.asyncio
+async def test_probe_success_without_tool_calls_remains_unknown():
+    """A successful response without a tool call does not prove the model lacks tool support."""
     svc = ModelDiscoveryService()
 
     fake_resp = MagicMock()
@@ -315,9 +380,9 @@ async def test_probe_success_without_tool_calls_yields_unsupported():
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=fake_resp):
         res = await svc.probe_model_capability("ollama", "chat-only-model")
 
-    assert res.tool_support == "unsupported"
-    assert "without tool calls" in res.details.lower()
-    assert svc._probed_cache.get("ollama:chat-only-model") == "unsupported"
+    assert res.tool_support == "unknown"
+    assert "without a tool call" in res.details.lower()
+    assert svc._probed_cache.get("ollama:chat-only-model") == "unknown"
 
 
 @pytest.mark.asyncio

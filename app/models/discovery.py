@@ -407,9 +407,10 @@ class ModelDiscoveryService:
     ) -> CapabilityProbeResult:
         """
         Explicitly test a model's ability to emit structured tool calls.
-        Only marks 'unsupported' when the runtime/model successfully responds
-        and provides meaningful evidence that structured tool calling is unsupported.
-        Connection errors or timeouts yield 'unknown' / provider unavailable.
+        For local runtime probes, report support only after observing a tool
+        call. Non-observation remains unknown; one response cannot establish
+        that a model lacks tool support. Cloud/mock entries use their registered
+        provider capability without invoking a model.
         """
         if provider_id not in {"ollama", "lmstudio"}:
             return CapabilityProbeResult(
@@ -473,26 +474,30 @@ class ModelDiscoveryService:
                                 tool_support="supported",
                                 details="Model successfully emitted structured tool call.",
                             )
-                    # Model responded successfully (200), but emitted no tool calls despite tool request
-                    self._probed_cache[cache_key] = "unsupported"
+                    # A model can choose not to call a tool even when it
+                    # supports tools, so one response without a call is not
+                    # sufficient evidence to classify it as unsupported.
+                    self._probed_cache[cache_key] = "unknown"
                     return CapabilityProbeResult(
                         provider_id=provider_id,
                         model_id=model_id,
-                        tool_support="unsupported",
-                        details="Model responded without tool calls when function calling was requested.",
+                        tool_support="unknown",
+                        details="Model responded without a tool call; tool support remains unknown.",
                     )
                 elif resp.status_code == 400:
-                    err_msg = ""
-                    try:
-                        err_msg = resp.json().get("error", {}).get("message", "")
-                    except Exception:
-                        err_msg = resp.text
-                    self._probed_cache[cache_key] = "unsupported"
+                    # A bad request can indicate a malformed request, auth
+                    # issue, or unsupported tools. Without a provider-neutral
+                    # capability signal, do not classify it as unsupported or
+                    # return the provider's potentially sensitive error body.
+                    self._probed_cache[cache_key] = "unknown"
                     return CapabilityProbeResult(
                         provider_id=provider_id,
                         model_id=model_id,
-                        tool_support="unsupported",
-                        details=f"Runtime rejected tool calling schema (HTTP 400): {err_msg}",
+                        tool_support="unknown",
+                        details=(
+                            "Provider rejected the capability probe request (HTTP 400); "
+                            "tool support remains unknown."
+                        ),
                     )
                 else:
                     # 5xx or other status: provider unavailable or error, NOT unsupported
@@ -503,22 +508,22 @@ class ModelDiscoveryService:
                         tool_support="unknown",
                         details=f"Provider returned HTTP {resp.status_code}. Status unknown or provider unavailable.",
                     )
-        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RequestError, OSError) as e:
+        except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RequestError, OSError):
             # Failed connection/timeout: unknown or provider unavailable, NOT unsupported!
             self._probed_cache[cache_key] = "unknown"
             return CapabilityProbeResult(
                 provider_id=provider_id,
                 model_id=model_id,
                 tool_support="unknown",
-                details=f"Connection probe failed or timed out: {e}. Provider unavailable.",
+                details="Connection probe failed or timed out. Provider unavailable; tool support remains unknown.",
             )
-        except Exception as e:
+        except Exception:
             self._probed_cache[cache_key] = "unknown"
             return CapabilityProbeResult(
                 provider_id=provider_id,
                 model_id=model_id,
                 tool_support="unknown",
-                details=f"Unexpected probe failure: {e}",
+                details="Capability probe failed unexpectedly; tool support remains unknown.",
             )
 
 
