@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "scenario": "A5_privacy_boundary",
+  "outcome": "PASS",
+  "started_at": "2026-11-21T15:18:37.778615+00:00",
+  "completed_at": "2026-11-21T15:18:41.634881+00:00",
+  "execution": {
+    "mode": "local_pytest_api_and_provider_spies",
+    "live_inference_claim": false,
+    "external_provider_invocations": 0,
+    "pytest_summary": "17 passed",
+    "pytest_duration_seconds": 1.0
+  },
+  "run_id": "0553f6e9-f981-47f8-8690-9a6991505dc8",
+  "confirmation_id": "14210ad0-54f5-48b7-a3a6-03b16cecbdf0",
+  "events": [
+    {
+      "event_id": "ce42bb2a-11ca-4a18-adb9-039908947498",
+      "event_type": "context_compiled"
+    },
+    {
+      "event_id": "6406e82b-e9ea-465d-9a37-436cf9a85b9b",
+      "event_type": "routing_confirmation_requested"
+    },
+    {
+      "event_id": "ec6e0c36-8727-45fe-8e23-3626d9aa3943",
+      "event_type": "routing_confirmation_rejected"
+    }
+  ],
+  "route": {
+    "profile_id": "system-balanced",
+    "profile_version": 1,
+    "winning_scope": "system",
+    "privacy_policy": "public",
+    "fallback_policy": "cloud_allowed",
+    "provider": "openai",
+    "model": "gpt-4o-mini"
+  },
+  "assertions": [
+    {
+      "name": "cloud_model_blocked_before_provider_invocation_for_strict_privacy",
+      "result": "PASS",
+      "evidence": [
+        "tests/unit/test_model_router.py::test_explicit_provider_route_blocks_cloud_before_provider_call",
+        "tests/unit/test_workspace_graph.py::test_project_memory_local_only_blocks_cloud_model_before_provider_call",
+        "tests/unit/test_workspace_graph.py::test_session_local_only_episode_blocks_cloud_model_before_provider_call",
+        "tests/unit/test_workspace_graph.py::test_profile_local_only_blocks_cloud_model_before_provider_call",
+        "tests/unit/test_workspace_graph.py::test_project_scoped_semantic_local_only_blocks_cloud_model_before_provider_call"
+      ]
+    },
+    {
+      "name": "cloud_embedding_batch_and_query_blocked_before_provider_invocation",
+      "result": "PASS",
+      "evidence": [
+        "tests/unit/test_embedding_abstraction.py::test_cloud_embedding_calls_are_blocked_before_provider_invocation"
+      ]
+    },
+    {
+      "name": "external_research_search_blocked_before_provider_invocation",
+      "result": "PASS",
+      "evidence": [
+        "tests/unit/test_composite_provider.py::test_search_tool_blocks_external_query_for_strict_privacy"
+      ]
+    },
+    {
+      "name": "cloud_capability_filtered_before_tool_or_model_invocation",
+      "result": "PASS",
+      "evidence": [
+        "tests/unit/test_capability_providers.py::test_strict_privacy_filters_cloud_and_unknown_capability_providers",
+        "tests/unit/test_workspace_graph.py::test_confidential_context_never_exposes_cloud_capability_tools"
+      ]
+    },
+    {
+      "name": "selected_file_text_is_in_checkpoint_context",
+      "result": "PASS"
+    },
+    {
+      "name": "selected_file_text_is_absent_from_trace_payloads",
+      "result": "PASS"
+    },
+    {
+      "name": "cloud_route_waits_for_durable_confirmation",
+      "result": "PASS"
+    },
+    {
+      "name": "rejected_cloud_route_never_invokes_provider",
+      "result": "PASS"
+    },
+    {
+      "name": "routing_confirmation_rejection_never_calls_model",
+      "result": "PASS",
+      "evidence": [
+        "tests/integration/test_routing_confirmation_flow.py::test_rejected_routing_confirmation_never_calls_model"
+      ]
+    },
+    {
+      "name": "approved_confirmation_resumes_through_the_same_run",
+      "result": "PASS",
+      "evidence": [
+        "tests/integration/test_routing_confirmation_flow.py::test_approved_routing_confirmation_resumes_same_run"
+      ]
+    }
+  ],
+  "source": {
+    "base_commit_sha": "a576330a4f0cf172c244094720bc4e5d1deb76fd",
+    "acceptance_source_sha256": "ef47201e2bd2956397103fb5d0bdece13c1df568d2aa0ccf7697d552b82fdcc4",
+    "runner_sha256": "08f7f9abf8c5125b36e5eb705947ef7114a28ff6f3327ffc006a34e179b47fdd"
+  }
+}

@@ -1,10 +1,11 @@
 """Unit tests for the provider-neutral ModelRouter."""
 
 import pytest
-from app.core.errors import ProviderError
-from app.models.base import ChatMessage, ModelRequest, ModelResponse, ModelRole, ToolCallRequest
+from app.core.errors import PrivacyBoundaryViolation, ProviderError
+from app.models.base import ChatMessage, ModelRequest, ModelResponse, ModelRole, RoutingContext, ToolCallRequest
 from app.models.mock_provider import MockModelProvider
 from app.models.router import ModelRouter
+from app.models.routing_policy import ProviderMetadata
 
 
 @pytest.mark.asyncio
@@ -48,3 +49,27 @@ async def test_router_unregistered_provider_raises_error():
     with pytest.raises(ProviderError) as exc_info:
         router.get_provider("non_existent_provider")
     assert "not registered" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("privacy", ["confidential", "local_only"])
+async def test_explicit_provider_route_blocks_cloud_before_provider_call(privacy):
+    cloud_provider = MockModelProvider()
+    router = ModelRouter(default_provider_name="mock")
+    router.register_provider(
+        cloud_provider,
+        ProviderMetadata(
+            name="mock",
+            privacy_status="cloud",
+            default_model="mock-default",
+        ),
+    )
+    request = ModelRequest(
+        messages=[ChatMessage(role=ModelRole.USER, content="private request")],
+        routing_context=RoutingContext(privacy_requirement=privacy),
+    )
+
+    with pytest.raises(PrivacyBoundaryViolation):
+        await router.route(request, provider_name="mock")
+
+    assert cloud_provider.call_history == []

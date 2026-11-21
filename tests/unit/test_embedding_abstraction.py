@@ -4,6 +4,7 @@ import pytest
 from app.memory.embeddings.base import EmbeddingRequest
 from app.memory.embeddings.mock_provider import MockEmbeddingProvider
 from app.memory.embeddings.router import (
+    EmbeddingPrivacyBoundaryError,
     EmbeddingModelMismatchError,
     EmbeddingRouter,
 )
@@ -57,6 +58,39 @@ async def test_embedding_router_dimension_validation_and_mismatch():
     # Mismatched model name must raise EmbeddingModelMismatchError
     with pytest.raises(EmbeddingModelMismatchError, match="Re-embedding required"):
         router.validate_vector_compatibility(valid_vec, model_name="old-legacy-model-v0")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("privacy", ["confidential", "local_only"])
+@pytest.mark.parametrize("operation", ["embed", "embed_query"])
+async def test_cloud_embedding_calls_are_blocked_before_provider_invocation(privacy, operation):
+    class CloudEmbeddingSpy(MockEmbeddingProvider):
+        def __init__(self):
+            super().__init__(dimension=8, model_name="cloud-spy", name="cloud")
+            self.calls = 0
+
+        @property
+        def privacy_status(self):
+            return "cloud"
+
+        async def embed(self, request):
+            self.calls += 1
+            return await super().embed(request)
+
+        async def embed_query(self, text):
+            self.calls += 1
+            return await super().embed_query(text)
+
+    provider = CloudEmbeddingSpy()
+    router = EmbeddingRouter(providers={"cloud": provider}, default_provider="cloud")
+
+    with pytest.raises(EmbeddingPrivacyBoundaryError):
+        if operation == "embed":
+            await router.embed(["private text"], privacy_requirement=privacy)
+        else:
+            await router.embed_query("private query", privacy_requirement=privacy)
+
+    assert provider.calls == 0
 
 
 @pytest.mark.asyncio

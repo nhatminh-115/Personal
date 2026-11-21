@@ -1,7 +1,7 @@
 """ModelRouter abstraction for routing requests to providers."""
 
 from typing import Dict, Optional, Tuple
-from app.core.errors import ProviderError
+from app.core.errors import PrivacyBoundaryViolation, ProviderError
 from app.core.settings import settings
 from app.models.base import ModelRequest, ModelResponse, RoutingContext
 from app.models.mock_provider import MockModelProvider
@@ -143,6 +143,15 @@ class ModelRouter:
                     "run_id": ctx.run_id if ctx else None,
                 },
             )
+
+        if ctx:
+            privacy = getattr(ctx.privacy_requirement, "value", ctx.privacy_requirement)
+            provider_metadata = self._metadata.get(provider.name)
+            provider_privacy = provider_metadata.privacy_status if provider_metadata else "unknown"
+            if privacy in {"confidential", "local_only"} and provider_privacy not in {"local", "airgap"}:
+                raise PrivacyBoundaryViolation(
+                    f"Model provider '{provider.name}' does not satisfy the required {privacy} privacy boundary."
+                )
 
         return await provider.generate(request)
 
