@@ -68,9 +68,9 @@ async def _existing_chat_response(
     db: AsyncSession,
     run: RunModel,
     *,
-    request_fingerprint: str,
+    request_fingerprint: Optional[str],
 ) -> ChatResponse:
-    if run.request_fingerprint != request_fingerprint:
+    if request_fingerprint is not None and run.request_fingerprint != request_fingerprint:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail={
@@ -297,7 +297,7 @@ async def chat_endpoint(
             return await _existing_chat_response(
                 db,
                 existing,
-                request_fingerprint=request_fingerprint or "",
+                request_fingerprint=request_fingerprint,
             )
 
     run_id = str(uuid.uuid4())
@@ -423,7 +423,7 @@ async def chat_endpoint(
         return await _existing_chat_response(
             db,
             existing,
-            request_fingerprint=request_fingerprint or "",
+            request_fingerprint=request_fingerprint,
         )
 
     # 3. Emit initial audit trace
@@ -487,6 +487,14 @@ async def chat_endpoint(
         # 5. Invoke LangGraph orchestrator with durable checkpointer
         graph = await get_compiled_graph()
         async with lock_run_execution(db, run_id):
+            # Recovery can close this run while request setup is still in progress.
+            await db.refresh(run_record)
+            if run_record.status != RunStatus.RUNNING.value:
+                return await _existing_chat_response(
+                    db,
+                    run_record,
+                    request_fingerprint=request_fingerprint,
+                )
             await trace_service.record_event(
                 run_id=run_id,
                 session_id=req.session_id,
@@ -557,7 +565,7 @@ async def chat_endpoint(
                         return await _existing_chat_response(
                             db,
                             run_record,
-                            request_fingerprint=request_fingerprint or "",
+                            request_fingerprint=request_fingerprint,
                         )
                     if run_record.cancel_requested_at is not None:
                         return await _persist_cancelled_chat_turn(
@@ -570,7 +578,7 @@ async def chat_endpoint(
             return await _existing_chat_response(
                 db,
                 run_record,
-                request_fingerprint=request_fingerprint or "",
+                request_fingerprint=request_fingerprint,
             )
 
         run_record.status = next_status
@@ -603,7 +611,7 @@ async def chat_endpoint(
                     return await _existing_chat_response(
                         db,
                         run_record,
-                        request_fingerprint=request_fingerprint or "",
+                        request_fingerprint=request_fingerprint,
                     )
                 if run_record.cancel_requested_at is not None:
                     return await _persist_cancelled_chat_turn(
