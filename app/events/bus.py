@@ -120,8 +120,8 @@ class EventBus:
                     )
                 else:
                     logger.error(
-                        f"Error in event handler '{handler.__name__}' for event '{event.event_type}': {e}",
-                        exc_info=True,
+                        "Event handler failed (error type: %s).",
+                        type(e).__name__,
                         extra={"event_id": event.id, "event_type": event.event_type},
                     )
                 dispatch_error = e

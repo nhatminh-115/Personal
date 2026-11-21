@@ -179,8 +179,8 @@ class OutboxWorker:
                             )
                         else:
                             logger.error(
-                                f"OutboxWorker handler error on event '{event.id}' ({event.event_type}): {e}",
-                                exc_info=True,
+                                "OutboxWorker handler failed (error type: %s).",
+                                type(e).__name__,
                                 extra={"event_id": event.id, "worker_id": self.worker_id},
                             )
                         handler_error = e
