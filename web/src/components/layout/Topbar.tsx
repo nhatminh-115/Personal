@@ -1,4 +1,4 @@
-import { ChevronDown, Command, Files, LayoutDashboard, PanelRightOpen, Sparkles } from 'lucide-react';
+import { ChevronDown, Command, Files, KeyRound, LayoutDashboard, PanelRightOpen, Sparkles } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import type { EffectiveRouting, ModelCatalog, ReasoningEffort, WorkspaceMode } from '../../types';
 import { RoutingPopover } from '../ui/RoutingPopover';
@@ -25,6 +25,8 @@ interface TopbarProps {
   inspectorOpen: boolean;
   onToggleInspector: () => void;
   onOpenAura: () => void;
+  apiTokenConfigured: boolean;
+  onOpenApiAccess: () => void;
 }
 
 const modes: WorkspaceMode[] = ['chat', 'board', 'split'];
@@ -51,6 +53,8 @@ export function Topbar({
   inspectorOpen,
   onToggleInspector,
   onOpenAura,
+  apiTokenConfigured,
+  onOpenApiAccess,
 }: TopbarProps) {
   const activeIndex = modes.indexOf(mode);
   const inProject = Boolean(projectName);
@@ -95,6 +99,15 @@ export function Topbar({
           <Sparkles size={13} />
           <span>Search</span>
           <Command size={11} />
+        </button>
+        <button
+          className={`soft-pill api-access-trigger ${apiTokenConfigured ? 'is-active' : ''}`}
+          type="button"
+          onClick={onOpenApiAccess}
+          title={apiTokenConfigured ? 'Replace the API token saved for this tab' : 'Enter an API token if this server requires one'}
+        >
+          <KeyRound size={13} />
+          <span>{apiTokenConfigured ? 'API key set' : 'API access'}</span>
         </button>
         {inProject ? (
           <div className="routing-trigger-wrap">

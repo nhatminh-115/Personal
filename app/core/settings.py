@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from typing import Literal, Optional
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +21,20 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     LOG_LEVEL: str = "INFO"
     CORS_ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
+    AURA_API_TOKEN: SecretStr | None = Field(
+        default=None,
+        description="Optional shared bearer token required for API and documentation routes.",
+    )
+
+    @field_validator("AURA_API_TOKEN", mode="before")
+    @classmethod
+    def validate_api_token(cls, value):
+        if value is None or value == "":
+            return None
+        token = value.get_secret_value() if isinstance(value, SecretStr) else value
+        if not isinstance(token, str) or len(token) < 32 or token.strip() != token or any(char.isspace() for char in token):
+            raise ValueError("AURA_API_TOKEN must be at least 32 non-whitespace characters when configured.")
+        return value
 
     # Database
     # Default to SQLite for easy local testability; override via .env with PostgreSQL + pgvector

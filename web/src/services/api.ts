@@ -54,6 +54,36 @@ export class ApiError extends Error {
 }
 
 const BASE_URL = ''; // Proxy forwards /v1 to FastAPI in dev
+const API_TOKEN_SESSION_KEY = 'aura-api-token';
+export const API_AUTH_REQUIRED_EVENT = 'aura:api-auth-required';
+
+export function getApiToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    return window.sessionStorage.getItem(API_TOKEN_SESSION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setApiToken(token: string | null): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (token) window.sessionStorage.setItem(API_TOKEN_SESSION_KEY, token);
+    else window.sessionStorage.removeItem(API_TOKEN_SESSION_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const token = getApiToken();
+  if (!token) return init === undefined ? fetch(input) : fetch(input, init);
+  const headers = new Headers(init?.headers);
+  headers.set('Authorization', 'Bearer ' + token);
+  return fetch(input, { ...init, headers });
+}
 
 export function createClientTurnId(): string {
   return globalThis.crypto?.randomUUID?.()
@@ -66,6 +96,9 @@ async function handleResponse<T>(res: Response): Promise<T> {
     try {
       const errJson = JSON.parse(text);
       const detail = errJson.detail;
+      if ((errJson.code === 'api_auth_required' || detail?.code === 'api_auth_required') && typeof window !== 'undefined') {
+        window.dispatchEvent(new Event(API_AUTH_REQUIRED_EVENT));
+      }
       throw new ApiError(
         res.status,
         errJson.message || (typeof detail === 'string' ? detail : detail?.message) || `Request failed with status ${res.status}`,
@@ -91,7 +124,7 @@ async function fetchAllCursorPages<T>(path: string, pageSize = 100): Promise<T[]
       params.set('cursor', cursor);
     }
     const query = params.toString();
-    const response = await fetch(`${BASE_URL}${path}${query ? `?${query}` : ''}`);
+    const response = await apiFetch(`${BASE_URL}${path}${query ? `?${query}` : ''}`);
     items.push(...await handleResponse<T[]>(response));
     cursor = response.headers?.get('X-Next-Cursor') ?? null;
   } while (cursor);
@@ -100,28 +133,28 @@ async function fetchAllCursorPages<T>(path: string, pageSize = 100): Promise<T[]
 
 export const api = {
   async fetchCapabilityProviders(): Promise<CapabilityProvidersResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/capabilities/providers`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/capabilities/providers`));
   },
 
   async refreshCapabilityProvider(providerId: string): Promise<CapabilityProviderMetadata> {
-    return handleResponse(await fetch(
+    return handleResponse(await apiFetch(
       `${BASE_URL}/v1/capabilities/providers/${encodeURIComponent(providerId)}/refresh`,
       { method: 'POST' },
     ));
   },
 
   async fetchModels(): Promise<ModelCatalog> {
-    const res = await fetch(`${BASE_URL}/v1/models`);
+    const res = await apiFetch(`${BASE_URL}/v1/models`);
     return handleResponse<ModelCatalog>(res);
   },
 
   async refreshModels(): Promise<ModelCatalog> {
-    const res = await fetch(`${BASE_URL}/v1/models/refresh`, { method: 'POST' });
+    const res = await apiFetch(`${BASE_URL}/v1/models/refresh`, { method: 'POST' });
     return handleResponse<ModelCatalog>(res);
   },
 
   async probeModel(providerId: string, modelId: string): Promise<ModelProbeResponse> {
-    const res = await fetch(`${BASE_URL}/v1/models/probe`, {
+    const res = await apiFetch(`${BASE_URL}/v1/models/probe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ provider_id: providerId, model_id: modelId }),
@@ -130,16 +163,16 @@ export const api = {
   },
 
   async fetchRoutingProfiles(): Promise<RoutingProfile[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/profiles`));
   },
 
   async fetchRoutingProfile(id: string): Promise<RoutingProfile> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}`));
   },
 
   async saveRoutingProfile(profile: RoutingProfile): Promise<RoutingProfile> {
     const update = Boolean(profile.id && profile.id !== 'system-balanced');
-    const res = await fetch(`${BASE_URL}/v1/routing/profiles${update ? `/${encodeURIComponent(profile.id!)}` : ''}`, {
+    const res = await apiFetch(`${BASE_URL}/v1/routing/profiles${update ? `/${encodeURIComponent(profile.id!)}` : ''}`, {
       method: update ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(profile),
@@ -148,15 +181,15 @@ export const api = {
   },
 
   async duplicateRoutingProfile(id: string): Promise<RoutingProfile> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
   },
 
   async validateRoutingProfile(id: string): Promise<RoutingProfileValidation> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/validate`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}/validate`, { method: 'POST' }));
   },
 
   async setDefaultRoutingProfile(profileId: string | null): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/routing/default`, {
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/routing/default`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile_id: profileId }),
     }));
@@ -164,33 +197,33 @@ export const api = {
 
   async deleteRoutingProfile(id: string, expectedVersion: number): Promise<void> {
     const params = new URLSearchParams({ expected_version: String(expectedVersion) });
-    await handleResponse(await fetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}?${params}`, { method: 'DELETE' }));
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/routing/profiles/${encodeURIComponent(id)}?${params}`, { method: 'DELETE' }));
   },
 
   async fetchEffectiveRouting(projectName?: string, sessionId?: string): Promise<EffectiveRouting> {
     const params = new URLSearchParams();
     if (projectName) params.set('project_name', projectName);
     if (sessionId) params.set('session_id', sessionId);
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/effective${params.size ? `?${params}` : ''}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/effective${params.size ? `?${params}` : ''}`));
   },
 
   async assignProjectRouting(projectName: string, profileId: string, expectedRevision: number): Promise<{ revision: number }> {
     const params = new URLSearchParams({ profile_id: profileId, expected_revision: String(expectedRevision) });
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}?${params}`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}?${params}`, { method: 'POST' }));
   },
 
   async fetchProjectRouting(projectName: string): Promise<{ project_name: string; routing_profile_id: string | null; revision: number }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/assignments/${encodeURIComponent(projectName)}`));
   },
 
   async assignSessionRouting(sessionId: string, profileId: string | null, expectedRevision: number): Promise<{ revision: number }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profile_id: profileId, expected_revision: expectedRevision }),
     }));
   },
 
   async fetchSessionRouting(sessionId: string): Promise<{ session_id: string; routing_profile_id: string | null; revision: number }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/sessions/${encodeURIComponent(sessionId)}`));
   },
 
   async fetchRoutingPreview(input: {
@@ -202,7 +235,7 @@ export const api = {
     project_name?: string;
     session_id?: string;
   }): Promise<RoutingDecision> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing/preview`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing/preview`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
@@ -211,7 +244,7 @@ export const api = {
     const params = new URLSearchParams({ page_size: '25' });
     if (projectName) params.set('project_name', projectName);
     if (cursor) params.set('cursor', cursor);
-    const res = await fetch(`${BASE_URL}/v1/sessions?${params.toString()}`);
+    const res = await apiFetch(`${BASE_URL}/v1/sessions?${params.toString()}`);
     const items = await handleResponse<SessionSummary[]>(res);
     return { items, nextCursor: res.headers?.get('X-Next-Cursor') ?? null };
   },
@@ -220,16 +253,16 @@ export const api = {
     const params = new URLSearchParams();
     if (cursor) params.set('cursor', cursor);
     const query = params.size ? `?${params.toString()}` : '';
-    const res = await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}${query}`);
+    const res = await apiFetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}${query}`);
     return handleResponse<SessionDetail>(res);
   },
 
   async fetchSessionExecutionState(sessionId: string): Promise<SessionExecutionState> {
-    return handleResponse<SessionExecutionState>(await fetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}/state`));
+    return handleResponse<SessionExecutionState>(await apiFetch(`${BASE_URL}/v1/sessions/${encodeURIComponent(sessionId)}/state`));
   },
 
   async previewWorkspaceContext(projectName: string, selectedObjectIds: string[]): Promise<WorkspaceContextPreview> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/context/preview`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/context/preview`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ selected_object_ids: [...new Set(selectedObjectIds)] }),
@@ -240,7 +273,7 @@ export const api = {
     const params = new URLSearchParams();
     if (executionCursor) params.set('execution_cursor', executionCursor);
     const query = params.size ? `?${params.toString()}` : '';
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/execution${query}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/execution${query}`));
   },
 
   async fetchWorkspaceGraph(projectName: string, executionCursor?: string | null): Promise<WorkspaceGraph> {
@@ -249,7 +282,7 @@ export const api = {
     if (executionCursor) firstParams.set('execution_cursor', executionCursor);
     const firstQueryString = firstParams.toString();
     const firstQuery = firstQueryString ? `?${firstQueryString}` : '';
-    const firstPage = await handleResponse<WorkspaceGraph>(await fetch(
+    const firstPage = await handleResponse<WorkspaceGraph>(await apiFetch(
       `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph${firstQuery}`,
     ));
     const objects = [...firstPage.objects];
@@ -270,7 +303,7 @@ export const api = {
       params.set('include_project_state', 'false');
       if (executionCursor) params.set('execution_cursor', executionCursor);
       const queryString = params.toString();
-      const page = await handleResponse<WorkspaceGraph>(await fetch(
+      const page = await handleResponse<WorkspaceGraph>(await apiFetch(
         `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${queryString}`,
       ));
       objects.push(...page.objects);
@@ -298,7 +331,7 @@ export const api = {
     else if (cursors) params.set('objects_exhausted', 'true');
     if (cursors?.edge) params.set('edge_cursor', cursors.edge);
     else if (cursors) params.set('edges_exhausted', 'true');
-    const graph = await handleResponse<WorkspaceGraph>(await fetch(
+    const graph = await handleResponse<WorkspaceGraph>(await apiFetch(
       `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
     ));
     if (!cursors) return graph;
@@ -324,7 +357,7 @@ export const api = {
     else if (cursors) params.set('objects_exhausted', 'true');
     if (cursors?.edge) params.set('edge_cursor', cursors.edge);
     else if (cursors) params.set('edges_exhausted', 'true');
-    return handleResponse(await fetch(
+    return handleResponse(await apiFetch(
       `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
     ));
   },
@@ -340,7 +373,7 @@ export const api = {
       include_project_state: 'false',
     });
     if (cursor) params.set('object_cursor', cursor);
-    const graph = await handleResponse<WorkspaceGraph>(await fetch(
+    const graph = await handleResponse<WorkspaceGraph>(await apiFetch(
       `${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/graph?${params.toString()}`,
     ));
     return { objects: graph.objects, nextCursor: graph.objects_next_cursor ?? null };
@@ -353,7 +386,7 @@ export const api = {
   async fetchWorkspaceNotesPage(cursor?: string | null, pageSize = 50): Promise<{ items: WorkspaceNoteRecord[]; nextCursor: string | null }> {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/workspace/notes?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/workspace/notes?${params.toString()}`);
     return {
       items: await handleResponse<WorkspaceNoteRecord[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -361,14 +394,14 @@ export const api = {
   },
 
   async createWorkspaceNote(input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'>): Promise<WorkspaceNoteRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/notes`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
   },
 
   async updateWorkspaceNote(id: string, input: Omit<WorkspaceNoteRecord, 'id' | 'created_at' | 'updated_at' | 'revision'> & { expected_revision: number }): Promise<WorkspaceNoteRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
@@ -376,7 +409,7 @@ export const api = {
 
   async deleteWorkspaceNote(id: string, expectedRevision: number): Promise<void> {
     const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
   },
 
   async fetchStudySessions(): Promise<StudySessionRecord[]> {
@@ -386,13 +419,13 @@ export const api = {
   async fetchStudySessionsPage(cursor?: string | null): Promise<{ items: StudySessionRecord[]; nextCursor: string | null }> {
     const params = new URLSearchParams({ page_size: '100' });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/study/sessions?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/study/sessions?${params.toString()}`);
     const items = await handleResponse<StudySessionRecord[]>(response);
     return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
   },
 
   async startStudySession(trackId: string, trackTitle: string, materialId?: string, materialProjectName?: string): Promise<StudySessionRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         track_id: trackId,
@@ -404,7 +437,7 @@ export const api = {
   },
 
   async updateStudySessionReflection(sessionId: string, reflection: string, expectedRevision: number): Promise<StudySessionRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/reflection`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/reflection`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ reflection, expected_revision: expectedRevision }),
@@ -418,7 +451,7 @@ export const api = {
   async fetchStudyCardsPage(cursor?: string | null): Promise<{ items: StudyCardRecord[]; nextCursor: string | null }> {
     const params = new URLSearchParams({ page_size: '100' });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/study/cards?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/study/cards?${params.toString()}`);
     const items = await handleResponse<StudyCardRecord[]>(response);
     return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
   },
@@ -426,13 +459,13 @@ export const api = {
   async fetchStudyReviewQueuePage(cursor?: string | null): Promise<{ items: StudyCardRecord[]; nextCursor: string | null }> {
     const params = new URLSearchParams({ page_size: '50' });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/study/review-queue?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/study/review-queue?${params.toString()}`);
     const items = await handleResponse<StudyCardRecord[]>(response);
     return { items, nextCursor: response.headers?.get('X-Next-Cursor') ?? null };
   },
 
   async createStudyCard(sessionId: string, question: string, answer: string): Promise<StudyCardRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, answer }),
@@ -440,7 +473,7 @@ export const api = {
   },
 
   async updateStudyCard(cardId: string, sessionId: string, question: string, answer: string, expectedRevision: number): Promise<StudyCardRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ question, answer, expected_revision: expectedRevision }),
@@ -448,7 +481,7 @@ export const api = {
   },
 
   async reviewStudyCard(cardId: string, sessionId: string, rating: StudyCardRating, expectedRevision: number): Promise<StudyCardRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}/review`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rating, expected_revision: expectedRevision }),
@@ -456,13 +489,13 @@ export const api = {
   },
 
   async deleteStudyCard(cardId: string, sessionId: string, expectedRevision: number): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}?expected_revision=${expectedRevision}`, {
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/cards/${encodeURIComponent(cardId)}?expected_revision=${expectedRevision}`, {
       method: 'DELETE',
     }));
   },
 
   async completeStudySession(sessionId: string): Promise<StudySessionRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/study/sessions/${encodeURIComponent(sessionId)}/complete`, {
       method: 'POST',
     }));
   },
@@ -477,7 +510,7 @@ export const api = {
     if (query?.trim()) params.set('q', query.trim());
     if (projectName?.trim()) params.set('project_name', projectName.trim());
     if (unlinkedProjectName?.trim()) params.set('unlinked_project_name', unlinkedProjectName.trim());
-    const response = await fetch(`${BASE_URL}/v1/workspace/library?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/workspace/library?${params.toString()}`);
     return {
       items: await handleResponse<WorkspaceLibraryReferenceRecord[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -502,7 +535,7 @@ export const api = {
       project_name: string | null;
       project_note_count: number;
       project_library_count: number;
-    }>>(await fetch(`${BASE_URL}/v1/workspace/summary${query}`));
+    }>>(await apiFetch(`${BASE_URL}/v1/workspace/summary${query}`));
     const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
     return {
       note_count: count(summary.note_count),
@@ -522,7 +555,7 @@ export const api = {
     const params = new URLSearchParams({ query, limit: String(limit) });
     if (projectName) params.set('project_name', projectName);
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/workspace/search?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/workspace/search?${params.toString()}`);
     return {
       items: await handleResponse<WorkspaceSearchResult[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -530,11 +563,11 @@ export const api = {
   },
 
   async fetchWorkspaceNote(id: string): Promise<WorkspaceNoteRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/notes/${encodeURIComponent(id)}`));
   },
 
   async createWorkspaceProject(input: { id: string; name: string; subtitle: string }): Promise<WorkspaceProjectRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
@@ -542,7 +575,7 @@ export const api = {
 
   async setWorkspaceProjectArchived(id: string, archived: boolean, expectedRevision: number): Promise<WorkspaceProjectRecord> {
     const action = archived ? 'archive' : 'restore';
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(id)}/${action}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(id)}/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ expected_revision: expectedRevision }),
     }));
@@ -555,7 +588,7 @@ export const api = {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
     if (includeArchived) params.set('include_archived', 'true');
-    const response = await fetch(`${BASE_URL}/v1/automations?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/automations?${params.toString()}`);
     return {
       automations: await handleResponse<AutomationRecordResponse[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -566,12 +599,12 @@ export const api = {
     if (ids.length === 0) return [];
     const params = new URLSearchParams();
     ids.forEach((id) => params.append('automation_ids', id));
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/status?${params.toString()}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/status?${params.toString()}`));
   },
 
   async fetchAutomationSummary(): Promise<{ total: number; enabled: number }> {
     const summary = await handleResponse<Partial<{ total: number; enabled: number }>>(
-      await fetch(`${BASE_URL}/v1/automations/summary`),
+      await apiFetch(`${BASE_URL}/v1/automations/summary`),
     );
     const count = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
     return { total: count(summary.total), enabled: count(summary.enabled) };
@@ -583,7 +616,7 @@ export const api = {
   }> {
     const params = new URLSearchParams({ page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/runs?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/runs?${params.toString()}`);
     return {
       runs: await handleResponse<AutomationExecutionRecord[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -600,7 +633,7 @@ export const api = {
     schedule: { mode: 'interval' | 'daily' | 'weekly'; local_time: string | null; weekdays: number[]; timezone: string };
     webhook_enabled?: boolean;
   }): Promise<AutomationRecordResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
@@ -614,49 +647,49 @@ export const api = {
     webhook_enabled?: boolean;
     expected_revision: number;
   }): Promise<AutomationRecordResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
 
   async setAutomationArchived(id: string, archived: boolean, expectedRevision: number): Promise<AutomationRecordResponse> {
     const action = archived ? 'archive' : 'restore';
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expected_revision: expectedRevision }),
     }));
   },
 
   async duplicateAutomation(id: string): Promise<AutomationRecordResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/duplicate`, { method: 'POST' }));
   },
 
   async setAutomationEnabled(id: string, enabled: boolean, expectedRevision: number): Promise<AutomationRecordResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled, expected_revision: expectedRevision }),
     }));
   },
 
   async runAutomation(id: string): Promise<AutomationRunResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/run`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(id)}/run`, { method: 'POST' }));
   },
 
   async cancelAutomationRun(automationId: string, eventId: string): Promise<AutomationExecutionRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/cancel`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/cancel`, { method: 'POST' }));
   },
 
   async retryAutomationRun(automationId: string, eventId: string): Promise<AutomationExecutionRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/retry`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/automations/${encodeURIComponent(automationId)}/runs/${encodeURIComponent(eventId)}/retry`, { method: 'POST' }));
   },
 
   async createWorkspaceLibraryReference(input: Omit<WorkspaceLibraryReferenceRecord, 'created_at' | 'updated_at' | 'revision'>): Promise<WorkspaceLibraryReferenceRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/library`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(input),
     }));
   },
 
   async updateWorkspaceLibraryReference(id: string, input: Omit<WorkspaceLibraryReferenceRecord, 'id' | 'created_at' | 'updated_at' | 'revision'>, expectedRevision: number): Promise<WorkspaceLibraryReferenceRecord> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...input, expected_revision: expectedRevision }),
     }));
@@ -664,11 +697,11 @@ export const api = {
 
   async deleteWorkspaceLibraryReference(id: string, expectedRevision: number): Promise<void> {
     const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/library/${encodeURIComponent(id)}?${params.toString()}`, { method: 'DELETE' }));
   },
 
   async attachWorkspaceSession(projectName: string, sessionId: string): Promise<{ session_id: string; project_name: string }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'POST' }));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/sessions/${encodeURIComponent(sessionId)}`, { method: 'POST' }));
   },
 
   async createWorkspaceObject(projectName: string, input: {
@@ -679,20 +712,20 @@ export const api = {
     metadata_json?: Record<string, unknown>;
     source_object_ids?: string[];
   }): Promise<WorkspaceObject> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
 
   async deleteWorkspaceObject(projectName: string, objectId: string, expectedRevision: number): Promise<void> {
     const params = new URLSearchParams({ expected_revision: String(expectedRevision) });
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}?${params}`, { method: 'DELETE' }));
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}?${params}`, { method: 'DELETE' }));
   },
 
   async updateWorkspaceObject(projectName: string, objectId: string, input: {
     title: string; content: string; metadata_json?: Record<string, unknown>; expected_revision: number;
   }): Promise<WorkspaceObject> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/objects/${encodeURIComponent(objectId)}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
@@ -701,13 +734,13 @@ export const api = {
     source_object_id: string; target_object_id: string; relation_type: string;
     edge_family: Extract<WorkspaceEdge['edge_family'], 'semantic' | 'context'>; metadata_json?: Record<string, unknown>;
   }): Promise<WorkspaceEdge> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
     }));
   },
 
   async deleteWorkspaceEdges(projectName: string, edgeIds: string[]): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges`, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ edge_ids: edgeIds }),
@@ -718,7 +751,7 @@ export const api = {
     projectName: string,
     edges: Array<Pick<WorkspaceEdge, 'id' | 'source_object_id' | 'target_object_id' | 'relation_type' | 'edge_family' | 'metadata_json'>>,
   ): Promise<WorkspaceEdge[]> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-restore`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/batch-restore`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ edges }),
@@ -726,11 +759,11 @@ export const api = {
   },
 
   async deleteWorkspaceEdge(projectName: string, edgeId: string): Promise<void> {
-    await handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
+    await handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/edges/${encodeURIComponent(edgeId)}`, { method: 'DELETE' }));
   },
 
   async putWorkspaceLayout(projectName: string, layout: Record<string, any>, expectedRevision: number): Promise<WorkspaceLayout> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ layout, expected_revision: expectedRevision }),
     }));
@@ -772,17 +805,17 @@ export const api = {
     };
     let res: Response;
     try {
-      res = await fetch(`${BASE_URL}/v1/chat`, request);
+      res = await apiFetch(`${BASE_URL}/v1/chat`, request);
     } catch {
       // A connection can fail after the server accepted the request. Reuse
       // the same turn ID so the retry returns that run instead of invoking it twice.
-      res = await fetch(`${BASE_URL}/v1/chat`, request);
+      res = await apiFetch(`${BASE_URL}/v1/chat`, request);
     }
     return handleResponse<ChatResponse>(res);
   },
 
   async cancelChatTurn(sessionId: string, clientTurnId: string): Promise<{ run_id: string; status: 'cancellation_requested'; already_requested: boolean }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/runs/cancel-turn`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/runs/cancel-turn`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, client_turn_id: clientTurnId }),
@@ -795,7 +828,7 @@ export const api = {
   }> {
     const params = new URLSearchParams({ session_id: sessionId, page_size: String(pageSize) });
     if (cursor) params.set('cursor', cursor);
-    const response = await fetch(`${BASE_URL}/v1/routing-confirmations/pending?${params.toString()}`);
+    const response = await apiFetch(`${BASE_URL}/v1/routing-confirmations/pending?${params.toString()}`);
     return {
       items: await handleResponse<RoutingConfirmationDetail[]>(response),
       nextCursor: response.headers?.get('X-Next-Cursor') ?? null,
@@ -803,11 +836,11 @@ export const api = {
   },
 
   async fetchWorkspaceLayout(projectName: string): Promise<WorkspaceLayout> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/workspace/projects/${encodeURIComponent(projectName)}/layout`));
   },
 
   async fetchRoutingConfirmation(id: string): Promise<RoutingConfirmationDetail> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}`));
   },
 
   async decideRoutingConfirmation(
@@ -815,7 +848,7 @@ export const api = {
     decision: 'approved' | 'rejected',
     decisionNotes?: string,
   ): Promise<RoutingConfirmationDecisionResponse> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}/decision`, {
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/routing-confirmations/${encodeURIComponent(id)}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ decision, ...(decisionNotes ? { decision_notes: decisionNotes } : {}) }),
@@ -823,7 +856,7 @@ export const api = {
   },
 
   async fetchApproval(approvalId: string): Promise<ApprovalDetail> {
-    const res = await fetch(`${BASE_URL}/v1/approvals/${encodeURIComponent(approvalId)}`);
+    const res = await apiFetch(`${BASE_URL}/v1/approvals/${encodeURIComponent(approvalId)}`);
     return handleResponse<ApprovalDetail>(res);
   },
 
@@ -837,7 +870,7 @@ export const api = {
     if (decisionNotes) payload.decision_notes = decisionNotes;
     if (editedInput) payload.edited_input = editedInput;
 
-    const res = await fetch(`${BASE_URL}/v1/approvals/${encodeURIComponent(approvalId)}/decision`, {
+    const res = await apiFetch(`${BASE_URL}/v1/approvals/${encodeURIComponent(approvalId)}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -853,7 +886,7 @@ export const api = {
     do {
       const params = new URLSearchParams({ page_size: '100' });
       if (cursor) params.set('cursor', cursor);
-      const res = await fetch(`${path}?${params.toString()}`);
+      const res = await apiFetch(`${path}?${params.toString()}`);
       const page = await handleResponse<RunDetail>(res);
       run ??= page;
       events.push(...page.events);
@@ -863,12 +896,12 @@ export const api = {
   },
 
   async fetchRunResearch(runId: string): Promise<ResearchInspectorData> {
-    const res = await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/research`);
+    const res = await apiFetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/research`);
     return handleResponse<ResearchInspectorData>(res);
   },
 
   async fetchRunRouting(runId: string): Promise<{ run_id: string; decisions: RunRoutingDecision[] }> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/runs/${encodeURIComponent(runId)}/routing`));
   },
 
   async fetchMemories(projectName?: string, sessionId?: string, cursor?: string | null, includeInactive = false, memoryType?: string): Promise<{
@@ -884,7 +917,7 @@ export const api = {
     if (cursor) params.set('cursor', cursor);
 
     const queryStr = params.toString() ? `?${params.toString()}` : '';
-    const res = await fetch(`${BASE_URL}/v1/memory${queryStr}`);
+    const res = await apiFetch(`${BASE_URL}/v1/memory${queryStr}`);
     return {
       items: await handleResponse<MemoryItem[]>(res),
       nextCursor: res.headers?.get('X-Next-Cursor') ?? null,
@@ -895,15 +928,15 @@ export const api = {
     const params = new URLSearchParams();
     if (projectName) params.set('project_name', projectName);
     if (sessionId) params.set('session_id', sessionId);
-    return handleResponse(await fetch(`${BASE_URL}/v1/memory/by-id/${encodeURIComponent(memoryId)}?${params.toString()}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/memory/by-id/${encodeURIComponent(memoryId)}?${params.toString()}`));
   },
 
   async fetchProfileMemoryById(memoryId: string): Promise<MemoryItem> {
-    return handleResponse(await fetch(`${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`));
+    return handleResponse(await apiFetch(`${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`));
   },
 
   async setProjectMemoryActive(projectName: string, memoryId: string, isActive: boolean): Promise<MemoryItem> {
-    return handleResponse(await fetch(
+    return handleResponse(await apiFetch(
       `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
       {
         method: 'PATCH',
@@ -914,7 +947,7 @@ export const api = {
   },
 
   async editProjectMemory(projectName: string, memoryId: string, content: string): Promise<MemoryItem> {
-    return handleResponse(await fetch(
+    return handleResponse(await apiFetch(
       `${BASE_URL}/v1/memory/projects/${encodeURIComponent(projectName)}/${encodeURIComponent(memoryId)}`,
       {
         method: 'PUT',
@@ -925,7 +958,7 @@ export const api = {
   },
 
   async setProfileMemoryActive(memoryId: string, isActive: boolean): Promise<MemoryItem> {
-    return handleResponse(await fetch(
+    return handleResponse(await apiFetch(
       `${BASE_URL}/v1/memory/profile/${encodeURIComponent(memoryId)}`,
       {
         method: 'PATCH',
