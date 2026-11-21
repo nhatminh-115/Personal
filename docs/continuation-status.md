@@ -93,7 +93,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #379 / branch 31): prior assistant messages and persisted plans remain conversation history, not authorization for new actions. Merged as `fea8b0469489ed04e367664c51b9f81d364451d8`. CI #991 (`44892382388`), job `136810791569`, passed: backend 739 tests in 55.12s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.24s.
 - Completed milestone (PR #380 / branch 32): prevent model-supplied delegation arguments from overriding trusted root project scope and privacy/fallback routing boundaries. Merged as `3374bd0da4eddafd4ee6e7654e6f7a3e3a04b60b`. CI #993 (`44893591919`), job `136814425832`, passed: backend 740 tests in 70.46s; targeted delegation-boundary regression passed; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 10.18s.
 - Completed milestone (PR #381 / branch 33): pin scholarly PDF fetches to the public IP addresses validated for each URL hop while preserving HTTP Host and TLS SNI identity. Merged as `b9415ff831ec2d5117faebca5638b61168bc0497`. Final CI #996 (`44895348664`), job `136819696309`, passed: backend 741 tests in 54.48s; both PDF destination regressions passed; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.17s. Initial CI #995 failed on a missing import; corrected before the final green run.
-- Current audit (branch 34, based on `b9415ff831ec2d5117faebca5638b61168bc0497`): review model discovery and capability-probe network calls, classify their endpoint trust sources and data exposure, and harden any concrete resource or privacy boundary without breaking intentional provider configuration.
+- Current milestone (branch 34, based on `b9415ff831ec2d5117faebca5638b61168bc0497`): bound the decoded JSON bodies and model/capability metadata returned by configured Ollama and LM Studio endpoints, including explicit model capability probes.
 
 ## Recent verified milestones
 
@@ -149,8 +149,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #381: pin research PDF requests to validated addresses | Merged as `b9415ff`; CI #996 (`44895348664`), backend 741 passed in 54.48s; PDF destination regressions passed; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 8.17s |
 
 ## Immediate next steps
-1. Complete branch 34's review of model discovery and capability probes. Treat deployment-configured provider endpoints as intentional inputs, but verify response bounds, error redaction, and the exact data returned.
-2. Add regression coverage for any concrete boundary found, then wait for full remote Actions before merging the tested head.
+1. Verify branch 34's response byte limits, model-count caps, and unchanged provider error/privacy semantics with the full remote Actions run.
+2. Merge only the exact tested head after Actions are green, then create a fresh branch from canonical `main`.
 3. Continue the next highest-value non-blocked AURA gap. CodeGraph dogfood remains pending external setup.
 ## Dogfood and external setup
 
@@ -170,7 +170,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Branch 29's tool metadata prompt regression and full suite passed in CI #983; backend 738 tests, Phases 1/2.1/3/4, frontend tests, and build all passed on the merged head.
 - Branch 30's retrieved-context role-separation regression passed in CI #989; backend 739 tests, Phases 1/2.1/3/4, frontend 47 files / 320 tests, and Vite build all passed.
 - Branch 31's authorization-boundary regression passed in CI #991; backend 739 tests, Phases 1/2.1/3/4, frontend 47 files / 320 tests, and Vite build all passed.
-- Branch 32's delegation-scope regression passed in CI #993. Branch 33's DNS-rebinding regressions passed in CI #996: requests use only validated literal addresses and preserve the original hostname for HTTP/TLS. Branch 34 is an audit of model discovery and probe boundaries. Remote Actions remains the release gate.
+- Branch 32's delegation-scope regression passed in CI #993. Branch 33's DNS-rebinding regressions passed in CI #996: requests use only validated literal addresses and preserve the original hostname for HTTP/TLS. Branch 34 adds bounded streaming JSON reads and deterministic caps for model/capability metadata; its regression suite is pending remote Actions. Remote Actions remains the release gate.
 - No paid/hosted model is required for CI.
 - Keep changes isolated on a fresh branch from canonical `main`, then report exact merge SHA and remote CI evidence.
 
