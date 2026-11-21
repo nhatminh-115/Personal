@@ -1025,8 +1025,16 @@ async def execute_tool_node(state: AgentState, config: Optional[RunnableConfig] 
                 raise
             except Exception as e:
                 error_cat = "tool_failure"
-                errors.append(f"tool_failure: {e}")
-                result_payload = {"success": False, "output": "", "error": str(e), "error_category": error_cat}
+                error_type = type(e).__name__
+                error_message = "Tool execution failed because an internal error occurred."
+                errors.append(f"{error_cat}: {error_type}")
+                result_payload = {
+                    "success": False,
+                    "output": "",
+                    "error": error_message,
+                    "error_category": error_cat,
+                    "metadata": {"error_type": error_type},
+                }
 
         tool_results.append({
             "tool_call_id": tool_call_id,
