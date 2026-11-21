@@ -193,6 +193,25 @@ class EventToAgentBridge:
                 "reasoning_effort": routing_context.reasoning_effort.value if routing_context.reasoning_effort else None,
                 "routing_context": routing_context_dict,
             }
+            if existing_run is not None:
+                # Runs created before event provenance was persisted can still
+                # be retried by the outbox. Backfill the identity before graph
+                # compilation or execution can fail, while retaining the
+                # original routing decision and any other snapshot metadata.
+                persisted_snapshot = (
+                    dict(existing_run.routing_snapshot_json)
+                    if isinstance(existing_run.routing_snapshot_json, dict)
+                    else {}
+                )
+                provenance = {
+                    "execution_source": "event",
+                    "source_event_id": event.id,
+                }
+                if any(persisted_snapshot.get(key) != value for key, value in provenance.items()):
+                    persisted_snapshot.update(provenance)
+                    existing_run.routing_snapshot_json = persisted_snapshot
+                    await db.commit()
+
             run_metadata = dict(payload.get("metadata") or {})
             run_metadata["routing_context_dict"] = routing_context_dict
             run_metadata["routing_profile_id"] = profile_id
