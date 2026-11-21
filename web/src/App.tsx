@@ -314,7 +314,7 @@ export default function App() {
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
   const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
   const [apiAccessOpen, setApiAccessOpen] = useState(false);
-    const [auraOpen, setAuraOpen] = useState(false);
+  const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
   const [inspectorFocusRunId, setInspectorFocusRunId] = useState<string | null>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
