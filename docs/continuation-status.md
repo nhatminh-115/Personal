@@ -8,7 +8,7 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Current repository state
 
-- Canonical `main`: `3f025ad86f0e2350d6d9536ec8928f47e7531fe4`.
+- Canonical `main`: `a90d625dbc17819204bfc525c56da144bca374c0`.
 - PRs [#336](https://github.com/nhatminh-115/Personal/pull/336), [#337](https://github.com/nhatminh-115/Personal/pull/337), [#338](https://github.com/nhatminh-115/Personal/pull/338), [#339](https://github.com/nhatminh-115/Personal/pull/339), [#340](https://github.com/nhatminh-115/Personal/pull/340), [#341](https://github.com/nhatminh-115/Personal/pull/341), [#342](https://github.com/nhatminh-115/Personal/pull/342), [#343](https://github.com/nhatminh-115/Personal/pull/343), [#344](https://github.com/nhatminh-115/Personal/pull/344), [#345](https://github.com/nhatminh-115/Personal/pull/345), [#346](https://github.com/nhatminh-115/Personal/pull/346), [#347](https://github.com/nhatminh-115/Personal/pull/347), [#348](https://github.com/nhatminh-115/Personal/pull/348), [#349](https://github.com/nhatminh-115/Personal/pull/349), [#350](https://github.com/nhatminh-115/Personal/pull/350), [#351](https://github.com/nhatminh-115/Personal/pull/351), [#352](https://github.com/nhatminh-115/Personal/pull/352), [#353](https://github.com/nhatminh-115/Personal/pull/353), [#354](https://github.com/nhatminh-115/Personal/pull/354), [#355](https://github.com/nhatminh-115/Personal/pull/355), [#356](https://github.com/nhatminh-115/Personal/pull/356), [#357](https://github.com/nhatminh-115/Personal/pull/357), [#358](https://github.com/nhatminh-115/Personal/pull/358), [#359](https://github.com/nhatminh-115/Personal/pull/359), [#360](https://github.com/nhatminh-115/Personal/pull/360), [#361](https://github.com/nhatminh-115/Personal/pull/361), [#362](https://github.com/nhatminh-115/Personal/pull/362), [#363](https://github.com/nhatminh-115/Personal/pull/363), [#364](https://github.com/nhatminh-115/Personal/pull/364), [#365](https://github.com/nhatminh-115/Personal/pull/365), [#366](https://github.com/nhatminh-115/Personal/pull/366), [#367](https://github.com/nhatminh-115/Personal/pull/367), and [#368](https://github.com/nhatminh-115/Personal/pull/368) are merged.
 - PR #337 closes the provider-error leak when an approved specialist finishes but the root orchestrator fails while resuming. It stores safe root-run text and a `provider_failure` trace category.
 - PR #337 CI run #880 (`37326069933`) passed: backend 665 tests, Phases 1/2.1/3/4, frontend 47 test files, Vite build 12.42s.
@@ -44,7 +44,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - PR [#366](https://github.com/nhatminh-115/Personal/pull/366) removes raw Docker exception strings from sandbox lifecycle logs and sandbox tool errors. It merged as `0b1aeb8b26de13333c91f5fbfe21a8700fd005fe`. CI #960 (`44879324179`), job `136770921600`, passed every backend, Phase 1/2.1/3/4, frontend, and build step. The connected Actions summary did not expose test counts or durations.
 - PR [#367](https://github.com/nhatminh-115/Personal/pull/367) prevents workspace list/read/write tools from returning raw filesystem exception text, while keeping explicit workspace-boundary denials actionable. It merged as `019b34e403f0769ae9ee2a25a7a168acaaa73f72`. CI #962 (`44880473801`) passed every backend, Phase 1/2.1/3/4, frontend, and build step; the connected Actions summary omitted counts and durations.
 - PR [#368](https://github.com/nhatminh-115/Personal/pull/368) redacts unexpected tool exceptions before they reach chat messages, state, or traces and preserves explicit permission denials. It merged as `3f025ad86f0e2350d6d9536ec8928f47e7531fe4`. CI #964 (`44881172587`), job `136776569885`, passed every backend, Phase 1/2.1/3/4, frontend, and build step; the connected Actions summary omitted counts and durations.
-- Active branch: `codex/aura-next-milestone-20261121-21`, freshly created from canonical `main` at `3f025ad86f0e2350d6d9536ec8928f47e7531fe4`.
+- PR [#369](https://github.com/nhatminh-115/Personal/pull/369) sanitizes credential-bearing provider URLs in `/v1/models` while keeping router-internal URLs intact, and removes raw local model-discovery exceptions from logs. It merged as `a90d625dbc17819204bfc525c56da144bca374c0`. CI #966 (`44881977803`), job `136779033351`, passed: backend 725 tests in 77.57s; Phases 1/2.1/3/4 passed; frontend 47 files / 320 tests; Vite build 11.66s.
+- Active branch: `codex/aura-next-milestone-20261121-22`, freshly created from canonical `main` at `a90d625dbc17819204bfc525c56da144bca374c0`.
 - Completed on PR #341: sanitized Research provider/cache/PDF diagnostics in logs, returned errors, and exception chains, while preserving useful HTTP and destination categories.
 - Completed on PR #342: sanitized MCP runtime/config errors and validation failures, preserving safe categories and server crash isolation.
 - Completed on PR #343: preserve failed/cancelled Research child status when partial `research_state` exists while retaining partial artifacts and errors.
@@ -74,7 +75,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 - Completed milestone (PR #366 / branch 18): redact Docker runtime exception strings from sandbox lifecycle logs and shell/Python sandbox ToolResults, while retaining safe error categories and exception types for diagnosis.
 - Completed milestone (PR #367 / branch 19): keep unexpected workspace filesystem exception text and host paths out of List/Read/Write Workspace tool results, while preserving workspace-boundary denials and safe operation/error-type diagnostics.
 - Completed milestone (PR #368 / branch 20): redact unexpected exceptions raised by tools at the orchestrator boundary before they reach canonical tool messages, persisted result state, and execution traces; keep safe exception types and preserve explicit permission-denial behavior.
-- Current milestone (branch 21): keep credential-bearing userinfo, API tokens, and fragments out of `/v1/models` provider URLs, and redact raw local Ollama/LM Studio discovery exceptions from logs without changing the internal URLs used by the router.
+- Completed milestone (PR #369 / branch 21): keep credential-bearing userinfo, API tokens, and fragments out of `/v1/models` provider URLs, and redact raw local Ollama/LM Studio discovery exceptions from logs without changing the internal URLs used by the router.
+- Current milestone (branch 22): keep unexpected specialist child-run failures out of child-run storage, delegation results, logs, and the DelegateTaskTool boundary while preserving safe provider-failure and preflight-rejection messages.
 
 ## Recent verified milestones
 
@@ -115,10 +117,11 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 | PR #366: redact Docker sandbox runtime diagnostics | Merged as `0b1aeb8`; CI #960 (`44879324179`), every backend, Phase 1/2.1/3/4, frontend, and build step passed; the connected Actions summary omitted test counts and durations |
 | PR #367: redact workspace filesystem failure diagnostics | Merged as `019b34e`; CI #962 (`44880473801`), every backend, Phase 1/2.1/3/4, frontend, and build step passed; the connected Actions summary omitted test counts and durations |
 | PR #368: redact unexpected orchestrator tool exceptions | Merged as `3f025ad`; CI #964 (`44881172587`), every backend, Phase 1/2.1/3/4, frontend, and build step passed; the connected Actions summary omitted test counts and durations |
+| PR #369: sanitize public model catalog URLs and discovery diagnostics | Merged as `a90d625`; CI #966 (`44881977803`), backend 725 passed in 77.57s, Phases 1/2.1/3/4 passed, frontend 47 files / 320 tests, Vite build 11.66s |
 
 ## Immediate next steps
 
-1. Finish model catalog URL and discovery-log redaction on branch 21, open a PR, and wait for the complete GitHub Actions workflow.
+1. Finish specialist delegation error sanitization on branch 22, open a PR, and wait for the complete GitHub Actions workflow.
 2. Merge only the exact green head SHA, create a fresh branch from canonical `main`, and continue the next highest-value non-blocked workspace/runtime gap.
 3. CodeGraph setup remains pending external setup and is not a blocker.
 
@@ -130,7 +133,8 @@ Continue turning AURA into a durable personal AI workspace/runtime: one root orc
 
 ## Verification constraints
 
-- The targeted sandbox and workspace tool tests pass locally (23 passed, 4 skipped); orchestrator tool-exception tests pass locally (2 passed); model-catalog URL/discovery-log tests pass locally (3 passed). The API-level model route test runs in remote Actions because local host Python lacks `aiosqlite` during shared fixture loading.
+- The targeted sandbox and workspace tool tests pass locally (23 passed, 4 skipped); orchestrator tool-exception tests pass locally (2 passed); model-catalog URL/discovery-log tests pass locally (3 passed); delegation tool-boundary privacy tests pass locally (3 passed). Delegation runtime DB-backed tests run in remote Actions because local host Python lacks `aiosqlite` during shared fixture loading.
 - Python compilation and `git diff --check` pass locally.
 - No paid/hosted model is required for CI.
 - Keep changes isolated on a fresh branch from canonical `main`, then report exact merge SHA and remote CI evidence.
+
