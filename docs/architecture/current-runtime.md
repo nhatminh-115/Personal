@@ -118,6 +118,13 @@ identity or feature support from its name. `MODEL_PROVIDER=mock` is the local
 default. The Research Specialist uses deterministic sources by default unless
 `RESEARCH_PROVIDER_MODE` is explicitly changed.
 
+For local runtime probes, the explicit model capability probe reports
+`supported` only after observing a tool call. A successful response without a
+tool call, transport failures, and HTTP errors remain `unknown`, since they do
+not establish lack of model capability. Cloud and mock entries use their
+registered provider capability without invoking a model. Probe details use safe
+summaries and never echo provider error bodies or transport exception text.
+
 Routing profile edits use the profile version as a compare-and-swap token.
 Concurrent stale saves return a structured conflict and cannot overwrite the
 newer profile.
