@@ -17,11 +17,23 @@ def test_api_token_can_be_disabled_with_none_or_empty_string():
         "x" * 31,
         "x" * 32 + " ",
         "x" * 16 + "\t" + "x" * 16,
+        "x" * 31 + "=",
+        "x" * 32 + "é",
+        "x" * 32 + ":",
+        "x" * 16 + "=" + "x" * 16,
     ],
 )
 def test_api_token_rejects_weak_or_whitespace_values(token: str):
     with pytest.raises(ValidationError, match="AURA_API_TOKEN"):
         Settings(_env_file=None, AURA_API_TOKEN=token)
+
+
+def test_api_token_accepts_optional_bearer_padding():
+    token = "aura-test-token-" + "x" * 32 + "=="
+
+    configured = Settings(_env_file=None, AURA_API_TOKEN=token)
+
+    assert configured.AURA_API_TOKEN.get_secret_value() == token
 
 
 def test_api_token_is_validated_and_kept_as_a_masked_secret():
