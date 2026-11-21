@@ -36,6 +36,9 @@ export interface ChatPaneProps {
   onLoadOlderMessages?: () => Promise<void>;
   onMessagesChange: (updater: (messages: ChatMessage[]) => ChatMessage[]) => void;
   contextItems?: AIContextItem[];
+  /** Selected live context stays usable before opening the Context object catalog. */
+  initialContextObjectIds?: string[];
+  initialContextFileContentIds?: string[];
   contextIsLive?: boolean;
   contextHasMore?: boolean;
   loadingOlderContext?: boolean;
@@ -127,6 +130,8 @@ export function ChatPane({
   onLoadOlderMessages,
   onMessagesChange,
   contextItems: suppliedContext,
+  initialContextObjectIds,
+  initialContextFileContentIds,
   contextIsLive = false,
   contextHasMore = false,
   loadingOlderContext = false,
@@ -176,6 +181,14 @@ export function ChatPane({
 
   const includedContext = useMemo(() => contextItems.filter((item) => item.included), [contextItems]);
   const contextTokens = useMemo(() => includedContext.reduce((sum, item) => sum + item.tokens, 0), [includedContext]);
+  const initialSelectedContextIds = [...new Set([
+    ...(initialContextObjectIds ?? []),
+    ...(initialContextFileContentIds ?? []),
+  ])];
+  const selectedContextCount = isLiveThread && contextItems.length === 0 && initialContextObjectIds !== undefined
+    ? initialSelectedContextIds.length
+    : includedContext.length;
+  const contextEstimateAvailable = selectedContextCount === includedContext.length;
   const activeRoute = routeForMode(workMode);
 
   const clearRunTimers = useCallback(() => {
@@ -498,7 +511,9 @@ export function ChatPane({
                   <strong>Context</strong>
                   <small>{contextIsLive ? 'Project objects' : 'Demo examples'}</small>
                 </span>
-                <span className="composer-context__stats">{includedContext.length} objects · ~{(contextTokens / 1000).toFixed(1)}k estimated tokens</span>
+                <span className="composer-context__stats">{contextEstimateAvailable
+                  ? `${selectedContextCount} objects · ~${(contextTokens / 1000).toFixed(1)}k estimated tokens`
+                  : `${selectedContextCount} selected · open Context to inspect`}</span>
                 <ChevronDown className="composer-context__chevron" size={11} />
               </button>
             </div>

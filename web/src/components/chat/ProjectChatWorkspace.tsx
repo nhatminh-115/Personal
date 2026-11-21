@@ -347,6 +347,8 @@ export function ProjectChatWorkspace({
             onLoadOlderMessages={onLoadOlderMessages ? () => onLoadOlderMessages(activeThread.id) : undefined}
             onMessagesChange={(updater) => onUpdateMessages(activeThread.id, updater)}
             contextItems={contextItems}
+            initialContextObjectIds={activeThread.initialContextObjectIds ?? []}
+            initialContextFileContentIds={activeThread.initialContextFileContentIds ?? []}
             contextIsLive={isLiveThread}
             contextHasMore={Boolean(contextObjectsNextCursor)}
             loadingOlderContext={contextObjectsLoading}

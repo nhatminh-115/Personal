@@ -388,4 +388,84 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText(/No local model is eligible\. Privacy policy blocked this route/i)).toBeInTheDocument();
     expect(screen.getByText(/Review the profile scope and select a route that meets its privacy boundary/i)).toBeInTheDocument();
   });
+
+  it('sends a saved branch source with the first prompt without opening Context', async () => {
+    let chatPayload: Record<string, unknown> | null = null;
+    const branchId = 'branch-source-for-first-turn';
+    const graph = {
+      project_name: 'Stateful Architecture',
+      objects: [
+        {
+          id: 'source-turn-for-branch', project_name: 'Stateful Architecture', session_id: 'old-session', source_message_id: 'old-message',
+          object_type: 'conversation_turn', created_by: 'assistant', title: 'Source answer', content: 'The original branch context.',
+          metadata_json: { role: 'assistant' }, revision: 1,
+          created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z',
+        },
+        {
+          id: branchId, project_name: 'Stateful Architecture', session_id: null, source_message_id: null,
+          object_type: 'conversation_branch', created_by: 'user', title: 'Continue from the saved answer', content: '',
+          metadata_json: {}, revision: 1,
+          created_at: '2026-11-02T00:00:00Z', updated_at: '2026-11-02T00:00:00Z',
+        },
+      ],
+      edges: [{
+        id: 'branch-context-edge', project_name: 'Stateful Architecture', source_object_id: 'source-turn-for-branch', target_object_id: branchId,
+        relation_type: 'branches_to', edge_family: 'context', created_by: 'user', metadata_json: {},
+        created_at: '2026-11-02T00:00:00Z',
+      }],
+      layout: { project_name: 'Stateful Architecture', layout: {}, revision: 0 },
+      execution_traces: [],
+      execution_history_truncated: false,
+      execution_next_cursor: null,
+      objects_next_cursor: null,
+      edges_next_cursor: null,
+    };
+
+    global.fetch = vi.fn().mockImplementation((url: string, init?: RequestInit) => {
+      if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(graph) });
+      }
+      if (url.includes('/v1/workspace/projects/') && url.includes('/sessions/')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ session_id: 'branch-session', project_name: graph.project_name }) });
+      }
+      if (url.includes('/v1/workspace/projects/') && url.includes('/layout')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(graph.layout) });
+      }
+      if (url.includes('/v1/chat')) {
+        chatPayload = JSON.parse(String(init?.body));
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ run_id: 'branch-context-run', session_id: 'branch-session', status: 'completed', response: 'Continued from the saved branch.', tool_results: [] }) });
+      }
+      if (url.includes('/v1/runs/branch-context-run')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ id: 'branch-context-run', session_id: 'branch-session', status: 'completed', events: [] }) });
+      }
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/sessions') || url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
+    });
+
+    const { container } = render(<App />);
+    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0];
+    await act(async () => { fireEvent.click(projectButton); });
+    const openChats = await screen.findByRole('button', { name: /Open project chats/i });
+    await act(async () => { fireEvent.click(openChats); });
+    await act(async () => { fireEvent.click(screen.getByTitle('New chat')); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Board' })); });
+
+    expect(await screen.findByText('Continue from the saved answer')).toBeInTheDocument();
+    const continueInChat = [...container.querySelectorAll(`[data-id="${branchId}"] button`)]
+      .find((button) => button.textContent?.includes('Continue in Chat'));
+    expect(continueInChat).not.toBeNull();
+    fireEvent.click(continueInChat!);
+    const textarea = await screen.findByPlaceholderText(/Ask AURA in this chat…/i);
+    expect(screen.getByText(/1 selected · open Context to inspect/i)).toBeInTheDocument();
+    expect(screen.queryByText('What AURA can use')).not.toBeInTheDocument();
+    fireEvent.change(textarea, { target: { value: 'Continue this branch.' } });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
+
+    await waitFor(() => expect(chatPayload).not.toBeNull());
+    expect(chatPayload).toMatchObject({
+      message: 'Continue this branch.',
+      context_object_ids: [branchId],
+    });
+  });
 });
