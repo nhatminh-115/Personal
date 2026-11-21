@@ -1,5 +1,6 @@
 """Startup reconciliation for root runs whose executor disappeared."""
 
+from datetime import timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -38,7 +39,7 @@ async def _create_running_chat(db, *, run_id: str, session_id: str) -> RunModel:
         request_fingerprint="fingerprint",
         status=RunStatus.RUNNING.value,
         user_message="Please recover this run.",
-        routing_snapshot_json={"privacy_policy": "public"},
+        routing_snapshot_json={"execution_source": "chat", "privacy_policy": "public"},
     )
     db.add(run)
     db.add(RunEventModel(run_id=run_id, event_type="run_executor_started", payload={"source": "chat"}))
@@ -59,7 +60,7 @@ async def _create_running_event_run(
         session_id=session_id,
         status=RunStatus.RUNNING.value,
         user_message="Please recover this event run.",
-        routing_snapshot_json={"privacy_policy": "local_only"},
+        routing_snapshot_json={"execution_source": "event", "privacy_policy": "local_only"},
     )
     db.add(run)
     if executor_started:
@@ -111,6 +112,29 @@ async def test_recovers_started_legacy_chat_without_client_turn_id(test_db_sessi
     )
     test_db_session.add(SessionModel(id=unstarted.session_id, title="Unstarted legacy chat", metadata_json={}))
     test_db_session.add(unstarted)
+    pre_marker = RunModel(
+        id="recover-legacy-chat-pre-marker",
+        session_id="recover-legacy-chat-pre-marker-session",
+        user_message="This legacy chat was persisted before its executor marker.",
+        status=RunStatus.RUNNING.value,
+        created_at=utc_now() - timedelta(minutes=3),
+        routing_snapshot_json={"execution_source": "chat"},
+    )
+    test_db_session.add(SessionModel(id=pre_marker.session_id, title="Pre-marker legacy chat", metadata_json={}))
+    test_db_session.add(pre_marker)
+    fresh_pre_marker = RunModel(
+        id="recover-legacy-chat-fresh-pre-marker",
+        session_id="recover-legacy-chat-fresh-pre-marker-session",
+        user_message="This chat is still inside the executor startup grace period.",
+        status=RunStatus.RUNNING.value,
+        routing_snapshot_json={"execution_source": "chat"},
+    )
+    test_db_session.add(SessionModel(
+        id=fresh_pre_marker.session_id,
+        title="Fresh pre-marker legacy chat",
+        metadata_json={},
+    ))
+    test_db_session.add(fresh_pre_marker)
     await test_db_session.commit()
 
     graph = SnapshotGraph({
@@ -124,9 +148,14 @@ async def test_recovers_started_legacy_chat_without_client_turn_id(test_db_sessi
 
     await test_db_session.refresh(started)
     await test_db_session.refresh(unstarted)
-    assert result["interrupted"] == 1
+    await test_db_session.refresh(pre_marker)
+    await test_db_session.refresh(fresh_pre_marker)
+    assert result["interrupted"] == 2
+    assert result["skipped"] == 1
     assert started.status == RunStatus.FAILED.value
+    assert pre_marker.status == RunStatus.FAILED.value
     assert unstarted.status == RunStatus.RUNNING.value
+    assert fresh_pre_marker.status == RunStatus.RUNNING.value
 
 
 @pytest.mark.asyncio
