@@ -2,6 +2,13 @@
 
 Updated: 2026-11-22
 
+> **Status note:** The v1 closeout described below is historical. The
+> `aura-personal-v1` tag is preserved at `cc85f402f055a6b858704c7b42b705492c01bb5b`;
+> the post-v1 Context Engineering and Windows desktop milestones are separate
+> work and do not change that tag or retroactively reopen v1. Entries below
+> that say PR #400 or tagging is still pending record the status at the time of
+> this v1 closeout, not the current repository release action.
+
 ## Mission and stop condition
 
 Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_VISION_AND_V1_ROADMAP.md). Work only on O1–O7, A1–A8, or a release-blocking defect demonstrated by those scenarios. Stop when P3 passes, publish the v1 evidence report, and tag the accepted commit. After that, use a separately prioritized maintenance/v1.1 backlog; do not keep v1 open for speculative or cosmetic work.

@@ -54,4 +54,7 @@ async def test_context_loaded_trace_carries_memory_privacy_source_ids(monkeypatc
     assert len(context_events) == 1
     assert context_events[0]["payload"]["memory_privacy_sources"] == sources
     assert result["metadata"]["privacy_requirement"] == "local_only"
-    assert "reference context" in result["retrieved_context"]
+    assert any(
+        "reference context" in item["content"]
+        for item in result["context_candidates"]
+    )

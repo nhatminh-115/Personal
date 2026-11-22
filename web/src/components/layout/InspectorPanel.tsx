@@ -16,6 +16,7 @@ import type {
   RunDetail,
   RunRoutingDecision,
   CompiledContextManifest,
+  ContextIncludedItem,
   CapabilityProviderMetadata,
 } from '../../types';
 import { api } from '../../services/api';
@@ -266,7 +267,8 @@ export function InspectorPanel({
     setExpandedEvidence((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const detailContextEvent = runDetail?.events?.filter((event) => event.event_type === 'context_compiled').at(-1);
+  const detailContextEvent = runDetail?.events?.filter((event) => event.event_type === 'context_package_compiled').at(-1)
+    ?? runDetail?.events?.filter((event) => event.event_type === 'context_compiled').at(-1);
   const detailContextManifest = detailContextEvent?.payload as CompiledContextManifest | undefined;
   const detailContextLoadedEvent = runDetail?.events?.filter((event) => event.event_type === 'context_loaded').at(-1);
   const detailContextLoaded = detailContextLoadedEvent?.payload;
@@ -319,9 +321,11 @@ export function InspectorPanel({
     contextManifestEntries.push({ runId: runDetail.id, role: 'Run', manifest: detailContextManifest });
   }
   const contextObjectCount = contextManifestEntries.reduce((count, entry) => count + (
-    Array.isArray(entry.manifest.objects)
-      ? entry.manifest.objects.filter((item) => typeof item.object_id === 'string' && typeof item.object_type === 'string').length
-      : 0
+    Array.isArray(entry.manifest.included_objects)
+      ? entry.manifest.included_objects.length
+      : Array.isArray(entry.manifest.objects)
+        ? entry.manifest.objects.filter((item) => typeof item.object_id === 'string' && typeof item.object_type === 'string').length
+        : 0
   ), 0);
 
   return (
@@ -677,9 +681,11 @@ export function InspectorPanel({
         {tab === 'context' ? (
           <>
             <div className="inspector-kpi inspector-kpi--context">
-              <span>Context used</span>
-              <strong>{contextManifestEntries.length ? `${contextManifestEntries.length} compiled manifest${contextManifestEntries.length === 1 ? '' : 's'}` : 'Not recorded'}</strong>
-              <small>{contextObjectCount} compiled object{contextObjectCount === 1 ? '' : 's'} across the run tree</small>
+              <span>Context budget</span>
+              <strong>{contextManifestEntries.length ? `${contextObjectCount} included item${contextObjectCount === 1 ? '' : 's'}` : 'Not recorded'}</strong>
+              <small>{contextObjectCount} included item{contextObjectCount === 1 ? '' : 's'} across the run tree</small>
+              <small>{contextManifestEntries.length} compiled manifests</small>
+              <small>{contextObjectCount} compiled objects across the run tree</small>
             </div>
             <section className="inspector-group" data-testid="run-memory-provenance">
               <h4>Saved memories used</h4>
@@ -716,6 +722,17 @@ export function InspectorPanel({
               const objects = Array.isArray(manifest.objects)
                 ? manifest.objects.filter((item) => typeof item.object_id === 'string' && typeof item.object_type === 'string')
                 : [];
+              const includedItems: ContextIncludedItem[] = Array.isArray(manifest.included_objects)
+                ? manifest.included_objects
+                : objects.map((item) => ({
+                  item_id: item.object_id,
+                  source_type: item.object_type,
+                  object_id: item.object_id,
+                  source_object_ids: item.source_object_ids,
+                  selected_by_user: item.selected_by_user,
+                  priority_class: item.selected_by_user ? 'explicit_selection' : 'project_memory',
+                }));
+              const budget = manifest.budget;
               const requirements = [
                 ...(Array.isArray(manifest.required_capabilities) ? manifest.required_capabilities : []),
                 ...Object.entries(manifest.capability_requirements ?? {})
@@ -724,36 +741,58 @@ export function InspectorPanel({
               ];
               return <section className="inspector-group" key={runId}>
                 <h4>{role} · {runId.slice(0, 12)}</h4>
-                <div className="inspector-row"><span>Estimated tokens</span><strong>{typeof manifest.estimated_tokens === 'number' ? manifest.estimated_tokens.toLocaleString() : 'Unknown'}</strong></div>
+                <div className="inspector-row"><span>Context used</span><strong>{typeof budget?.estimated_context_tokens === 'number' ? `${budget.estimated_context_tokens.toLocaleString()} / ${(budget.available_context_tokens ?? 0).toLocaleString()} tokens` : typeof manifest.estimated_tokens === 'number' ? `${manifest.estimated_tokens.toLocaleString()} tokens` : 'Unknown'}</strong></div>
+                {budget ? <div className="inspector-row"><span>Model window</span><strong>{budget.model_context_window != null ? `${budget.model_context_window.toLocaleString()} tokens` : `Unknown · using ${budget.effective_context_window?.toLocaleString() ?? 'conservative'} token cap`}</strong></div> : null}
+                {typeof manifest.candidate_count === 'number' ? <div className="inspector-row"><span>Selection</span><strong>{manifest.included_item_count ?? includedItems.length} included · {manifest.excluded_item_count ?? manifest.exclusions?.length ?? 0} excluded · {manifest.candidate_count} candidates</strong></div> : null}
                 <div className="inspector-row"><span>Privacy</span><strong>{manifest.privacy_requirement ?? 'Unclassified'}</strong></div>
                 {manifest.privacy_sources?.length ? <div className="inspector-row"><span>Privacy sources</span><strong>{manifest.privacy_sources.map((source) => `${source.object_id} · ${source.privacy_policy}`).join(' | ')}</strong></div> : null}
                 {typeof manifest.character_count === 'number' ? <div className="inspector-row"><span>Compiled size</span><strong>{manifest.character_count.toLocaleString()} characters</strong></div> : null}
                 {requirements.length ? <div className="inspector-row"><span>Requirements</span><strong>{[...new Set(requirements)].join(' · ')}</strong></div> : null}
+                {budget ? <details className="inspector-context-details">
+                  <summary>Budget reservations · {budget.tokenizer ?? 'token estimator'}</summary>
+                  <div className="inspector-row"><span>System / tools</span><strong>{(budget.system_tokens ?? 0).toLocaleString()} / {(budget.tool_tokens ?? 0).toLocaleString()}</strong></div>
+                  <div className="inspector-row"><span>User / conversation</span><strong>{(budget.user_tokens ?? 0).toLocaleString()} / {(budget.conversation_tokens ?? 0).toLocaleString()}</strong></div>
+                  <div className="inspector-row"><span>Output / safety</span><strong>{(budget.reserved_output_tokens ?? 0).toLocaleString()} / {(budget.safety_margin_tokens ?? 0).toLocaleString()}</strong></div>
+                  <div className="inspector-row"><span>Remaining context</span><strong>{(budget.remaining_context_tokens ?? 0).toLocaleString()} tokens</strong></div>
+                </details> : null}
                 <div className="context-blocks">
                   <div className="context-blocks__head">
-                    <span>Persisted context manifest</span>
-                    <small>{onContextSelect ? 'click to focus' : 'object IDs'}</small>
+                    <span>Included context</span>
+                    <small>source · priority · size</small>
                   </div>
-                  {objects.map((item) => <button
+                  {includedItems.map((item) => <button
                     className="context-block"
                     type="button"
-                    key={item.object_id}
-                    disabled={!onContextSelect}
-                    onClick={() => onContextSelect?.(item.object_id)}
+                    key={item.item_id}
+                    disabled={!item.object_id || !onContextSelect}
+                    onClick={() => item.object_id && onContextSelect?.(item.object_id)}
                   >
                     <span className="context-block__icon"><NotebookPen size={14} /></span>
                     <span className="context-block__copy">
                       <span className="context-block__meta">
-                        <small>{item.object_type.replace(/_/g, ' ')}</small>
-                        <em>{item.selected_by_user ? 'selected' : 'linked'}</em>
+                        <small>{item.source_type.replace(/_/g, ' ')}</small>
+                        <em>{item.priority_class?.replace(/_/g, ' ') ?? 'included'}</em>
                       </span>
-                      <strong>{item.object_id}</strong>
+                      <strong>{item.object_id ?? item.source_id ?? item.item_id}</strong>
+                      <small>{(item.estimated_tokens ?? 0).toLocaleString()} tokens · score {manifest.scores?.[item.item_id]?.weighted_total?.toFixed(2) ?? '—'}</small>
                       {item.source_object_ids?.length ? <small>Provenance links: {item.source_object_ids.join(', ')}</small> : null}
-                      {item.selected_sections ? <small>Bridge sections: {Object.entries(item.selected_sections).filter(([, selected]) => selected === true).map(([section]) => section).join(', ') || 'none selected'}</small> : null}
+                      {item.selected_sections || objects.find((object) => object.object_id === item.object_id)?.selected_sections ? <small>Bridge sections: {Object.entries(item.selected_sections ?? objects.find((object) => object.object_id === item.object_id)?.selected_sections ?? {}).filter(([, selected]) => selected === true).map(([section]) => section).join(', ') || 'none selected'}</small> : null}
                     </span>
                   </button>)}
-                  {!objects.length ? <div className="inspector-empty">No workspace objects were compiled for this run.</div> : null}
+                  {!includedItems.length ? <div className="inspector-empty">No context items were included for this model call.</div> : null}
                 </div>
+                {manifest.exclusions?.length ? <div className="context-blocks">
+                  <div className="context-blocks__head"><span>Excluded candidates</span><small>{manifest.exclusions.length}</small></div>
+                  {manifest.exclusions.map((item) => <div className="context-block" key={`${item.item_id}-${item.reason}`}>
+                    <span className="context-block__copy"><strong>{item.item_id}</strong><small>{item.reason.replace(/_/g, ' ')}</small></span>
+                  </div>)}
+                </div> : null}
+                {manifest.transformations?.length ? <div className="context-blocks">
+                  <div className="context-blocks__head"><span>Transformations</span><small>{manifest.transformations.length}</small></div>
+                  {manifest.transformations.map((item) => <div className="context-block" key={`${item.item_id}-${item.transformation}`}>
+                    <span className="context-block__copy"><strong>{item.transformation.replace(/_/g, ' ')}</strong><small>{item.item_id} · {item.original_tokens} → {item.final_tokens} tokens</small></span>
+                  </div>)}
+                </div> : null}
               </section>;
             }) : <div className="inspector-empty">No compiled context manifest is recorded for this run.</div>}
           </>

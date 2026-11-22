@@ -139,6 +139,152 @@ def sanitize_trace_payload(event_type: str, payload: object) -> dict[str, Any]:
                 and isinstance(row.get("privacy_policy"), str)
             ]
         return safe
+    if event_type == "context_package_compiled":
+        safe: dict[str, Any] = {}
+        budget = payload.get("budget")
+        if isinstance(budget, dict):
+            safe_budget: dict[str, Any] = {}
+            integer_fields = (
+                "model_context_window", "effective_context_window", "system_tokens", "tool_tokens",
+                "user_tokens", "conversation_tokens", "reserved_output_tokens", "safety_margin_tokens",
+                "available_context_tokens", "estimated_context_tokens", "remaining_context_tokens",
+            )
+            for field in integer_fields:
+                value = budget.get(field)
+                if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                    safe_budget[field] = value
+            if budget.get("model_context_window") is None:
+                safe_budget["model_context_window"] = None
+            if budget.get("context_window_source") in {"model_metadata", "conservative_fallback"}:
+                safe_budget["context_window_source"] = budget["context_window_source"]
+            tokenizer = budget.get("tokenizer")
+            if isinstance(tokenizer, str) and len(tokenizer) <= 64:
+                safe_budget["tokenizer"] = tokenizer
+            safe["budget"] = safe_budget
+        for field in ("candidate_count", "included_item_count", "excluded_item_count"):
+            value = payload.get(field)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                safe[field] = value
+        safe["version"] = 1
+        project_name = payload.get("project_name")
+        if isinstance(project_name, str):
+            safe["project_name"] = project_name[:128]
+        privacy = payload.get("privacy_requirement")
+        if isinstance(privacy, str) and privacy in {"public", "internal", "confidential", "local_only"}:
+            safe["privacy_requirement"] = privacy
+        privacy_sources = payload.get("privacy_sources")
+        if isinstance(privacy_sources, list):
+            safe["privacy_sources"] = [
+                {"object_id": row["object_id"][:128], "privacy_policy": row["privacy_policy"]}
+                for row in privacy_sources[:256]
+                if isinstance(row, dict)
+                and isinstance(row.get("object_id"), str)
+                and isinstance(row.get("privacy_policy"), str)
+                and row.get("privacy_policy") in {"public", "internal", "confidential", "local_only"}
+            ]
+
+        valid_priorities = {
+            "explicit_selection", "user_authored_note", "context_bridge", "required_ancestry",
+            "verified_research_evidence", "project_memory", "external_retrieved", "optional_execution",
+        }
+
+        def safe_ids(values: object, limit: int = 256) -> list[str]:
+            if not isinstance(values, list):
+                return []
+            return list(dict.fromkeys(value[:128] for value in values if isinstance(value, str) and value))[:limit]
+
+        safe["selected_item_ids"] = safe_ids(payload.get("selected_item_ids"))
+        priority_classes = payload.get("priority_classes")
+        if isinstance(priority_classes, dict):
+            safe["priority_classes"] = {
+                key: safe_ids(value)
+                for key, value in priority_classes.items()
+                if isinstance(key, str) and key in valid_priorities and isinstance(value, list)
+            }
+        scores = payload.get("scores")
+        if isinstance(scores, dict):
+            safe_scores: dict[str, dict[str, Any]] = {}
+            for item_id, score in list(scores.items())[:256]:
+                if not isinstance(item_id, str) or not isinstance(score, dict):
+                    continue
+                row: dict[str, Any] = {}
+                for field in ("relevance", "freshness", "authority", "utility", "weighted_total"):
+                    value = score.get(field)
+                    if value is None and field != "weighted_total":
+                        row[field] = None
+                    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                        row[field] = float(value)
+                priority = score.get("priority_class")
+                if isinstance(priority, str) and priority in valid_priorities:
+                    row["priority_class"] = priority
+                safe_scores[item_id[:128]] = row
+            safe["scores"] = safe_scores
+        included = payload.get("included_objects")
+        if isinstance(included, list):
+            rows = []
+            for item in included[:256]:
+                if not isinstance(item, dict):
+                    continue
+                item_id = item.get("item_id")
+                source_type = item.get("source_type")
+                if not isinstance(item_id, str) or not isinstance(source_type, str):
+                    continue
+                row = {
+                    "item_id": item_id[:128],
+                    "source_type": source_type[:64],
+                    "selected_by_user": item.get("selected_by_user") is True,
+                    "source_object_ids": safe_ids(item.get("source_object_ids"), 64),
+                    "priority_class": item.get("priority_class") if isinstance(item.get("priority_class"), str) and item.get("priority_class") in valid_priorities else "project_memory",
+                }
+                for field in ("source_id", "object_id", "project_id"):
+                    value = item.get(field)
+                    if isinstance(value, str):
+                        row[field] = value[:128]
+                sections = item.get("selected_sections")
+                if isinstance(sections, dict):
+                    row["selected_sections"] = {
+                        key: value for key, value in sections.items()
+                        if isinstance(key, str) and (value is None or isinstance(value, bool))
+                    }
+                tokens = item.get("estimated_tokens")
+                if isinstance(tokens, int) and not isinstance(tokens, bool) and tokens >= 0:
+                    row["estimated_tokens"] = tokens
+                rows.append(row)
+            safe["included_objects"] = rows
+        exclusions = payload.get("exclusions")
+        valid_reasons = {
+            "out_of_scope", "privacy_blocked", "capability_mismatch", "duplicate", "lower_priority",
+            "stale", "over_budget", "invalid_provenance", "unsupported_type",
+        }
+        if isinstance(exclusions, list):
+            safe["exclusions"] = [
+                {"item_id": row["item_id"][:128], "reason": row["reason"]}
+                for row in exclusions[:256]
+                if isinstance(row, dict)
+                and isinstance(row.get("item_id"), str)
+                and isinstance(row.get("reason"), str)
+                and row.get("reason") in valid_reasons
+            ]
+        transformations = payload.get("transformations")
+        valid_transformations = {"exact_duplicate_merge", "extractive_sentences"}
+        if isinstance(transformations, list):
+            safe["transformations"] = [
+                {
+                    "item_id": row["item_id"][:128],
+                    "transformation": row["transformation"],
+                    "original_tokens": row["original_tokens"],
+                    "final_tokens": row["final_tokens"],
+                    "provenance": safe_ids(row.get("provenance"), 64),
+                }
+                for row in transformations[:256]
+                if isinstance(row, dict)
+                and isinstance(row.get("item_id"), str)
+                and isinstance(row.get("transformation"), str)
+                and row.get("transformation") in valid_transformations
+                and isinstance(row.get("original_tokens"), int)
+                and isinstance(row.get("final_tokens"), int)
+            ]
+        return safe
     if event_type == "reasoning_effort_selected":
         return pick(payload, ("policy_mode", "configured_bounds", "selected_effort"))
     if event_type == "fallback_considered":

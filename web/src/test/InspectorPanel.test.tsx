@@ -272,9 +272,9 @@ describe('InspectorPanel Component', () => {
     render(<InspectorPanel runDetail={runDetail} onClose={vi.fn()} onContextSelect={onContextSelect} />);
     fireEvent.click(screen.getByTestId('inspector-tab-context'));
 
-    expect(screen.getByText('1 compiled manifest')).toBeInTheDocument();
-    expect(screen.getByText('128')).toBeInTheDocument();
-    expect(screen.getByText('3 compiled objects across the run tree')).toBeInTheDocument();
+    expect(screen.getByText('3 included items')).toBeInTheDocument();
+    expect(screen.getByText('128 tokens')).toBeInTheDocument();
+    expect(screen.getByText('3 included items across the run tree')).toBeInTheDocument();
     expect(screen.getByText('confidential')).toBeInTheDocument();
     expect(screen.getByText('selected-bridge · local_only')).toBeInTheDocument();
     expect(screen.getByText('code_graph.read · tools')).toBeInTheDocument();
@@ -284,6 +284,72 @@ describe('InspectorPanel Component', () => {
     expect(screen.queryByText(/private source text/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /selected-context-set/i }));
     expect(onContextSelect).toHaveBeenCalledWith('selected-context-set');
+  });
+
+  it('shows the per-call context budget, selection rationale, and exclusions without source text', () => {
+    const onContextSelect = vi.fn();
+    const runDetail: RunDetail = {
+      ...sampleRunDetail,
+      events: [...sampleRunDetail.events, {
+        id: 'context-package-1',
+        event_type: 'context_package_compiled',
+        created_at: new Date().toISOString(),
+        payload: {
+          version: 1,
+          project_name: 'Atlas',
+          budget: {
+            model_context_window: 32_000,
+            effective_context_window: 32_000,
+            context_window_source: 'model_metadata',
+            tokenizer: 'utf8-bytes-ceil-div-3',
+            system_tokens: 100,
+            tool_tokens: 80,
+            user_tokens: 30,
+            conversation_tokens: 200,
+            reserved_output_tokens: 2_000,
+            safety_margin_tokens: 3_200,
+            available_context_tokens: 500,
+            estimated_context_tokens: 72,
+            remaining_context_tokens: 428,
+          },
+          candidate_count: 2,
+          included_item_count: 1,
+          excluded_item_count: 1,
+          selected_item_ids: ['workspace:selected-note'],
+          priority_classes: { explicit_selection: ['workspace:selected-note'] },
+          scores: { 'workspace:selected-note': { weighted_total: 0.9, priority_class: 'explicit_selection' } },
+          included_objects: [{
+            item_id: 'workspace:selected-note',
+            source_type: 'manual_note',
+            source_id: 'selected-note',
+            object_id: 'selected-note',
+            project_id: 'Atlas',
+            priority_class: 'explicit_selection',
+            estimated_tokens: 72,
+            source_object_ids: ['source-1'],
+            selected_by_user: true,
+          }],
+          exclusions: [{ item_id: 'memory:old', reason: 'lower_priority' }],
+          transformations: [],
+          privacy_requirement: 'internal',
+          privacy_sources: [{ object_id: 'selected-note', privacy_policy: 'internal' }],
+          prompt_text: 'Private note contents must not appear in the Inspector.',
+        },
+      }],
+    };
+
+    render(<InspectorPanel runDetail={runDetail} onClose={vi.fn()} onContextSelect={onContextSelect} />);
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+
+    expect(screen.getByText('1 included item')).toBeInTheDocument();
+    expect(screen.getByText('72 / 500 tokens')).toBeInTheDocument();
+    expect(screen.getByText('32,000 tokens')).toBeInTheDocument();
+    expect(screen.getByText('1 included · 1 excluded · 2 candidates')).toBeInTheDocument();
+    expect(screen.getByText('lower priority')).toBeInTheDocument();
+    expect(screen.getByText('manual note')).toBeInTheDocument();
+    expect(screen.queryByText(/Private note contents/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /selected-note/i }));
+    expect(onContextSelect).toHaveBeenCalledWith('selected-note');
   });
 
   it('shows tiered memory provenance and loads an older memory for review by ID', async () => {

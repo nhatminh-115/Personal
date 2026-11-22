@@ -68,6 +68,25 @@ def _expect(response: httpx.Response, status_code: int, stage: str) -> Any:
         raise AcceptanceFailure(stage, "invalid_json_response") from exc
 
 
+def _manifest_workspace_objects(manifest: dict[str, Any]) -> list[dict[str, Any]]:
+    legacy_objects = manifest.get("objects")
+    if isinstance(legacy_objects, list):
+        return [item for item in legacy_objects if isinstance(item, dict)]
+    included = manifest.get("included_objects", [])
+    if not isinstance(included, list):
+        return []
+    return [
+        {
+            "object_id": item.get("object_id"),
+            "object_type": item.get("source_type"),
+            "selected_by_user": item.get("selected_by_user") is True,
+            "source_object_ids": item.get("source_object_ids", []),
+        }
+        for item in included
+        if isinstance(item, dict)
+    ]
+
+
 def _available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
         listener.bind(("127.0.0.1", 0))
@@ -176,17 +195,19 @@ def _append_assertion(report: dict[str, Any], name: str) -> None:
 
 def _source_metadata() -> dict[str, str]:
     runner_path = Path(__file__).resolve()
-    try:
-        revision = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPOSITORY_ROOT,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout.strip()
-    except (OSError, subprocess.SubprocessError):
-        revision = "unknown"
+    revision = os.environ.get("AURA_SOURCE_COMMIT_SHA", "").strip().lower()
+    if len(revision) != 40 or any(character not in "0123456789abcdef" for character in revision):
+        try:
+            revision = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=REPOSITORY_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=5,
+            ).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            revision = "unknown"
     return {
         "base_commit_sha": revision,
         "runner_sha256": hashlib.sha256(runner_path.read_bytes()).hexdigest(),
@@ -387,7 +408,7 @@ async def run_acceptance(
                 {},
             )
             manifest = decision.get("context_manifest") if isinstance(decision.get("context_manifest"), dict) else {}
-            manifest_objects = manifest.get("objects", [])
+            manifest_objects = _manifest_workspace_objects(manifest)
             _need(
                 len(manifest_objects) == 1
                 and manifest_objects[0].get("object_id") == note_id
@@ -480,7 +501,7 @@ async def run_acceptance(
                 if isinstance(reopened_decision.get("context_manifest"), dict)
                 else {}
             )
-            reopened_objects = reopened_manifest.get("objects", [])
+            reopened_objects = _manifest_workspace_objects(reopened_manifest)
             _need(
                 len(reopened_objects) == 1
                 and reopened_objects[0].get("object_id") == note_id

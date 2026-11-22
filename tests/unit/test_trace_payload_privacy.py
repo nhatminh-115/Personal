@@ -194,6 +194,68 @@ async def test_context_loaded_trace_keeps_tiered_memory_ids_without_memory_text(
 
 
 @pytest.mark.asyncio
+async def test_context_package_manifest_persists_budget_and_provenance_without_source_content(test_db_session):
+    trace = TraceService(test_db_session)
+    test_db_session.add(SessionModel(id="context-package-session"))
+    test_db_session.add(RunModel(id="context-package-run", session_id="context-package-session", user_message="question"))
+    await test_db_session.commit()
+    secret = "private selected file text must never enter the context trace"
+    event = await trace.record_event(
+        run_id="context-package-run",
+        session_id="context-package-session",
+        event_type="context_package_compiled",
+        payload={
+            "version": 1,
+            "budget": {
+                "model_context_window": 32_000,
+                "effective_context_window": 32_000,
+                "context_window_source": "model_metadata",
+                "tokenizer": "utf8-bytes-ceil-div-3",
+                "system_tokens": 100,
+                "tool_tokens": 80,
+                "user_tokens": 20,
+                "conversation_tokens": 200,
+                "reserved_output_tokens": 2_000,
+                "safety_margin_tokens": 3_200,
+                "available_context_tokens": 26_420,
+                "estimated_context_tokens": 120,
+                "remaining_context_tokens": 26_300,
+            },
+            "candidate_count": 2,
+            "included_item_count": 1,
+            "excluded_item_count": 1,
+            "selected_item_ids": ["workspace:note-1"],
+            "priority_classes": {"explicit_selection": ["workspace:note-1"]},
+            "scores": {"workspace:note-1": {"weighted_total": 0.75, "priority_class": "explicit_selection"}},
+            "included_objects": [{
+                "item_id": "workspace:note-1",
+                "source_type": "manual_note",
+                "source_id": "note-1",
+                "object_id": "note-1",
+                "project_id": "AURA",
+                "priority_class": "explicit_selection",
+                "estimated_tokens": 120,
+                "source_object_ids": ["memory:source-1"],
+                "selected_by_user": True,
+                "content": secret,
+            }],
+            "exclusions": [{"item_id": "memory:old-1", "reason": "lower_priority", "content": secret}],
+            "transformations": [],
+            "privacy_requirement": "internal",
+            "prompt_text": secret,
+        },
+    )
+
+    assert event.payload["budget"]["effective_context_window"] == 32_000
+    assert event.payload["budget"]["estimated_context_tokens"] == 120
+    assert event.payload["budget"]["tokenizer"] == "utf8-bytes-ceil-div-3"
+    assert event.payload["included_objects"][0]["object_id"] == "note-1"
+    assert event.payload["included_objects"][0]["estimated_tokens"] == 120
+    assert event.payload["exclusions"] == [{"item_id": "memory:old-1", "reason": "lower_priority"}]
+    assert secret not in str(event.payload)
+
+
+@pytest.mark.asyncio
 async def test_run_recovery_trace_keeps_only_safe_lifecycle_metadata(test_db_session):
     trace = TraceService(test_db_session)
     test_db_session.add(SessionModel(id="recovery-trace-session"))

@@ -44,6 +44,9 @@ class ModelRouter:
                     latency_class="low",
                     privacy_status="local",
                     default_model="mock-default",
+                    # The deterministic mock is a test/runtime fixture, not a
+                    # discovered user model. Its bounded window is known.
+                    context_window=32_768,
                     models=["mock-default", "mock-fast", "mock-pro"],
                     allow_arbitrary_models=True,
                     reasoning_support={"mock-pro": "high", "mock-default": "fixed_by_model"},

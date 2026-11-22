@@ -312,10 +312,15 @@ Compiled object metadata can add model requirements (`vision`,
 turn's `RoutingContext`. Tool capabilities must resolve through an enabled
 provider registration or compilation fails closed. The context preview uses
 the same compiler and reports the normalized routing flags without invoking a
-model or writing workspace data. Live chat also measures the assembled prompt
-and tool definitions before selecting a model. Neither the compiler manifest
-nor the Execution Graph exposes hidden chain-of-thought or raw context text in
-telemetry.
+model or writing workspace data. Live chat measures mandatory messages and
+selected context before the existing router selects a model. It then allocates
+retrieved candidates using the selected model's context-window metadata and
+validates the final assembled prompt and tool definitions before invocation.
+See [Context Engineering](context-engineering.md) and
+[ADR-008](adr/ADR-008-context-engineering-intelligence.md) for scoring,
+budgeting, transformations, and manifest semantics. Neither the compiler
+manifest nor the Execution Graph exposes hidden chain-of-thought or raw context
+text in telemetry.
 
 Embedding requests carry the effective privacy requirement too. Only providers
 declaring a local or air-gapped boundary may embed confidential or local-only

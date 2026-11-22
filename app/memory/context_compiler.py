@@ -1,5 +1,7 @@
 """Compile explicitly selected workspace graph objects into bounded model context."""
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -69,6 +71,13 @@ def stricter_privacy_requirement(current: str | None, required: str | None) -> s
 class CompiledContextObject(BaseModel):
     object_id: str
     object_type: str
+    title: str = Field(default="", exclude=True)
+    # Runtime-only source text. Pydantic excludes this field from API manifests.
+    content: str = Field(default="", exclude=True, repr=False)
+    source_metadata: dict[str, object] = Field(default_factory=dict, exclude=True, repr=False)
+    created_by: str = Field(default="", exclude=True)
+    created_at: datetime | None = Field(default=None, exclude=True)
+    updated_at: datetime | None = Field(default=None, exclude=True)
     selected_by_user: bool = False
     source_object_ids: list[str] = Field(default_factory=list)
     selected_sections: dict[str, bool | None] | None = None
@@ -445,6 +454,12 @@ class WorkspaceContextCompiler:
                 CompiledContextObject(
                     object_id=item.id,
                     object_type=item.object_type,
+                    title=item.title or "",
+                    content=content,
+                    source_metadata=dict(item.metadata_json or {}),
+                    created_by=item.created_by,
+                    created_at=item.created_at,
+                    updated_at=item.updated_at,
                     selected_by_user=item.id in roots,
                     source_object_ids=sorted(set(
                         linked_sources.get(item.id, []) + provenance_sources.get(item.id, [])
@@ -456,7 +471,12 @@ class WorkspaceContextCompiler:
         if len(prompt_text) > self.max_chars:
             raise ContextSelectionError(
                 "Selected workspace context exceeds the per-turn size limit. Narrow the selection and try again.",
-                {"project_name": project_name, "character_limit": self.max_chars},
+                {
+                    "budget_error": "mandatory_context_overflow",
+                    "project_name": project_name,
+                    "character_limit": self.max_chars,
+                    "suggestion": "Reduce the explicitly selected text or select fewer workspace objects.",
+                },
             )
 
         return CompiledWorkspaceContext(
