@@ -21,8 +21,8 @@ class ProviderError(AuraError):
 
 MODEL_PROVIDER_FAILURE_CODE = "ModelProviderError"
 MODEL_PROVIDER_FAILURE_MESSAGE = (
-    "The model provider is not configured or could not complete this request. "
-    "Open AURA Desktop settings or Routing Studio to choose or check a provider, then retry."
+    "The selected model provider could not complete this request. "
+    "Check provider availability and routing settings, then retry."
 )
 MODEL_PROVIDER_FAILURE_STORAGE_MESSAGE = "Model provider request failed."
 
