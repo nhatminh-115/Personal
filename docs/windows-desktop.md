@@ -26,6 +26,21 @@ unavailable database/checkpointer is `degraded`. Startup detects API port
 conflicts before starting services and translates PostgreSQL bind conflicts
 into an actionable message.
 
+## Model and workspace defaults
+
+A fresh desktop install starts with no model provider selected and no model ID
+assumed. AI runs report that a provider must be configured instead of returning
+deterministic mock text. The offline Mock provider remains available as an
+explicit demo choice. Local Ollama and LM Studio models are discovered from the
+desktop runtime and can be selected in Routing Studio; cloud-compatible
+endpoints require the exact endpoint URL and model ID to be entered in desktop
+settings.
+
+Bundled demo projects, chats, notes, automations, and library files remain part
+of the browser prototype only. Desktop startup filters those fixtures from its
+initial state and from any older browser storage, while retaining imported and
+live records.
+
 ## Build and install
 
 Requirements: Windows 11 x64, WebView2 Runtime, Docker Desktop with the Linux

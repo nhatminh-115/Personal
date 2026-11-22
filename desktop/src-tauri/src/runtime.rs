@@ -60,9 +60,9 @@ pub struct DesktopPreferences {
 impl Default for DesktopPreferences {
     fn default() -> Self {
         Self {
-            provider: "mock".into(),
-            base_url: "https://api.openai.com/v1".into(),
-            model: "gpt-4o-mini".into(),
+            provider: "unconfigured".into(),
+            base_url: String::new(),
+            model: String::new(),
             close_to_tray: true,
             autostart: false,
             notifications: false,
@@ -994,21 +994,38 @@ pub async fn desktop_save_preferences(
     runtime: State<'_, DesktopRuntime>,
     app: AppHandle,
 ) -> Result<RuntimeSnapshot, String> {
-    if !matches!(provider.as_str(), "mock" | "openai") {
-        return Err("Choose Mock or OpenAI-compatible routing.".into());
+    if !matches!(provider.as_str(), "unconfigured" | "mock" | "openai") {
+        return Err(
+            "Choose Not configured, Mock offline demo, or OpenAI-compatible routing.".into(),
+        );
     }
     if !is_supported_global_shortcut(&global_shortcut) {
         return Err("Choose one of the supported AURA shortcuts.".into());
     }
-    if model.trim().is_empty() || model.len() > 200 {
-        return Err("Model name must contain 1 to 200 characters.".into());
+    if provider == "openai" && model.trim().is_empty() {
+        return Err(
+            "Enter a model name reported by your selected OpenAI-compatible endpoint.".into(),
+        );
     }
-    if !base_url.starts_with("http://") && !base_url.starts_with("https://") {
+    if model.len() > 200 {
+        return Err("Model name must contain at most 200 characters.".into());
+    }
+    if provider == "openai" && !base_url.starts_with("http://") && !base_url.starts_with("https://")
+    {
         return Err("Model endpoint must use HTTP or HTTPS.".into());
     }
-    if base_url.contains('@') || base_url.contains('#') || base_url.len() > 1000 {
+    if provider == "openai"
+        && (base_url.contains('@') || base_url.contains('#') || base_url.len() > 1000)
+    {
         return Err("Model endpoint URL is invalid.".into());
     }
+    let (base_url, model) = if provider == "mock" {
+        (String::new(), "mock-default".to_owned())
+    } else if provider == "unconfigured" {
+        (String::new(), String::new())
+    } else {
+        (base_url, model)
+    };
     let preferences = DesktopPreferences {
         provider,
         base_url,
@@ -1148,6 +1165,7 @@ pub async fn desktop_restore_backup(
 mod tests {
     use super::{
         docker_compose_start_error, ensure_loopback_port_available, is_supported_global_shortcut,
+        DesktopPreferences,
     };
     use std::net::TcpListener;
 
@@ -1175,5 +1193,14 @@ mod tests {
         assert!(is_supported_global_shortcut("CommandOrControl+Shift+A"));
         assert!(is_supported_global_shortcut("none"));
         assert!(!is_supported_global_shortcut("Alt+F4"));
+    }
+
+    #[test]
+    fn new_desktop_preferences_do_not_assume_a_provider_or_model() {
+        let preferences = DesktopPreferences::default();
+
+        assert_eq!(preferences.provider, "unconfigured");
+        assert!(preferences.base_url.is_empty());
+        assert!(preferences.model.is_empty());
     }
 }

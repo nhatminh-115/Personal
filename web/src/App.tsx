@@ -37,6 +37,7 @@ import { extractHtmlText, MAX_HTML_INPUT_BYTES } from './lib/htmlText';
 import { extractLocalTextFile, MAX_LOCAL_TEXT_FILE_BYTES } from './lib/localTextFile';
 import { extractRtfText, MAX_LOCAL_RTF_BYTES } from './lib/rtfText';
 import { executionErrorText } from './lib/executionError';
+import { workspaceRecordsForRuntime } from './lib/workspaceBootstrap';
 import {
   compiledContextTokenCount,
   compiledContextTokenCountFromManifest,
@@ -260,11 +261,12 @@ function projectFromRecord(record: WorkspaceProjectRecord, index: number): Proje
   };
 }
 
-function loadLibrary(): LibraryItem[] {
-  const stored = loadStored<LibraryItem[]>(STORAGE.library, []);
-  if (!stored.length) return initialLibraryItems.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
+function loadLibrary(isDesktop: boolean): LibraryItem[] {
+  const stored = workspaceRecordsForRuntime(loadStored<LibraryItem[]>(STORAGE.library, []), isDesktop);
+  const fixtures = isDesktop ? [] : initialLibraryItems;
+  if (!stored.length) return fixtures.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
   const storedById = new Map(stored.map((item) => [item.id, item]));
-  const builtIns = initialLibraryItems.map((item) => ({ ...item, ...(storedById.get(item.id) ?? {}), href: item.href, source: 'bundled' as const }));
+  const builtIns = fixtures.map((item) => ({ ...item, ...(storedById.get(item.id) ?? {}), href: item.href, source: 'bundled' as const }));
   const imported = stored.filter((item) => item.source === 'imported');
   return [...builtIns, ...imported];
 }
@@ -300,6 +302,7 @@ interface AppTab extends AuraTab {
 
 const AURA_TAB: AppTab = { id: 'aura', title: 'AURA', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
 const isDesktopApp = isTauri();
+const runtimeProjects = isDesktopApp ? [] : projects;
 const DESKTOP_API_READY_KEY = 'aura:desktop-awaiting-api-ready';
 
 function tabStateKey(tab: AppTab) {
@@ -323,7 +326,7 @@ export default function App() {
   const [inspectorFocusRunId, setInspectorFocusRunId] = useState<string | null>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(params.get('focus'));
-  const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
+  const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => isDesktopApp ? undefined : initialNodes.find((node) => node.id === params.get('focus')));
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef(new Map<number, number>());
@@ -338,7 +341,7 @@ export default function App() {
   const [focusedStudySessionId, setFocusedStudySessionId] = useState<string | null>(null);
   const workspaceSearchRequest = useRef(0);
 
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(() => loadLibrary(isDesktopApp));
   const [libraryNextCursor, setLibraryNextCursor] = useState<string | null>(null);
   const [libraryPageLoading, setLibraryPageLoading] = useState(false);
   const [libraryPageError, setLibraryPageError] = useState<string | null>(null);
@@ -376,7 +379,7 @@ export default function App() {
   const [activeTabId, setActiveTabId] = useState(AURA_TAB.id);
   const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
   const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
-  const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [notes, setNotes] = useState<WorkspaceNote[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.notes, initialNotes), isDesktopApp));
   const [notesProjectScopeId, setNotesProjectScopeId] = useState<string | null>(null);
   const [noteConflicts, setNoteConflicts] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof api.fetchWorkspaceSummary>>>(() => ({
@@ -415,10 +418,10 @@ export default function App() {
   const savedNotePrivacyPolicies = useRef(new Map<string, WorkspaceNote['privacyPolicy']>());
   const savedNoteRevisions = useRef(new Map<string, number>());
   const deletedWorkspaceNoteIds = useRef(new Set<string>());
-  const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
+  const [automations, setAutomations] = useState<AutomationRecord[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.automations, initialAutomations), isDesktopApp));
   const automationsLoaded = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
-    const initial = loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations);
+    const initial = workspaceRecordsForRuntime(loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations), isDesktopApp);
     const live = initial.filter((item) => item.source === 'live');
     return { total: live.length, enabled: live.filter((item) => item.enabled).length };
   });
@@ -429,7 +432,7 @@ export default function App() {
   const automationPageRequest = useRef(false);
   const automationArchiveRequests = useRef(new Set<string>());
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() =>
-    loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
+    workspaceRecordsForRuntime(loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads), isDesktopApp)
       .map((thread) => ({ ...thread, loadingOlderMessages: false }))
   );
   const [workspaceGraphRevisions, setWorkspaceGraphRevisions] = useState<Record<string, number>>({});
@@ -438,14 +441,14 @@ export default function App() {
   }, []);
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
-    projects.forEach((project) => {
+    runtimeProjects.forEach((project) => {
       const first = initialChatThreads.find((thread) => thread.projectId === project.id);
       if (first) map[project.id] = first.id;
     });
     return map;
   });
 
-  const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
+  const projectCatalog = useMemo(() => [...userProjects, ...runtimeProjects], [userProjects]);
   const activeProjectCatalog = useMemo(() => projectCatalog.filter((project) => !project.archived), [projectCatalog]);
   const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
 
@@ -495,7 +498,7 @@ export default function App() {
   const workspaceGraphRevision = activeProject ? workspaceGraphRevisions[activeProject.name] ?? 0 : 0;
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
   const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
-  const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
+  const genericBoard = useMemo(() => !isDesktopApp && activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
 
   useEffect(() => window.localStorage.setItem(STORAGE.library, JSON.stringify(libraryItems)), [libraryItems]);
   useEffect(() => window.localStorage.setItem(STORAGE.notes, JSON.stringify(notes)), [notes]);
@@ -3371,8 +3374,8 @@ export default function App() {
             <BoardCanvas
               key={activeProject.id}
               boardKey={activeProject.id}
-              seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
-              seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
+              seedNodes={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.nodes}
+              seedEdges={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.edges}
               workspaceProjectName={workspaceGraphProjectName}
               workspaceSessionIds={workspaceSessionIds}
               workspaceGraphRevision={workspaceGraphRevision}
@@ -3425,7 +3428,7 @@ export default function App() {
             </div>
             <div className="split-workspace__board">
               <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
-                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} workspaceGraphRevision={workspaceGraphRevision} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
+                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} workspaceGraphRevision={workspaceGraphRevision} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
               </Suspense>
             </div>
           </div>

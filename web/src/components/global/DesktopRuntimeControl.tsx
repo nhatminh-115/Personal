@@ -17,7 +17,7 @@ interface RuntimeSnapshot {
   message: string;
   apiUrl: string;
   dockerAvailable: boolean;
-  provider: 'mock' | 'openai';
+  provider: 'unconfigured' | 'mock' | 'openai';
   baseUrl: string;
   model: string;
   closeToTray: boolean;
@@ -54,9 +54,9 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [provider, setProvider] = useState<'mock' | 'openai'>('mock');
-  const [baseUrl, setBaseUrl] = useState('https://api.openai.com/v1');
-  const [model, setModel] = useState('gpt-4o-mini');
+  const [provider, setProvider] = useState<'unconfigured' | 'mock' | 'openai'>('unconfigured');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [model, setModel] = useState('');
   const [providerKey, setProviderKey] = useState('');
   const [closeToTray, setCloseToTray] = useState(true);
   const [autostart, setAutostart] = useState(false);
@@ -242,6 +242,10 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (provider === 'openai' && (!baseUrl.trim() || !model.trim())) {
+      setError('Enter the endpoint URL and exact model ID reported by that endpoint.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -330,12 +334,13 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
             {phase === 'error' && !snapshot?.dockerAvailable ? <p className="desktop-prerequisite">AURA Desktop needs Docker Desktop with the Linux engine running. Open Docker Desktop, wait for “Engine running”, then choose Start runtime. AURA will not install Docker.</p> : null}
             <details className="desktop-log-disclosure"><summary>Runtime log</summary><pre>{snapshot?.logs.length ? snapshot.logs.join('\n') : 'No runtime log entries yet.'}</pre></details>
             <form className="desktop-settings-form" onSubmit={(event) => void saveSettings(event)}>
-              <div className="desktop-settings-section"><div><strong>Model provider</strong><small>Mock works offline; keys are kept in Windows Credential Manager.</small></div>
-                <label className="desktop-field"><span>Provider</span><select value={provider} onChange={(event) => setProvider(event.target.value as 'mock' | 'openai')}><option value="mock">Mock · offline demo</option><option value="openai">OpenAI-compatible</option></select></label>
+              <div className="desktop-settings-section"><div><strong>Model provider</strong><small>No model is assumed on first launch. Mock returns deterministic demo answers; API keys are kept in Windows Credential Manager.</small></div>
+                <label className="desktop-field"><span>Provider</span><select value={provider} onChange={(event) => setProvider(event.target.value as 'unconfigured' | 'mock' | 'openai')}><option value="unconfigured">Not configured</option><option value="mock">Offline demo · Mock</option><option value="openai">OpenAI-compatible cloud endpoint</option></select></label>
+                {provider === 'unconfigured' ? <p className="desktop-prerequisite">Auto routing stays disabled until a provider is selected. Local Ollama and LM Studio models can be discovered and selected in Routing Studio.</p> : null}
                 {provider === 'openai' ? <>
-                  <label className="desktop-field"><span>API base URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} autoComplete="url" /></label>
-                  <label className="desktop-field"><span>Model name</span><input value={model} onChange={(event) => setModel(event.target.value)} autoComplete="off" /></label>
-                  <label className="desktop-field"><span>API key {snapshot?.hasProviderKey ? '· already stored' : ''}</span><input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={snapshot?.hasProviderKey ? 'Leave blank to keep the saved key' : 'Paste provider key'} autoComplete="new-password" /></label>
+                  <label className="desktop-field"><span>Endpoint URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://provider.example/v1" autoComplete="url" /></label>
+                  <label className="desktop-field"><span>Exact model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Copy the ID reported by your provider" autoComplete="off" /></label>
+                  <label className="desktop-field"><span>API key {snapshot?.hasProviderKey ? '· already stored' : '· optional for endpoints that need none'}</span><input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={snapshot?.hasProviderKey ? 'Leave blank to keep the saved key' : 'Paste provider key if required'} autoComplete="new-password" /></label>
                   {snapshot?.hasProviderKey ? <button className="desktop-text-button" type="button" disabled={busy} onClick={() => void forgetProviderKey()}>Forget saved provider key</button> : null}
                 </> : null}
               </div>

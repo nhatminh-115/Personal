@@ -102,6 +102,12 @@ class ModelRouter:
         context: Optional[RoutingContext],
     ) -> Tuple[ModelProvider, ModelSelection]:
         """Use deterministic routing policy to select provider and model for given context."""
+        if self._default_provider_name == "unconfigured" and not (
+            context and context.explicit_model_override
+        ):
+            raise ProviderError(
+                "No model provider is configured. Open AURA Desktop settings and choose a provider before starting an AI run."
+            )
         selection = self._policy.select(
             context=context,
             available_metadata=self._metadata,

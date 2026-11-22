@@ -51,6 +51,24 @@ async def test_router_unregistered_provider_raises_error():
     assert "not registered" in str(exc_info.value)
 
 
+def test_unconfigured_default_fails_clearly_without_selecting_mock():
+    router = ModelRouter(default_provider_name="unconfigured")
+
+    with pytest.raises(ProviderError, match="No model provider is configured"):
+        router.select_model_for_task(RoutingContext())
+
+
+def test_explicit_model_route_remains_available_with_unconfigured_default():
+    router = ModelRouter(default_provider_name="unconfigured")
+
+    provider, selection = router.select_model_for_task(
+        RoutingContext(explicit_model_override="mock:mock-default")
+    )
+
+    assert provider.name == "mock"
+    assert selection.model_name == "mock-default"
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("privacy", ["confidential", "local_only"])
 async def test_explicit_provider_route_blocks_cloud_before_provider_call(privacy):
