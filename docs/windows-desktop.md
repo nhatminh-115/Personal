@@ -80,6 +80,10 @@ show the standard unsigned-app warning. Builds do not need a provider API key.
 - API token, Postgres password, and optional provider key: Windows Credential
   Manager. The backup archive excludes these credentials.
 
+The desktop shell shares one in-memory API token between the renderer and the
+sidecar. First-launch token creation is serialized so concurrent startup paths
+cannot give the renderer and API different credentials.
+
 Folder connections store an opaque ID and selected root path. Indexing reads
 file metadata only. File bytes are read only after opening a selected result or
 dropping a file on the AURA window. Dropped files are limited to five files,

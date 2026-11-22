@@ -76,6 +76,7 @@ struct RuntimeInner {
     message: String,
     docker_available: bool,
     child: Option<Child>,
+    api_token: Option<String>,
     #[cfg(windows)]
     child_job: Option<std::os::windows::io::OwnedHandle>,
     logs: VecDeque<String>,
@@ -92,6 +93,7 @@ impl Default for DesktopRuntime {
             message: "AURA Desktop is stopped.".into(),
             docker_available: false,
             child: None,
+            api_token: None,
             #[cfg(windows)]
             child_job: None,
             logs: VecDeque::with_capacity(200),
@@ -104,6 +106,26 @@ impl DesktopRuntime {
     fn entry(key: &str) -> Result<Entry, String> {
         Entry::new(SERVICE_NAME, key)
             .map_err(|error| format!("Windows Credential Manager: {error}"))
+    }
+
+    fn api_token_with(
+        &self,
+        load: impl FnOnce() -> Result<String, String>,
+    ) -> Result<String, String> {
+        let mut inner = self
+            .0
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(token) = inner.api_token.as_ref() {
+            return Ok(token.clone());
+        }
+        let token = load()?;
+        inner.api_token = Some(token.clone());
+        Ok(token)
+    }
+
+    fn api_token(&self) -> Result<String, String> {
+        self.api_token_with(|| Self::ensure_secret("api_token"))
     }
 
     fn ensure_secret(key: &str) -> Result<String, String> {
@@ -365,7 +387,7 @@ impl DesktopRuntime {
             self.log(message.clone());
             return Err(message);
         }
-        let _api_token = Self::ensure_secret("api_token")?;
+        let api_token = self.api_token()?;
         let postgres_password = Self::ensure_secret("postgres_password")?;
         let mut docker = Command::new("docker");
         docker
@@ -462,7 +484,7 @@ impl DesktopRuntime {
         let sidecar_env = |command: &mut Command| {
             command
                 .env("DESKTOP_MODE", "true")
-                .env("AURA_API_TOKEN", _api_token.as_str())
+                .env("AURA_API_TOKEN", api_token.as_str())
                 .env("DATABASE_URL", &database_url)
                 .env(
                     "CHECKPOINT_DB_PATH",
@@ -615,6 +637,7 @@ impl DesktopRuntime {
     }
 
     pub fn run_sidecar_operation(
+        &self,
         app: &AppHandle,
         operation: &str,
         path: &Path,
@@ -630,7 +653,7 @@ impl DesktopRuntime {
         let configuration = Self::aura_config_dir(app)?;
         let compose_file = resource_dir.join("runtime").join("compose.yaml");
         let postgres_password = Self::ensure_secret("postgres_password")?;
-        let api_token = Self::ensure_secret("api_token")?;
+        let api_token = self.api_token()?;
         let database_url = format!(
             "postgresql+asyncpg://aura_desktop:{postgres_password}@127.0.0.1:15432/aura_desktop"
         );
@@ -955,8 +978,8 @@ pub async fn desktop_status(
 }
 
 #[tauri::command]
-pub async fn desktop_api_token() -> Result<String, String> {
-    DesktopRuntime::ensure_secret("api_token")
+pub async fn desktop_api_token(runtime: State<'_, DesktopRuntime>) -> Result<String, String> {
+    runtime.api_token()
 }
 
 #[tauri::command]
@@ -1118,7 +1141,7 @@ pub async fn desktop_create_backup(
     tauri::async_runtime::spawn_blocking(move || {
         runtime.stop(&app)?;
         let backup_result = DesktopRuntime::start_postgres_for_maintenance(&app)
-            .and_then(|()| DesktopRuntime::run_sidecar_operation(&app, "--desktop-backup", &path));
+            .and_then(|()| runtime.run_sidecar_operation(&app, "--desktop-backup", &path));
         let pause_result = DesktopRuntime::stop_postgres_after_maintenance(&app);
         let resume_result = runtime.start(&app);
         if let Err(error) = backup_result {
@@ -1144,7 +1167,7 @@ pub async fn desktop_restore_backup(
     tauri::async_runtime::spawn_blocking(move || {
         runtime.stop(&app)?;
         let restore_result = DesktopRuntime::start_postgres_for_maintenance(&app)
-            .and_then(|()| DesktopRuntime::run_sidecar_operation(&app, "--desktop-restore", &path));
+            .and_then(|()| runtime.run_sidecar_operation(&app, "--desktop-restore", &path));
         if let Err(error) = DesktopRuntime::stop_postgres_after_maintenance(&app) {
             runtime.log(format!("Restore database pause warning: {error}"));
         }
@@ -1165,9 +1188,45 @@ pub async fn desktop_restore_backup(
 mod tests {
     use super::{
         docker_compose_start_error, ensure_loopback_port_available, is_supported_global_shortcut,
-        DesktopPreferences,
+        DesktopPreferences, DesktopRuntime,
     };
     use std::net::TcpListener;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    use std::time::Duration;
+
+    #[test]
+    fn concurrent_api_token_requests_share_one_credential() {
+        const THREADS: usize = 8;
+        let runtime = DesktopRuntime::default();
+        let barrier = Arc::new(Barrier::new(THREADS));
+        let loads = Arc::new(AtomicUsize::new(0));
+        let workers = (0..THREADS)
+            .map(|_| {
+                let runtime = runtime.clone();
+                let barrier = barrier.clone();
+                let loads = loads.clone();
+                thread::spawn(move || {
+                    barrier.wait();
+                    runtime
+                        .api_token_with(|| {
+                            loads.fetch_add(1, Ordering::SeqCst);
+                            thread::sleep(Duration::from_millis(10));
+                            Ok("shared-api-token".to_owned())
+                        })
+                        .unwrap()
+                })
+            })
+            .collect::<Vec<_>>();
+        let tokens = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect::<Vec<_>>();
+
+        assert_eq!(loads.load(Ordering::SeqCst), 1);
+        assert!(tokens.iter().all(|token| token == "shared-api-token"));
+    }
 
     #[test]
     fn reports_loopback_port_conflicts_with_the_exact_port() {
