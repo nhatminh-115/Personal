@@ -1,0 +1,3 @@
+# Built using the repository's locked Python application dependencies and
+# this pinned Windows executable packager.
+pyinstaller==6.22.3

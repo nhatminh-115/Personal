@@ -112,6 +112,8 @@ def create_app() -> FastAPI:
         description="Production-grade personal AI agent runtime with persistent memory, capability-based tools, and human-in-the-loop approvals.",
         lifespan=lifespan,
     )
+    if settings.DESKTOP_MODE:
+        app.state.desktop_shutdown_event = asyncio.Event()
 
     web_is_built = (WEB_DIST_DIR / "index.html").is_file()
     allowed_origins = [
@@ -149,6 +151,10 @@ def create_app() -> FastAPI:
     app.include_router(study.router)
     app.include_router(automations.router)
     app.include_router(capabilities.router)
+    if settings.DESKTOP_MODE:
+        from app.api.routes.desktop import router as desktop_router
+
+        app.include_router(desktop_router)
 
     # Keep unknown API paths from falling through to the single-page web app.
     unmatched_api_methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
@@ -223,6 +229,7 @@ def create_app() -> FastAPI:
             "status": "healthy",
             "app": settings.APP_NAME,
             "version": settings.APP_VERSION,
+            "desktop_mode": settings.DESKTOP_MODE,
         }
 
     @app.get("/ready", tags=["Health"])

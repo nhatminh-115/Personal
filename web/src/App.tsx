@@ -7,6 +7,8 @@ import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
 import { WorkspaceChrome, type AuraTab } from './components/layout/WorkspaceChrome';
 import { ToastStack } from './components/ui/ToastStack';
+import { DesktopRuntimeControl } from './components/global/DesktopRuntimeControl';
+import { isTauri } from '@tauri-apps/api/core';
 import { RoutingConfirmationNotice } from './components/routing/RoutingConfirmationNotice';
 import { initialNodes } from './data/mockData';
 import { makeProjectBoard } from './data/projectBoards';
@@ -297,6 +299,8 @@ interface AppTab extends AuraTab {
 }
 
 const AURA_TAB: AppTab = { id: 'aura', title: 'AURA', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
+const isDesktopApp = isTauri();
+const DESKTOP_API_READY_KEY = 'aura:desktop-awaiting-api-ready';
 
 function tabStateKey(tab: AppTab) {
   return [tab.id, tab.surface, tab.projectId ?? '', tab.connectionId ?? '', tab.previewId ?? '', tab.mode ?? ''].join('|');
@@ -682,12 +686,46 @@ export default function App() {
     setThreadRoutingOverrides((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning } }));
   }, [activeThreadId]);
 
-  function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
+  const patchThreadLive = useCallback((threadId: string, patch: Partial<ThreadLiveState>) => {
     setThreadLiveStates((prev) => ({
       ...prev,
       [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null }, ...(prev[threadId] ?? {}), ...patch },
     }));
-  }
+  }, []);
+
+  const liveRunTracking = useRef({ threadLiveStates, chatThreads, activeThreadId });
+  liveRunTracking.current = { threadLiveStates, chatThreads, activeThreadId };
+
+  useEffect(() => {
+    if (!isDesktopApp) return;
+    const pollBackgroundRuns = () => {
+      const current = liveRunTracking.current;
+      for (const [threadId, live] of Object.entries(current.threadLiveStates)) {
+        if (threadId === current.activeThreadId || !live.runId || !['running', 'cancellation_requested', 'resuming_routing'].includes(live.runStatus ?? '')) continue;
+        const thread = current.chatThreads.find((candidate) => candidate.id === threadId && candidate.source === 'live' && candidate.sessionId);
+        if (!thread?.sessionId) continue;
+        const runId = live.runId;
+        void api.fetchSessionExecutionState(thread.sessionId).then((execution) => {
+          if (execution.run_id !== runId || !['waiting_for_approval', 'completed', 'failed', 'cancelled'].includes(execution.run_status ?? '')) return;
+          setThreadLiveStates((states) => {
+            const existing = states[threadId];
+            if (!existing || existing.runId !== runId) return states;
+            return {
+              ...states,
+              [threadId]: {
+                ...existing,
+                runStatus: execution.run_status ?? existing.runStatus,
+                approval: execution.run_status === 'waiting_for_approval' ? execution.approval ?? null : null,
+              },
+            };
+          });
+        }).catch(() => {});
+      }
+    };
+    pollBackgroundRuns();
+    const timer = window.setInterval(pollBackgroundRuns, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
@@ -2895,7 +2933,8 @@ export default function App() {
   }, [includeArchivedAutomations, loadAutomationPage]);
 
   useEffect(() => {
-    if (surface !== 'automations' || automationsLoaded.current || automationPageLoading) return;
+    const waitingForDesktopApi = isDesktopApp && window.sessionStorage.getItem(DESKTOP_API_READY_KEY) === '1';
+    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || automationsLoaded.current || automationPageLoading) return;
     void loadAutomationPage();
   }, [automationPageLoading, loadAutomationPage, surface]);
 
@@ -2904,7 +2943,8 @@ export default function App() {
     .map((item) => item.id);
   const inFlightAutomationKey = inFlightAutomationIds.join('|');
   useEffect(() => {
-    if (surface !== 'automations' || !automationsLoaded.current || !inFlightAutomationKey) return;
+    const waitingForDesktopApi = isDesktopApp && window.sessionStorage.getItem(DESKTOP_API_READY_KEY) === '1';
+    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || !automationsLoaded.current || !inFlightAutomationKey) return;
     const timer = window.setInterval(() => {
       void api.fetchAutomationStatuses(inFlightAutomationKey.split('|')).then((records) => {
         const updates = new Map(records.map((record) => [record.id, automationFromRecord(record, projectCatalog)]));
@@ -3070,6 +3110,18 @@ export default function App() {
   };
 
   const hasActiveProjectSummary = Boolean(activeProject && workspaceSummary.project_name === activeProject.name);
+  const desktopRunEvents = useMemo(() => Object.entries(threadLiveStates).flatMap(([threadId, live]) => {
+    if (!live.runStatus) return [];
+    return [{
+      eventId: `${threadId}:${live.runId ?? live.clientTurnId ?? 'run'}`,
+      status: live.runStatus,
+      approvalPending: Boolean(live.approval),
+    }];
+  }), [threadLiveStates]);
+  const desktopAutomationRuns = useMemo(() => automations.flatMap((automation) => {
+    if (automation.source !== 'live' || !automation.latestExecution) return [];
+    return [{ eventId: automation.latestExecution.eventId, status: automation.latestExecution.status }];
+  }), [automations]);
   const projectFileCount = activeProjectId
     ? (hasActiveProjectSummary ? workspaceSummary.project_library_count : 0) + projectArtifacts.filter((item) => item.projectId === activeProjectId).length
     : 0;
@@ -3439,6 +3491,12 @@ export default function App() {
           />
       ) : null}
       <ToastStack toasts={toasts} />
+      <DesktopRuntimeControl
+        runEvents={desktopRunEvents}
+        automationRuns={desktopAutomationRuns}
+        onDroppedFiles={importFiles}
+        onDropError={(message) => pushToast('Could not import dropped files', message)}
+      />
     </div>
   );
 }

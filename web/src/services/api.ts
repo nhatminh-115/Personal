@@ -53,7 +53,7 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = ''; // Proxy forwards /v1 to FastAPI in dev
+const BASE_URL = import.meta.env.VITE_AURA_API_BASE_URL ?? ''; // Desktop points at its loopback runtime; browser dev uses the Vite proxy.
 const API_TOKEN_SESSION_KEY = 'aura-api-token';
 export const API_AUTH_REQUIRED_EVENT = 'aura:api-auth-required';
 

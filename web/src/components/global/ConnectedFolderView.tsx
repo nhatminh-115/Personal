@@ -17,21 +17,14 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ensureReadPermission,
   getDirectoryIndexSnapshot,
   getDirectoryConnectionHandle,
+  getFileAccessProvider,
   indexDirectoryConnection,
-  type AuraFileSystemDirectoryHandle,
-  type AuraFileSystemFileHandle,
-  type AuraFileSystemHandle,
+  listDirectoryEntries,
+  type DirectoryBrowseEntry,
   type DirectoryConnection,
 } from '../../lib/folderConnections';
-
-interface FolderEntry {
-  name: string;
-  kind: 'file' | 'directory';
-  handle: AuraFileSystemHandle;
-}
 
 interface ConnectedFolderViewProps {
   connection: DirectoryConnection;
@@ -51,12 +44,12 @@ function iconForName(name: string) {
 }
 
 export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect, onOpenFile }: ConnectedFolderViewProps) {
-  const [rootHandle, setRootHandle] = useState<AuraFileSystemDirectoryHandle | null>(null);
   const [path, setPath] = useState<string[]>([]);
-  const [entries, setEntries] = useState<FolderEntry[]>([]);
+  const [entries, setEntries] = useState<DirectoryBrowseEntry[]>([]);
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [permissionBlocked, setPermissionBlocked] = useState(false);
+  const [directoryTruncated, setDirectoryTruncated] = useState(false);
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [indexSnapshot, setIndexSnapshot] = useState<{ indexedAt: number; fileCount: number; truncated: boolean } | null>(null);
   const [indexing, setIndexing] = useState(false);
@@ -87,27 +80,9 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
     setLoading(true);
     setPermissionBlocked(false);
     try {
-      const root = await getDirectoryConnectionHandle(connection.id);
-      if (!root) throw new Error('Connection handle not found');
-      const granted = await ensureReadPermission(root);
-      if (!granted) {
-        setRootHandle(root);
-        setPermissionBlocked(true);
-        setEntries([]);
-        return;
-      }
-      setRootHandle(root);
-      let directory = root;
-      for (const segment of path) directory = await directory.getDirectoryHandle(segment);
-      const next: FolderEntry[] = [];
-      for await (const handle of directory.values()) {
-        next.push({ name: handle.name, kind: handle.kind, handle });
-      }
-      next.sort((a, b) => {
-        if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
-      });
-      setEntries(next);
+      const snapshot = await listDirectoryEntries(connection.id, path.join('/'));
+      setEntries(snapshot.entries);
+      setDirectoryTruncated(snapshot.truncated);
     } catch {
       setEntries([]);
       setPermissionBlocked(true);
@@ -123,19 +98,31 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
     return q ? entries.filter((entry) => entry.name.toLowerCase().includes(q)) : entries;
   }, [entries, query]);
 
-  const openEntry = useCallback(async (entry: FolderEntry) => {
+  const openEntry = useCallback(async (entry: DirectoryBrowseEntry) => {
     if (entry.kind === 'directory') {
       setPath((current) => [...current, entry.name]);
       setQuery('');
       return;
     }
     try {
-      const file = await (entry.handle as AuraFileSystemFileHandle).getFile();
-      onOpenFile(file, [connection.name, ...path, entry.name].join('/'));
+      const file = await getFileAccessProvider().openFolderFile(connection.id, entry.relativePath);
+      onOpenFile(file, [connection.name, entry.relativePath].join('/'));
     } catch {
       // Permission changes are reflected on the next refresh.
     }
-  }, [connection.name, onOpenFile, path]);
+  }, [connection.id, connection.name, onOpenFile]);
+
+  const restoreFolderAccess = async () => {
+    if (getFileAccessProvider().kind === 'browser') {
+      try {
+        const root = await getDirectoryConnectionHandle(connection.id);
+        if (root?.requestPermission && await root.requestPermission({ mode: 'read' }) !== 'granted') return;
+      } catch {
+        // Reconnecting from Library remains available if the saved browser handle expired.
+      }
+    }
+    setRefreshNonce((value) => value + 1);
+  };
 
   const crumbs = [connection.name, ...path];
 
@@ -184,8 +171,8 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
       {permissionBlocked ? (
         <div className="folder-permission-card">
           <Folder size={28} />
-          <div><strong>Folder permission needs to be restored.</strong><span>Browsers may revoke a saved directory permission between sessions. Re-open this connection to grant read access again.</span></div>
-          <button className="primary-soft-button" type="button" onClick={() => rootHandle && rootHandle.requestPermission?.({ mode: 'read' }).then(() => setRefreshNonce((value) => value + 1))}>Grant access</button>
+          <div><strong>Folder access needs attention.</strong><span>{getFileAccessProvider().kind === 'browser' ? 'The browser may have revoked its saved permission. Grant access again or reconnect this folder from Library.' : 'AURA could not read the selected folder. Reconnect it from Library and try again.'}</span></div>
+          <button className="primary-soft-button" type="button" onClick={() => void restoreFolderAccess()}>{getFileAccessProvider().kind === 'browser' ? 'Grant access' : 'Retry'}</button>
         </div>
       ) : (
         <div className="explorer-list-shell">
@@ -208,7 +195,9 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
         </div>
       )}
 
-      <footer className="explorer-statusbar"><span>{entries.length} items</span><span>Read-only browser connection · filesystem remains the source of truth</span></footer>
+      {directoryTruncated ? <div className="folder-index-error" role="status">This folder contains more than 2,000 entries. The list is limited to the first 2,000; narrow the folder or use filename indexing.</div> : null}
+
+      <footer className="explorer-statusbar"><span>{entries.length} items</span><span>Read-only connected folder · filesystem remains the source of truth</span></footer>
     </section>
   );
 }
