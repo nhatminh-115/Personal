@@ -71,13 +71,16 @@ content. Stable ties use item ID and source ID.
 ## Hard filters and allocation
 
 Scope, privacy, available capabilities, source provenance shape, supported
-type, and expiration are checked before ranking. A hard-filtered selected or
+type, and expiration are checked before ranking. Only `global` and `project`
+scopes are accepted; a project item must name the active project, while a
+global item cannot carry a project ID. Missing or contradictory scope metadata
+fails closed. A hard-filtered selected or
 required item raises `mandatory_context_rejected`; a selected item that cannot
 fit raises `mandatory_context_overflow`. Both include a structured reason and
 an actionable suggestion. Optional exclusions use stable reason codes such as
 `out_of_scope`, `privacy_blocked`, `capability_mismatch`, `duplicate`,
 `lower_priority`, `stale`, `over_budget`, `invalid_provenance`, and
-`unsupported_type`.
+`unsupported_type`, `unsupported_scope`, and `invalid_scope`.
 
 Budget calculation reserves system, tools, current user message, conversation,
 output, and a safety margin. It uses `tiktoken` for a compatible model when

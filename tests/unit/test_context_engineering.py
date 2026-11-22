@@ -115,6 +115,43 @@ def test_hard_filters_run_before_ranking_and_report_actionable_reasons():
     assert all(candidate.score is None for candidate in eligible)
 
 
+def test_scope_filter_rejects_missing_or_inconsistent_project_scope():
+    candidates = [
+        item("project-without-owner", scope="project"),
+        item("unknown-scope", scope="session", project_id="alpha"),
+        item("global-with-project-owner", scope="global", project_id="beta"),
+    ]
+
+    eligible, exclusions = hard_filter_items(candidates, ContextFilterPolicy(
+        project_id="alpha",
+        privacy_requirement="internal",
+        available_capabilities=set(),
+        now=AS_OF,
+    ))
+
+    assert eligible == []
+    assert {row.item_id: row.reason for row in exclusions} == {
+        "project-without-owner": "out_of_scope",
+        "unknown-scope": "unsupported_scope",
+        "global-with-project-owner": "invalid_scope",
+    }
+
+
+def test_required_context_with_ambiguous_scope_fails_closed():
+    selected = item(
+        "selected-without-project",
+        scope="project",
+        explicitly_selected=True,
+    )
+
+    with pytest.raises(ContextHardFilterError) as error:
+        allocate([selected])
+
+    assert error.value.details["budget_error"] == "mandatory_context_rejected"
+    assert error.value.details["item_id"] == "selected-without-project"
+    assert error.value.details["reason"] == "out_of_scope"
+
+
 def test_optional_context_is_ranked_and_exact_duplicates_keep_provenance():
     candidates = [
         item("lower", relevance=0.4, content="same factual evidence", source_id="source-lower"),

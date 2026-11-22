@@ -61,6 +61,7 @@ SUPPORTED_SOURCE_TYPES = {
     "execution_result",
     "external_retrieval",
 }
+SUPPORTED_CONTEXT_SCOPES = {"global", "project"}
 
 
 class ContextScoreBreakdown(BaseModel):
@@ -291,9 +292,13 @@ def hard_filter_items(
         reason = None
         if item.source_type not in SUPPORTED_SOURCE_TYPES:
             reason = "unsupported_type"
-        elif item.scope != "global" and policy.project_id and item.project_id and item.project_id != policy.project_id:
-            reason = "out_of_scope"
-        elif item.scope != "global" and item.project_id and policy.project_id is None:
+        elif item.scope not in SUPPORTED_CONTEXT_SCOPES:
+            reason = "unsupported_scope"
+        elif item.scope == "global" and item.project_id is not None:
+            reason = "invalid_scope"
+        elif item.scope == "project" and (
+            not item.project_id or not policy.project_id or item.project_id != policy.project_id
+        ):
             reason = "out_of_scope"
         elif item.privacy_classification and item.privacy_classification not in PRIVACY_REQUIREMENT_ORDER:
             reason = "privacy_blocked"
@@ -388,7 +393,7 @@ def allocate_context(
         for item in candidates
         if item.pre_exclusion_reason in {
             "out_of_scope", "privacy_blocked", "capability_mismatch", "duplicate", "lower_priority",
-            "stale", "over_budget", "invalid_provenance", "unsupported_type",
+            "stale", "over_budget", "invalid_provenance", "unsupported_type", "unsupported_scope", "invalid_scope",
         }
     ]
     for item in candidates:
