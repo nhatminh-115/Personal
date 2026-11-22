@@ -19,6 +19,10 @@ to `127.0.0.1:15432` and stores data in the dedicated volume
 ports and volumes. Normal stop, quit, backup, restore, and uninstall never
 remove that volume.
 
+The packaged frontend sends API requests to `http://127.0.0.1:17890` by
+default. Browser builds keep relative `/v1` requests and use the Vite development
+proxy. `VITE_AURA_API_BASE_URL` can override the API base URL in either mode.
+
 The shell supervises the API process with a Windows job object configured to
 terminate the sidecar if AURA exits unexpectedly. Runtime status checks the
 child process and `/ready`; a lost API is `error`, while a live API with an

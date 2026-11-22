@@ -53,7 +53,15 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = import.meta.env.VITE_AURA_API_BASE_URL ?? ''; // Desktop points at its loopback runtime; browser dev uses the Vite proxy.
+const DESKTOP_API_BASE_URL = 'http://127.0.0.1:17890';
+
+export function resolveApiBaseUrl(mode: string, configuredBaseUrl?: string): string {
+  const configured = configuredBaseUrl?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  return mode === 'desktop' ? DESKTOP_API_BASE_URL : '';
+}
+
+const BASE_URL = resolveApiBaseUrl(import.meta.env.MODE, import.meta.env.VITE_AURA_API_BASE_URL);
 const API_TOKEN_SESSION_KEY = 'aura-api-token';
 export const API_AUTH_REQUIRED_EVENT = 'aura:api-auth-required';
 
