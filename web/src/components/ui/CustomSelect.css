@@ -1,0 +1,181 @@
+/* Accessible custom select used for workspace-level routing controls. */
+.aura-menu-select {
+  position: relative;
+  z-index: 42;
+  min-width: 0;
+  color: #dce6ee;
+}
+
+.aura-menu-select__trigger {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 11px;
+  border: 1px solid rgba(164, 187, 205, .13);
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgba(23, 33, 44, .97), rgba(13, 21, 30, .98));
+  color: #dce6ee;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.025);
+  transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease;
+}
+
+.aura-menu-select__trigger:hover,
+.aura-menu-select.is-open .aura-menu-select__trigger {
+  border-color: rgba(103, 201, 218, .3);
+  background: linear-gradient(145deg, rgba(27, 39, 51, .99), rgba(15, 24, 34, .99));
+}
+
+.aura-menu-select__trigger:focus-visible {
+  outline: 2px solid rgba(103, 201, 218, .36);
+  outline-offset: 2px;
+}
+
+.aura-menu-select__trigger:disabled {
+  opacity: .56;
+  cursor: not-allowed;
+}
+
+.aura-menu-select__caption {
+  flex: none;
+  color: #7f94a2;
+  font-size: 8.5px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.aura-menu-select__trigger strong {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #dfe8ed;
+  font-size: 10.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.aura-menu-select__chevron {
+  flex: none;
+  color: #8eabb6;
+  transition: transform 150ms ease;
+}
+
+.aura-menu-select.is-open .aura-menu-select__chevron {
+  transform: rotate(180deg);
+}
+
+.aura-menu-select__menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 120;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(360px, calc(100vw - 28px));
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px;
+  border: 1px solid rgba(164, 187, 205, .15);
+  border-radius: 13px;
+  background: linear-gradient(160deg, rgba(22, 32, 44, .99), rgba(10, 17, 25, .995));
+  box-shadow: 0 22px 58px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(20px);
+  animation: aura-menu-select-in 140ms ease both;
+}
+
+.aura-menu-select--field .aura-menu-select__menu {
+  left: 0;
+  right: auto;
+  width: 100%;
+}
+
+.aura-menu-select--topbar {
+  width: 150px;
+  flex: none;
+}
+
+.aura-menu-select--topbar .aura-menu-select__menu {
+  min-width: 228px;
+}
+
+.aura-menu-select__option {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #d8e2e9;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.aura-menu-select__option:hover:not(:disabled) {
+  border-color: rgba(255,255,255,.055);
+  background: rgba(255,255,255,.055);
+}
+
+.aura-menu-select__option.is-selected {
+  border-color: rgba(103, 201, 218, .15);
+  background: rgba(103, 201, 218, .075);
+}
+
+.aura-menu-select__option:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.aura-menu-select__option-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.aura-menu-select__option-copy strong {
+  color: #e0e8ed;
+  font-size: 10.5px;
+  font-weight: 630;
+}
+
+.aura-menu-select__option-copy small {
+  color: #8195a3;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.aura-menu-select__check {
+  width: 16px;
+  min-height: 16px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: #86d1dc;
+}
+
+@keyframes aura-menu-select-in {
+  from { opacity: 0; transform: translateY(-4px) scale(.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .aura-menu-select__trigger,
+  .aura-menu-select__chevron,
+  .aura-menu-select__option { transition: none; }
+  .aura-menu-select__menu { animation: none; }
+}
