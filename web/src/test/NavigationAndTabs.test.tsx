@@ -419,7 +419,9 @@ describe('Navigation and Workspace Shell Invariants', () => {
 
     // Routing badge present in topbar
     expect(screen.getByText(/Routing…/i)).toBeInTheDocument();
-    expect(screen.getByText(/Reasoning: Profile/i)).toBeInTheDocument();
+    const reasoningControl = screen.getByRole('button', { name: 'Temporary reasoning override' });
+    expect(reasoningControl).toHaveTextContent('Reasoning');
+    expect(reasoningControl).toHaveTextContent('Profile');
     expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
 
     // Old sidebar model picker is absent
