@@ -66,6 +66,24 @@ export function Topbar({
   const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
   const unsupportedReasoning = lockedModelInfo?.reasoning_support === 'unsupported';
   const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
+  const reasoningOptions = [
+    {
+      value: '',
+      label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
+      description: fixedReasoning
+        ? 'The selected model controls its own reasoning.'
+        : unsupportedReasoning
+          ? 'This model does not expose a reasoning control.'
+          : 'Use the project routing profile',
+    },
+    ...(fixedReasoning || unsupportedReasoning
+      ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
+      : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => ({
+        value,
+        label: value[0].toUpperCase() + value.slice(1),
+        description: value === 'instant' ? 'Prioritize response speed' : value === 'max' ? 'Use the maximum available effort' : `Use ${value} reasoning effort`,
+      }))),
+  ];
 
   return (
     <header className="topbar">
@@ -152,23 +170,7 @@ export function Topbar({
                   ? 'Reasoning support for this exact model is unknown; the backend may reject an override.'
                   : undefined}
           onChange={(value) => onSetReasoningOverride((value || null) as ReasoningEffort | null)}
-          options={[
-            {
-              value: '',
-              label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
-              description: fixedReasoning
-                ? 'The selected model controls its own reasoning.'
-                : unsupportedReasoning
-                  ? 'This model does not expose a reasoning control.'
-                  : 'Use the project routing profile',
-            },
-            ...(fixedReasoning || unsupportedReasoning
-              ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
-              : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => ({
-                value,
-                label: value[0].toUpperCase() + value.slice(1),
-                description: value === 'instant' ? 'Prioritize response speed' : value === 'max' ? 'Use the maximum available effort' : `Use ${value} reasoning effort`,
-              })))}
+          options={reasoningOptions}
         />
         ) : null}
 
