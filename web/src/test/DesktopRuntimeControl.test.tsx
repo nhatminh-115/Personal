@@ -54,10 +54,20 @@ describe('DesktopRuntimeControl settings', () => {
     desktop.register.mockResolvedValue(undefined);
     desktop.unregister.mockResolvedValue(undefined);
     desktop.invoke.mockImplementation(async (command: string) => {
-      if (command === 'desktop_status' || command === 'desktop_save_preferences') return runtimeSnapshot;
+      if (command === 'desktop_status' || command === 'desktop_save_preferences' || command === 'desktop_restart') return runtimeSnapshot;
       if (command === 'desktop_api_token') return 'test-token';
       throw new Error(`Unexpected desktop command: ${command}`);
     });
+  });
+
+  it('uses the restart command when the runtime is already ready', async () => {
+    render(<DesktopRuntimeControl />);
+    await waitFor(() => expect(desktop.invoke).toHaveBeenCalledWith('desktop_status'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'AURA Desktop runtime: Ready. Open runtime settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Restart runtime' }));
+
+    await waitFor(() => expect(desktop.invoke).toHaveBeenCalledWith('desktop_restart'));
   });
 
   it('saves unrelated settings without unregistering and registering the unchanged global shortcut', async () => {

@@ -357,6 +357,11 @@ impl DesktopRuntime {
         }
     }
 
+    pub fn restart(&self, app: &AppHandle) -> Result<RuntimeSnapshot, String> {
+        self.stop(app)?;
+        self.start(app)
+    }
+
     pub fn start(&self, app: &AppHandle) -> Result<RuntimeSnapshot, String> {
         if self.child_alive() && matches!(self.snapshot().phase, RuntimePhase::Ready) {
             return Ok(self.snapshot());
@@ -989,6 +994,17 @@ pub async fn desktop_start(
 ) -> Result<RuntimeSnapshot, String> {
     let runtime = runtime.inner().clone();
     tauri::async_runtime::spawn_blocking(move || runtime.start(&app))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn desktop_restart(
+    runtime: State<'_, DesktopRuntime>,
+    app: AppHandle,
+) -> Result<RuntimeSnapshot, String> {
+    let runtime = runtime.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || runtime.restart(&app))
         .await
         .map_err(|error| error.to_string())?
 }

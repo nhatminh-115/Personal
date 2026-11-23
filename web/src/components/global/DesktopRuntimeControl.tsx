@@ -186,14 +186,14 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
 
   if (!isDesktop) return null;
 
-  const start = async () => {
+  const start = async (restart = false) => {
     setBusy(true);
     setError(null);
     window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
     try {
       const token = await tauriInvoke<string>('desktop_api_token');
       setApiToken(token);
-      setSnapshot(await tauriInvoke<RuntimeSnapshot>('desktop_start'));
+      setSnapshot(await tauriInvoke<RuntimeSnapshot>(restart ? 'desktop_restart' : 'desktop_start'));
     } catch (cause) {
       window.sessionStorage.removeItem(AUTO_RELOAD_KEY);
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -314,7 +314,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
             </div>
             {error ? <div className="desktop-panel-error" role="alert"><CircleAlert size={15} /><span>{error}</span></div> : null}
             <div className="desktop-runtime-actions">
-              <button className="primary-soft-button" type="button" disabled={busy || phase === 'starting' || phase === 'stopping'} onClick={() => void start()}>{busy || phase === 'starting' ? <RefreshCw size={15} className="desktop-spin" /> : <Activity size={15} />}{phase === 'ready' ? 'Restart runtime' : 'Start runtime'}</button>
+              <button className="primary-soft-button" type="button" disabled={busy || phase === 'starting' || phase === 'stopping'} onClick={() => void start(phase === 'ready')}>{busy || phase === 'starting' ? <RefreshCw size={15} className="desktop-spin" /> : <Activity size={15} />}{phase === 'ready' ? 'Restart runtime' : 'Start runtime'}</button>
               <button className="secondary-button" type="button" disabled={busy || !['ready', 'degraded', 'error'].includes(phase)} onClick={() => void stop()}><Power size={14} /> Stop and preserve data</button>
             </div>
             <div className="desktop-backup-actions">

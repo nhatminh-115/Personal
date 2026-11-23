@@ -53,6 +53,7 @@ fn main() {
             runtime::desktop_status,
             runtime::desktop_api_token,
             runtime::desktop_start,
+            runtime::desktop_restart,
             runtime::desktop_stop,
             runtime::desktop_save_preferences,
             runtime::desktop_forget_provider_key,
