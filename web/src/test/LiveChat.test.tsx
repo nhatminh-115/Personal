@@ -236,14 +236,14 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     fireEvent.click(screen.getByText('Context').closest('button')!);
     fireEvent.click(await screen.findByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
-    expect(await screen.findByText('Restartability claim')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
+    expect(await screen.findByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' }).closest('.react-flow__node')).toHaveClass('selected'));
 
     // Response provenance must also navigate to the persisted object without the message click stealing focus.
     fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
     fireEvent.click(screen.getByRole('button', { name: /Research claim.*research-claim-1/i }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByText('Restartability claim').closest('.react-flow__node')).toHaveClass('selected'));
+    await waitFor(() => expect(screen.getByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' }).closest('.react-flow__node')).toHaveClass('selected'));
     expect(consoleError.mock.calls.flat().join(' ')).not.toMatch(/Received NaN/);
     expect(consoleWarn.mock.calls.flat().join(' ')).not.toMatch(/Received NaN/);
   });
