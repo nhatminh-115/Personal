@@ -84,13 +84,16 @@ export function CustomSelect({
 
       {open ? (
         <div id={menuId} className="aura-menu-select__menu" role="listbox" aria-label={ariaLabel}>
-          {options.map((option) => {
+          {options.map((option, index) => {
             const isSelected = option.value === value;
+            const descriptionId = `${menuId}-description-${index}`;
             return (
               <button
                 key={option.value}
                 type="button"
                 role="option"
+                aria-label={option.label}
+                aria-describedby={option.description ? descriptionId : undefined}
                 aria-selected={isSelected}
                 className={`aura-menu-select__option ${isSelected ? 'is-selected' : ''}`}
                 disabled={option.disabled}
@@ -102,7 +105,7 @@ export function CustomSelect({
               >
                 <span className="aura-menu-select__option-copy">
                   <strong>{option.label}</strong>
-                  {option.description ? <small>{option.description}</small> : null}
+                  {option.description ? <small id={descriptionId}>{option.description}</small> : null}
                 </span>
                 <span className="aura-menu-select__check" aria-hidden="true">
                   {isSelected ? <Check size={14} /> : null}
