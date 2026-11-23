@@ -254,16 +254,6 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
         const granted = await isPermissionGranted();
         if (!granted && await requestPermission() !== 'granted') throw new Error('Allow AURA notifications in Windows Settings to enable this option.');
       }
-      await unregister(snapshot?.globalShortcut ?? 'CommandOrControl+Alt+A').catch(() => {});
-      if (globalShortcut !== 'none') {
-        await register(globalShortcut, (shortcutEvent) => {
-          if (shortcutEvent.state === 'Pressed') {
-            void getCurrentWindow().show();
-            void getCurrentWindow().unminimize();
-            void getCurrentWindow().setFocus();
-          }
-        });
-      }
       window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
       const next = await invoke<RuntimeSnapshot>('desktop_save_preferences', {
         provider,

@@ -3297,15 +3297,16 @@ export default function App() {
           <ProjectHome
             projects={projectCatalog}
             projectId={activeProject.id}
+            threads={projectThreads}
             chatCount={projectThreads.length}
             fileCount={projectFileCount}
             noteCount={projectNoteCount}
-            onBack={() => handleSidebarNavigate('projects')}
-            onOpenNode={openBoardNode}
             onOpenChats={openProjectChats}
+            onOpenThread={(threadId) => { selectThread(threadId); openProjectChats(); }}
+            onNewThread={newThread}
+            onOpenBoard={() => handleModeChange('board')}
             onOpenFiles={openProjectFiles}
             onOpenNotes={() => openProjectNotes(activeProject.id)}
-            onMockObject={(label) => pushToast(label, 'Open Chats, Files or Board to continue working with this object.')}
           />
         ) : null}
 

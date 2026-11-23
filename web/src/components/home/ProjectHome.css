@@ -1,0 +1,330 @@
+.project-home-redesign {
+  --project-ink: #f3f1ec;
+  --project-muted: #a9adbb;
+  --project-dim: #777f92;
+  --project-line: rgba(238, 241, 255, 0.085);
+  --project-violet: #b8abf5;
+  --project-lime: #dceca0;
+  min-height: 100%;
+  display: grid;
+  align-content: start;
+  gap: 25px;
+  padding: clamp(28px, 3.5vw, 54px) clamp(24px, 4.2vw, 60px) 48px;
+  color: var(--project-ink);
+  background:
+    radial-gradient(ellipse at 93% 0%, rgba(184, 171, 245, 0.095), transparent 34%),
+    radial-gradient(ellipse at 3% 82%, rgba(220, 236, 160, 0.045), transparent 30%);
+}
+
+.project-home-redesign__header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.project-home-redesign__heading { min-width: 0; }
+
+.project-home-redesign__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  color: #cdd48d;
+  font: 10px/1.4 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .13em;
+}
+
+.project-home-redesign__source {
+  padding: 4px 7px;
+  border: 1px solid var(--project-line);
+  border-radius: 999px;
+  color: var(--project-dim);
+  font-size: 9px;
+  letter-spacing: .06em;
+}
+
+.project-home-redesign__source.is-live {
+  border-color: rgba(220, 236, 160, .16);
+  color: #d5e69d;
+}
+
+.project-home-redesign__source.is-demo {
+  border-color: rgba(184, 171, 245, .18);
+  color: #c9befa;
+}
+
+.project-home-redesign__heading h1 {
+  margin: 13px 0 8px;
+  color: var(--project-ink);
+  background: linear-gradient(105deg, #fbf9ff 0%, #d7ceff 50%, #e2efb0 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font: 400 clamp(38px, 4vw, 58px)/1 "Iowan Old Style", Baskerville, Georgia, serif;
+  letter-spacing: -.035em;
+}
+
+.project-home-redesign__heading p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--project-muted);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.project-home-redesign__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+}
+
+.project-home-redesign__button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--project-line);
+  border-radius: 11px;
+  font-size: 11.5px;
+  font-weight: 580;
+  transition: transform 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.project-home-redesign__button:hover { transform: translateY(-1px); }
+
+.project-home-redesign__button--quiet {
+  background: rgba(255, 255, 255, .025);
+  color: #d0d3de;
+}
+
+.project-home-redesign__button--quiet:hover {
+  border-color: rgba(255, 255, 255, .15);
+  background: rgba(255, 255, 255, .055);
+}
+
+.project-home-redesign__button--primary {
+  border-color: rgba(220, 236, 160, .28);
+  background: linear-gradient(135deg, #e4f2b8, #cbdc8d);
+  color: #202511;
+  box-shadow: 0 8px 24px rgba(202, 220, 141, .11), inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+
+.project-home-redesign__button--primary:hover { background: #eff8cf; }
+
+.project-home-redesign__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.24fr) minmax(300px, .76fr);
+  align-items: start;
+  gap: 17px;
+}
+
+.project-home-redesign__main-column,
+.project-home-redesign__side-column { min-width: 0; display: grid; align-content: start; gap: 17px; }
+
+.project-home-redesign__card {
+  min-width: 0;
+  padding: 20px 21px;
+  border: 1px solid var(--project-line);
+  border-radius: 17px;
+  background: linear-gradient(160deg, rgba(20, 25, 38, .92), rgba(12, 16, 26, .94));
+  box-shadow: 0 16px 42px rgba(0, 0, 0, .12), inset 0 1px 0 rgba(255, 255, 255, .018);
+}
+
+.project-home-redesign__card-heading,
+.project-home-redesign__section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.project-home-redesign__label {
+  color: #9ea6bc;
+  font: 10px/1.4 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .11em;
+}
+
+.project-home-redesign__brief-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #9ea6bc;
+  font: 9px/1.4 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .06em;
+}
+
+.project-home-redesign__brief-mark svg { color: var(--project-violet); }
+
+.project-home-redesign__brief h2 {
+  max-width: 800px;
+  margin: 15px 0 19px;
+  color: #f2f0ec;
+  font: 400 clamp(25px, 2.5vw, 35px)/1.12 "Iowan Old Style", Baskerville, Georgia, serif;
+  letter-spacing: -.02em;
+}
+
+.project-home-redesign__direction {
+  padding: 14px 15px;
+  border: 1px solid rgba(220, 236, 160, .10);
+  border-radius: 12px;
+  background: linear-gradient(110deg, rgba(220, 236, 160, .055), rgba(255, 255, 255, .012));
+}
+
+.project-home-redesign__direction > span {
+  color: #cbd493;
+  font: 9px/1.4 "Cascadia Code", Consolas, monospace;
+  letter-spacing: .1em;
+}
+
+.project-home-redesign__direction p {
+  margin: 7px 0 0;
+  color: #c2c5d0;
+  font-size: 12.5px;
+  line-height: 1.72;
+}
+
+.project-home-redesign__brief-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  color: var(--project-dim);
+  font: 10px/1.5 "Cascadia Code", Consolas, monospace;
+}
+
+.project-home-redesign__brief-footer span:first-child { display: inline-flex; align-items: center; gap: 7px; }
+.project-home-redesign__brief-footer svg { color: var(--project-violet); }
+
+.project-home-redesign__section-heading h2 {
+  margin: 6px 0 0;
+  color: #f0eee9;
+  font: 400 24px/1.08 "Iowan Old Style", Baskerville, Georgia, serif;
+  letter-spacing: -.018em;
+}
+
+.project-home-redesign__section-heading--compact h2 { font-size: 22px; }
+
+.project-home-redesign__text-action {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  color: #d2c9fa;
+  font-size: 10.5px;
+  font-weight: 550;
+}
+
+.project-home-redesign__text-action:hover { color: #f0edff; }
+
+.project-home-redesign__thread-list { display: grid; margin-top: 13px; }
+
+.project-home-redesign__thread {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto 15px;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 2px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+  background: transparent;
+  text-align: left;
+}
+
+.project-home-redesign__thread:hover .project-home-redesign__thread-copy strong { color: #e6e0ff; }
+.project-home-redesign__thread:first-child { border-top: 0; }
+
+.project-home-redesign__thread-icon,
+.project-home-redesign__stat-icon,
+.project-home-redesign__board-icon {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(184, 171, 245, .1);
+  border-radius: 11px;
+  background: rgba(184, 171, 245, .07);
+  color: #d6ceff;
+}
+
+.project-home-redesign__thread-icon { width: 36px; height: 36px; }
+.project-home-redesign__thread-copy { min-width: 0; }
+.project-home-redesign__thread-copy strong { display: block; overflow: hidden; color: #e7e7ee; font-size: 12px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.project-home-redesign__thread-copy small { display: block; overflow: hidden; margin-top: 4px; color: #9299ab; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+.project-home-redesign__thread-copy small span { padding: 0 3px; color: #636a7c; }
+.project-home-redesign__thread-time { color: #81899b; font: 9.5px "Cascadia Code", Consolas, monospace; white-space: nowrap; }
+.project-home-redesign__thread-arrow { color: #747b8e; }
+
+.project-home-redesign__empty {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin-top: 15px;
+  padding: 15px 0 2px;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+}
+
+.project-home-redesign__empty-icon { width: 36px; height: 36px; display: grid; place-items: center; flex: none; border-radius: 11px; background: rgba(184, 171, 245, .07); color: #c9c0f2; }
+.project-home-redesign__empty > div { min-width: 0; flex: 1; }
+.project-home-redesign__empty strong { color: #e6e6ed; font-size: 11.5px; }
+.project-home-redesign__empty p { margin: 4px 0 0; color: #949bac; font-size: 10.5px; line-height: 1.55; }
+.project-home-redesign__empty .project-home-redesign__button { flex: none; min-height: 32px; font-size: 10px; }
+
+.project-home-redesign__stats { display: grid; margin-top: 13px; }
+
+.project-home-redesign__stats button {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 14px;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 11px 1px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, .055);
+  background: transparent;
+  color: #8d94a7;
+  text-align: left;
+}
+
+.project-home-redesign__stats button:first-child { border-top: 0; }
+.project-home-redesign__stats button:hover { color: #d8d0ff; }
+.project-home-redesign__stat-icon { width: 34px; height: 34px; border-color: rgba(255, 255, 255, .06); background: rgba(255, 255, 255, .025); color: #c6c9d4; }
+.project-home-redesign__stat-copy { display: grid; grid-template-columns: auto 1fr; align-items: baseline; gap: 2px 8px; }
+.project-home-redesign__stat-copy strong { color: #f1f0eb; font: 400 22px/1 Georgia, serif; }
+.project-home-redesign__stat-copy > span { color: #d1d3dc; font-size: 11px; }
+.project-home-redesign__stat-copy small { grid-column: 1 / -1; color: #8e95a6; font-size: 10px; }
+
+.project-home-redesign__board-card p {
+  margin: 12px 0 11px;
+  color: var(--project-muted);
+  font-size: 11.5px;
+  line-height: 1.7;
+}
+
+.project-home-redesign__board-icon { width: 35px; height: 35px; color: #c9c0f2; }
+
+@media (max-width: 1180px) {
+  .project-home-redesign__grid { grid-template-columns: minmax(0, 1fr); }
+  .project-home-redesign__side-column { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+}
+
+@media (max-width: 760px) {
+  .project-home-redesign { padding: 26px 20px 32px; }
+  .project-home-redesign__header { align-items: flex-start; flex-direction: column; }
+  .project-home-redesign__actions { flex-wrap: wrap; }
+  .project-home-redesign__side-column { grid-template-columns: minmax(0, 1fr); }
+  .project-home-redesign__thread { grid-template-columns: 34px minmax(0, 1fr) 14px; }
+  .project-home-redesign__thread-time { display: none; }
+  .project-home-redesign__empty { align-items: flex-start; flex-wrap: wrap; }
+  .project-home-redesign__empty > div { flex-basis: calc(100% - 50px); }
+  .project-home-redesign__empty .project-home-redesign__button { margin-left: 49px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .project-home-redesign__button { transition: none; }
+}

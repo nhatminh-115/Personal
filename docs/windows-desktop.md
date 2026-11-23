@@ -99,6 +99,8 @@ The tray menu can show the main window, start the runtime, open runtime
 settings, or quit. Closing to tray is enabled by default. Start with Windows is
 disabled until the user opts in. Notifications are also opt-in and use generic
 text without prompts, file names, or model responses.
+The global shortcut is managed when its selected value changes; saving unrelated
+preferences does not register the same shortcut a second time.
 
 The desktop panel reports Docker, API, and readiness failures. API port
 conflicts identify port `17890`; database bind conflicts identify port
