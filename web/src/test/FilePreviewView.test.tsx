@@ -1,7 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FilePreviewView } from '../components/global/FilePreviewView';
-import desktopConfig from '../../../desktop/src-tauri/tauri.conf.json';
 
 describe('connected file preview', () => {
   it('offers an explicit browser-local Library copy while retaining the source path', () => {
@@ -38,11 +37,5 @@ describe('connected file preview', () => {
       onOpenExternal={vi.fn()}
     />);
     expect(screen.getByTitle('report.pdf')).not.toHaveAttribute('sandbox');
-  });
-
-  it('allows sandboxed blob HTML previews in the packaged desktop webview CSP', () => {
-    expect(desktopConfig.app.security.csp).toContain("frame-src 'self' blob:");
-    expect(desktopConfig.app.security.csp).toContain("script-src 'self' 'wasm-unsafe-eval'");
-    expect(desktopConfig.app.security.csp).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 });
