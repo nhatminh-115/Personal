@@ -293,14 +293,15 @@ describe('Thread-Scoped Live State', () => {
     await act(async () => { render(<App />); });
     await openStatefulChats();
     await selectThread('Thread A');
-    const reasoning = screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement;
-    fireEvent.change(reasoning, { target: { value: 'high' } });
-    expect(reasoning.value).toBe('high');
+    const reasoning = screen.getByRole('button', { name: 'Temporary reasoning override' });
+    fireEvent.click(reasoning);
+    fireEvent.click(screen.getByRole('option', { name: 'High' }));
+    expect(reasoning).toHaveTextContent('High');
 
     await selectThread('Thread B');
-    expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByRole('button', { name: 'Temporary reasoning override' })).toHaveTextContent('Profile');
     await selectThread('Thread A');
-    expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe('high');
+    expect(screen.getByRole('button', { name: 'Temporary reasoning override' })).toHaveTextContent('High');
   });
 
   it('keeps exact model locks per thread and only sends the originating thread override', async () => {
@@ -318,9 +319,10 @@ describe('Thread-Scoped Live State', () => {
     await selectThread('Thread A');
 
     fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
-    const modelLock = screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement;
-    fireEvent.change(modelLock, { target: { value: 'local:model-a' } });
-    expect(modelLock.value).toBe('local:model-a');
+    const modelLock = screen.getByRole('button', { name: 'Temporary exact model lock' });
+    fireEvent.click(modelLock);
+    fireEvent.click(screen.getByRole('option', { name: /Local · Model A/ }));
+    expect(modelLock).toHaveTextContent('Local · Model A');
 
     const send = async (message: string) => {
       const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
@@ -334,13 +336,13 @@ describe('Thread-Scoped Live State', () => {
     expect(sentBodies[0].model_override).toBe('local:model-a');
 
     await selectThread('Thread B');
-    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('');
+    expect(screen.getByRole('button', { name: 'Temporary exact model lock' })).toHaveTextContent('Unlocked · follow profile');
     await send('Unlocked in B');
     await waitFor(() => expect(sentBodies).toHaveLength(2));
     expect(sentBodies[1]).not.toHaveProperty('model_override');
 
     await selectThread('Thread A');
-    expect((screen.getByLabelText('Temporary exact model lock') as HTMLSelectElement).value).toBe('local:model-a');
+    expect(screen.getByRole('button', { name: 'Temporary exact model lock' })).toHaveTextContent('Local · Model A');
   });
 
   it.each(['fixed_by_model', 'unsupported'] as const)(
@@ -359,15 +361,19 @@ describe('Thread-Scoped Live State', () => {
       await openStatefulChats();
       await selectThread('Thread A');
 
-      const reasoning = screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement;
-      fireEvent.change(reasoning, { target: { value: 'high' } });
-      expect(reasoning.value).toBe('high');
+      const reasoning = screen.getByRole('button', { name: 'Temporary reasoning override' });
+      fireEvent.click(reasoning);
+      fireEvent.click(screen.getByRole('option', { name: 'High' }));
+      expect(reasoning).toHaveTextContent('High');
 
       fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
-      fireEvent.change(screen.getByLabelText('Temporary exact model lock'), { target: { value: 'local:model-a' } });
+      const modelLock = screen.getByRole('button', { name: 'Temporary exact model lock' });
+      fireEvent.click(modelLock);
+      fireEvent.click(screen.getByRole('option', { name: /Local · Model A/ }));
 
-      await waitFor(() => expect((screen.getByLabelText('Temporary reasoning override') as HTMLSelectElement).value).toBe(''));
-      expect(screen.getByLabelText('Temporary reasoning') as HTMLSelectElement).toBeDisabled();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Temporary reasoning override' }))
+        .toHaveTextContent(reasoningSupport === 'fixed_by_model' ? 'Fixed by model' : 'Unsupported'));
+      expect(screen.getByRole('button', { name: 'Temporary reasoning' })).toBeDisabled();
 
       const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
       await act(async () => {
