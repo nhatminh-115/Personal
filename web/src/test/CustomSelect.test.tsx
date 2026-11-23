@@ -16,7 +16,7 @@ describe('CustomSelect', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reasoning override' }));
 
     expect(screen.getByRole('listbox', { name: 'Reasoning override' })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('option', { name: /High More deliberate reasoning/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'High' }));
 
     expect(onChange).toHaveBeenCalledWith('high');
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
