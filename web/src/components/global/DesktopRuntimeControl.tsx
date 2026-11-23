@@ -9,6 +9,7 @@ import { Activity, Archive, ChevronDown, CircleAlert, Cog, Database, FolderSync,
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { invoke as tauriInvoke } from '@tauri-apps/api/core';
 import { toDesktopDroppedFile, type DesktopDroppedFilePayload } from '../../lib/desktopDrop';
+import { setApiToken } from '../../services/api';
 
 type RuntimePhase = 'stopped' | 'starting' | 'ready' | 'degraded' | 'stopping' | 'error';
 
@@ -191,7 +192,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
     window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
     try {
       const token = await tauriInvoke<string>('desktop_api_token');
-      window.sessionStorage.setItem('aura-api-token', token);
+      setApiToken(token);
       setSnapshot(await tauriInvoke<RuntimeSnapshot>('desktop_start'));
     } catch (cause) {
       window.sessionStorage.removeItem(AUTO_RELOAD_KEY);
@@ -232,7 +233,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
     window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
     try {
       setSnapshot(await invoke<RuntimeSnapshot>('desktop_restore_backup'));
-      window.sessionStorage.setItem('aura-api-token', await invoke<string>('desktop_api_token'));
+      setApiToken(await invoke<string>('desktop_api_token'));
     } catch (cause) {
       window.sessionStorage.removeItem(AUTO_RELOAD_KEY);
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -265,7 +266,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
         globalShortcut,
         providerApiKey: providerKey || null,
       });
-      window.sessionStorage.setItem('aura-api-token', await invoke<string>('desktop_api_token'));
+      setApiToken(await invoke<string>('desktop_api_token'));
       setProviderKey('');
       setSnapshot(next);
       if (notifications) {

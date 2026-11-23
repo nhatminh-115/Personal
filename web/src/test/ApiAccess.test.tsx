@@ -4,6 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiAccessDialog } from '../components/global/ApiAccessDialog';
 import { API_AUTH_REQUIRED_EVENT, api, getApiToken, setApiToken } from '../services/api';
 
+const desktopRuntime = vi.hoisted(() => ({ enabled: false }));
+
+vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => desktopRuntime.enabled }));
+
 function jsonResponse(body: unknown, status = 200): Response {
   if (status >= 400) {
     return {
@@ -56,6 +60,24 @@ describe('API access', () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
     expect((init?.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`);
     expect(getApiToken()).toBe(token);
+  });
+
+  it('keeps the desktop bearer token in memory and out of browser storage', async () => {
+    desktopRuntime.enabled = true;
+    const token = 'aura-desktop-token-' + 'd'.repeat(32);
+    try {
+      expect(setApiToken(token)).toBe(true);
+      expect(getApiToken()).toBe(token);
+      expect(sessionStorage.getItem('aura-api-token')).toBeNull();
+      await api.fetchModels();
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+      expect((init?.headers as Headers).get('Authorization')).toBe(`Bearer ${token}`);
+      expect(sessionStorage.getItem('aura-api-token')).toBeNull();
+    } finally {
+      setApiToken(null);
+      desktopRuntime.enabled = false;
+    }
   });
 
   it('signals the app when the API requires authentication', async () => {

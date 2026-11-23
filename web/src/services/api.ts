@@ -38,6 +38,7 @@ import {
   AutomationExecutionRecord,
   AutomationRunResponse,
 } from '../types';
+import { isTauri } from '@tauri-apps/api/core';
 
 export class ApiError extends Error {
   status: number;
@@ -64,8 +65,10 @@ export function resolveApiBaseUrl(mode: string, configuredBaseUrl?: string): str
 const BASE_URL = resolveApiBaseUrl(import.meta.env.MODE, import.meta.env.VITE_AURA_API_BASE_URL);
 const API_TOKEN_SESSION_KEY = 'aura-api-token';
 export const API_AUTH_REQUIRED_EVENT = 'aura:api-auth-required';
+let desktopApiToken: string | null = null;
 
 export function getApiToken(): string | null {
+  if (isTauri()) return desktopApiToken;
   if (typeof window === 'undefined') return null;
   try {
     return window.sessionStorage.getItem(API_TOKEN_SESSION_KEY);
@@ -75,6 +78,10 @@ export function getApiToken(): string | null {
 }
 
 export function setApiToken(token: string | null): boolean {
+  if (isTauri()) {
+    desktopApiToken = token || null;
+    return true;
+  }
   if (typeof window === 'undefined') return false;
   try {
     if (token) window.sessionStorage.setItem(API_TOKEN_SESSION_KEY, token);
