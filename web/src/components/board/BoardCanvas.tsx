@@ -16,6 +16,7 @@ import { useBoardHistory } from '../../hooks/useBoardHistory';
 import type { AuraFlowEdge, AuraFlowNode, LayerKey, NodeDensity, RoutingPrivacy, WorkspaceContextPreview, WorkspaceExecutionTrace } from '../../types';
 import { AuraNodeCard } from './AuraNodeCard';
 import { BoardToolbar } from './BoardToolbar';
+import { BoardObjectInspector } from './BoardObjectInspector';
 import { ContextLensBar } from './ContextLensBar';
 import { buildMergedContinuation } from './contextActions';
 import { SmartEdge } from './SmartEdge';
@@ -194,6 +195,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   const [graphEdgeCursor, setGraphEdgeCursor] = useState<string | null>(null);
   const [loadingOlderGraph, setLoadingOlderGraph] = useState(false);
   const [activeTool, setActiveTool] = useState<'select' | 'note' | 'link'>('select');
+  const [dismissedInspectorNodeId, setDismissedInspectorNodeId] = useState<string | null>(null);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     conversation: true,
     knowledge: true,
@@ -1104,6 +1106,41 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [executionNextCursor, executionTraces, loadingOlderExecution, toast, workspaceProjectName]);
 
   const selectedNodes = useMemo(() => nodes.filter((node) => node.selected), [nodes]);
+  const inspectedNodeId = selectedNodes.length === 1 && selectedNodes[0].id !== dismissedInspectorNodeId
+    ? selectedNodes[0].id
+    : null;
+  const inspectedNode = inspectedNodeId ? nodes.find((node) => node.id === inspectedNodeId) ?? null : null;
+  const inspectorRelationships = useMemo(() => {
+    if (!inspectedNodeId) return [];
+    return edges.flatMap((edge) => {
+      const direction: 'Incoming' | 'Outgoing' | null = edge.source === inspectedNodeId
+        ? 'Outgoing'
+        : edge.target === inspectedNodeId ? 'Incoming' : null;
+      if (!direction) return [];
+      const relatedId = direction === 'Outgoing' ? edge.target : edge.source;
+      const relatedNode = nodes.find((node) => node.id === relatedId);
+      if (!relatedNode) return [];
+      return [{
+        id: edge.id,
+        node: relatedNode,
+        direction,
+        label: String(edge.data?.relationType ?? edge.data?.edgeFamily ?? edge.data?.edgeKind ?? 'related'),
+      }];
+    });
+  }, [edges, inspectedNodeId, nodes]);
+  const focusRelationshipNode = useCallback((node: AuraFlowNode) => {
+    setDismissedInspectorNodeId(null);
+    setNodes((current) => current.map((item) => ({ ...item, selected: item.id === node.id })));
+    setEdges((current) => current.map((edge) => ({ ...edge, selected: false })));
+    onNodeFocus?.(node.data.messageId ?? null, node);
+    const width = node.measured?.width ?? 296;
+    const height = node.measured?.height ?? 132;
+    requestAnimationFrame(() => instanceRef.current?.setCenter(
+      node.position.x + width / 2,
+      node.position.y + height / 2,
+      { zoom: compact ? 0.78 : 0.96, duration: 260 },
+    ));
+  }, [compact, onNodeFocus, setEdges, setNodes]);
   const previewSelectedContext = useCallback(async () => {
     if (!workspaceProjectName) return;
     setContextPreviewLoading(true);
@@ -1449,7 +1486,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
   }, [canvasSizeReady, compact, focusNodeId, flowReady, nodes, setNodes]);
 
   return (
-    <div ref={canvasRef} className={`board-canvas ${compact ? 'board-canvas--compact' : ''}`}>
+    <div ref={canvasRef} className={`board-canvas ${compact ? 'board-canvas--compact' : ''} ${inspectedNode ? 'board-canvas--inspector-open' : ''}`}>
       {showBranchLabels ? (
         <div className="board-branch-labels" aria-hidden="true">
           <span className="branch-label branch-label--a">A · TTT literature</span>
@@ -1518,6 +1555,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         defaultViewport={viewport ?? undefined}
         onMoveEnd={(_, nextViewport) => setViewport(nextViewport)}
         onNodeClick={async (_, node) => {
+          setDismissedInspectorNodeId(null);
           if (activeTool === 'link') {
             if (!linkSource) {
               setLinkSource(node.id);
@@ -1610,6 +1648,16 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           maskColor="rgba(6, 10, 15, .72)"
         />
       </ReactFlow>
+
+      {inspectedNode ? (
+        <BoardObjectInspector
+          node={inspectedNode}
+          relationships={inspectorRelationships}
+          onClose={() => setDismissedInspectorNodeId(inspectedNode.id)}
+          onSelectRelationship={focusRelationshipNode}
+          onAskWithContext={onAskWithContext}
+        />
+      ) : null}
 
       <BoardToolbar
         activeTool={activeTool}
