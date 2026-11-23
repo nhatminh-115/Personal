@@ -78,7 +78,7 @@ export function CustomSelect({
         }}
       >
         {label ? <span className="aura-menu-select__caption">{label}</span> : null}
-        <strong>{selected?.label ?? value || 'Choose…'}</strong>
+        <strong>{(selected?.label ?? value) || 'Choose…'}</strong>
         <ChevronDown className="aura-menu-select__chevron" size={13} aria-hidden="true" />
       </button>
 
