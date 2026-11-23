@@ -59,7 +59,7 @@ export function ProjectHome({
         <div className="project-home-redesign__actions">
           <button className="project-home-redesign__button project-home-redesign__button--quiet" type="button" onClick={onOpenChats}>
             <MessageSquareText size={15} />
-            <span>Conversations</span>
+            <span>Open project chats</span>
           </button>
           <button className="project-home-redesign__button project-home-redesign__button--primary" type="button" onClick={onNewThread}>
             <Plus size={16} />
@@ -75,7 +75,7 @@ export function ProjectHome({
               <span className="project-home-redesign__label">PROJECT BRIEF</span>
               <span className="project-home-redesign__brief-mark"><Sparkles size={13} /> {isUserProject ? 'IN PROGRESS' : 'EXAMPLE CONTEXT'}</span>
             </div>
-            <h2>{isUserProject ? 'Build context as you work.' : project.thesis}</h2>
+            <h2>{isUserProject ? 'Your project is ready.' : project.thesis}</h2>
             <div className="project-home-redesign__direction">
               <span>{isUserProject ? 'GET STARTED' : 'CURRENT DIRECTION'}</span>
               <p>{isUserProject ? 'Start a conversation or add a file. Project context will grow from the work you choose to keep.' : project.next}</p>
