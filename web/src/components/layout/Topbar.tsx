@@ -2,6 +2,7 @@ import { ChevronDown, Command, Files, KeyRound, LayoutDashboard, PanelRightOpen,
 import type { CSSProperties } from 'react';
 import type { EffectiveRouting, ModelCatalog, ReasoningEffort, WorkspaceMode } from '../../types';
 import { RoutingPopover } from '../ui/RoutingPopover';
+import { CustomSelect } from '../ui/CustomSelect';
 
 interface TopbarProps {
   projectName: string | null;
@@ -135,10 +136,40 @@ export function Topbar({
         ) : null}
 
         {inProject ? (
-        <select aria-label="Temporary reasoning override" className="topbar-reasoning-select" value={reasoningOverride ?? ''} disabled={demoThread || fixedReasoning || unsupportedReasoning} title={demoThread ? 'Start a live chat to use temporary reasoning overrides.' : fixedReasoning ? 'The locked model controls reasoning internally.' : unsupportedReasoning ? 'The locked model does not support reasoning controls.' : reasoningUnknown ? 'Reasoning support for this exact model is unknown; the backend may reject an override.' : undefined} onChange={(event) => onSetReasoningOverride((event.target.value || null) as ReasoningEffort | null)}>
-            <option value="">Reasoning: {fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile'}</option>
-            {fixedReasoning || unsupportedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>Reasoning: {reasoningOverride} · unavailable</option> : null : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => <option key={value} value={value}>Reasoning: {value[0].toUpperCase() + value.slice(1)}</option>)}
-          </select>
+        <CustomSelect
+          ariaLabel="Temporary reasoning override"
+          label="Reasoning"
+          variant="topbar"
+          value={reasoningOverride ?? ''}
+          disabled={demoThread || fixedReasoning || unsupportedReasoning}
+          title={demoThread
+            ? 'Start a live chat to use temporary reasoning overrides.'
+            : fixedReasoning
+              ? 'The locked model controls reasoning internally.'
+              : unsupportedReasoning
+                ? 'The locked model does not support reasoning controls.'
+                : reasoningUnknown
+                  ? 'Reasoning support for this exact model is unknown; the backend may reject an override.'
+                  : undefined}
+          onChange={(value) => onSetReasoningOverride((value || null) as ReasoningEffort | null)}
+          options={[
+            {
+              value: '',
+              label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
+              description: fixedReasoning
+                ? 'The selected model controls its own reasoning.'
+                : unsupportedReasoning
+                  ? 'This model does not expose a reasoning control.'
+                  : 'Use the project routing profile',
+            },
+            ...(fixedReasoning || unsupportedReasoning
+              ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
+              : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => ({
+                value,
+                label: value[0].toUpperCase() + value.slice(1),
+                description: value === 'instant' ? 'Prioritize response speed' : value === 'max' ? 'Use the maximum available effort' : `Use ${value} reasoning effort`,
+              })))}
+        />
         ) : null}
 
         {inProject && projectSection === 'workspace' ? (
