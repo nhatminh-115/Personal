@@ -32,6 +32,24 @@ export function RoutingPopover({
   const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
   const unsupportedReasoning = lockedModelInfo?.reasoning_support === 'unsupported';
   const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
+  const reasoningOptions = [
+    {
+      value: '',
+      label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
+      description: fixedReasoning
+        ? 'The model controls reasoning internally.'
+        : unsupportedReasoning
+          ? 'This model has no reasoning control.'
+          : 'Use the project profile',
+    },
+    ...(fixedReasoning || unsupportedReasoning
+      ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
+      : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => ({
+        value: effort,
+        label: effort[0].toUpperCase() + effort.slice(1),
+        description: effort === 'instant' ? 'Prioritize response speed' : effort === 'max' ? 'Use the maximum available effort' : `Use ${effort} reasoning effort`,
+      }))),
+  ];
 
   return (
     <div className="popover routing-popover" role="dialog" aria-label="Routing controls">
@@ -66,20 +84,7 @@ export function RoutingPopover({
         disabled={demoThread || fixedReasoning || unsupportedReasoning}
         className="routing-popover-select"
         onChange={(value) => onSetReasoning((value || null) as ReasoningEffort | null)}
-        options={[
-          {
-            value: '',
-            label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
-            description: fixedReasoning ? 'The model controls reasoning internally.' : unsupportedReasoning ? 'This model has no reasoning control.' : 'Use the project profile',
-          },
-          ...(fixedReasoning || unsupportedReasoning
-            ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
-            : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => ({
-              value: effort,
-              label: effort[0].toUpperCase() + effort.slice(1),
-              description: effort === 'instant' ? 'Prioritize response speed' : effort === 'max' ? 'Use the maximum available effort' : `Use ${effort} reasoning effort`,
-            })))}
-        ]}
+        options={reasoningOptions}
       />
       {fixedReasoning ? <p className="routing-note">This exact model controls reasoning internally; temporary effort overrides are unavailable.</p> : null}
       {unsupportedReasoning ? <p className="routing-note">This exact model does not support reasoning controls.</p> : null}
