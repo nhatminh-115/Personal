@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout exact PR head
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Parse read-only Windows snapshot script
         shell: pwsh
@@ -107,7 +109,7 @@ jobs:
       - name: Upload unsigned installer for review and dogfood
         uses: actions/upload-artifact@v6
         with:
-          name: aura-desktop-windows-x64-${{ github.sha }}
+          name: aura-desktop-windows-x64-${{ github.event.pull_request.head.sha || github.sha }}
           path: |
             desktop/src-tauri/target/release/bundle/nsis/*.exe
             desktop/src-tauri/target/release/bundle/nsis/*.sha256
