@@ -118,21 +118,14 @@ There is no in-app data deletion command in this milestone.
 
 ## Verification record
 
-Automated CI evidence and interactive dogfood evidence are tracked separately.
-Do not mark a dogfood item passed based on compilation or unit tests.
-
-| Check | Required evidence | Result |
-| --- | --- | --- |
-| D1 Fresh install | Install the CI artifact, launch from Start Menu, see the production UI, start services, and observe `/ready` | Pending Windows dogfood |
-| D2 Runtime continuity | Close to tray, reopen, quit, relaunch, and confirm a persisted object remains | Pending Windows dogfood |
-| D3 Filesystem | Connect a folder, restart, reopen one supported file, send selected text, confirm unrelated files remain untouched | Pending Windows dogfood |
-| D4 Notifications | Exercise approval and completed/failed run notifications with opt-in and opt-out; inspect generic text | Pending Windows dogfood |
-| D5 Runtime failures | Exercise Docker missing/stopped, API and DB port conflicts, backend exit, and database unavailable; inspect diagnostics | Pending Windows dogfood |
-| D6 Recovery | Create/restore a backup, verify the safety archive and preserved volume, uninstall/reinstall without data loss | Pending Windows dogfood |
-| D7 Security | Verify loopback listeners, native scoped file access, no renderer shell command, and Credential Manager storage | Pending Windows dogfood |
+Windows Desktop verification is CI-first and must not control a developer's
+primary desktop. Use the read-only host snapshot and the D1–D7 status matrix in
+[`windows-desktop-testing.md`](windows-desktop-testing.md). Tray, native
+notification, drag-and-drop, restore, uninstall, and first-launch UI scenarios
+that need visible interaction are deferred until an isolated Windows VM or test
+session is available.
 
 Windows CI runs frontend tests/build, desktop API/backup tests, frozen-sidecar
-self-test, Rust format/tests, and NSIS packaging on the exact PR head. CI cannot
-prove Start Menu installation, tray behavior, real Windows notifications,
-Credential Manager behavior, or uninstall persistence; record those only after
-the corresponding interactive checks run.
+self-test, Rust format/tests, and NSIS packaging on the exact PR head. CI proves
+the code and package checks only; it does not by itself prove installed runtime
+health or the isolated Windows behaviors listed above.

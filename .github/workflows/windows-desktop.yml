@@ -20,6 +20,18 @@ jobs:
       - name: Checkout exact PR head
         uses: actions/checkout@v7
 
+      - name: Parse read-only Windows snapshot script
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $parseErrors = $null
+          $scriptPath = (Resolve-Path 'desktop/scripts/Get-AuraDesktopSnapshot.ps1').Path
+          [System.Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | Format-List | Out-String | Write-Error
+            throw 'The read-only Windows snapshot script has PowerShell parse errors.'
+          }
+
       - name: Set up Python 3.12
         uses: actions/setup-python@v7
         with:
