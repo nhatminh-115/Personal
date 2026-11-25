@@ -4,6 +4,7 @@ import '@xyflow/react/dist/style.css'
 import './styles.css'
 import './desktop.css'
 import App from './App'
+import './v16.css'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import { setApiToken } from './services/api'
 

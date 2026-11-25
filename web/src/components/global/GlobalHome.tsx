@@ -1,4 +1,4 @@
-import { ArrowRight, BookOpenText, Clock3, FolderKanban, Sparkles } from 'lucide-react';
+import { ArrowRight, BookOpenText, Clock3, FolderKanban, Library, Sparkles } from 'lucide-react';
 import type { LibraryItem, ProjectRecord } from '../../data/workspaceData';
 
 interface GlobalHomeProps {
@@ -30,7 +30,15 @@ export function GlobalHome({ projects, libraryItems, libraryCount, linkedLibrary
       <div className="global-home__hero">
         <span className="eyebrow">PERSONAL WORKSPACE</span>
         <h1>{greeting()}.</h1>
-        <p>Pick up a project, open a personal file, continue studying, or ask AURA across the workspace.</p>
+        <p>Return to a project conversation, explore your saved files, or keep your notes and study work close at hand.</p>
+        <div className="global-home__actions">
+          <button className="global-home__action global-home__action--primary" type="button" onClick={onOpenProjects}>
+            <FolderKanban size={15} /> Browse projects
+          </button>
+          <button className="global-home__action" type="button" onClick={onOpenLibrary}>
+            <Library size={15} /> Open Library
+          </button>
+        </div>
       </div>
 
       <div className="global-home__section global-home__section--continue">
@@ -48,6 +56,13 @@ export function GlobalHome({ projects, libraryItems, libraryCount, linkedLibrary
             </button>
           ))}
         </div>
+        {!recent.length ? (
+          <div className="home-empty-state">
+            <FolderKanban size={18} />
+            <span><strong>No projects yet</strong><small>Create a project to keep its conversations, Board, and files together.</small></span>
+            <button className="global-home__action global-home__action--primary" type="button" onClick={onOpenProjects}>Open projects</button>
+          </div>
+        ) : null}
       </div>
 
       <div className="global-home__columns">
@@ -64,6 +79,12 @@ export function GlobalHome({ projects, libraryItems, libraryCount, linkedLibrary
                 <ArrowRight size={13} />
               </button>
             ))}
+            {!recentFiles.length ? (
+              <div className="recent-file-empty">
+                <span>{libraryCount ? 'Your recent Library files will appear here.' : 'Your Library is ready for its first file.'}</span>
+                <button type="button" onClick={onOpenLibrary}>{libraryCount ? 'Browse Library' : 'Add a file or connect a folder'} <ArrowRight size={13} /></button>
+              </div>
+            ) : null}
           </div>
         </section>
 

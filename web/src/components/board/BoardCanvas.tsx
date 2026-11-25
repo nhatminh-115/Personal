@@ -1632,7 +1632,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         defaultEdgeOptions={{ type: 'smart' }}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#26323d" />
+        <Background variant={BackgroundVariant.Dots} gap={26} size={1} color="#282638" />
         <MiniMap
           className="aura-minimap"
           pannable
