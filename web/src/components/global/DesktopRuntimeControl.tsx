@@ -43,6 +43,7 @@ interface DesktopAutomationEventState {
 interface DesktopRuntimeControlProps {
   runEvents?: DesktopRunEventState[];
   automationRuns?: DesktopAutomationEventState[];
+  settingsRequest?: number;
   onDroppedFiles?: (files: File[]) => void | Promise<void>;
   onDropError?: (message: string) => void;
 }
@@ -50,7 +51,7 @@ interface DesktopRuntimeControlProps {
 const isDesktop = isTauri();
 const AUTO_RELOAD_KEY = 'aura:desktop-awaiting-api-ready';
 
-export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onDroppedFiles, onDropError }: DesktopRuntimeControlProps) {
+export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], settingsRequest = 0, onDroppedFiles, onDropError }: DesktopRuntimeControlProps) {
   const [snapshot, setSnapshot] = useState<RuntimeSnapshot | null>(null);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,6 +67,10 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], onD
   const previousReady = useRef(false);
   const previousRunEvents = useRef(new Map<string, { status: string; approvalPending: boolean }>());
   const previousAutomationRuns = useRef(new Map<string, string>());
+
+  useEffect(() => {
+    if (settingsRequest > 0) setOpen(true);
+  }, [settingsRequest]);
 
   const notify = useCallback((title: string, body: string) => {
     if (!snapshot?.notifications) return;

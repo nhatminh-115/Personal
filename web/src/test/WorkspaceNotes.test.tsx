@@ -35,7 +35,7 @@ describe('Persistent personal workspace Notes', () => {
     fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/notes?page_size=50'));
 
-    await screen.findByRole('heading', { name: 'Personal notes' });
+    await screen.findByRole('heading', { name: 'Recent notes' });
     expect(screen.getByText('Novelty framing')).toBeInTheDocument();
     expect(global.fetch).not.toHaveBeenCalledWith('/v1/workspace/notes', expect.objectContaining({ method: 'POST' }));
 
@@ -79,13 +79,14 @@ describe('Persistent personal workspace Notes', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.click(screen.getByTitle(/Search anything/i));
+    const input = screen.getByRole('textbox', { name: 'Search saved workspace content' });
     fireEvent.change(input, { target: { value: 'privacy boundary' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
     expect(await screen.findByText('Privacy boundary')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open note' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Privacy boundary/ }));
 
-    expect(await screen.findByRole('heading', { name: 'Personal notes' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recent notes' })).toBeInTheDocument();
     expect(await screen.findByDisplayValue('Privacy boundary')).toBeInTheDocument();
     expect(await screen.findByDisplayValue('Connected files stay on this device.')).toBeInTheDocument();
 
@@ -114,7 +115,7 @@ describe('Persistent personal workspace Notes', () => {
     await act(async () => { render(<App />); });
     fireEvent.click(screen.getByRole('button', { name: /Notes/i }));
 
-    await screen.findByRole('heading', { name: 'Personal notes' });
+    await screen.findByRole('heading', { name: 'Recent notes' });
     fireEvent.click(await screen.findByRole('button', { name: /Private note/i }));
     expect(await screen.findByDisplayValue('Private note')).toBeInTheDocument();
     const privacy = screen.getByRole('combobox', { name: 'Note privacy classification' });

@@ -205,11 +205,12 @@ describe('Workspace Library references', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    fireEvent.click(screen.getByTitle(/Search anything/i));
+    const input = screen.getByRole('textbox', { name: 'Search saved workspace content' });
     fireEvent.change(input, { target: { value: 'methods paper' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
     expect(await screen.findByText('Methods paper')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Library' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Methods paper/ }));
 
     expect(await screen.findByRole('heading', { name: 'Your files can stay where they already live.' })).toBeInTheDocument();
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('/v1/workspace/library?page_size=50&cursor=next-library'));

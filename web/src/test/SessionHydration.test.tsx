@@ -330,8 +330,8 @@ describe('Session Hydration', () => {
     await act(async () => { render(<App />); });
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => { fireEvent.click(projectButton); });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Chat' })); });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Inspector' })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Conversations' })); });
+    await act(async () => { fireEvent.click(screen.getByTitle('Toggle inspector')); });
     await screen.findByTestId('inspector-panel');
     await act(async () => { fireEvent.click(screen.getByTestId('inspector-tab-memory')); });
     await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Why AURA remembers this' })); });

@@ -42,8 +42,10 @@ describe('Routing Studio v2', () => {
 
   async function openProject() {
     await act(async () => { render(<App />); });
-    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    const projectButton = screen.getByTitle('Stateful Architecture');
     await act(async () => { fireEvent.click(projectButton); });
+    const projectNavigation = await screen.findByRole('navigation', { name: 'Project navigation' });
+    await act(async () => { fireEvent.click(within(projectNavigation).getByRole('button', { name: 'Conversations' })); });
     await waitFor(() => expect(screen.getByText(/System Balanced · system/i)).toBeInTheDocument());
   }
 

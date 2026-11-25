@@ -1,7 +1,12 @@
-import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import App from '../App';
 import * as folderConn from '../lib/folderConnections';
+
+async function openWorkspaceSearch() {
+  fireEvent.click(screen.getByRole('button', { name: /Search anything/i }));
+  return screen.findByRole('textbox', { name: 'Search saved workspace content' });
+}
 
 describe('Navigation and Workspace Shell Invariants', () => {
   beforeEach(() => {
@@ -33,18 +38,41 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
   });
 
-  it('verifies AURA tab is permanent and cannot be closed', async () => {
+  it('renders the V16 shell navigation without browser tabs or an address bar', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    const auraTab = screen.getByRole('button', { name: /^AURA$/i });
-    expect(auraTab).toBeInTheDocument();
-
-    expect(screen.queryByTitle('Close tab')).not.toBeInTheDocument();
+    const nav = screen.getByRole('navigation', { name: 'Personal workspace navigation' });
+    for (const label of ['Home', 'Conversation', 'Projects', 'Notes', 'Library', 'Automations', 'Preferences']) {
+      expect(within(nav).getByTitle(label)).toBeInTheDocument();
+    }
+    expect(nav).toBeInTheDocument();
+    expect(document.querySelector('.workspace-chrome')).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/enter a URL/i)).not.toBeInTheDocument();
   });
 
-  it('runs a real workspace search from the omnibox and displays backend results', async () => {
+  it('opens the all-project conversation workspace and selects a saved live thread in place', async () => {
+    window.localStorage.setItem('aura-v7-chats', JSON.stringify([{
+      id: 'live-thread-a', projectId: 'stateful', title: 'Saved architecture decision',
+      summary: 'A persisted project conversation', updated: 'just now', messages: [], source: 'live', sessionId: 'session-live-a',
+    }]));
+    await act(async () => { render(<App />); });
+
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Personal workspace navigation' })).getByTitle('Conversation'));
+    expect(await screen.findByRole('heading', { name: 'Conversations' })).toBeInTheDocument();
+    const scope = screen.getByRole('combobox', { name: 'Conversation project scope' });
+    expect(scope).toHaveValue('');
+    const savedThread = await waitFor(() => document.querySelector<HTMLButtonElement>('.conversation-v16__thread'));
+    expect(savedThread).not.toBeNull();
+    fireEvent.click(savedThread!);
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Conversation project scope' })).toHaveValue(''));
+    expect(document.querySelector('.project-chat-workspace')).toBeInTheDocument();
+    expect(document.querySelector('.project-chat-workspace--rail-hidden')).toBeInTheDocument();
+  });
+
+  it('runs a real workspace search from the V16 search action and displays backend results', async () => {
     const searchResults = [{
       object_id: 'object-search-1', object_type: 'manual_note', title: 'A saved finding',
       excerpt: 'This contains the phrase unique omnibox search.', project_name: null,
@@ -61,13 +89,12 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    const input = await openWorkspaceSearch();
     fireEvent.change(input, { target: { value: 'unique omnibox search' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
 
     expect(await screen.findByText('A saved finding')).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/search?query=unique+omnibox+search'));
-    expect(screen.getByRole('button', { name: /^AURA$/i })).toBeInTheDocument();
   });
 
   it('loads later pages from the backend workspace search', async () => {
@@ -92,7 +119,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    const input = await openWorkspaceSearch();
     fireEvent.change(input, { target: { value: 'matching phrase' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
     expect(await screen.findByText('First saved result')).toBeInTheDocument();
@@ -124,11 +151,10 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    const input = await openWorkspaceSearch();
     fireEvent.change(input, { target: { value: 'overview.pdf' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
-    expect(await screen.findByText('Research / papers/overview.pdf')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open file' }));
+    fireEvent.click(await screen.findByRole('button', { name: /overview\.pdf/ }));
     await waitFor(() => expect(openFile).toHaveBeenCalledWith(indexedFile));
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL });
   });
@@ -148,13 +174,13 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    const input = await openWorkspaceSearch();
     fireEvent.change(input, { target: { value: 'bridge match unique' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
-    expect(await screen.findByText('Bridge match')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Bridge match/ }));
 
-    expect(await screen.findByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
+    const projectNavigation = await screen.findByRole('navigation', { name: 'Project navigation' });
+    expect(projectNavigation.querySelector('button.is-active')).toHaveTextContent('Board');
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/Search%20Project/graph')));
     await waitFor(() => expect(document.querySelector('[data-id="search-match-1"]')).toHaveClass('selected'), { timeout: 5000 });
   });
@@ -174,92 +200,53 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { render(<App />); });
 
-    const input = screen.getByPlaceholderText(/Search files, projects/i);
+    const input = await openWorkspaceSearch();
     fireEvent.change(input, { target: { value: 'board note match' } });
     await act(async () => { fireEvent.submit(input.closest('form')!); });
-    expect(await screen.findByText('Board note match')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
+    fireEvent.click(await screen.findByRole('button', { name: /Board note match/ }));
 
-    expect(await screen.findByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
+    const projectNavigation = await screen.findByRole('navigation', { name: 'Project navigation' });
+    expect(projectNavigation.querySelector('button.is-active')).toHaveTextContent('Board');
     await waitFor(() => expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/workspace/projects/Note%20Project/graph')));
     await waitFor(() => expect(document.querySelector('[data-id="board-note-search-match"]')).toHaveClass('selected'));
   });
 
-  it('opening a project creates/reuses exactly one project tab', async () => {
+  it('opening a project shows one project overview in the V16 page shell', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    // Click project card
-    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
-    await act(async () => {
-      fireEvent.click(projectButton);
-    });
+    const projectButton = screen.getByTitle('Stateful Architecture');
+    await act(async () => { fireEvent.click(projectButton); });
 
-    // There must be exactly ONE button element in the tab strip
-    // whose accessible name starts with "Stateful Architecture".
-    // We locate the tab strip by its landmark role and verify the count.
-    const allTabButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
-    );
-    expect(allTabButtons.length).toBe(1);
-
-    // Clicking the same project again MUST NOT create a second tab
-    await act(async () => {
-      fireEvent.click(projectButton);
-    });
-
-    const allTabButtonsAfterSecondClick = screen.getAllByRole('button').filter(
-      (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
-    );
-    // Still exactly 1 tab for this project
-    expect(allTabButtonsAfterSecondClick.length).toBe(1);
+    expect(await screen.findByRole('heading', { name: 'Stateful Architecture' })).toBeInTheDocument();
+    expect(screen.getByRole('navigation', { name: 'Project navigation' })).toBeInTheDocument();
+    expect(document.querySelector('.workspace-chrome')).not.toBeInTheDocument();
   });
 
-  it('overview / chat / board / split / files reuse the same single project tab', async () => {
+  it('project navigation switches among overview, conversations, Board, Split, and Files', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    // Helper: count how many buttons inside .workspace-chrome mention the project name
-    function countProjectTabs() {
-      return screen.getAllByRole('button').filter(
-        (btn) => btn.textContent?.includes('Stateful Architecture') && btn.closest('.workspace-chrome')
-      ).length;
-    }
-
-    // ── Step 1: Open project (Overview) ────────────────────────────────────
-    const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
+    const projectButton = screen.getByTitle('Stateful Architecture');
     await act(async () => { fireEvent.click(projectButton); });
-    expect(countProjectTabs()).toBe(1);
+    const clickProjectTab = async (label: string) => {
+      const currentNav = await screen.findByRole('navigation', { name: 'Project navigation' });
+      fireEvent.click(within(currentNav).getByRole('button', { name: label }));
+      await waitFor(() => expect(screen.getByRole('navigation', { name: 'Project navigation' }).querySelector('button.is-active')).toHaveTextContent(label));
+    };
 
-    // ── Step 2: Switch to Chat ──────────────────────────────────────────────
-    const chatsBtn = (await screen.findByText(/Open project chats/i)).closest('button')!;
-    await act(async () => { fireEvent.click(chatsBtn); });
-
-    // Workspace mode group present
-    expect(screen.getByRole('group', { name: /Workspace mode/i })).toBeInTheDocument();
-    expect(countProjectTabs()).toBe(1);
-
-    // ── Step 3: Switch to Board ─────────────────────────────────────────────
-    const boardModeBtn = screen.getByRole('button', { name: /^Board$/i });
-    await act(async () => { fireEvent.click(boardModeBtn); });
-    expect(countProjectTabs()).toBe(1);
-
-    // ── Step 4: Switch to Split ─────────────────────────────────────────────
-    const splitModeBtn = screen.getByRole('button', { name: /^Split$/i });
-    await act(async () => { fireEvent.click(splitModeBtn); });
-    expect(countProjectTabs()).toBe(1);
-
-    // ── Step 5: Navigate to Files ───────────────────────────────────────────
-    const filesBtn = screen.getByRole('button', { name: /^Files$/i });
-    await act(async () => { fireEvent.click(filesBtn); });
-    expect(countProjectTabs()).toBe(1);
-
-    // ── Step 6: Back to Overview ────────────────────────────────────────────
-    const overviewBtn = screen.getByRole('button', { name: /^Overview$/i });
-    await act(async () => { fireEvent.click(overviewBtn); });
-    expect(countProjectTabs()).toBe(1);
+    await clickProjectTab('Conversations');
+    await clickProjectTab('Board');
+    expect(document.querySelector('.routing-trigger-wrap')).not.toBeInTheDocument();
+    expect(document.querySelector('.inspector-toggle')).not.toBeInTheDocument();
+    await clickProjectTab('Split');
+    expect(document.querySelector('.routing-trigger-wrap')).not.toBeInTheDocument();
+    expect(document.querySelector('.inspector-toggle')).not.toBeInTheDocument();
+    await clickProjectTab('Files');
+    await clickProjectTab('Overview');
+    expect(document.querySelector('.workspace-chrome')).not.toBeInTheDocument();
   });
 
   it('searches every Library reference linked to the project from Project Files', async () => {
@@ -351,7 +338,7 @@ describe('Navigation and Workspace Shell Invariants', () => {
   });
 
 
-  it('file object opens its own dedicated preview tab', async () => {
+  it('file object opens its dedicated preview surface without a browser tab strip', async () => {
     await act(async () => {
       render(<App />);
     });
@@ -363,47 +350,27 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
 
     // Click on a library item to open dedicated tab
-    const fileItem = screen.getAllByText(/German A1 Tracker/i)[0];
+    const fileItem = await screen.findByText(/German A1 Tracker/i);
     await act(async () => {
-      fireEvent.click(fileItem);
+      fireEvent.click(fileItem.closest('button')!);
     });
 
-    // A separate tab for German A1 Tracker opens
-    expect(screen.getByRole('button', { name: /German A1 Tracker/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /Open in browser/ })).toBeInTheDocument();
+    expect(document.querySelector('.file-preview-view')).toBeInTheDocument();
+    expect(document.querySelector('.workspace-chrome')).not.toBeInTheDocument();
   });
 
-  it('back/forward restores workspace state snapshots', async () => {
+  it('exposes Preferences from the shell and leaves browser history controls out of the workspace', async () => {
     await act(async () => {
       render(<App />);
     });
 
-    // Start at Home
-    expect(screen.getByText(/Personal AI workspace/i)).toBeInTheDocument();
-
-    // Navigate to Library
-    const libraryNav = screen.getByTitle('Library');
-    await act(async () => {
-      fireEvent.click(libraryNav);
-    });
-    expect(await screen.findByText(/Your files can stay where they already live/i)).toBeInTheDocument();
-
-    // Click Back button in topbar
-    const backBtn = screen.getByTitle('Back');
-    await act(async () => {
-      fireEvent.click(backBtn);
-    });
-
-    // Restores Home snapshot
-    expect(screen.getByText(/Personal AI workspace/i)).toBeInTheDocument();
-
-    // Click Forward button
-    const forwardBtn = screen.getByTitle('Forward');
-    await act(async () => {
-      fireEvent.click(forwardBtn);
-    });
-
-    // Restores Library snapshot
-    expect(await screen.findByText(/Your files can stay where they already live/i)).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Personal workspace navigation' })).getByTitle('Preferences'));
+    expect(await screen.findByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'API access' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Routing' })).toBeInTheDocument();
+    expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Forward')).not.toBeInTheDocument();
   });
 
   it('preserves routing control in topbar and confirms old sidebar model picker is absent', async () => {
@@ -411,11 +378,12 @@ describe('Navigation and Workspace Shell Invariants', () => {
       render(<App />);
     });
 
-    // Navigate into a project so project topbar controls are visible
+    // Open a project, then its conversations, so project controls are available.
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0].closest('button')!;
     await act(async () => {
       fireEvent.click(projectButton);
     });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Conversations' })); });
 
     // Routing badge present in topbar
     expect(screen.getByText(/Routing…/i)).toBeInTheDocument();

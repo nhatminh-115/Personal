@@ -2,10 +2,12 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
 import { ApiAccessDialog } from './components/global/ApiAccessDialog';
+import { ConversationView } from './components/global/ConversationView';
 import type { FilePreviewRecord } from './components/global/FilePreviewView';
+import { PreferencesView } from './components/global/PreferencesView';
 import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
-import { WorkspaceChrome, type AuraTab } from './components/layout/WorkspaceChrome';
+import type { AuraTab } from './components/layout/WorkspaceChrome';
 import { ToastStack } from './components/ui/ToastStack';
 import { DesktopRuntimeControl } from './components/global/DesktopRuntimeControl';
 import { isTauri } from '@tauri-apps/api/core';
@@ -99,11 +101,14 @@ const StudyView = lazy(() => import('./components/global/StudyView').then((modul
 const WorkspaceSearchView = lazy(() => import('./components/global/WorkspaceSearchView').then((module) => ({ default: module.WorkspaceSearchView })));
 const ProjectFilesView = lazy(() => import('./components/home/ProjectFilesView').then((module) => ({ default: module.ProjectFilesView })));
 const ProjectHome = lazy(() => import('./components/home/ProjectHome').then((module) => ({ default: module.ProjectHome })));
+const ProjectNavigation = lazy(() => import('./components/home/ProjectNavigation').then((module) => ({ default: module.ProjectNavigation })));
 const InspectorPanel = lazy(() => import('./components/layout/InspectorPanel').then((module) => ({ default: module.InspectorPanel })));
 const RoutingStudio = lazy(() => import('./components/routing/RoutingStudio').then((module) => ({ default: module.RoutingStudio })));
 
 type WorkspaceSurface =
   | 'global-home'
+  | 'conversation'
+  | 'preferences'
   | 'search-results'
   | 'library'
   | 'notes'
@@ -122,6 +127,46 @@ const STORAGE = {
   automations: 'aura-v7-automations',
   chats: 'aura-v7-chats',
 };
+
+async function buildContextAttachments(contextFileContentIds: string[], libraryItems: LibraryItem[]): Promise<ChatContextAttachment[]> {
+  const uniqueIds = [...new Set(contextFileContentIds)];
+  if (uniqueIds.length > 5) throw new Error('Choose up to five local files for one message.');
+
+  const attachments: ChatContextAttachment[] = [];
+  let totalAttachmentChars = 0;
+  for (const objectId of uniqueIds) {
+    const item = libraryItems.find((candidate) => candidate.id === objectId);
+    const isPdf = item?.kind === 'PDF';
+    const isDocx = item?.kind === 'DOCX';
+    const isXlsx = item?.kind === 'XLSX';
+    const isImage = item?.kind === 'IMAGE';
+    const isPptx = item?.kind === 'PPTX';
+    const isEpub = item?.kind === 'EPUB';
+    const isRtf = item?.kind === 'RTF';
+    const isHtml = item?.kind === 'HTML';
+    const isPlainText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON'].includes(item.kind));
+    const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(item.kind));
+    if (!item?.blobKey || (!supportedText && !isPdf && !isDocx && !isXlsx && !isImage && !isPptx && !isEpub)) {
+      throw new Error('This browser does not have a supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy of one selected file.');
+    }
+    const blob = await getLocalFile(item.blobKey);
+    const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : isRtf ? MAX_LOCAL_RTF_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
+    if (!blob || blob.size > maxBytes) {
+      throw new Error(isPdf || isDocx || isXlsx || isImage || isPptx || isEpub
+        ? `A selected local ${isPdf ? 'PDF' : isDocx ? 'Word document' : isXlsx ? 'spreadsheet' : isImage ? 'image' : isPptx ? 'presentation' : 'e-book'} is missing or exceeds the 10 MB browser parsing limit.`
+        : isHtml || isRtf || isPlainText ? `A selected local ${isHtml ? 'HTML' : isRtf ? 'RTF' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
+    }
+    const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : isRtf ? await extractRtfText(blob) : await extractLocalTextFile(blob);
+    const fileCharacterCount = Array.from(fileText).length;
+    if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
+      throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
+    }
+    totalAttachmentChars += fileCharacterCount;
+    if (totalAttachmentChars > 40_000) throw new Error('Selected file text exceeds the 40,000-character total limit.');
+    attachments.push({ object_id: objectId, text: fileText });
+  }
+  return attachments;
+}
 
 function initialModeFromUrl(): WorkspaceMode {
   const value = new URLSearchParams(window.location.search).get('mode');
@@ -305,10 +350,6 @@ const isDesktopApp = isTauri();
 const runtimeProjects = isDesktopApp ? [] : projects;
 const DESKTOP_API_READY_KEY = 'aura:desktop-awaiting-api-ready';
 
-function tabStateKey(tab: AppTab) {
-  return [tab.id, tab.surface, tab.projectId ?? '', tab.connectionId ?? '', tab.previewId ?? '', tab.mode ?? ''].join('|');
-}
-
 export default function App() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const [mode, setMode] = useState<WorkspaceMode>(initialModeFromUrl);
@@ -316,6 +357,13 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<SidebarDestination | null>('home');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
+  const [desktopSettingsRequest, setDesktopSettingsRequest] = useState(0);
+  const [pendingConversationAction, setPendingConversationAction] = useState<
+    | { kind: 'start'; projectId: string; prompt: string; taskType?: 'research' | 'coding' | 'writing'; contextFileContentIds?: string[] }
+    | { kind: 'open'; projectId: string; threadId: string }
+    | { kind: 'new'; projectId: string }
+    | null
+  >(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
   const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
@@ -377,8 +425,6 @@ export default function App() {
   const [filePreviews, setFilePreviews] = useState<Record<string, FilePreviewRecord>>({});
   const [tabs, setTabs] = useState<AppTab[]>([AURA_TAB]);
   const [activeTabId, setActiveTabId] = useState(AURA_TAB.id);
-  const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
-  const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
   const [notes, setNotes] = useState<WorkspaceNote[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.notes, initialNotes), isDesktopApp));
   const [notesProjectScopeId, setNotesProjectScopeId] = useState<string | null>(null);
   const [noteConflicts, setNoteConflicts] = useState<Record<string, { loading: boolean; error?: string }>>({});
@@ -475,6 +521,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (surface !== 'global-home') return;
+    const liveProjects = activeProjectCatalog.filter((project) => project.source === 'user');
+    if (!liveProjects.length) return;
+    let active = true;
+    void Promise.allSettled(liveProjects.map(async (project) => ({ project, page: await api.fetchSessions(project.name) }))).then((results) => {
+      if (!active) return;
+      const restored = results.flatMap((result) => result.status === 'fulfilled'
+        ? result.value.page.items
+          .filter((item) => item.project_name === result.value.project.name)
+          .map((item): ChatThreadRecord => ({
+            id: `session-${item.id}`,
+            projectId: result.value.project.id,
+            title: item.title && item.title !== 'New Session' ? item.title : 'Restored conversation',
+            summary: 'Saved live conversation',
+            updated: new Date(item.updated_at).toLocaleDateString(),
+            messages: [],
+            sessionId: item.id,
+            source: 'live',
+          }))
+        : []);
+      setChatThreads((current) => {
+        const knownSessions = new Set(current.map((thread) => thread.sessionId).filter((id): id is string => Boolean(id)));
+        return [...restored.filter((thread) => thread.sessionId && !knownSessions.has(thread.sessionId)), ...current];
+      });
+    });
+    return () => { active = false; };
+  }, [activeProjectCatalog, surface]);
+
+  useEffect(() => {
     if (!userProjects.length) return;
     const idByName = new Map(userProjects.map((project) => [project.name, project.id]));
     setLibraryItems((current) => current.map((item) => ({
@@ -497,7 +572,6 @@ export default function App() {
     .map((thread) => thread.sessionId!), [projectThreads]);
   const workspaceGraphRevision = activeProject ? workspaceGraphRevisions[activeProject.name] ?? 0 : 0;
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
-  const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
   const genericBoard = useMemo(() => !isDesktopApp && activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
 
   useEffect(() => window.localStorage.setItem(STORAGE.library, JSON.stringify(libraryItems)), [libraryItems]);
@@ -868,6 +942,8 @@ export default function App() {
     setActiveConnectionId(tab.connectionId ?? null);
     if (tab.mode) setMode(tab.mode);
     if (tab.surface === 'global-home') setActiveNav('home');
+    else if (tab.surface === 'conversation') setActiveNav('conversation');
+    else if (tab.surface === 'preferences') setActiveNav('preferences');
     else if (tab.surface === 'library' || tab.surface === 'folder-viewer' || tab.surface === 'file-viewer') setActiveNav('library');
     else if (tab.surface === 'notes') setActiveNav('notes');
     else if (tab.surface === 'study') setActiveNav('study');
@@ -876,66 +952,10 @@ export default function App() {
     else setActiveNav(null);
   }, []);
 
-  const openOrActivateTab = useCallback((tab: AppTab, recordHistory = true) => {
+  const openOrActivateTab = useCallback((tab: AppTab) => {
     setTabs((current) => current.some((item) => item.id === tab.id) ? current.map((item) => item.id === tab.id ? { ...item, ...tab } : item) : [...current, tab]);
     applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex]);
-
-  const selectTab = useCallback((tabId: string, recordHistory = true) => {
-    const tab = tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
-
-  const closeTab = useCallback((tabId: string) => {
-    if (tabId === AURA_TAB.id) return;
-    const closing = tabs.find((tab) => tab.id === tabId);
-    if (closing?.previewId) {
-      const preview = filePreviews[closing.previewId];
-      if (preview?.url.startsWith('blob:')) URL.revokeObjectURL(preview.url);
-      setFilePreviews((current) => { const next = { ...current }; delete next[closing.previewId!]; return next; });
-    }
-    setTabs((current) => {
-      if (current.length <= 1) return current;
-      const index = current.findIndex((item) => item.id === tabId);
-      const next = current.filter((item) => item.id !== tabId);
-      if (tabId === activeTabId) {
-        const fallback = next[Math.max(0, Math.min(index - 1, next.length - 1))] ?? AURA_TAB;
-        window.setTimeout(() => applyTab(fallback), 0);
-      }
-      return next;
-    });
-  }, [activeTabId, applyTab, filePreviews, tabs]);
-
-  const goTabHistory = useCallback((direction: -1 | 1) => {
-    let nextIndex = tabHistoryIndex + direction;
-    while (nextIndex >= 0 && nextIndex < tabHistory.length) {
-      const snapshot = tabHistory[nextIndex];
-      if (tabs.some((tab) => tab.id === snapshot.id)) {
-        setTabHistoryIndex(nextIndex);
-        setTabs((current) => current.map((tab) => tab.id === snapshot.id ? { ...tab, ...snapshot } : tab));
-        applyTab(snapshot);
-        return;
-      }
-      nextIndex += direction;
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
+  }, [applyTab]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1080,10 +1100,29 @@ export default function App() {
     pushToast('Branch point requested', workspaceGraphProjectName ? 'The Board will save a link from this persisted conversation turn.' : 'The Board opened at the nearest project turn.');
   }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast, workspaceGraphProjectName]);
 
+  const openAllConversations = useCallback(() => {
+    const firstThread = chatThreads.find((thread) => activeProjectCatalog.some((project) => project.id === thread.projectId));
+    const currentProjectHasThread = Boolean(activeProjectId && chatThreads.some((thread) => thread.projectId === activeProjectId));
+    const selectedProjectId = currentProjectHasThread
+      ? activeProjectId
+      : firstThread?.projectId ?? (activeProjectCatalog.some((project) => project.id === activeProjectId) ? activeProjectId : activeProjectCatalog[0]?.id ?? null);
+    const selectedThread = selectedProjectId ? chatThreads.find((thread) => thread.projectId === selectedProjectId) : null;
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    if (selectedProjectId && selectedThread) {
+      setActiveThreadByProject((current) => ({ ...current, [selectedProjectId]: selectedThread.id }));
+    }
+    openOrActivateTab({ id: 'conversations', title: 'Conversation', subtitle: 'All projects', kind: 'home', surface: 'conversation', projectId: selectedProjectId, mode: 'chat' });
+  }, [activeProjectCatalog, activeProjectId, chatThreads, openOrActivateTab]);
+
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
     setRoutingOpen(false);
     if (destination === 'notes') setNotesProjectScopeId(null);
+    if (destination === 'conversation') {
+      openAllConversations();
+      return;
+    }
     const map: Record<SidebarDestination, AppTab> = {
       home: { ...AURA_TAB, subtitle: 'Home', surface: 'global-home' },
       library: { ...AURA_TAB, subtitle: 'Library', surface: 'library' },
@@ -1091,14 +1130,51 @@ export default function App() {
       study: { ...AURA_TAB, subtitle: 'Study', surface: 'study' },
       projects: { ...AURA_TAB, subtitle: 'Projects', surface: 'projects' },
       automations: { ...AURA_TAB, subtitle: 'Automations', surface: 'automations' },
+      preferences: { ...AURA_TAB, subtitle: 'Preferences', surface: 'preferences' },
+      conversation: { ...AURA_TAB, subtitle: 'Conversation', surface: 'conversation' },
     };
     openOrActivateTab(map[destination]);
-  }, [openOrActivateTab]);
+  }, [openAllConversations, openOrActivateTab]);
+
+  const openConversationForProject = useCallback((projectId: string) => {
+    const project = activeProjectCatalog.find((item) => item.id === projectId);
+    if (!project) return;
+    setInspectorOpen(false);
+    setRoutingOpen(false);
+    openOrActivateTab({ id: `conversation-${project.id}`, title: 'Conversation', subtitle: project.name, kind: 'project', surface: 'conversation', projectId: project.id, mode: 'chat' });
+  }, [activeProjectCatalog, openOrActivateTab]);
+
+  const startConversationFromHome = useCallback((projectId: string, prompt: string, taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
+    setPendingConversationAction({ kind: 'start', projectId, prompt, taskType, contextFileContentIds });
+    openConversationForProject(projectId);
+  }, [openConversationForProject]);
+
+  const openHomeConversation = useCallback((projectId: string, threadId: string) => {
+    setPendingConversationAction({ kind: 'open', projectId, threadId });
+    openConversationForProject(projectId);
+  }, [openConversationForProject]);
+
+  const selectAllProjectConversation = useCallback((projectId: string, threadId: string) => {
+    if (!activeProjectCatalog.some((project) => project.id === projectId)) return;
+    setActiveThreadByProject((current) => ({ ...current, [projectId]: threadId }));
+    setActiveProjectId(projectId);
+    setTabs((current) => current.map((tab) => tab.id === 'conversations' ? { ...tab, projectId } : tab));
+  }, [activeProjectCatalog]);
 
   const handleModeChange = useCallback((nextMode: WorkspaceMode) => {
     if (!activeProjectId || !activeProject) return;
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: nextMode[0].toUpperCase() + nextMode.slice(1), kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: nextMode });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
+    const globalConversation = surface === 'conversation';
+    const allProjectsHub = globalConversation && activeTabId === 'conversations';
+    openOrActivateTab({
+      id: allProjectsHub ? 'conversations' : globalConversation ? `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+      title: globalConversation ? 'Conversation' : activeProject.name,
+      subtitle: allProjectsHub ? 'All projects' : globalConversation ? activeProject.name : nextMode[0].toUpperCase() + nextMode.slice(1),
+      kind: allProjectsHub ? 'home' : 'project',
+      surface: globalConversation ? 'conversation' : 'workspace',
+      projectId: activeProjectId,
+      mode: nextMode,
+    });
+  }, [activeProject, activeProjectId, activeTabId, openOrActivateTab, surface]);
 
   const openFilePreview = useCallback((preview: FilePreviewRecord) => {
     setFilePreviews((current) => {
@@ -1178,8 +1254,8 @@ export default function App() {
     }
   }, [pushToast]);
 
-  const importFiles = useCallback(async (files: File[], projectId?: string, connectedSourcePath?: string) => {
-    if (!files.length) return;
+  const importFiles = useCallback(async (files: File[], projectId?: string, connectedSourcePath?: string): Promise<LibraryItem[]> => {
+    if (!files.length) return [];
     const imported: LibraryItem[] = [];
     for (const file of files) {
       const id = crypto.randomUUID();
@@ -1219,6 +1295,7 @@ export default function App() {
       }
       pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, `${savedCount} reference${savedCount === 1 ? '' : 's'} saved to the workspace graph; file contents remain in this browser.`);
     }
+    return imported;
   }, [projectCatalog, pushToast]);
 
   const toggleProjectLink = useCallback(async (itemId: string, projectId: string, candidate?: LibraryItem) => {
@@ -1562,9 +1639,32 @@ export default function App() {
     };
     setChatThreads((current) => [thread, ...current]);
     setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-    if (activeProject) openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
+    if (activeProject) openOrActivateTab({
+      id: surface === 'conversation' ? activeTabId === 'conversations' ? 'conversations' : `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+      title: surface === 'conversation' ? 'Conversation' : activeProject.name,
+      subtitle: surface === 'conversation' ? activeTabId === 'conversations' ? 'All projects' : activeProject.name : 'Chat',
+      kind: surface === 'conversation' && activeTabId === 'conversations' ? 'home' : 'project',
+      surface: surface === 'conversation' ? 'conversation' : 'workspace',
+      projectId: activeProjectId,
+      mode: 'chat',
+    });
     pushToast('New project chat', 'This thread starts clean and connects to live backend.');
-  }, [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast]);
+  }, [activeProject, activeProjectId, activeTabId, chatThreads, openOrActivateTab, pushToast, surface]);
+
+  const startNewConversationFromHub = useCallback((projectId: string | null) => {
+    const targetProjectId = projectId ?? activeProjectId ?? activeProjectCatalog[0]?.id ?? null;
+    if (!targetProjectId) {
+      handleSidebarNavigate('projects');
+      setProjectCreateRequest((current) => current + 1);
+      return;
+    }
+    if (surface === 'conversation' && activeProjectId === targetProjectId) {
+      newThread();
+      return;
+    }
+    setPendingConversationAction({ kind: 'new', projectId: targetProjectId });
+    openConversationForProject(targetProjectId);
+  }, [activeProjectCatalog, activeProjectId, handleSidebarNavigate, newThread, openConversationForProject, surface]);
 
   const updateThreadMessages = useCallback((threadId: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
     setChatThreads((current) => current.map((thread) => {
@@ -1598,48 +1698,12 @@ export default function App() {
       }
 
       const contextAttachments: ChatContextAttachment[] = [];
-      let totalAttachmentChars = 0;
       const uniqueContextFileIds = [...new Set([
         ...contextFileContentIds,
         ...(currentThread?.initialContextFileContentIds ?? []),
       ])];
       try {
-        if (uniqueContextFileIds.length > 5) {
-          throw new Error('Choose up to five local files for one message.');
-        }
-        for (const objectId of uniqueContextFileIds) {
-          const item = libraryItems.find((candidate) => candidate.id === objectId);
-          const isPdf = item?.kind === 'PDF';
-          const isDocx = item?.kind === 'DOCX';
-          const isXlsx = item?.kind === 'XLSX';
-          const isImage = item?.kind === 'IMAGE';
-          const isPptx = item?.kind === 'PPTX';
-          const isEpub = item?.kind === 'EPUB';
-          const isRtf = item?.kind === 'RTF';
-          const isHtml = item?.kind === 'HTML';
-          const isPlainText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON'].includes(item.kind));
-          const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(item.kind));
-          if (!item?.blobKey || (!supportedText && !isPdf && !isDocx && !isXlsx && !isImage && !isPptx && !isEpub)) {
-            throw new Error('This browser does not have a supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy of one selected file.');
-          }
-          const blob = await getLocalFile(item.blobKey);
-          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : isRtf ? MAX_LOCAL_RTF_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
-          if (!blob || blob.size > maxBytes) {
-            throw new Error(isPdf || isDocx || isXlsx || isImage || isPptx || isEpub
-              ? `A selected local ${isPdf ? 'PDF' : isDocx ? 'Word document' : isXlsx ? 'spreadsheet' : isImage ? 'image' : isPptx ? 'presentation' : 'e-book'} is missing or exceeds the 10 MB browser parsing limit.`
-              : isHtml || isRtf || isPlainText ? `A selected local ${isHtml ? 'HTML' : isRtf ? 'RTF' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
-          }
-          const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : isRtf ? await extractRtfText(blob) : await extractLocalTextFile(blob);
-          const fileCharacterCount = Array.from(fileText).length;
-          if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
-            throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
-          }
-          totalAttachmentChars += fileCharacterCount;
-          if (totalAttachmentChars > 40_000) {
-            throw new Error('Selected file text exceeds the 40,000-character total limit.');
-          }
-          contextAttachments.push({ object_id: objectId, text: fileText });
-        }
+        contextAttachments.push(...await buildContextAttachments(uniqueContextFileIds, libraryItems));
       } catch (error) {
         pushToast('Could not include file text', executionErrorText(error));
         return;
@@ -1805,9 +1869,18 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing') => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
+      const uniqueContextFileIds = [...new Set(contextFileContentIds)];
+      let contextAttachments: ChatContextAttachment[] = [];
+      try {
+        contextAttachments = await buildContextAttachments(uniqueContextFileIds, libraryItems);
+      } catch (error) {
+        pushToast('Could not include file text', executionErrorText(error));
+        return;
+      }
+      const selectedObjectIds = [...new Set([...contextObjectIds, ...uniqueContextFileIds])];
       const id = `${activeProjectId}-live-${Date.now()}`;
       const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
@@ -1825,10 +1898,20 @@ export default function App() {
         sessionId,
         source: 'live',
         initialContextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
+        initialContextFileContentIds: uniqueContextFileIds.length > 0 ? uniqueContextFileIds : undefined,
       };
       setChatThreads((current) => [thread, ...current]);
       setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-      openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
+      const allProjectsHub = surface === 'conversation' && activeTabId === 'conversations';
+      openOrActivateTab({
+        id: surface === 'conversation' ? allProjectsHub ? 'conversations' : `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+        title: surface === 'conversation' ? 'Conversation' : activeProject.name,
+        subtitle: surface === 'conversation' ? allProjectsHub ? 'All projects' : activeProject.name : 'Chat',
+        kind: allProjectsHub ? 'home' : 'project',
+        surface: surface === 'conversation' ? 'conversation' : 'workspace',
+        projectId: activeProjectId,
+        mode: 'chat',
+      });
       pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
 
       // If there is no prompt text, we only create the thread — no backend call.
@@ -1839,7 +1922,7 @@ export default function App() {
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: selectedObjectIds.length > 0 ? selectedObjectIds : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
@@ -1847,7 +1930,7 @@ export default function App() {
           patchThreadLive(originatingThreadId, { runStatus: 'running', clientTurnId });
           // A new live thread starts with profile routing; thread-local temporary
           // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType, [], clientTurnId);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, selectedObjectIds, taskType, contextAttachments, clientTurnId);
           notifyWorkspaceGraphChanged(activeProject.name);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status, clientTurnId: null });
           if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
@@ -1875,7 +1958,7 @@ export default function App() {
                   patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 } catch {}
               }
-              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds, ...routingSummary };
+              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds: selectedObjectIds, ...routingSummary };
               updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
             }
           }
@@ -1887,8 +1970,17 @@ export default function App() {
       })();
       void count; // suppress lint — count used for UI naming above
     },
-    [activeProject, activeProjectId, chatThreads, notifyWorkspaceGraphChanged, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
+    [activeProject, activeProjectId, activeTabId, chatThreads, libraryItems, notifyWorkspaceGraphChanged, openOrActivateTab, pushToast, refreshInspectorData, surface, updateThreadMessages]
   );
+
+  useEffect(() => {
+    const action = pendingConversationAction;
+    if (!action || surface !== 'conversation' || activeProjectId !== action.projectId) return;
+    setPendingConversationAction(null);
+    if (action.kind === 'start') void handleStartLiveChat(action.prompt, [], action.taskType, action.contextFileContentIds);
+    else if (action.kind === 'open') selectThread(action.threadId);
+    else newThread();
+  }, [activeProjectId, handleStartLiveChat, newThread, pendingConversationAction, selectThread, surface]);
 
   const handleBoardAskWithContext = useCallback(async (prompt: string, objectIds: string[]) => {
     const currentThread = chatThreads.find((thread) => thread.id === activeThreadId);
@@ -2961,73 +3053,26 @@ export default function App() {
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
+    : surface === 'conversation' ? 'Conversation'
+    : surface === 'preferences' ? 'Preferences'
     : surface === 'search-results' ? 'Workspace Search'
     : surface === 'library' ? 'Library'
     : surface === 'notes' ? 'Notes'
     : surface === 'study' ? 'Study'
     : surface === 'automations' ? 'Automations'
     : surface === 'projects' ? 'Projects'
+    : surface === 'project-overview' ? 'Overview'
+    : surface === 'project-files' ? 'Files'
+    : surface === 'workspace' ? mode === 'chat' ? 'Conversations' : mode === 'board' ? 'Board' : 'Split'
     : surface === 'folder-viewer' ? activeConnection?.name ?? 'Connected folder'
     : surface === 'file-viewer' ? activeFilePreview?.name ?? 'File'
     : 'Home';
 
-  const locationValue = surface === 'global-home' ? 'aura://home'
-    : surface === 'search-results' ? `aura://search?q=${encodeURIComponent(workspaceSearch.query)}`
-    : surface === 'library' ? 'aura://library'
-    : surface === 'folder-viewer' ? `folder://${activeConnection?.name ?? 'connected'}`
-    : surface === 'file-viewer' ? activeFilePreview?.virtualPath ?? 'aura://file'
-    : activeProject ? `aura://projects/${activeProject.name.replace(/\s+/g, '-').toLowerCase()}/${surface === 'workspace' ? mode : surface.replace('project-', '')}`
-    : `aura://${surface}`;
-
-  const handleLocationSubmit = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (/^https?:\/\//i.test(trimmed)) {
-      window.open(trimmed, '_blank', 'noopener,noreferrer');
-      pushToast('Opened URL', trimmed);
-      return;
-    }
-    const normalized = trimmed.toLowerCase();
-    if (normalized.includes('library')) { handleSidebarNavigate('library'); return; }
-    if (normalized.includes('home')) { handleSidebarNavigate('home'); return; }
-    const matchingProject = projectCatalog.find((project) => project.name.toLowerCase().includes(normalized) || normalized.includes(project.name.toLowerCase()));
-    if (matchingProject) { openProject(matchingProject.id); return; }
-    const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
-    if (matchingConnection) { openConnection(matchingConnection); return; }
-    const requestId = ++workspaceSearchRequest.current;
-    const projectName = activeProject?.name ?? null;
-    setWorkspaceSearch({ query: trimmed, projectName, results: [], nextCursor: null, loading: true, loadingMore: false, error: null });
-    openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
-    void Promise.allSettled([
-      api.searchWorkspace(trimmed, projectName ?? undefined),
-      activeProject ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(trimmed),
-    ]).then(([workspace, folderFiles]) => {
-      if (workspaceSearchRequest.current !== requestId) return;
-      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value.items] : [];
-      if (folderFiles.status === 'fulfilled') {
-        results.push(...folderFiles.value.map((file) => ({
-          object_id: `external:${file.connectionId}:${file.relativePath}`,
-          object_type: 'file_reference',
-          title: file.name,
-          excerpt: `${file.connectionName} / ${file.relativePath}`,
-          project_name: null,
-          created_by: 'external',
-          updated_at: new Date(file.lastModified).toISOString(),
-          source: 'connected-folder' as const,
-          connection_id: file.connectionId,
-          connection_name: file.connectionName,
-          relative_path: file.relativePath,
-          size: file.size,
-          mime_type: file.mimeType,
-        })));
-      }
-      const errors = [
-        ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
-        ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
-      ];
-      setWorkspaceSearch({ query: trimmed, projectName, results, nextCursor: workspace.status === 'fulfilled' ? workspace.value.nextCursor : null, loading: false, loadingMore: false, error: errors.length ? errors.join(' ') : null });
-    });
-  };
+  const homeConversations = useMemo(() => chatThreads.flatMap((thread) => {
+    if (thread.source === 'demo') return [];
+    const project = activeProjectCatalog.find((item) => item.id === thread.projectId);
+    return project ? [{ thread, project }] : [];
+  }), [activeProjectCatalog, chatThreads]);
 
   const loadMoreWorkspaceSearch = async () => {
     if (!workspaceSearch.query || !workspaceSearch.nextCursor || workspaceSearch.loading || workspaceSearch.loadingMore) return;
@@ -3053,6 +3098,43 @@ export default function App() {
         ? { ...current, loadingMore: false, error: executionErrorText(error) }
         : current);
     }
+  };
+
+  const retryWorkspaceSearch = () => {
+    const query = workspaceSearch.query.trim();
+    if (!query) return;
+    const projectName = workspaceSearch.projectName;
+    const requestId = ++workspaceSearchRequest.current;
+    setWorkspaceSearch((current) => ({ ...current, loading: true, loadingMore: false, error: null }));
+    void Promise.allSettled([
+      api.searchWorkspace(query, projectName ?? undefined),
+      projectName ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(query),
+    ]).then(([workspace, folderFiles]) => {
+      if (workspaceSearchRequest.current !== requestId) return;
+      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value.items] : [];
+      if (folderFiles.status === 'fulfilled') {
+        results.push(...folderFiles.value.map((file) => ({
+          object_id: `external:${file.connectionId}:${file.relativePath}`,
+          object_type: 'file_reference',
+          title: file.name,
+          excerpt: `${file.connectionName} / ${file.relativePath}`,
+          project_name: null,
+          created_by: 'external',
+          updated_at: new Date(file.lastModified).toISOString(),
+          source: 'connected-folder' as const,
+          connection_id: file.connectionId,
+          connection_name: file.connectionName,
+          relative_path: file.relativePath,
+          size: file.size,
+          mime_type: file.mimeType,
+        })));
+      }
+      const errors = [
+        ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
+        ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
+      ];
+      setWorkspaceSearch({ query, projectName, results, nextCursor: workspace.status === 'fulfilled' ? workspace.value.nextCursor : null, loading: false, loadingMore: false, error: errors.length ? errors.join(' ') : null });
+    });
   };
 
   const handleOpenWorkspaceSearchResult = (projectName: string, objectId: string) => {
@@ -3131,9 +3213,15 @@ export default function App() {
   const projectNoteCount = activeProjectId
     ? (hasActiveProjectSummary ? workspaceSummary.project_note_count : 0) + notes.filter((note) => note.source === 'demo' && note.projectIds.includes(activeProjectId)).length
     : 0;
+  const projectWorkspaceActive = surface === 'workspace' || surface === 'conversation';
+  const projectNavigationActive = surface === 'project-overview' ? 'overview'
+    : surface === 'project-files' ? 'files'
+    : surface === 'workspace' && mode === 'board' ? 'board'
+    : surface === 'workspace' && mode === 'split' ? 'split'
+    : 'conversations';
 
   return (
-    <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
+    <div className={`app-shell ${inspectorOpen && projectWorkspaceActive ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <Sidebar
         projects={activeProjectCatalog}
         collapsed={sidebarCollapsed}
@@ -3147,13 +3235,15 @@ export default function App() {
       />
 
       <Topbar
-        projectName={activeProject?.name ?? null}
-        projectSection={projectSection}
+        projectName={activeTabId === 'conversations' ? null : activeProject?.name ?? null}
         globalTitle={title}
-        mode={mode}
-        onModeChange={handleModeChange}
-        onOpenProjectOverview={openProjectOverview}
-        onOpenProjectFiles={openProjectFiles}
+        projectWorkspace={Boolean(activeProject && projectWorkspaceActive && mode === 'chat' && !(surface === 'conversation' && activeTabId === 'conversations'))}
+        createLabel={surface === 'conversation' || (activeProject && surface === 'workspace') ? 'New conversation' : 'New project'}
+        onCreate={() => {
+          if (surface === 'conversation' && !activeProject) startNewConversationFromHub(null);
+          else if (activeProject && (surface === 'workspace' || surface === 'conversation')) newThread();
+          else { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }
+        }}
         routingOpen={routingOpen}
         onRoutingOpenChange={setRoutingOpen}
         effectiveRouting={effectiveRouting}
@@ -3167,9 +3257,8 @@ export default function App() {
         onOpenRoutingStudio={openRoutingStudio}
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((value) => !value)}
-        onOpenAura={() => setAuraOpen(true)}
-        apiTokenConfigured={Boolean(getApiToken())}
-        onOpenApiAccess={() => setApiAccessOpen(true)}
+        onOpenSearch={() => setAuraOpen(true)}
+        onOpenPreferences={() => handleSidebarNavigate('preferences')}
       />
       <ApiAccessDialog
         open={apiAccessOpen}
@@ -3216,36 +3305,59 @@ export default function App() {
         onConfirm={() => void handleRoutingConfirmationDecision('approved')}
       /> : null}
 
-      <WorkspaceChrome
-        tabs={tabs}
-        activeTabId={activeTabId}
-        locationValue={locationValue}
-        canGoBack={tabHistoryIndex > 0}
-        canGoForward={tabHistoryIndex < tabHistory.length - 1}
-        onGoBack={() => goTabHistory(-1)}
-        onGoForward={() => goTabHistory(1)}
-        onSelectTab={selectTab}
-        onCloseTab={closeTab}
-        onSubmitLocation={handleLocationSubmit}
-      />
-
-      <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}`}>
+      <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}${surface === 'conversation' && activeTabId === 'conversations' && activeProject ? ' workspace--conversation-all' : ''}`}>
         <Suspense fallback={<div className="workspace-loading" role="status">Loading workspace…</div>}>
         {surface === 'global-home' ? (
           <GlobalHome
             projects={activeProjectCatalog}
-            libraryItems={libraryItems}
-            libraryCount={workspaceSummary.library_count}
-            linkedLibraryCount={workspaceSummary.linked_library_count}
-            activeAutomationCount={automationSummary.enabled}
-            noteCount={workspaceSummary.note_count}
-            onOpenProject={openProject}
+            conversations={homeConversations}
+            defaultProjectId={activeProjectId}
+            onStartConversation={startConversationFromHome}
+            onImportContextFiles={async (files, projectId) => (await importFiles(files, projectId)).map(({ id, name }) => ({ id, name }))}
+            onOpenConversation={openHomeConversation}
+            onOpenConversations={() => handleSidebarNavigate('conversation')}
             onOpenProjects={() => handleSidebarNavigate('projects')}
-            onOpenLibrary={() => handleSidebarNavigate('library')}
-            onOpenFile={(id) => {
-              const item = libraryItems.find((entry) => entry.id === id);
-              if (item) void handleLibraryItem(item);
-            }}
+          />
+        ) : null}
+
+        {surface === 'conversation' ? (
+          <ConversationView
+            projects={activeProjectCatalog}
+            conversations={homeConversations}
+            projectId={activeTabId === 'conversations' ? null : activeProjectId}
+            activeProjectId={activeProjectId}
+            activeThreadId={activeThreadId}
+            mode={mode}
+            onSelectProject={(projectId) => projectId ? openConversationForProject(projectId) : openAllConversations()}
+            onChangeMode={handleModeChange}
+            onNewConversation={startNewConversationFromHub}
+            onOpenConversation={selectAllProjectConversation}
+            showInspectorToggle={activeTabId === 'conversations'}
+            inspectorOpen={inspectorOpen}
+            onToggleInspector={() => setInspectorOpen((value) => !value)}
+            onCreateProject={() => { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }}
+          />
+        ) : null}
+
+        {surface === 'preferences' ? (
+          <PreferencesView
+            apiTokenConfigured={Boolean(getApiToken())}
+            onOpenApiAccess={() => setApiAccessOpen(true)}
+            onOpenDesktopSettings={() => setDesktopSettingsRequest((current) => current + 1)}
+            onOpenRouting={openRoutingStudio}
+          />
+        ) : null}
+
+        {activeProject && ['project-files', 'workspace'].includes(surface) ? (
+          <ProjectNavigation
+            project={activeProject}
+            showProjectHeading
+            active={projectNavigationActive}
+            onOverview={openProjectOverview}
+            onConversations={openProjectChats}
+            onModeChange={handleModeChange}
+            onFiles={openProjectFiles}
+            onNewConversation={newThread}
           />
         ) : null}
 
@@ -3307,6 +3419,15 @@ export default function App() {
             onOpenBoard={() => handleModeChange('board')}
             onOpenFiles={openProjectFiles}
             onOpenNotes={() => openProjectNotes(activeProject.id)}
+            navigation={<ProjectNavigation
+              project={activeProject}
+              active={projectNavigationActive}
+              onOverview={openProjectOverview}
+              onConversations={openProjectChats}
+              onModeChange={handleModeChange}
+              onFiles={openProjectFiles}
+              onNewConversation={newThread}
+            />}
           />
         ) : null}
 
@@ -3337,8 +3458,9 @@ export default function App() {
           />
         ) : null}
 
-        {surface === 'workspace' && mode === 'chat' && activeProject ? (
+        {projectWorkspaceActive && mode === 'chat' && activeProject ? (
           <ProjectChatWorkspace
+            hideThreadRail={surface === 'conversation' && activeTabId === 'conversations'}
             project={activeProject}
             threads={projectThreads}
             activeThreadId={activeThreadId}
@@ -3370,7 +3492,7 @@ export default function App() {
           />
         ) : null}
 
-        {surface === 'workspace' && mode === 'board' && activeProject ? (
+        {projectWorkspaceActive && mode === 'board' && activeProject ? (
           <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
             <BoardCanvas
               key={activeProject.id}
@@ -3392,7 +3514,7 @@ export default function App() {
           </Suspense>
         ) : null}
 
-        {surface === 'workspace' && mode === 'split' && activeProject ? (
+        {projectWorkspaceActive && mode === 'split' && activeProject ? (
           <div className="split-workspace">
             <div className="split-workspace__chat">
               <ProjectChatWorkspace
@@ -3444,7 +3566,7 @@ export default function App() {
             hasMore={Boolean(workspaceSearch.nextCursor)}
             loadingMore={workspaceSearch.loadingMore}
             onLoadMore={() => void loadMoreWorkspaceSearch()}
-            onRetry={() => handleLocationSubmit(workspaceSearch.query)}
+            onRetry={() => retryWorkspaceSearch()}
             onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenNote={handleOpenWorkspaceSearchNote}
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
@@ -3456,7 +3578,7 @@ export default function App() {
         </Suspense>
       </main>
 
-      {inspectorOpen ? (
+      {inspectorOpen && projectWorkspaceActive ? (
         <Suspense fallback={<aside className="inspector-panel inspector-panel--loading" role="status">Loading Inspector…</aside>}>
           <InspectorPanel
             selectedNode={selectedNode}
@@ -3498,7 +3620,8 @@ export default function App() {
       <DesktopRuntimeControl
         runEvents={desktopRunEvents}
         automationRuns={desktopAutomationRuns}
-        onDroppedFiles={importFiles}
+        settingsRequest={desktopSettingsRequest}
+        onDroppedFiles={(files) => importFiles(files).then(() => undefined)}
         onDropError={(message) => pushToast('Could not import dropped files', message)}
       />
     </div>

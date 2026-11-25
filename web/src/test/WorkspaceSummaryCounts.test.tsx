@@ -1,49 +1,54 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { GlobalHome } from '../components/global/GlobalHome';
+import type { ChatThreadRecord, ProjectRecord } from '../data/workspaceData';
 
-describe('workspace aggregate counts', () => {
-  it('shows canonical collection totals independently from the loaded preview page', () => {
+const project: ProjectRecord = {
+  id: 'project-a', name: 'Research', subtitle: 'Research context', status: 'active', accent: 'purple', updated: 'today', meta: '2 conversations', thesis: '', next: '', source: 'user',
+};
+
+const thread: ChatThreadRecord = {
+  id: 'thread-a', projectId: project.id, title: 'Review the outline', summary: 'A saved live conversation', updated: 'just now', messages: [], source: 'live', sessionId: 'session-a',
+};
+
+describe('V16 Home', () => {
+  it('starts a project conversation with the submitted prompt', () => {
+    const onStartConversation = vi.fn();
     render(<GlobalHome
-      projects={[]}
-      libraryItems={[]}
-      libraryCount={118}
-      linkedLibraryCount={34}
-      activeAutomationCount={6}
-      noteCount={203}
-      onOpenProject={vi.fn()}
+      projects={[project]}
+      conversations={[]}
+      defaultProjectId={project.id}
+      onStartConversation={onStartConversation}
+      onImportContextFiles={vi.fn().mockResolvedValue([])}
+      onOpenConversation={vi.fn()}
+      onOpenConversations={vi.fn()}
       onOpenProjects={vi.fn()}
-      onOpenLibrary={vi.fn()}
-      onOpenFile={vi.fn()}
     />);
 
-    expect(screen.getByText('118 saved Library references')).toBeInTheDocument();
-    expect(screen.getByText('203 notes · 34 linked files')).toBeInTheDocument();
-    expect(screen.getByText('6 active automations')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Start a conversation' }), { target: { value: 'Help me compare these sources.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Start conversation' }));
+
+    expect(onStartConversation).toHaveBeenCalledWith(project.id, 'Help me compare these sources.', undefined, []);
   });
 
-  it('keeps Home actions connected to real project and Library routes when collections are empty', () => {
-    const onOpenProjects = vi.fn();
-    const onOpenLibrary = vi.fn();
+  it('opens a real recent conversation and exposes the all-conversations route', () => {
+    const onOpenConversation = vi.fn();
+    const onOpenConversations = vi.fn();
     render(<GlobalHome
-      projects={[]}
-      libraryItems={[]}
-      libraryCount={0}
-      linkedLibraryCount={0}
-      activeAutomationCount={0}
-      noteCount={0}
-      onOpenProject={vi.fn()}
-      onOpenProjects={onOpenProjects}
-      onOpenLibrary={onOpenLibrary}
-      onOpenFile={vi.fn()}
+      projects={[project]}
+      conversations={[{ thread, project }]}
+      defaultProjectId={project.id}
+      onStartConversation={vi.fn()}
+      onImportContextFiles={vi.fn().mockResolvedValue([])}
+      onOpenConversation={onOpenConversation}
+      onOpenConversations={onOpenConversations}
+      onOpenProjects={vi.fn()}
     />);
 
-    expect(screen.getByText('No projects yet')).toBeInTheDocument();
-    expect(screen.getByText('Your Library is ready for its first file.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Browse projects/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Open Library/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Review the outline/ }));
+    fireEvent.click(screen.getByRole('button', { name: /All conversations/ }));
 
-    expect(onOpenProjects).toHaveBeenCalledOnce();
-    expect(onOpenLibrary).toHaveBeenCalledOnce();
+    expect(onOpenConversation).toHaveBeenCalledWith(project.id, thread.id);
+    expect(onOpenConversations).toHaveBeenCalledOnce();
   });
 });

@@ -1,4 +1,5 @@
 import { ArrowRight, FileText, Layers3, MessageSquareText, Plus, Sparkles, StickyNote, Workflow } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { ChatThreadRecord, ProjectRecord } from '../../data/workspaceData';
 import './ProjectHome.css';
 
@@ -15,6 +16,7 @@ interface ProjectHomeProps {
   onOpenBoard: () => void;
   onOpenFiles: () => void;
   onOpenNotes: () => void;
+  navigation?: ReactNode;
 }
 
 function threadSourceLabel(thread: ChatThreadRecord): string {
@@ -36,6 +38,7 @@ export function ProjectHome({
   onOpenThread,
   onOpenFiles,
   onOpenNotes,
+  navigation,
 }: ProjectHomeProps) {
   const project = projects.find((item) => item.id === projectId);
   if (!project) return null;
@@ -67,6 +70,8 @@ export function ProjectHome({
           </button>
         </div>
       </header>
+
+      {navigation ? <div className="project-home-redesign__navigation">{navigation}</div> : null}
 
       <div className="project-home-redesign__grid">
         <div className="project-home-redesign__main-column">

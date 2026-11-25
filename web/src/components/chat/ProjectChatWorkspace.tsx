@@ -77,6 +77,7 @@ function mapWorkspaceContextObjects(objects: WorkspaceObject[], selectedIds: Set
 
 export interface ProjectChatWorkspaceProps {
   compact?: boolean;
+  hideThreadRail?: boolean;
   project: ProjectRecord;
   threads: ChatThreadRecord[];
   activeThreadId: string | null;
@@ -113,6 +114,7 @@ export interface ProjectChatWorkspaceProps {
 
 export function ProjectChatWorkspace({
   compact = false,
+  hideThreadRail = false,
   project,
   threads,
   activeThreadId,
@@ -287,7 +289,7 @@ export function ProjectChatWorkspace({
     : demoContextItems, [demoContextItems, isLiveThread, liveWorkspaceContext, selectedContextIds, selectedFileContentIds]);
 
   return (
-    <div className={`project-chat-workspace ${compact ? 'project-chat-workspace--compact' : ''}`}>
+    <div className={`project-chat-workspace ${compact ? 'project-chat-workspace--compact' : ''} ${hideThreadRail ? 'project-chat-workspace--rail-hidden' : ''}`}>
       <aside className="chat-thread-rail">
         <div className="chat-thread-rail__head">
           <div>

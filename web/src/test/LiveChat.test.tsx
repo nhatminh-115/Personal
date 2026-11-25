@@ -37,9 +37,9 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     global.fetch = fetchMock;
 
     await act(async () => { render(<App />); });
-    const projectButton = (await screen.findByText(/^AURA$/i, { selector: '.project-card *' })).closest('.project-card')!;
+    const projectButton = screen.getByTitle('AURA');
     await act(async () => { fireEvent.click(projectButton); });
-    const chatsButton = await screen.findByRole('button', { name: /Open project chats/i });
+    const chatsButton = await screen.findByRole('button', { name: 'Conversations' });
     await act(async () => { fireEvent.click(chatsButton); });
     await act(async () => { fireEvent.click(screen.getByTitle('New chat')); });
 
@@ -170,13 +170,13 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Open project chat
-    const projectButton = (await screen.findByText(/^AURA$/i, { selector: '.project-card *' })).closest('.project-card')!;
+    const projectButton = screen.getByTitle('AURA');
     await act(async () => {
       fireEvent.click(projectButton);
     });
 
     // Click Chats
-    const chatsBtn = await screen.findByRole('button', { name: /Open project chats/i });
+    const chatsBtn = await screen.findByRole('button', { name: 'Conversations' });
     await act(async () => {
       fireEvent.click(chatsBtn);
     });
@@ -188,7 +188,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // The live Context panel uses saved project graph objects and sends their IDs.
-    fireEvent.click(screen.getByText('Context').closest('button')!);
+    fireEvent.click(screen.getByRole('button', { name: /Context Project objects/i }));
     await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalled());
     await screen.findByText('Shared project constraint');
     expect((await screen.findByText('Durable execution paper')).closest('.ai-context-item')).toHaveTextContent('research source');
@@ -233,14 +233,14 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Verify execution badge
     expect(await screen.findByText(/AURA · 4 steps/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText('Context').closest('button')!);
+    fireEvent.click(screen.getByRole('button', { name: /Context Project objects/i }));
     fireEvent.click(await screen.findByRole('button', { name: 'Show Restartability claim on Board' }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     expect(await screen.findByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' }).closest('.react-flow__node')).toHaveClass('selected'));
 
     // Response provenance must also navigate to the persisted object without the message click stealing focus.
-    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Conversations' }));
     fireEvent.click(screen.getByRole('button', { name: /Research claim.*research-claim-1/i }));
     expect(await screen.findByRole('button', { name: 'Board' })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText('Restartability claim', { selector: '.react-flow__node .aura-node__title' }).closest('.react-flow__node')).toHaveClass('selected'));
@@ -335,7 +335,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     await act(async () => {
       fireEvent.click(projectButton);
     });
-    const chatsBtn = await screen.findByRole('button', { name: /Open project chats/i });
+    const chatsBtn = await screen.findByRole('button', { name: 'Conversations' });
     await act(async () => {
       fireEvent.click(chatsBtn);
     });
@@ -381,7 +381,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
     await act(async () => { render(<App />); });
     fireEvent.click(screen.getAllByText(/Stateful Architecture/i)[0]);
-    fireEvent.click(await screen.findByRole('button', { name: /Open project chats/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Conversations' }));
     fireEvent.click(screen.getByTitle('New chat'));
     fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep this local' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
@@ -446,7 +446,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     const { container } = render(<App />);
     const projectButton = screen.getAllByText(/Stateful Architecture/i)[0];
     await act(async () => { fireEvent.click(projectButton); });
-    const openChats = await screen.findByRole('button', { name: /Open project chats/i });
+    const openChats = await screen.findByRole('button', { name: 'Conversations' });
     await act(async () => { fireEvent.click(openChats); });
     await act(async () => { fireEvent.click(screen.getByTitle('New chat')); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Board' })); });

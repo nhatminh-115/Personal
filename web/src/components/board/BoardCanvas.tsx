@@ -368,7 +368,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     if (!hasSize) return;
     const instance = pendingInitialFit.current;
     if (!instance) return;
-    if (workspaceProjectName && viewportRef.current) {
+    if (!compact && workspaceProjectName && viewportRef.current) {
       pendingInitialFit.current = null;
       return;
     }
@@ -384,6 +384,14 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
     fitInitialViewWhenReady();
     return () => observer.disconnect();
   }, [fitInitialViewWhenReady]);
+
+  useEffect(() => {
+    if (!compact || !flowReady || !canvasSizeReady || !nodes.length) return;
+    const frame = window.requestAnimationFrame(() => {
+      void instanceRef.current?.fitView({ padding: 0.2, duration: 0 });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [canvasSizeReady, compact, flowReady, nodes.length, workspaceLoadVersion]);
 
   const refreshRecentWorkspacePage = useCallback(async (fitView = true) => {
     if (!workspaceProjectName) return;
@@ -1543,7 +1551,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         onInit={(instance) => {
           instanceRef.current = instance;
           setFlowReady(true);
-          if (!workspaceProjectName || !viewportRef.current) {
+          if (compact || !workspaceProjectName || !viewportRef.current) {
             if (initialFitTimer.current !== null) window.clearTimeout(initialFitTimer.current);
             initialFitTimer.current = window.setTimeout(() => {
               initialFitTimer.current = null;
@@ -1553,7 +1561,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           }
         }}
         defaultViewport={viewport ?? undefined}
-        onMoveEnd={(_, nextViewport) => setViewport(nextViewport)}
+        onMoveEnd={(_, nextViewport) => { if (!compact) setViewport(nextViewport); }}
         onNodeClick={async (_, node) => {
           setDismissedInspectorNodeId(null);
           if (activeTool === 'link') {
