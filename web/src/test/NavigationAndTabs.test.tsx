@@ -367,8 +367,13 @@ describe('Navigation and Workspace Shell Invariants', () => {
 
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Personal workspace navigation' })).getByTitle('Preferences'));
     expect(await screen.findByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'API access' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Server API token' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Routing' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Set up server access|Manage server token/i }));
+    expect(await screen.findByRole('dialog', { name: 'API access' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close API access' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open routing studio' }));
+    expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeInTheDocument();
     expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Forward')).not.toBeInTheDocument();
   });

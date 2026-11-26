@@ -143,7 +143,10 @@ describe('Demo / Live Separation', () => {
     await act(async () => {
       fireEvent.change(textarea, { target: { value: draftText } });
     });
-    fireEvent.click(screen.getByRole('button', { name: /Code/i }));
+    const workMode = screen.getByRole('button', { name: 'Assistant work mode' });
+    fireEvent.click(workMode);
+    fireEvent.click(screen.getByRole('option', { name: 'Code' }));
+    expect(workMode).toHaveTextContent('Code');
 
     // Click "Start live chat" CTA button
     const ctaBtn = screen.getByText('Start live chat');
@@ -152,13 +155,20 @@ describe('Demo / Live Separation', () => {
     // Wait for async backend call
     await act(async () => { await new Promise((r) => window.setTimeout(r, 100)); });
 
-    // Backend was called exactly once
+    // The CTA created a fresh live thread instead of promoting the demo thread.
+    expect(await screen.findByRole('heading', { name: draftText })).toBeInTheDocument();
+    expect(screen.queryByText(/demo thread/i)).not.toBeInTheDocument();
+    // Backend was called exactly once.
     expect(postCalls).toHaveLength(1);
-    // The exact draft text was sent — NOT literal "Start live chat"
-    expect(postCalls[0].body).toContain(draftText);
-    expect(postCalls[0].body).not.toContain('Start live chat');
-    expect(JSON.parse(postCalls[0].body).task_type).toBe('coding');
-    expect(JSON.parse(postCalls[0].body).context_object_ids).toBeUndefined();
+    // The exact draft text was sent — NOT the literal CTA label.
+    const payload = JSON.parse(postCalls[0].body);
+    expect(payload.message).toBe(draftText);
+    expect(payload.message).not.toBe('Start live chat');
+    expect(payload.session_id).toMatch(/^sess-/);
+    expect(payload.client_turn_id).toEqual(expect.any(String));
+    expect(payload.task_type).toBe('coding');
+    expect(payload.context_object_ids).toBeUndefined();
+    expect(await screen.findByText('Reply')).toBeInTheDocument();
   });
 
   it('CTA with empty draft creates live thread WITHOUT calling backend', async () => {

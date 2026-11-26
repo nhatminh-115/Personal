@@ -206,7 +206,10 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Type prompt into textarea and send
     const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat…/i);
     fireEvent.change(textarea, { target: { value: 'Explain state persistence in Kuractus' } });
-    fireEvent.click(screen.getByRole('button', { name: /Code/i }));
+    const workMode = screen.getByRole('button', { name: 'Assistant work mode' });
+    fireEvent.click(workMode);
+    fireEvent.click(screen.getByRole('option', { name: 'Code' }));
+    expect(workMode).toHaveTextContent('Code');
 
     const sendBtn = screen.getByRole('button', { name: /Send/i });
     await act(async () => {

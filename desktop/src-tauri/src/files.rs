@@ -674,7 +674,8 @@ pub async fn desktop_read_folder_file(
     let candidate = root.join(requested);
     if is_reparse_or_symlink(&candidate) {
         return Err(
-            "Kuractus cannot read symbolic links or Windows junctions from connected folders.".into(),
+            "Kuractus cannot read symbolic links or Windows junctions from connected folders."
+                .into(),
         );
     }
     let canonical = candidate
