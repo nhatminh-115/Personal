@@ -1,8 +1,4 @@
 import {
-  BookOpenText,
-  ChevronDown,
-  ChevronRight,
-  CircleUserRound,
   FolderKanban,
   Home,
   Library,
@@ -12,7 +8,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Sparkles,
   Workflow,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -35,87 +30,109 @@ interface SidebarProps {
   collapsed: boolean;
   active: SidebarDestination | null;
   activeProjectId: string | null;
-  libraryCount: number;
   onCollapsedChange: (collapsed: boolean) => void;
   onNavigate: (destination: SidebarDestination) => void;
   onProjectOpen: (projectId: string) => void;
   onNewProject: () => void;
 }
 
-export function Sidebar({ projects, collapsed, active, activeProjectId, libraryCount, onCollapsedChange, onNavigate, onProjectOpen, onNewProject }: SidebarProps) {
+function PrototypeMark({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 64 64" fill="none" stroke="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <circle cx="32" cy="32" r="14" strokeWidth="1.45" strokeDasharray="2.5 3.5" opacity="0.34" />
+      <ellipse cx="32" cy="32" rx="23.5" ry="8.5" transform="rotate(-30 32 32)" strokeWidth="2.15" opacity="0.86" />
+      <ellipse cx="32" cy="32" rx="23.5" ry="8.5" transform="rotate(30 32 32)" strokeWidth="1.65" opacity="0.38" />
+      <path d="M32 23L39.8 27.5L32 32L24.2 27.5L32 23Z" fill="currentColor" stroke="none" />
+      <path d="M24.2 27.5L32 32V41L24.2 36.5V27.5Z" fill="currentColor" stroke="none" opacity="0.68" />
+      <path d="M39.8 27.5L32 32V41L39.8 36.5V27.5Z" fill="currentColor" stroke="none" opacity="0.36" />
+      <circle cx="32" cy="11" r="3.1" fill="currentColor" stroke="none" />
+      <circle cx="50.2" cy="42.5" r="2.9" fill="currentColor" stroke="none" opacity="0.82" />
+      <circle cx="13.8" cy="42.5" r="2.9" fill="currentColor" stroke="none" opacity="0.82" />
+    </svg>
+  );
+}
+
+function projectMonogram(name: string) {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  return words.length > 1
+    ? words.slice(0, 2).map((word) => word[0]).join('').toUpperCase()
+    : (words[0] ?? 'P').slice(0, 2).toUpperCase();
+}
+
+export function Sidebar({ projects, collapsed, active, activeProjectId, onCollapsedChange, onNavigate, onProjectOpen, onNewProject }: SidebarProps) {
   const [hovered, setHovered] = useState(false);
-  const [projectsOpen, setProjectsOpen] = useState(true);
   const visuallyExpanded = !collapsed || hovered;
 
   return (
     <aside
-      className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${visuallyExpanded ? 'sidebar--peek-open' : ''}`}
+      className={`sidebar sidebar--prototype ${collapsed ? 'sidebar--collapsed' : ''} ${visuallyExpanded ? 'sidebar--peek-open' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="brand-row">
-        <div className="aura-mark" aria-hidden="true"><Sparkles size={15} strokeWidth={2.1} /></div>
-        {visuallyExpanded ? <span className="brand-word">AURA</span> : null}
+      <div className="sidebar-personal-space">
+        <div className="sidebar-personal-space__mark"><PrototypeMark /></div>
+        {visuallyExpanded ? <div className="sidebar-personal-space__copy"><strong>Personal space</strong><small>Private by design</small></div> : null}
+        {visuallyExpanded ? <span className="sidebar-personal-space__indicator" aria-hidden="true" /> : null}
       </div>
 
+      <div className="sidebar-nav-label">YOUR SPACE</div>
       <nav className="sidebar-nav sidebar-nav--global" aria-label="Personal workspace navigation">
-        {globalNav.map(({ label, id, icon: Icon }) => (
-          <div className="sidebar-nav__group" key={id}>
-            <div className="sidebar-nav__row">
-              <button
-                className={`sidebar-nav__item ${active === id ? 'is-active' : ''}`}
-                type="button"
-                title={label}
-                aria-current={active === id ? 'page' : undefined}
-                onClick={() => onNavigate(id)}
-              >
-                <Icon size={17} strokeWidth={1.8} />
-                {visuallyExpanded ? <span>{label}</span> : null}
-              </button>
-              {id === 'projects' && visuallyExpanded ? <button className="sidebar-nav__add" type="button" onClick={onNewProject} title="New project" aria-label="New project"><Plus size={14} /></button> : null}
-            </div>
-            {id === 'library' && visuallyExpanded ? (
-              <button className={`sidebar-nav__subitem ${active === 'study' ? 'is-active' : ''}`} type="button" onClick={() => onNavigate('study')}>
-                <BookOpenText size={14} /> <span>Study</span>
-              </button>
-            ) : null}
-          </div>
-        ))}
+        {globalNav.map(({ label, id, icon: Icon }) => {
+          const isActive = active === id || (id === 'library' && active === 'study');
+          return (
+            <button
+              key={id}
+              className={`sidebar-nav__item ${isActive ? 'is-active' : ''}`}
+              type="button"
+              title={label}
+              aria-label={label}
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() => onNavigate(id)}
+            >
+              <Icon size={17} strokeWidth={1.8} />
+              {visuallyExpanded ? <span>{label}</span> : null}
+              {id === 'projects' && visuallyExpanded ? <span className="sidebar-nav__count">{String(projects.length).padStart(2, '0')}</span> : null}
+            </button>
+          );
+        })}
       </nav>
 
       <div className="sidebar-section-head sidebar-section-head--projects">
-        {visuallyExpanded ? <span>PROJECTS</span> : <span className="sidebar-section-dot" />}
-        {visuallyExpanded ? <button className="sidebar-projects-toggle" type="button" onClick={() => setProjectsOpen((value) => !value)} aria-label={projectsOpen ? 'Collapse projects' : 'Expand projects'}>{projectsOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}</button> : null}
+        {visuallyExpanded ? <span>PINNED PROJECTS</span> : <span className="sidebar-section-dot" />}
+        {visuallyExpanded ? <button className="sidebar-projects-add" type="button" onClick={onNewProject} title="New project" aria-label="New project"><Plus size={15} /></button> : null}
       </div>
 
-      {projectsOpen ? (
-        <nav className="sidebar-project-tree" aria-label="Projects">
-          {projects.map((project) => (
-            <button
-              key={project.id}
-              type="button"
-              className={`sidebar-project-child ${activeProjectId === project.id ? 'is-active' : ''}`}
-              onClick={() => onProjectOpen(project.id)}
-              title={project.name}
-              aria-current={activeProjectId === project.id ? 'page' : undefined}
-            >
-              <span className={`project-dot project-dot--${project.accent}`} />
-              {visuallyExpanded ? <span className="sidebar-project__copy"><strong>{project.name}</strong><small>{project.updated}</small></span> : null}
-            </button>
-          ))}
-        </nav>
-      ) : null}
+      <nav className="sidebar-project-list" aria-label="Projects">
+        {projects.map((project) => (
+          <button
+            key={project.id}
+            type="button"
+            className={`sidebar-project-row ${activeProjectId === project.id ? 'is-active' : ''}`}
+            onClick={() => onProjectOpen(project.id)}
+            title={project.name}
+            aria-label={project.name}
+            aria-current={activeProjectId === project.id ? 'page' : undefined}
+          >
+            <span className={`sidebar-project-mark sidebar-project-mark--${project.accent}`}>{projectMonogram(project.name)}</span>
+            {visuallyExpanded ? <span className="sidebar-project-name">{project.name}</span> : null}
+            <span className={`sidebar-project-status sidebar-project-status--${project.status}`} aria-hidden="true" />
+          </button>
+        ))}
+      </nav>
 
       <div className="sidebar-spacer" />
 
-      {visuallyExpanded ? <div className="sidebar-hint"><BookOpenText size={15} /><div><strong>Personal library</strong><span>{libraryCount} local artifacts</span></div></div> : null}
-      <div className="sidebar-footer">
-        <button className="sidebar-collapse" type="button" onClick={() => onCollapsedChange(!collapsed)} title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {collapsed ? <PanelLeftOpen size={15} /> : <PanelLeftClose size={15} />}
-          {visuallyExpanded ? <span>{collapsed ? 'Expand' : 'Collapse'}</span> : null}
-        </button>
-        <button className="sidebar-profile" type="button" onClick={() => onNavigate('preferences')} title="Local workspace">
-          <CircleUserRound size={15} /> {visuallyExpanded ? <span>Local workspace</span> : null}
+      <div className="sidebar-footer sidebar-footer--prototype">
+        <button
+          className="sidebar-collapse"
+          type="button"
+          onClick={() => onCollapsedChange(!collapsed)}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+          {visuallyExpanded ? <span>{collapsed ? 'Expand sidebar' : 'Collapse sidebar'}</span> : null}
         </button>
       </div>
     </aside>

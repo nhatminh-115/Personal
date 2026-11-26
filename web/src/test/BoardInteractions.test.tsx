@@ -272,7 +272,7 @@ describe('Compiled Context Preview', () => {
       },
     } as AuraFlowNode;
     const preview: WorkspaceContextPreview = {
-      project_name: 'AURA Project',
+      project_name: 'Kuractus Project',
       estimated_tokens: 22,
       prompt_text: 'The reviewed finding is ready.',
       privacy_requirement: 'internal',

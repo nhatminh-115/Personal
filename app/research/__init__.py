@@ -1,4 +1,4 @@
-"""AURA Research Specialist module."""
+"""Kuractus Research Specialist module."""
 
 from app.research.models import (
     ClaimType,

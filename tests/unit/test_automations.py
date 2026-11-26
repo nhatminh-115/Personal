@@ -21,21 +21,21 @@ async def test_automation_crud_and_manual_run_are_persisted(async_client, test_d
         "description": "Summarize updates",
         "instruction": "Summarize new project updates and list the next action.",
         "scope": "project",
-        "project_name": "AURA",
+        "project_name": "Kuractus",
         "interval_seconds": 86400,
     })
     assert created.status_code == 201, created.text
     automation = created.json()
     assert automation["enabled"] is True
     assert automation["scope"] == "project"
-    assert automation["project_name"] == "AURA"
+    assert automation["project_name"] == "Kuractus"
     assert automation["interval_seconds"] == 86400
 
     job = await test_db_session.get(ScheduledJobModel, automation["id"])
     assert job is not None
     assert job.job_type == JobType.RECURRING.value
     assert job.payload_json["message"] == "Summarize new project updates and list the next action."
-    assert job.payload_json["project_name"] == "AURA"
+    assert job.payload_json["project_name"] == "Kuractus"
     assert job.metadata_json["kind"] == "automation"
 
     listed = await async_client.get("/v1/automations")
@@ -262,7 +262,7 @@ async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(a
         "description": "Summarize updates",
         "instruction": "Summarize project updates.",
         "scope": "project",
-        "project_name": "AURA",
+        "project_name": "Kuractus",
         "interval_seconds": 86400,
     })
     automation_id = created.json()["id"]
@@ -285,10 +285,10 @@ async def test_automation_edit_preserves_scope_session_and_queued_run_snapshot(a
     assert record["instruction"] == "Summarize new decisions and list owners."
     assert record["interval_seconds"] == 3600
     assert record["scope"] == "project"
-    assert record["project_name"] == "AURA"
+    assert record["project_name"] == "Kuractus"
     job = await test_db_session.get(ScheduledJobModel, automation_id)
     assert job.payload_json["session_id"] == original_session_id
-    assert job.payload_json["project_name"] == "AURA"
+    assert job.payload_json["project_name"] == "Kuractus"
     assert job.payload_json["message"] == "Summarize new decisions and list owners."
     assert job.schedule_expression == "3600"
     assert event.payload_json["message"] == "Summarize project updates."
@@ -446,7 +446,7 @@ async def test_duplicate_automation_gets_a_paused_independent_session_and_empty_
         "description": "Summarize changes",
         "instruction": "Summarize project changes.",
         "scope": "project",
-        "project_name": "AURA",
+        "project_name": "Kuractus",
         "interval_seconds": 86400,
     })
     source_id = source.json()["id"]
@@ -463,7 +463,7 @@ async def test_duplicate_automation_gets_a_paused_independent_session_and_empty_
     assert duplicate["description"] == "Summarize changes"
     assert duplicate["instruction"] == "Summarize project changes."
     assert duplicate["scope"] == "project"
-    assert duplicate["project_name"] == "AURA"
+    assert duplicate["project_name"] == "Kuractus"
     assert duplicate["interval_seconds"] == 86400
     assert duplicate["enabled"] is False
     assert duplicate["archived"] is False
@@ -472,7 +472,7 @@ async def test_duplicate_automation_gets_a_paused_independent_session_and_empty_
     duplicate_job = await test_db_session.get(ScheduledJobModel, duplicate["id"])
     assert duplicate_job.payload_json["session_id"] != source_session_id
     assert duplicate_job.payload_json["automation_id"] == duplicate["id"]
-    assert duplicate_job.payload_json["project_name"] == "AURA"
+    assert duplicate_job.payload_json["project_name"] == "Kuractus"
     assert duplicate_job.is_active is False
     assert (await async_client.get(f"/v1/automations/{duplicate['id']}/runs")).json() == []
     assert (await async_client.get(f"/v1/automations/{source_id}/runs")).json()[0]["event_id"] == queued.json()["event_id"]

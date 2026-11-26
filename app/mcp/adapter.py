@@ -1,4 +1,4 @@
-"""Adapter exposing MCP tools as canonical AURA Tool instances."""
+"""Adapter exposing MCP tools as canonical Kuractus Tool instances."""
 
 from typing import Any, Dict, List, Optional, TYPE_CHECKING
 from app.core.logging import logger
@@ -35,7 +35,7 @@ class MCPToolAdapter(Tool):
         self._manager = manager
         self._policy = policy or mcp_security_policy
 
-        # Canonical name in AURA namespace: mcp_{server_id}_{tool_name}
+        # Canonical name in Kuractus namespace: mcp_{server_id}_{tool_name}
         self._name = f"mcp_{server_id}_{mcp_tool_name}"
 
     @property

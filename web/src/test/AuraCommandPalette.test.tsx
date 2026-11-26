@@ -14,13 +14,13 @@ describe('AuraCommandPalette', () => {
     };
     const search = vi.spyOn(api, 'searchWorkspace').mockResolvedValue({ items: [result], nextCursor: null });
     const onOpenResult = vi.fn();
-    render(<AuraCommandPalette projectName="AURA" onClose={() => {}} onOpenResult={onOpenResult} onOpenFile={() => {}} />);
+    render(<AuraCommandPalette projectName="Kuractus" onClose={() => {}} onOpenResult={onOpenResult} onOpenFile={() => {}} />);
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search saved workspace content' }), { target: { value: 'memory' } });
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
 
     await waitFor(() => expect(screen.getByText('Memory constraints')).toBeInTheDocument());
-    expect(search).toHaveBeenCalledWith('memory', 'AURA');
+    expect(search).toHaveBeenCalledWith('memory', 'Kuractus');
     expect(screen.getByRole('button', { name: /Memory constraints/ })).toHaveTextContent('Keep the project notes explicit.');
     expect(screen.queryByText(/The workspace has .* saved Library references/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Memory constraints/ }));

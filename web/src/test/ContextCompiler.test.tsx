@@ -8,18 +8,18 @@ describe('Workspace context chat requests', () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ run_id: 'run-1' }) });
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.sendChat('session-1', 'Use these constraints', 'AURA Project', null, null, ['note-1', 'bridge-1', 'note-1']);
+    await api.sendChat('session-1', 'Use these constraints', 'Kuractus Project', null, null, ['note-1', 'bridge-1', 'note-1']);
 
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(payload.context_object_ids).toEqual(['note-1', 'bridge-1']);
-    expect(payload.project_name).toBe('AURA Project');
+    expect(payload.project_name).toBe('Kuractus Project');
   });
 
   it('omits context selection for ordinary chat turns', async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ run_id: 'run-2' }) });
     vi.stubGlobal('fetch', fetchMock);
 
-    await api.sendChat('session-2', 'Hello', 'AURA Project');
+    await api.sendChat('session-2', 'Hello', 'Kuractus Project');
 
     const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
     expect(payload).not.toHaveProperty('context_object_ids');

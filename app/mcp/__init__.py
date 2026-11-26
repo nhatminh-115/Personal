@@ -1,4 +1,4 @@
-"""Model Context Protocol (MCP) integration layer for AURA."""
+"""Model Context Protocol (MCP) integration layer for Kuractus."""
 
 from app.mcp.config import MCPServerConfig, MCPTransportType
 from app.mcp.policy import MCPSecurityPolicy, MCPValidationError, mcp_security_policy

@@ -33,7 +33,7 @@
 }
 
 .aura-menu-select__trigger:focus-visible {
-  outline: 2px solid rgba(103, 201, 218, .36);
+  outline: 2px solid rgba(184, 171, 245, .4);
   outline-offset: 2px;
 }
 

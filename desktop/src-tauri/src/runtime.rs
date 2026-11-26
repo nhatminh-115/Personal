@@ -42,7 +42,28 @@ pub struct RuntimeSnapshot {
     pub autostart: bool,
     pub notifications: bool,
     pub has_provider_key: bool,
+    pub provider_connections: Vec<ProviderConnectionStatus>,
+    pub active_provider_connection_id: Option<String>,
     pub logs: Vec<String>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConnection {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConnectionStatus {
+    pub id: String,
+    pub name: String,
+    pub base_url: String,
+    pub model: String,
+    pub has_api_key: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,6 +76,10 @@ pub struct DesktopPreferences {
     pub autostart: bool,
     pub notifications: bool,
     pub global_shortcut: String,
+    #[serde(default)]
+    pub provider_connections: Vec<ProviderConnection>,
+    #[serde(default)]
+    pub active_provider_connection_id: Option<String>,
 }
 
 impl Default for DesktopPreferences {
@@ -67,6 +92,8 @@ impl Default for DesktopPreferences {
             autostart: false,
             notifications: false,
             global_shortcut: "CommandOrControl+Alt+A".into(),
+            provider_connections: Vec::new(),
+            active_provider_connection_id: None,
         }
     }
 }
@@ -90,7 +117,7 @@ impl Default for DesktopRuntime {
     fn default() -> Self {
         Self(Arc::new(Mutex::new(RuntimeInner {
             phase: RuntimePhase::Stopped,
-            message: "AURA Desktop is stopped.".into(),
+            message: "Kuractus Desktop is stopped.".into(),
             docker_available: false,
             child: None,
             api_token: None,
@@ -151,6 +178,51 @@ impl DesktopRuntime {
         }
     }
 
+    fn provider_secret_key(connection_id: Option<&str>) -> String {
+        match connection_id {
+            Some("legacy") | None => "provider_api_key".into(),
+            Some(id) => format!("provider_api_key_{id}"),
+        }
+    }
+
+    fn provider_connections_for(preferences: &DesktopPreferences) -> Vec<ProviderConnection> {
+        if !preferences.provider_connections.is_empty() {
+            let mut connections = preferences.provider_connections.clone();
+            let active_id = preferences
+                .active_provider_connection_id
+                .as_deref()
+                .unwrap_or("legacy");
+            if preferences.provider == "openai"
+                && !connections
+                    .iter()
+                    .any(|connection| connection.id == active_id)
+            {
+                connections.push(ProviderConnection {
+                    id: active_id.into(),
+                    name: "OpenAI-compatible API".into(),
+                    base_url: preferences.base_url.clone(),
+                    model: preferences.model.clone(),
+                });
+            }
+            return connections;
+        }
+        if preferences.provider == "openai" {
+            return vec![ProviderConnection {
+                id: "legacy".into(),
+                name: "OpenAI-compatible API".into(),
+                base_url: preferences.base_url.clone(),
+                model: preferences.model.clone(),
+            }];
+        }
+        Vec::new()
+    }
+
+    fn active_provider_key(preferences: &DesktopPreferences) -> Result<String, String> {
+        let secret_key =
+            Self::provider_secret_key(preferences.active_provider_connection_id.as_deref());
+        Ok(Self::read_secret(&secret_key)?.unwrap_or_default())
+    }
+
     pub fn aura_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
         let directory = std::env::var_os("APPDATA")
             .map(PathBuf::from)
@@ -205,6 +277,23 @@ impl DesktopRuntime {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let preferences = &inner.preferences;
+        let provider_connections = Self::provider_connections_for(preferences)
+            .into_iter()
+            .map(|connection| ProviderConnectionStatus {
+                has_api_key: Self::read_secret(&Self::provider_secret_key(Some(&connection.id)))
+                    .ok()
+                    .flatten()
+                    .is_some(),
+                id: connection.id,
+                name: connection.name,
+                base_url: connection.base_url,
+                model: connection.model,
+            })
+            .collect();
+        let active_provider_connection_id = preferences
+            .active_provider_connection_id
+            .clone()
+            .or_else(|| (preferences.provider == "openai").then(|| "legacy".into()));
         RuntimeSnapshot {
             phase: inner.phase.clone(),
             message: inner.message.clone(),
@@ -217,10 +306,16 @@ impl DesktopRuntime {
             close_to_tray: preferences.close_to_tray,
             autostart: preferences.autostart,
             notifications: preferences.notifications,
-            has_provider_key: Self::read_secret("provider_api_key")
-                .ok()
-                .flatten()
+            has_provider_key: active_provider_connection_id
+                .as_deref()
+                .and_then(|id| {
+                    Self::read_secret(&Self::provider_secret_key(Some(id)))
+                        .ok()
+                        .flatten()
+                })
                 .is_some(),
+            provider_connections,
+            active_provider_connection_id,
             logs: inner.logs.iter().cloned().collect(),
         }
     }
@@ -234,10 +329,7 @@ impl DesktopRuntime {
             inner.logs.pop_front();
         }
         let message = message.into();
-        let provider_key = Self::read_secret("provider_api_key")
-            .ok()
-            .flatten()
-            .unwrap_or_default();
+        let provider_key = Self::active_provider_key(&inner.preferences).unwrap_or_default();
         let postgres_password = Self::read_secret("postgres_password")
             .ok()
             .flatten()
@@ -305,14 +397,14 @@ impl DesktopRuntime {
             None => {
                 self.set_phase(
                     RuntimePhase::Error,
-                    "The AURA API process is no longer supervised. Restart the runtime to recover.",
+                    "The Kuractus API process is no longer supervised. Restart the runtime to recover.",
                     self.snapshot().docker_available,
                 );
-                self.log("The AURA API process handle was lost while the runtime was active.");
+                self.log("The Kuractus API process handle was lost while the runtime was active.");
             }
             Some(Err(error)) => self.set_phase(
                 RuntimePhase::Degraded,
-                format!("Could not verify the AURA API process: {error}"),
+                format!("Could not verify the Kuractus API process: {error}"),
                 self.snapshot().docker_available,
             ),
             Some(Ok(Some(exit))) => {
@@ -332,7 +424,7 @@ impl DesktopRuntime {
                     .map(|value| value.to_string())
                     .unwrap_or_else(|| "unknown".into());
                 let message = format!(
-                    "The AURA API stopped unexpectedly (exit code {code}). Restart the runtime to recover."
+                    "The Kuractus API stopped unexpectedly (exit code {code}). Restart the runtime to recover."
                 );
                 self.set_phase(RuntimePhase::Error, message.clone(), true);
                 self.log(message);
@@ -340,17 +432,17 @@ impl DesktopRuntime {
             Some(Ok(None)) => match request_ready() {
                 Ok(true) => self.set_phase(
                     RuntimePhase::Ready,
-                    "AURA is ready. Your data stays on this PC.",
+                    "Kuractus is ready. Your data stays on this PC.",
                     true,
                 ),
                 Ok(false) => self.set_phase(
                     RuntimePhase::Degraded,
-                    "The AURA API is running, but its database or checkpoint service is not ready. Check Docker Desktop, then restart the runtime.",
+                    "The Kuractus API is running, but its database or checkpoint service is not ready. Check Docker Desktop, then restart the runtime.",
                     true,
                 ),
                 Err(_) => self.set_phase(
                     RuntimePhase::Degraded,
-                    "The AURA API is running, but the local readiness check failed. Check the runtime log, then restart if needed.",
+                    "The Kuractus API is running, but the local readiness check failed. Check the runtime log, then restart if needed.",
                     true,
                 ),
             },
@@ -387,7 +479,7 @@ impl DesktopRuntime {
             }
         }
         self.set_phase(RuntimePhase::Starting, "Checking Docker Desktop…", false);
-        if let Err(message) = ensure_loopback_port_available(API_PORT, "AURA API") {
+        if let Err(message) = ensure_loopback_port_available(API_PORT, "Kuractus API") {
             self.set_phase(RuntimePhase::Error, message.clone(), false);
             self.log(message.clone());
             return Err(message);
@@ -417,7 +509,7 @@ impl DesktopRuntime {
             }
             Err(error) => {
                 let message = if error.kind() == std::io::ErrorKind::NotFound {
-                    "Docker Desktop is required. Install it and start the Linux container engine; AURA will not install Docker for you.".into()
+                    "Docker Desktop is required. Install it and start the Linux container engine; Kuractus will not install Docker for you.".into()
                 } else {
                     format!("Could not connect to Docker Desktop: {error}")
                 };
@@ -428,7 +520,7 @@ impl DesktopRuntime {
         };
         self.set_phase(
             RuntimePhase::Starting,
-            format!("Docker Engine {docker_version} is ready. Starting AURA data services…"),
+            format!("Docker Engine {docker_version} is ready. Starting Kuractus data services…"),
             true,
         );
 
@@ -451,7 +543,7 @@ impl DesktopRuntime {
             .args(["up", "-d", "--wait"])
             .env("AURA_DESKTOP_POSTGRES_PASSWORD", &postgres_password)
             .output()
-            .map_err(|error| format!("Could not start AURA's PostgreSQL service: {error}"))?;
+            .map_err(|error| format!("Could not start Kuractus's PostgreSQL service: {error}"))?;
         if !compose.status.success() {
             let detail = redact(
                 &String::from_utf8_lossy(&compose.stderr),
@@ -470,17 +562,18 @@ impl DesktopRuntime {
         let configuration = Self::aura_config_dir(app)?;
         for directory in [&workspace, &checkpoints, &configuration] {
             std::fs::create_dir_all(directory)
-                .map_err(|error| format!("Could not prepare AURA data directory: {error}"))?;
+                .map_err(|error| format!("Could not prepare Kuractus data directory: {error}"))?;
         }
         let database_url = format!(
             "postgresql+asyncpg://aura_desktop:{postgres_password}@127.0.0.1:15432/aura_desktop"
         );
         self.apply_preferences(Self::load_preferences(app));
         let settings = self.settings();
+        let provider_key = Self::active_provider_key(&settings)?;
         let sidecar = resource_dir.join("aura-api.exe");
         if !sidecar.is_file() {
             let message = format!(
-                "The packaged AURA runtime is missing: {}",
+                "The packaged Kuractus runtime is missing: {}",
                 sidecar.display()
             );
             self.set_phase(RuntimePhase::Error, message.clone(), true);
@@ -509,13 +602,7 @@ impl DesktopRuntime {
                 .env("MODEL_PROVIDER", &settings.provider)
                 .env("OPENAI_BASE_URL", &settings.base_url)
                 .env("OPENAI_MODEL_NAME", &settings.model)
-                .env(
-                    "OPENAI_API_KEY",
-                    Self::read_secret("provider_api_key")
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default(),
-                );
+                .env("OPENAI_API_KEY", &provider_key);
         };
         let migration = Command::new(&sidecar);
         let mut migration = migration;
@@ -553,7 +640,7 @@ impl DesktopRuntime {
         }
         let mut child = process
             .spawn()
-            .map_err(|error| format!("Could not start the AURA runtime: {error}"))?;
+            .map_err(|error| format!("Could not start the Kuractus runtime: {error}"))?;
         #[cfg(windows)]
         let child_job = match create_kill_on_close_job(&child) {
             Ok(job) => job,
@@ -578,17 +665,17 @@ impl DesktopRuntime {
         }
         self.set_phase(
             RuntimePhase::Starting,
-            "Waiting for the AURA API to become ready…",
+            "Waiting for the Kuractus API to become ready…",
             true,
         );
         match wait_until_ready(&self.0) {
             Ok(()) => {
                 self.set_phase(
                     RuntimePhase::Ready,
-                    "AURA is ready. Your data stays on this PC.",
+                    "Kuractus is ready. Your data stays on this PC.",
                     true,
                 );
-                self.log("AURA API and durable runtime are ready on loopback port 17890.");
+                self.log("Kuractus API and durable runtime are ready on loopback port 17890.");
                 Ok(self.snapshot())
             }
             Err(message) => {
@@ -613,7 +700,7 @@ impl DesktopRuntime {
             .args(["up", "-d", "--wait", "postgres"])
             .env("AURA_DESKTOP_POSTGRES_PASSWORD", &password)
             .output()
-            .map_err(|error| format!("Could not start the AURA database service: {error}"))?;
+            .map_err(|error| format!("Could not start the Kuractus database service: {error}"))?;
         if !output.status.success() {
             return Err(redact(&String::from_utf8_lossy(&output.stderr), &password));
         }
@@ -634,7 +721,7 @@ impl DesktopRuntime {
             .args(["stop", "--timeout", "15", "postgres"])
             .env("AURA_DESKTOP_POSTGRES_PASSWORD", &password)
             .output()
-            .map_err(|error| format!("Could not pause the AURA database service: {error}"))?;
+            .map_err(|error| format!("Could not pause the Kuractus database service: {error}"))?;
         if !output.status.success() {
             return Err(redact(&String::from_utf8_lossy(&output.stderr), &password));
         }
@@ -663,7 +750,7 @@ impl DesktopRuntime {
             "postgresql+asyncpg://aura_desktop:{postgres_password}@127.0.0.1:15432/aura_desktop"
         );
         let preferences = Self::load_preferences(app);
-        let provider_key = Self::read_secret("provider_api_key")?.unwrap_or_default();
+        let provider_key = Self::active_provider_key(&preferences)?;
         let mut command = Command::new(sidecar);
         command
             .arg(operation)
@@ -700,7 +787,7 @@ impl DesktopRuntime {
         }
         let output = command
             .output()
-            .map_err(|error| format!("Could not run AURA's local data operation: {error}"))?;
+            .map_err(|error| format!("Could not run Kuractus's local data operation: {error}"))?;
         if !output.status.success() {
             let mut message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
             for secret in [&postgres_password, &api_token, &provider_key] {
@@ -710,7 +797,7 @@ impl DesktopRuntime {
             }
             return Err(if message.is_empty() {
                 format!(
-                    "AURA local operation failed (exit code {}).",
+                    "Kuractus local operation failed (exit code {}).",
                     output.status.code().unwrap_or(-1)
                 )
             } else {
@@ -727,7 +814,7 @@ impl DesktopRuntime {
         }
         self.set_phase(
             RuntimePhase::Stopping,
-            "Stopping the AURA runtime and pausing PostgreSQL…",
+            "Stopping the Kuractus runtime and pausing PostgreSQL…",
             self.snapshot().docker_available,
         );
         let token = Self::read_secret("api_token")
@@ -792,10 +879,10 @@ impl DesktopRuntime {
         }
         self.set_phase(
             RuntimePhase::Stopped,
-            "AURA is stopped. Local data and the database volume are preserved.",
+            "Kuractus is stopped. Local data and the database volume are preserved.",
             true,
         );
-        self.log("AURA runtime stopped; PostgreSQL volume and local files were preserved.");
+        self.log("Kuractus runtime stopped; PostgreSQL volume and local files were preserved.");
         Ok(self.snapshot())
     }
 }
@@ -813,7 +900,7 @@ fn ensure_loopback_port_available(port: u16, service: &str) -> Result<(), String
         .map(drop)
         .map_err(|_| {
             format!(
-                "Port {port} is already in use. Close the application using it, then restart the AURA {service}."
+                "Port {port} is already in use. Close the application using it, then restart the Kuractus {service}."
             )
         })
 }
@@ -825,7 +912,7 @@ fn docker_compose_start_error(detail: &str) -> String {
             || normalized.contains("address already in use")
             || normalized.contains("already allocated"))
     {
-        return "Port 15432 is already in use. Close the local database using that port, then restart AURA Desktop.".into();
+        return "Port 15432 is already in use. Close the local database using that port, then restart Kuractus Desktop.".into();
     }
     detail.to_owned()
 }
@@ -851,7 +938,7 @@ fn create_kill_on_close_job(child: &Child) -> Result<std::os::windows::io::Owned
     unsafe {
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
         if job.is_null() {
-            return Err("Could not create the AURA runtime process supervisor.".into());
+            return Err("Could not create the Kuractus runtime process supervisor.".into());
         }
 
         let mut limits: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
@@ -865,7 +952,7 @@ fn create_kill_on_close_job(child: &Child) -> Result<std::os::windows::io::Owned
         if configured == 0 || AssignProcessToJobObject(job, child.as_raw_handle()) == 0 {
             let _ = CloseHandle(job);
             return Err(
-                "Could not attach the AURA API to its Windows process supervisor. Restart AURA Desktop and check Windows process restrictions.".into(),
+                "Could not attach the Kuractus API to its Windows process supervisor. Restart Kuractus Desktop and check Windows process restrictions.".into(),
             );
         }
         Ok(OwnedHandle::from_raw_handle(job))
@@ -881,7 +968,7 @@ fn wait_until_ready(inner: &Arc<Mutex<RuntimeInner>>) -> Result<(), String> {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(child) = state.child.as_mut() {
                 if let Ok(Some(exit)) = child.try_wait() {
-                    return Err(format!("AURA runtime exited before becoming ready (code {}). Check the desktop runtime log.", exit.code().map(|value| value.to_string()).unwrap_or_else(|| "unknown".into())));
+                    return Err(format!("Kuractus runtime exited before becoming ready (code {}). Check the desktop runtime log.", exit.code().map(|value| value.to_string()).unwrap_or_else(|| "unknown".into())));
                 }
             }
         }
@@ -890,7 +977,7 @@ fn wait_until_ready(inner: &Arc<Mutex<RuntimeInner>>) -> Result<(), String> {
         }
         if Instant::now() >= deadline {
             return Err(
-                "AURA did not become ready within two minutes. Check Docker Desktop, then retry."
+                "Kuractus did not become ready within two minutes. Check Docker Desktop, then retry."
                     .into(),
             );
         }
@@ -1039,7 +1126,7 @@ pub async fn desktop_save_preferences(
         );
     }
     if !is_supported_global_shortcut(&global_shortcut) {
-        return Err("Choose one of the supported AURA shortcuts.".into());
+        return Err("Choose one of the supported Kuractus shortcuts.".into());
     }
     if provider == "openai" && model.trim().is_empty() {
         return Err(
@@ -1065,37 +1152,156 @@ pub async fn desktop_save_preferences(
     } else {
         (base_url, model)
     };
-    let preferences = DesktopPreferences {
-        provider,
-        base_url,
-        model,
-        close_to_tray,
-        autostart,
-        notifications,
-        global_shortcut,
-    };
+    let runtime = runtime.inner().clone();
+    let mut preferences = runtime.settings();
+    preferences.provider = provider.clone();
+    preferences.base_url = base_url.clone();
+    preferences.model = model.clone();
+    preferences.close_to_tray = close_to_tray;
+    preferences.autostart = autostart;
+    preferences.notifications = notifications;
+    preferences.global_shortcut = global_shortcut;
+    if provider == "openai" {
+        let connection_id = preferences
+            .active_provider_connection_id
+            .clone()
+            .unwrap_or_else(|| "legacy".into());
+        preferences.active_provider_connection_id = Some(connection_id.clone());
+        if let Some(connection) = preferences
+            .provider_connections
+            .iter_mut()
+            .find(|connection| connection.id == connection_id)
+        {
+            connection.base_url = base_url;
+            connection.model = model;
+        } else {
+            preferences.provider_connections.push(ProviderConnection {
+                id: connection_id,
+                name: "OpenAI-compatible API".into(),
+                base_url,
+                model,
+            });
+        }
+    }
     if let Some(key) = provider_api_key.filter(|value| !value.is_empty()) {
         if key.len() > 4096 {
             return Err("Provider API key is too long.".into());
         }
-        DesktopRuntime::entry("provider_api_key")?
+        let secret_key = DesktopRuntime::provider_secret_key(
+            preferences.active_provider_connection_id.as_deref(),
+        );
+        DesktopRuntime::entry(&secret_key)?
             .set_password(&key)
             .map_err(|error| {
                 format!("Could not store the provider key in Windows Credential Manager: {error}")
             })?;
     }
     DesktopRuntime::save_preferences(&app, &preferences)?;
-    let runtime = runtime.inner().clone();
     runtime.apply_preferences(preferences);
     let _ = runtime.stop(&app);
     runtime.start(&app)
 }
 
 #[tauri::command]
+pub async fn desktop_save_provider_connection(
+    connection_id: String,
+    name: String,
+    base_url: String,
+    model: String,
+    provider_api_key: Option<String>,
+    activate: bool,
+    runtime: State<'_, DesktopRuntime>,
+    app: AppHandle,
+) -> Result<RuntimeSnapshot, String> {
+    let id = connection_id.trim();
+    let name = name.trim();
+    let base_url = base_url.trim();
+    let model = model.trim();
+    if id.is_empty()
+        || id.len() > 64
+        || !id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err("API connection ID is invalid. Please add the connection again.".into());
+    }
+    if name.is_empty() || name.len() > 80 {
+        return Err("Give this API connection a name of 1–80 characters.".into());
+    }
+    if model.is_empty() || model.len() > 200 {
+        return Err("Enter the exact model ID reported by this endpoint.".into());
+    }
+    if (!base_url.starts_with("http://") && !base_url.starts_with("https://"))
+        || base_url.contains('@')
+        || base_url.contains('#')
+        || base_url.len() > 1000
+    {
+        return Err("Enter a valid HTTP or HTTPS API endpoint URL.".into());
+    }
+    if provider_api_key
+        .as_ref()
+        .is_some_and(|key| key.len() > 4096)
+    {
+        return Err("Provider API key is too long.".into());
+    }
+
+    let runtime = runtime.inner().clone();
+    let mut preferences = runtime.settings();
+    let connection = ProviderConnection {
+        id: id.to_owned(),
+        name: name.to_owned(),
+        base_url: base_url.to_owned(),
+        model: model.to_owned(),
+    };
+    if let Some(existing) = preferences
+        .provider_connections
+        .iter_mut()
+        .find(|item| item.id == id)
+    {
+        *existing = connection;
+    } else {
+        preferences.provider_connections.push(connection);
+    }
+    if let Some(key) = provider_api_key.filter(|key| !key.is_empty()) {
+        let secret_key = DesktopRuntime::provider_secret_key(Some(id));
+        DesktopRuntime::entry(&secret_key)?
+            .set_password(&key)
+            .map_err(|error| {
+                format!("Could not store this API key in Windows Credential Manager: {error}")
+            })?;
+    }
+    if activate {
+        preferences.provider = "openai".into();
+        preferences.base_url = base_url.to_owned();
+        preferences.model = model.to_owned();
+        preferences.active_provider_connection_id = Some(id.to_owned());
+    }
+    DesktopRuntime::save_preferences(&app, &preferences)?;
+    runtime.apply_preferences(preferences);
+    if activate {
+        tauri::async_runtime::spawn_blocking(move || runtime.restart(&app))
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        Ok(runtime.snapshot())
+    }
+}
+
+#[tauri::command]
 pub async fn desktop_forget_provider_key(
+    connection_id: String,
     runtime: State<'_, DesktopRuntime>,
 ) -> Result<RuntimeSnapshot, String> {
-    if let Ok(entry) = DesktopRuntime::entry("provider_api_key") {
+    if connection_id.is_empty()
+        || connection_id.len() > 64
+        || !connection_id
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        return Err("API connection ID is invalid.".into());
+    }
+    let secret_key = DesktopRuntime::provider_secret_key(Some(&connection_id));
+    if let Ok(entry) = DesktopRuntime::entry(&secret_key) {
         let _ = entry.delete_credential();
     }
     Ok(runtime.snapshot())
@@ -1120,7 +1326,7 @@ async fn choose_backup_path(app: &AppHandle, save: bool) -> Result<Option<PathBu
     let dialog = app
         .dialog()
         .file()
-        .add_filter("AURA Desktop backup", &["aurabackup"]);
+        .add_filter("Kuractus Desktop backup", &["aurabackup"]);
     if save {
         dialog
             .set_file_name("aura-backup.aurabackup")
@@ -1148,7 +1354,7 @@ pub async fn desktop_create_backup(
     app: AppHandle,
 ) -> Result<RuntimeSnapshot, String> {
     if !matches!(runtime.snapshot().phase, RuntimePhase::Ready) {
-        return Err("Start the AURA runtime before creating a backup.".into());
+        return Err("Start the Kuractus runtime before creating a backup.".into());
     }
     let Some(path) = choose_backup_path(&app, true).await? else {
         return Ok(runtime.snapshot());
@@ -1161,7 +1367,7 @@ pub async fn desktop_create_backup(
         let pause_result = DesktopRuntime::stop_postgres_after_maintenance(&app);
         let resume_result = runtime.start(&app);
         if let Err(error) = backup_result {
-            return Err(match resume_result { Ok(_) => error, Err(restart) => format!("{error} AURA runtime could not restart: {restart}") });
+            return Err(match resume_result { Ok(_) => error, Err(restart) => format!("{error} Kuractus runtime could not restart: {restart}") });
         }
         if let Err(error) = pause_result {
             let _ = resume_result;
@@ -1192,7 +1398,9 @@ pub async fn desktop_restore_backup(
             Ok(_) => restart_result,
             Err(error) => match restart_result {
                 Ok(_) => Err(error),
-                Err(restart) => Err(format!("{error} AURA runtime could not restart: {restart}")),
+                Err(restart) => Err(format!(
+                    "{error} Kuractus runtime could not restart: {restart}"
+                )),
             },
         }
     })
@@ -1248,7 +1456,7 @@ mod tests {
     fn reports_loopback_port_conflicts_with_the_exact_port() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
-        let error = ensure_loopback_port_available(port, "AURA API").unwrap_err();
+        let error = ensure_loopback_port_available(port, "Kuractus API").unwrap_err();
         assert!(error.contains(&port.to_string()));
         assert!(error.contains("already in use"));
     }

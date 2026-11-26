@@ -345,7 +345,7 @@ interface AppTab extends AuraTab {
   mode?: WorkspaceMode;
 }
 
-const AURA_TAB: AppTab = { id: 'aura', title: 'AURA', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
+const AURA_TAB: AppTab = { id: 'aura', title: 'Kuractus', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
 const isDesktopApp = isTauri();
 const runtimeProjects = isDesktopApp ? [] : projects;
 const DESKTOP_API_READY_KEY = 'aura:desktop-awaiting-api-ready';
@@ -378,6 +378,7 @@ export default function App() {
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef(new Map<number, number>());
+  const toastKeys = useRef(new Set<string>());
   useEffect(() => {
     const requestApiAccess = () => setApiAccessOpen(true);
     window.addEventListener(API_AUTH_REQUIRED_EVENT, requestApiAccess);
@@ -466,6 +467,7 @@ export default function App() {
   const deletedWorkspaceNoteIds = useRef(new Set<string>());
   const [automations, setAutomations] = useState<AutomationRecord[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.automations, initialAutomations), isDesktopApp));
   const automationsLoaded = useRef(false);
+  const automationInitialAttempted = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
     const initial = workspaceRecordsForRuntime(loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations), isDesktopApp);
     const live = initial.filter((item) => item.source === 'live');
@@ -921,14 +923,27 @@ export default function App() {
   void activeThreadLive;
 
   const pushToast = useCallback((title: string, detail?: string) => {
+    const key = `${title}\u0000${detail ?? ''}`;
+    if (toastKeys.current.has(key)) return;
     const id = Date.now() + Math.floor(Math.random() * 999);
-    setToasts((current) => [...current, { id, title, detail }]);
+    toastKeys.current.add(key);
+    setToasts((current) => [...current.slice(-3), { id, title, detail }]);
     const timer = window.setTimeout(() => {
       toastTimers.current.delete(id);
+      toastKeys.current.delete(key);
       setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 3200);
+    }, 3600);
     toastTimers.current.set(id, timer);
   }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    const toast = toasts.find((item) => item.id === id);
+    const timer = toastTimers.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    toastTimers.current.delete(id);
+    if (toast) toastKeys.current.delete(`${toast.title}\u0000${toast.detail ?? ''}`);
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }, [toasts]);
 
   useEffect(() => () => {
     toastTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -1202,7 +1217,7 @@ export default function App() {
       openFilePreview({ id: item.id, name: item.name, url: item.href, mimeType: item.mimeType || (item.kind === 'HTML' ? 'text/html' : 'application/octet-stream'), virtualPath: `Library / ${item.collection} / ${item.name}` });
       return;
     }
-    pushToast(`${item.kind} preview is mocked`, 'This bundled placeholder has metadata only. Your own imported files and connected-folder files open inside AURA tabs.');
+    pushToast(`${item.kind} preview is mocked`, 'This bundled placeholder has metadata only. Your own imported files and connected-folder files open inside Kuractus tabs.');
   }, [openFilePreview, pushToast]);
 
   const handleConnectedFile = useCallback((file: File, virtualPath: string) => {
@@ -1221,7 +1236,7 @@ export default function App() {
       const next = await listDirectoryConnections();
       setDirectoryConnections(next);
       openOrActivateTab({ ...AURA_TAB, subtitle: connection.name, surface: 'folder-viewer', connectionId: connection.id });
-      pushToast('Folder connected', `${connection.name} stays in its original location. AURA stores only a browser permission handle.`);
+      pushToast('Folder connected', `${connection.name} stays in its original location. Kuractus stores only a browser permission handle.`);
     } catch (error) {
       if ((error as DOMException)?.name !== 'AbortError') pushToast('Could not connect folder', 'The folder picker was cancelled or the browser denied access.');
     }
@@ -1235,7 +1250,7 @@ export default function App() {
     await removeDirectoryConnection(connection.id);
     setDirectoryConnections((current) => current.filter((item) => item.id !== connection.id));
     if (activeConnectionId === connection.id) openOrActivateTab({ ...AURA_TAB, subtitle: 'Library', surface: 'library' });
-    pushToast('Disconnected from AURA', `${connection.name} was not deleted from disk.`);
+    pushToast('Disconnected from Kuractus', `${connection.name} was not deleted from disk.`);
   }, [activeConnectionId, openOrActivateTab, pushToast]);
 
   const removeLibraryItem = useCallback(async (item: LibraryItem) => {
@@ -1693,7 +1708,7 @@ export default function App() {
       // The caller (ChatPane) shows a CTA instead; this is a hard guard in case
       // it is bypassed.
       if (currentThread?.source === 'demo') {
-        pushToast('Demo thread', 'Start a live chat to use the AURA backend with this project.');
+        pushToast('Demo thread', 'Start a live chat to use the Kuractus backend with this project.');
         return;
       }
 
@@ -1796,7 +1811,7 @@ export default function App() {
               timestamp: 'just now',
               created_at: new Date().toISOString(),
               status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
+              executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
@@ -1851,7 +1866,7 @@ export default function App() {
     patchThreadLive(activeThreadId, { runStatus: 'cancellation_requested' });
     try {
       await api.cancelChatTurn(currentThread.sessionId, clientTurnId);
-      pushToast('Stopping run', 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.');
+      pushToast('Stopping run', 'Kuractus will stop at the next safe execution boundary; an operation already in progress may finish.');
       return true;
     } catch (error) {
       patchThreadLive(activeThreadId, { runStatus: 'running' });
@@ -1912,7 +1927,7 @@ export default function App() {
         projectId: activeProjectId,
         mode: 'chat',
       });
-      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
+      pushToast('Live chat started', 'A new thread is connected to the Kuractus backend.');
 
       // If there is no prompt text, we only create the thread — no backend call.
       if (!promptText) return;
@@ -1958,7 +1973,7 @@ export default function App() {
                   patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 } catch {}
               }
-              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds: selectedObjectIds, ...routingSummary };
+              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds: selectedObjectIds, ...routingSummary };
               updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
             }
           }
@@ -2317,7 +2332,7 @@ export default function App() {
       replaceWorkspaceNote(note.id, liveNote);
       if (workspaceNoteFingerprint(latest) !== submittedFingerprint) queueWorkspaceNoteUpdate(liveNote);
     }).catch((error: unknown) => {
-      pushToast('Note is still local', `AURA could not sync it to the workspace: ${executionErrorText(error)}`);
+      pushToast('Note is still local', `Kuractus could not sync it to the workspace: ${executionErrorText(error)}`);
     }).finally(() => {
       noteCreateInFlight.current.delete(note.id);
     });
@@ -2702,7 +2717,7 @@ export default function App() {
               timestamp: 'just now',
               created_at: new Date().toISOString(),
               status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
+              executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
@@ -2820,7 +2835,7 @@ export default function App() {
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
       webhookEnabled: record.webhook_enabled, webhookPath: record.webhook_path, webhookSecret: record.webhook_secret,
       archived: record.archived,
-      trigger: intervalLabel, actions: ['Run through AURA'],
+      trigger: intervalLabel, actions: ['Run through Kuractus'],
       lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
       nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
       lastRunAt: record.last_run_at, nextRunAt: record.next_run_at,
@@ -2918,7 +2933,7 @@ export default function App() {
         const item = automationFromRecord(updated, projectCatalog);
         setAutomations((current) => current.map((entry) => entry.id === item.id ? item : entry));
       }).catch(() => {});
-      pushToast(`Queued · ${automation.name}`, `AURA accepted the run (${result.event_id.slice(0, 8)}).`);
+      pushToast(`Queued · ${automation.name}`, `Kuractus accepted the run (${result.event_id.slice(0, 8)}).`);
     } catch (error) {
       pushToast('Could not queue automation', executionErrorText(error));
     }
@@ -2936,8 +2951,8 @@ export default function App() {
     pushToast(
       cancelled.status === 'cancelled' ? 'Queued run cancelled' : 'Stop requested',
       cancelled.status === 'cancelled'
-        ? 'AURA had not started this run. Its history is preserved.'
-        : 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.',
+        ? 'Kuractus had not started this run. Its history is preserved.'
+        : 'Kuractus will stop at the next safe execution boundary; an operation already in progress may finish.',
     );
     return cancelled;
   }, [pushToast]);
@@ -2976,7 +2991,7 @@ export default function App() {
         status: 'queued',
       }
       : item));
-    pushToast('Retry queued', 'AURA created a fresh run using the saved Automation instruction.');
+    pushToast('Retry queued', 'Kuractus created a fresh run using the saved Automation instruction.');
     return retried;
   }, [pushToast]);
 
@@ -3010,13 +3025,17 @@ export default function App() {
       setAutomationCursor(page.nextCursor);
       automationsLoaded.current = true;
     } catch (error) {
-      setAutomationPageError(executionErrorText(error));
-      if (!cursor) pushToast('Could not load automations', executionErrorText(error));
+      const detail = executionErrorText(error);
+      setAutomationPageError(error instanceof ApiError && error.status >= 500
+        ? `HTTP ${error.status} while reading saved automations. This read-only request did not start or change any automation. ${isDesktopApp
+          ? `Check Desktop Runtime → Runtime log for details, then retry. (${detail})`
+          : `The web preview's API proxy cannot reach the backend at 127.0.0.1:8000; check that service, then retry. (${detail})`}`
+        : `The saved automation list could not be reached. This request did not run or change any automations. ${detail}`);
     } finally {
       automationPageRequest.current = false;
       setAutomationPageLoading(false);
     }
-  }, [automationFromRecord, includeArchivedAutomations, projectCatalog, pushToast]);
+  }, [automationFromRecord, includeArchivedAutomations, isDesktopApp, projectCatalog]);
 
   const toggleArchivedAutomations = useCallback(() => {
     const next = !includeArchivedAutomations;
@@ -3029,7 +3048,8 @@ export default function App() {
 
   useEffect(() => {
     const waitingForDesktopApi = isDesktopApp && window.sessionStorage.getItem(DESKTOP_API_READY_KEY) === '1';
-    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || automationsLoaded.current || automationPageLoading) return;
+    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || automationsLoaded.current || automationInitialAttempted.current || automationPageLoading) return;
+    automationInitialAttempted.current = true;
     void loadAutomationPage();
   }, [automationPageLoading, loadAutomationPage, surface]);
 
@@ -3227,7 +3247,6 @@ export default function App() {
         collapsed={sidebarCollapsed}
         active={activeNav}
         activeProjectId={activeProjectId}
-        libraryCount={workspaceSummary.library_count}
         onCollapsedChange={setSidebarCollapsed}
         onNavigate={handleSidebarNavigate}
         onProjectOpen={openProject}
@@ -3385,6 +3404,7 @@ export default function App() {
             onConnectFolder={() => void connectFolder()}
             onOpenConnection={openConnection}
             onDisconnectConnection={(connection) => void disconnectConnection(connection)}
+            onOpenStudy={() => handleSidebarNavigate('study')}
             onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
             onOpenProjectObject={openResearchProjectObject}
           />
@@ -3616,7 +3636,7 @@ export default function App() {
             onOpenFile={handleOpenConnectedSearchResult}
           />
       ) : null}
-      <ToastStack toasts={toasts} />
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
       <DesktopRuntimeControl
         runEvents={desktopRunEvents}
         automationRuns={desktopAutomationRuns}

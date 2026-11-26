@@ -70,7 +70,7 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
       const snapshot = await indexDirectoryConnection(connection, setIndexProgress);
       setIndexSnapshot(snapshot);
     } catch (error) {
-      setIndexError((error as Error)?.message ?? 'AURA could not index this folder.');
+      setIndexError((error as Error)?.message ?? 'Kuractus could not index this folder.');
     } finally {
       setIndexing(false);
     }
@@ -135,7 +135,7 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
           <div>
             <span className="eyebrow">CONNECTED FOLDER</span>
             <h1>{connection.name}</h1>
-            <p>AURA is browsing the original folder. Nothing is copied into the workspace.</p>
+            <p>Kuractus is browsing the original folder. Nothing is copied into the workspace.</p>
           </div>
         </div>
         <div className="folder-explorer-actions">
@@ -171,7 +171,7 @@ export function ConnectedFolderView({ connection, onBackToLibrary, onDisconnect,
       {permissionBlocked ? (
         <div className="folder-permission-card">
           <Folder size={28} />
-          <div><strong>Folder access needs attention.</strong><span>{getFileAccessProvider().kind === 'browser' ? 'The browser may have revoked its saved permission. Grant access again or reconnect this folder from Library.' : 'AURA could not read the selected folder. Reconnect it from Library and try again.'}</span></div>
+          <div><strong>Folder access needs attention.</strong><span>{getFileAccessProvider().kind === 'browser' ? 'The browser may have revoked its saved permission. Grant access again or reconnect this folder from Library.' : 'Kuractus could not read the selected folder. Reconnect it from Library and try again.'}</span></div>
           <button className="primary-soft-button" type="button" onClick={() => void restoreFolderAccess()}>{getFileAccessProvider().kind === 'browser' ? 'Grant access' : 'Retry'}</button>
         </div>
       ) : (

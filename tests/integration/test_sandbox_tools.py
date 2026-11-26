@@ -27,7 +27,7 @@ def test_sandbox_tools_registered_in_tool_registry():
 
 
 def test_sandbox_tools_permissions_enforce_human_approval():
-    """Verify sandbox tools require human approval under AURA permission policy."""
+    """Verify sandbox tools require human approval under Kuractus permission policy."""
     shell_tool = SandboxShellExecuteTool()
     python_tool = SandboxPythonExecuteTool()
     policy = PermissionPolicy()

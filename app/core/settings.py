@@ -10,7 +10,7 @@ BEARER_TOKEN_CHARACTERS = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq
 
 
 class Settings(BaseSettings):
-    """AURA Application configuration settings."""
+    """Kuractus Application configuration settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     )
 
     # Application
-    APP_NAME: str = "AURA — Adaptive User Runtime Agent"
+    APP_NAME: str = "Kuractus — Personal Intelligence"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
     DESKTOP_MODE: bool = False

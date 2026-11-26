@@ -76,7 +76,7 @@ function executionNodeContent(event: WorkspaceExecutionEvent) {
     case 'approval_rejected':
       return { title: 'Approval rejected', body: 'Execution stopped', chip: 'APPROVAL' };
     case 'response_generated':
-      return { title: 'Response generated', body: 'AURA prepared a response', chip: 'RESPONSE' };
+      return { title: 'Response generated', body: 'Kuractus prepared a response', chip: 'RESPONSE' };
     case 'run_failed':
       return { title: 'Run failed', body: 'Execution ended with an error', chip: 'RUN' };
     case 'run_cancelled':

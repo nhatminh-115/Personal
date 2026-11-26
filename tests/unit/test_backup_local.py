@@ -1,4 +1,4 @@
-"""Local SQLite backups preserve all AURA stores and restore only when explicitly confirmed."""
+"""Local SQLite backups preserve all Kuractus stores and restore only when explicitly confirmed."""
 
 import sqlite3
 from contextlib import closing

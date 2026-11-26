@@ -115,7 +115,7 @@ class DockerSandboxRuntime(SandboxRuntime):
                 raise AURAError(
                     f"Sandbox image '{cfg.image}' is not available locally. Build it from "
                     "docker/coding_sandbox.Dockerfile or make a trusted image available locally; "
-                    "AURA will not pull sandbox images automatically."
+                    "Kuractus will not pull sandbox images automatically."
                 ) from exc
 
             container = client.containers.create(

@@ -237,7 +237,7 @@ export function InspectorPanel({
       setCapabilityProviders(inventory.providers);
       setCapabilityState('loaded');
     } catch {
-      setCapabilityError('Provider inventory is unavailable. Check the AURA connection and retry.');
+      setCapabilityError('Provider inventory is unavailable. Check the Kuractus connection and retry.');
       setCapabilityState('error');
     }
   };
@@ -251,7 +251,7 @@ export function InspectorPanel({
         provider.provider_id === updated.provider_id ? updated : provider
       )));
     } catch {
-      setCapabilityRefreshError('Could not refresh this provider. Check the AURA connection and retry.');
+      setCapabilityRefreshError('Could not refresh this provider. Check the Kuractus connection and retry.');
     } finally {
       setRefreshingCapabilityId(null);
     }
@@ -663,7 +663,7 @@ export function InspectorPanel({
                       onClick={() => toggleMemoryProvenance(m.id)}
                       style={{ marginTop: 8, fontSize: 10 }}
                     >
-                      {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why AURA remembers this'}
+                      {expandedMemoryProvenance[m.id] ? 'Hide provenance' : 'Why Kuractus remembers this'}
                     </button>
                     {expandedMemoryProvenance[m.id] ? <MemoryProvenance memory={m} onOpenSourceChat={onOpenSourceChat} onOpenSourceRun={onOpenSourceRun} /> : null}
                     {memoryScope === 'project' && m.memory_type === 'project' && m.is_active && onEditProjectMemory ? (
@@ -838,14 +838,14 @@ export function InspectorPanel({
                 <div className="inspector-row"><span>Approval</span><strong>{formatProviderValue(provider.approval_requirement)}</strong></div>
                 <div className="inspector-row"><span>Health checked</span><strong>{provider.health_checked_at ?? 'Not checked'}</strong></div>
                 <div className="inspector-row"><span>Capabilities</span><strong>{formatProviderList(provider.capabilities)}</strong></div>
-                <div className="inspector-capability-bindings" aria-label="Configured capability to AURA tool mappings">
-                  <strong>Configured capability → AURA tools</strong>
+                <div className="inspector-capability-bindings" aria-label="Configured capability to Kuractus tool mappings">
+                  <strong>Configured capability → Kuractus tools</strong>
                   {Object.entries(provider.declared_capability_tools ?? {}).length ? Object.entries(provider.declared_capability_tools).map(([capability, tools]) => (
                     <div className="inspector-capability-binding" key={capability}><span>{capability}</span><strong>{tools.length ? tools.join(' · ') : 'No tools declared'}</strong></div>
                   )) : <span>No capability mappings declared</span>}
                 </div>
-                <div className="inspector-capability-bindings" aria-label="Verified available capability to AURA tool bindings">
-                  <strong>Verified available capability → AURA tools</strong>
+                <div className="inspector-capability-bindings" aria-label="Verified available capability to Kuractus tool bindings">
+                  <strong>Verified available capability → Kuractus tools</strong>
                   {Object.entries(provider.capability_tools ?? {}).length ? Object.entries(provider.capability_tools).map(([capability, tools]) => (
                     <div className="inspector-capability-binding" key={capability}><span>{capability}</span><strong>{tools.length ? tools.join(' · ') : 'No tools available'}</strong></div>
                   )) : <span>No tools verified available</span>}

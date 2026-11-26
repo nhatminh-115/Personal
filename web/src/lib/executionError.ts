@@ -5,7 +5,7 @@ const ROUTING_ERROR_GUIDANCE: Record<string, string> = {
   PrivacyBoundaryViolation: 'Privacy policy blocked this route. Review the profile scope and select a route that meets its privacy boundary.',
   ModelCapabilityMismatch: 'The selected model cannot meet this request’s capability requirements. Choose a compatible model or adjust the request requirements.',
   ReasoningControlUnsupported: 'The selected model does not support the requested reasoning control. Use Profile reasoning or choose a model with known support.',
-  ModelUnavailable: 'The configured provider or exact model is currently unavailable. Reconnect it or choose Auto; AURA did not substitute another model.',
+  ModelUnavailable: 'The configured provider or exact model is currently unavailable. Reconnect it or choose Auto; Kuractus did not substitute another model.',
   NoEligibleRoute: 'No route meets the current privacy, fallback, capability, and reasoning constraints. Review the profile in Routing Studio.',
 };
 
@@ -21,10 +21,10 @@ export function executionErrorText(error: unknown): string {
       return 'This routing assignment changed elsewhere. Close and reopen Routing Studio to load the latest assignment, then retry.';
     }
     if (error.code === 'WorkspaceLibraryRevisionConflict') {
-      return 'This Library reference changed elsewhere. Refresh the AURA workspace before changing its project links or removing it.';
+      return 'This Library reference changed elsewhere. Refresh the Kuractus workspace before changing its project links or removing it.';
     }
     if (error.code === 'WorkspaceProjectRevisionConflict') {
-      return 'This project archive state changed elsewhere. Reload AURA if the Projects list still looks stale, then retry.';
+      return 'This project archive state changed elsewhere. Reload Kuractus if the Projects list still looks stale, then retry.';
     }
     const nextStep = error.code ? ROUTING_ERROR_GUIDANCE[error.code] : undefined;
     return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;

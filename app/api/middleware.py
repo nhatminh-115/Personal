@@ -77,7 +77,7 @@ class RequestBodyLimitMiddleware:
 
 
 class ApiNoStoreMiddleware:
-    """Prevent HTTP caches from retaining private AURA API responses."""
+    """Prevent HTTP caches from retaining private Kuractus API responses."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app

@@ -34,7 +34,7 @@ export function WorkspaceSearchView({ query, results, loading, error, hasMore = 
       <header className="workspace-search__header">
         <div className="workspace-search__icon"><Search size={20} /></div>
         <div>
-          <p className="workspace-search__eyebrow">AURA workspace</p>
+          <p className="workspace-search__eyebrow">Kuractus workspace</p>
           <h1 id="workspace-search-title">Search results</h1>
           <p>Results for <strong>“{query}”</strong></p>
         </div>
@@ -46,7 +46,7 @@ export function WorkspaceSearchView({ query, results, loading, error, hasMore = 
         <div className="workspace-search__empty">
           <Search size={22} />
           <h2>No matches yet</h2>
-          <p>Try another phrase. AURA searches saved workspace objects, Library references, and file names from connected folders you have indexed.</p>
+          <p>Try another phrase. Kuractus searches saved workspace objects, Library references, and file names from connected folders you have indexed.</p>
         </div>
       ) : null}
       <div className="workspace-search__results" aria-live="polite">

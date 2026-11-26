@@ -30,7 +30,7 @@ class MCPClientManager:
     """
     Manages external Model Context Protocol (MCP) servers:
     - Handles lifecycle across stdio and SSE transports.
-    - Dynamically discovers and registers tools into AURA's ToolRegistry.
+    - Dynamically discovers and registers tools into Kuractus's ToolRegistry.
     - Implements strict server-level crash and fault isolation.
     """
 
@@ -165,7 +165,7 @@ class MCPClientManager:
     async def discover_tools(self, server_id: str) -> List[MCPToolAdapter]:
         """
         Connect to an MCP server, query available tools via tools/list,
-        apply AURA's local security policy overlay, and register into ToolRegistry.
+        apply Kuractus's local security policy overlay, and register into ToolRegistry.
         """
         config = self._servers.get(server_id)
         if not config:
@@ -216,7 +216,7 @@ class MCPClientManager:
                 tool_desc = t.description or ""
                 input_schema = t.input_schema if hasattr(t, "input_schema") else {}
 
-                # Evaluate AURA security policy overlay
+                # Evaluate Kuractus security policy overlay
                 risk_level, required_caps = self.policy.evaluate_tool_security(
                     server_config=config,
                     tool_name=tool_name,

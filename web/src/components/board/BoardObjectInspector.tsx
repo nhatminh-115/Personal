@@ -19,7 +19,7 @@ interface BoardObjectInspectorProps {
 
 function originLabel(node: AuraFlowNode): string {
   if (node.data.workspaceCreatedBy === 'user') return 'User-authored';
-  if (node.data.workspaceCreatedBy === 'assistant') return 'AURA-generated';
+  if (node.data.workspaceCreatedBy === 'assistant') return 'Kuractus-generated';
   return node.data.workspaceCreatedBy || 'Workspace object';
 }
 
@@ -104,7 +104,7 @@ export function BoardObjectInspector({
               [node.id],
             )}
           >
-            <Sparkles size={13} /> Ask AURA with this object
+            <Sparkles size={13} /> Ask Kuractus with this object
           </button>
         </footer>
       ) : null}

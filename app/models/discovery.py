@@ -1,4 +1,4 @@
-"""Dynamic model and local provider discovery service for AURA."""
+"""Dynamic model and local provider discovery service for Kuractus."""
 
 import json
 import re

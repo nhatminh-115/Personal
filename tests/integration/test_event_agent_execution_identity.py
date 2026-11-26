@@ -25,7 +25,7 @@ async def test_event_agent_isolated_execution_identity(test_db_session: AsyncSes
         event_type=EventType.TIMER_FIRED.value,
         payload={
             "session_id": shared_session_id,
-            "message": "Hello AURA, please do your routine check.",
+            "message": "Hello Kuractus, please do your routine check.",
         },
     )
     res1 = await bridge.handle_event(event1)

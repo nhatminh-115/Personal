@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "AURA",
+        "title": "Kuractus",
         "width": 1440,
         "height": 920,
         "minWidth": 980,
@@ -32,7 +32,7 @@
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
     "category": "Productivity",
-    "shortDescription": "AURA Personal workspace",
+    "shortDescription": "Kuractus Personal workspace",
     "longDescription": "A durable personal AI workspace that runs on your Windows PC.",
     "resources": {
       "binaries/aura-api.exe": "aura-api.exe",

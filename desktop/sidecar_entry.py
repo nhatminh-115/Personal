@@ -1,4 +1,4 @@
-"""Windows packaged entrypoint for the existing AURA API runtime."""
+"""Windows packaged entrypoint for the existing Kuractus API runtime."""
 
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def main() -> int:
         required = [root / "alembic.ini", root / "migrations" / "env.py"]
         missing = [str(path) for path in required if not path.exists()]
         if missing:
-            raise SystemExit(f"Packaged AURA runtime is incomplete: {', '.join(missing)}")
+            raise SystemExit(f"Packaged Kuractus runtime is incomplete: {', '.join(missing)}")
         from app.api.server import create_app
 
         app = create_app()
@@ -76,7 +76,7 @@ def main() -> int:
     if args.desktop_serve:
         asyncio.run(serve(args.host, args.port))
         return 0
-    parser.error("AURA Desktop invokes this executable with a desktop mode.")
+    parser.error("Kuractus Desktop invokes this executable with a desktop mode.")
     return 2
 
 

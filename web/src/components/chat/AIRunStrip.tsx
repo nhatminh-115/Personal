@@ -26,7 +26,7 @@ export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRe
       <div className="ai-run-strip__title">
         <span className="running-dot" />
         <div>
-          <strong>AURA is working</strong>
+          <strong>Kuractus is working</strong>
           <small>{specialist}</small>
         </div>
       </div>
@@ -50,7 +50,7 @@ export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRe
           className="ai-run-strip__stop"
           onClick={onStop}
           disabled={stopping || stopRequested}
-          title={stopRequested ? 'AURA will stop at the next safe execution boundary.' : undefined}
+          title={stopRequested ? 'Kuractus will stop at the next safe execution boundary.' : undefined}
         >
           <Square size={10} /> {stopping ? 'Stopping…' : stopRequested ? 'Stop requested' : 'Stop'}
         </button>

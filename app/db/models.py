@@ -1,4 +1,4 @@
-"""SQLAlchemy ORM models for AURA persistence."""
+"""SQLAlchemy ORM models for Kuractus persistence."""
 
 import uuid
 from datetime import datetime, timezone

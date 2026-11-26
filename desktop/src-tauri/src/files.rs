@@ -35,7 +35,7 @@ impl PendingDesktopDrop {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         if batches.len() >= MAX_PENDING_DROP_BATCHES {
             return Err(
-                "AURA is still processing earlier dropped files. Try again in a moment.".into(),
+                "Kuractus is still processing earlier dropped files. Try again in a moment.".into(),
             );
         }
         batches.push_back(paths);
@@ -302,7 +302,7 @@ fn read_dropped_files(paths: Vec<PathBuf>) -> Result<Vec<OpenedDesktopDrop>, Str
     let mut opened = Vec::with_capacity(paths.len());
     for path in paths {
         if is_reparse_or_symlink(&path) {
-            return Err("AURA cannot import symbolic links or Windows junctions.".into());
+            return Err("Kuractus cannot import symbolic links or Windows junctions.".into());
         }
         let mut options = OpenOptions::new();
         options.read(true);
@@ -320,7 +320,7 @@ fn read_dropped_files(paths: Vec<PathBuf>) -> Result<Vec<OpenedDesktopDrop>, Str
             .metadata()
             .map_err(|_| "Could not inspect a dropped file.".to_string())?;
         if is_reparse_metadata(&metadata) {
-            return Err("AURA cannot import symbolic links or Windows junctions.".into());
+            return Err("Kuractus cannot import symbolic links or Windows junctions.".into());
         }
         if !metadata.is_file() {
             return Err("Drop files only; folders are not imported.".into());
@@ -424,7 +424,7 @@ fn resolve_connection_directory(root: &Path, relative_path: &str) -> Result<Path
         };
         candidate.push(segment);
         if is_reparse_or_symlink(&candidate) {
-            return Err("AURA cannot browse symbolic links or Windows junctions.".into());
+            return Err("Kuractus cannot browse symbolic links or Windows junctions.".into());
         }
     }
     let canonical = candidate
@@ -674,7 +674,7 @@ pub async fn desktop_read_folder_file(
     let candidate = root.join(requested);
     if is_reparse_or_symlink(&candidate) {
         return Err(
-            "AURA cannot read symbolic links or Windows junctions from connected folders.".into(),
+            "Kuractus cannot read symbolic links or Windows junctions from connected folders.".into(),
         );
     }
     let canonical = candidate

@@ -262,7 +262,7 @@ export function RoutingStudio({ open, projectName, sessionId, sessionAvailable, 
 
   return <div className="routing-studio-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) requestClose(); }}>
     <section className="routing-studio" role="dialog" aria-modal="true" aria-label="Routing Studio">
-      <header className="routing-studio__header"><div><span className="eyebrow">AURA · ROUTING STUDIO</span><h2>Model routing</h2></div><button className="icon-button" type="button" onClick={requestClose} aria-label="Close Routing Studio">×</button></header>
+      <header className="routing-studio__header"><div><span className="eyebrow">Kuractus · ROUTING STUDIO</span><h2>Model routing</h2></div><button className="icon-button" type="button" onClick={requestClose} aria-label="Close Routing Studio">×</button></header>
       {error ? <div className="routing-error" role="alert">{error}</div> : null}
       <div className="routing-studio__layout">
         <aside className="routing-profile-list"><div className="routing-section-head"><h3>Profiles</h3><button type="button" onClick={() => selectProfile(null, newProfile())}>New</button></div>

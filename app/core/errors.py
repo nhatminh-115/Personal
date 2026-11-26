@@ -1,8 +1,8 @@
-"""Explicit error categories for AURA."""
+"""Explicit error categories for Kuractus."""
 
 
 class AuraError(Exception):
-    """Base exception for all AURA domain errors."""
+    """Base exception for all Kuractus domain errors."""
 
     def __init__(self, message: str, details: dict | None = None) -> None:
         super().__init__(message)

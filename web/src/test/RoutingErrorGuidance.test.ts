@@ -8,7 +8,7 @@ describe('routing error guidance', () => {
     ['PrivacyBoundaryViolation', 'select a route that meets its privacy boundary'],
     ['ModelCapabilityMismatch', 'compatible model'],
     ['ReasoningControlUnsupported', 'Use Profile reasoning'],
-    ['ModelUnavailable', 'AURA did not substitute another model'],
+    ['ModelUnavailable', 'Kuractus did not substitute another model'],
     ['NoEligibleRoute', 'Review the profile in Routing Studio'],
   ])('gives actionable guidance for %s without exposing structured details', (code, guidance) => {
     const message = executionErrorText(new ApiError(

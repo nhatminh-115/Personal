@@ -3,14 +3,11 @@ import {
   Bot,
   ChevronDown,
   ChevronRight,
-  Code2,
   GitBranch,
   Layers3,
   Paperclip,
-  Search,
   Sparkles,
   UserRound,
-  WandSparkles,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
@@ -25,6 +22,7 @@ import { AIContextPanel } from './AIContextPanel';
 import { AIRunStrip } from './AIRunStrip';
 import { ExecutionSidecar } from './ExecutionSidecar';
 import { ResponseProvenance } from './ResponseProvenance';
+import { CustomSelect } from '../ui/CustomSelect';
 
 export interface ChatPaneProps {
   compact?: boolean;
@@ -76,11 +74,11 @@ interface OpenExecution {
 
 type RunPhase = 'routing' | 'context' | 'synthesizing';
 
-const workModes: { id: AuraWorkMode; label: string; icon: typeof Sparkles }[] = [
-  { id: 'auto', label: 'Auto', icon: WandSparkles },
-  { id: 'research', label: 'Research', icon: Search },
-  { id: 'code', label: 'Code', icon: Code2 },
-  { id: 'write', label: 'Write', icon: Sparkles },
+const workModes: { id: AuraWorkMode; label: string; description: string }[] = [
+  { id: 'auto', label: 'Auto', description: 'Use the active routing profile' },
+  { id: 'research', label: 'Research', description: 'Prioritize research and evidence' },
+  { id: 'code', label: 'Code', description: 'Prioritize coding tasks' },
+  { id: 'write', label: 'Write', description: 'Prioritize writing tasks' },
 ];
 
 function routeForMode(mode: AuraWorkMode) {
@@ -117,7 +115,7 @@ function mockAnswer(mode: AuraWorkMode, prompt: string, includedCount: number) {
   if (mode === 'research') {
     return `Tôi sẽ coi đây là câu hỏi literature-boundary. ${includedCount} object đang được dùng làm evidence manifest; kết quả nên được lưu thành note/source object của project để các chat khác có thể reuse thay vì phụ thuộc vào lịch sử của riêng thread này.`;
   }
-  return `AURA route prompt này theo context của chat hiện tại nhưng vẫn giữ project artifacts ở dạng explicit manifest. ${includedCount} object đang được retain, nên câu trả lời có thể branch, link hoặc reuse ở chat khác mà không cần biến một conversation thành lịch sử vô hạn.`;
+  return `Kuractus route prompt này theo context của chat hiện tại nhưng vẫn giữ project artifacts ở dạng explicit manifest. ${includedCount} object đang được retain, nên câu trả lời có thể branch, link hoặc reuse ở chat khác mà không cần biến một conversation thành lịch sử vô hạn.`;
 }
 
 export function ChatPane({
@@ -158,6 +156,7 @@ export function ChatPane({
 }: ChatPaneProps) {
   const [openExecution, setOpenExecution] = useState<OpenExecution | null>(null);
   const [draft, setDraft] = useState('');
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [workMode, setWorkMode] = useState<AuraWorkMode>('auto');
   const [contextItems, setContextItems] = useState<AIContextItem[]>(() => (suppliedContext ?? []).map((item) => ({ ...item })));
   const [contextOpen, setContextOpen] = useState(false);
@@ -230,6 +229,7 @@ export function ChatPane({
 
     if (onSendMessage && isLiveThread) {
       setDraft('');
+      setComposerExpanded(false);
       setContextOpen(false);
       onContextPanelOpenChange?.(false);
       setRunPhase('routing');
@@ -262,6 +262,7 @@ export function ChatPane({
 
     onMessagesChange((current) => [...current, userMessage]);
     setDraft('');
+    setComposerExpanded(false);
     setContextOpen(false);
     onContextPanelOpenChange?.(false);
     setRunPhase('routing');
@@ -363,7 +364,7 @@ export function ChatPane({
                 <span className="chat-message__identity">
                   <span className="chat-message__avatar">{isUser ? <UserRound size={12} /> : <Bot size={12} />}</span>
                   <span>
-                    <strong>{isUser ? 'You' : 'AURA'}</strong>
+                    <strong>{isUser ? 'You' : 'Kuractus'}</strong>
                     {!isUser && message.specialist ? <small>{message.specialist}</small> : null}
                   </span>
                 </span>
@@ -431,7 +432,15 @@ export function ChatPane({
 
       <div className="chat-composer-wrap">
         {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'routing'} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} stopRequested={runCancellationRequested} /> : null}
-        <div className="chat-composer chat-composer--ai">
+        <div
+          className={`chat-composer chat-composer--ai ${composerExpanded ? 'is-expanded' : 'is-collapsed'}`}
+          onMouseDownCapture={() => setComposerExpanded(true)}
+          onFocusCapture={() => setComposerExpanded(true)}
+          onBlurCapture={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+            if (!draft.trim() && !contextOpen) setComposerExpanded(false);
+          }}
+        >
           {contextOpen ? (
             <AIContextPanel
               items={contextItems}
@@ -472,30 +481,17 @@ export function ChatPane({
             />
           ) : null}
 
-          <div className="ai-composer-toolbar">
-            <div className="ai-mode-switch" role="group" aria-label="AURA work mode">
-              {workModes.map(({ id, label, icon: Icon }) => (
-                <button key={id} type="button" className={workMode === id ? 'is-active' : ''} onClick={() => setWorkMode(id)}>
-                  <Icon size={11} /> {label}
-                </button>
-              ))}
-            </div>
-            <span className="ai-route-preview"><Sparkles size={11} /> {isLiveThread
-              ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
-              : `${activeRoute.specialist} · ${activeRoute.reasoning}`}</span>
-          </div>
-
           <textarea
             value={draft}
-            onChange={(event) => setDraft(event.target.value)}
+            onChange={(event) => { setDraft(event.target.value); setComposerExpanded(true); }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 submit();
               }
             }}
-            placeholder="Ask AURA in this chat…"
-            rows={compact ? 2 : 3}
+            placeholder="Ask Kuractus in this chat…"
+            rows={composerExpanded ? compact ? 2 : 3 : 1}
           />
 
           <div className="chat-composer__footer">
@@ -517,9 +513,27 @@ export function ChatPane({
                 <ChevronDown className="composer-context__chevron" size={11} />
               </button>
             </div>
-            <button className="send-button" type="button" onClick={submit} aria-label="Send" disabled={!draft.trim() || Boolean(runPhase || runInProgress)}>
-              <ArrowUp size={17} />
-            </button>
+            <div className="composer-actions">
+              <div className="composer-mode-controls">
+                <CustomSelect
+                  className="composer-mode-select"
+                  value={workMode}
+                  options={workModes.map(({ id, label, description }) => ({ value: id, label, description }))}
+                  onChange={(value) => setWorkMode(value as AuraWorkMode)}
+                  ariaLabel="Assistant work mode"
+                  label="Mode"
+                  title={isLiveThread
+                    ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
+                    : `${activeRoute.specialist} · ${activeRoute.reasoning}`}
+                />
+                <span className="ai-route-preview"><Sparkles size={11} /> {isLiveThread
+                  ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
+                  : `${activeRoute.specialist} · ${activeRoute.reasoning}`}</span>
+              </div>
+              <button className="send-button" type="button" onClick={submit} aria-label="Send" disabled={!draft.trim() || Boolean(runPhase || runInProgress)}>
+                <ArrowUp size={17} />
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -56,6 +56,7 @@ fn main() {
             runtime::desktop_restart,
             runtime::desktop_stop,
             runtime::desktop_save_preferences,
+            runtime::desktop_save_provider_connection,
             runtime::desktop_forget_provider_key,
             runtime::desktop_set_close_to_tray,
             runtime::desktop_create_backup,
@@ -80,19 +81,19 @@ fn main() {
                 }
             }
 
-            let show = MenuItem::with_id(app, "show", "Show AURA", true, None::<&str>)?;
-            let start = MenuItem::with_id(app, "start", "Start AURA", true, None::<&str>)?;
+            let show = MenuItem::with_id(app, "show", "Show Kuractus", true, None::<&str>)?;
+            let start = MenuItem::with_id(app, "start", "Start Kuractus", true, None::<&str>)?;
             let logs = MenuItem::with_id(app, "logs", "Open runtime settings", true, None::<&str>)?;
             let separator = PredefinedMenuItem::separator(app)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit AURA", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit Kuractus", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &start, &logs, &separator, &quit])?;
             let icon = app
                 .default_window_icon()
                 .cloned()
-                .ok_or("AURA tray icon is missing")?;
+                .ok_or("Kuractus tray icon is missing")?;
             TrayIconBuilder::with_id("aura-tray")
                 .icon(icon)
-                .tooltip("AURA Personal")
+                .tooltip("Kuractus Personal")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -157,5 +158,5 @@ fn main() {
             _ => {}
         })
         .run(tauri::generate_context!())
-        .expect("AURA Desktop failed to start");
+        .expect("Kuractus Desktop failed to start");
 }

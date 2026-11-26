@@ -1,4 +1,4 @@
-"""End-to-end integration tests wiring MCP tools directly into the AURA /v1/chat runtime."""
+"""End-to-end integration tests wiring MCP tools directly into the Kuractus /v1/chat runtime."""
 
 import sys
 import pytest

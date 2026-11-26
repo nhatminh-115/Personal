@@ -26,7 +26,17 @@ interface RuntimeSnapshot {
   notifications: boolean;
   globalShortcut: string;
   hasProviderKey: boolean;
+  providerConnections?: ApiConnection[];
+  activeProviderConnectionId?: string | null;
   logs: string[];
+}
+
+interface ApiConnection {
+  id: string;
+  name: string;
+  baseUrl: string;
+  model: string;
+  hasApiKey: boolean;
 }
 
 interface DesktopRunEventState {
@@ -57,6 +67,8 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [provider, setProvider] = useState<'unconfigured' | 'mock' | 'openai'>('unconfigured');
+  const [connectionId, setConnectionId] = useState('__new__');
+  const [providerName, setProviderName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
   const [model, setModel] = useState('');
   const [providerKey, setProviderKey] = useState('');
@@ -67,6 +79,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
   const previousReady = useRef(false);
   const previousRunEvents = useRef(new Map<string, { status: string; approvalPending: boolean }>());
   const previousAutomationRuns = useRef(new Map<string, string>());
+  const settingsHydrated = useRef(false);
 
   useEffect(() => {
     if (settingsRequest > 0) setOpen(true);
@@ -82,13 +95,19 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
   const refresh = useCallback(async () => {
     const next = await invoke<RuntimeSnapshot>('desktop_status');
     setSnapshot(next);
-    setProvider(next.provider);
-    setBaseUrl(next.baseUrl ?? 'https://api.openai.com/v1');
-    setModel(next.model);
-    setCloseToTray(next.closeToTray);
-    setAutostart(next.autostart);
-    setNotifications(next.notifications);
-    setGlobalShortcut(next.globalShortcut ?? 'CommandOrControl+Alt+A');
+    if (!settingsHydrated.current) {
+      setProvider(next.provider);
+      const active = next.providerConnections?.find((item) => item.id === next.activeProviderConnectionId);
+      setConnectionId(active?.id ?? '__new__');
+      setProviderName(active?.name ?? '');
+      setBaseUrl(active?.baseUrl ?? next.baseUrl ?? 'https://api.openai.com/v1');
+      setModel(active?.model ?? next.model);
+      setCloseToTray(next.closeToTray);
+      setAutostart(next.autostart);
+      setNotifications(next.notifications);
+      setGlobalShortcut(next.globalShortcut ?? 'CommandOrControl+Alt+A');
+      settingsHydrated.current = true;
+    }
 
     if (next.phase === 'ready') {
       if (!previousReady.current && window.sessionStorage.getItem(AUTO_RELOAD_KEY) === '1') {
@@ -133,7 +152,7 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
       else void consumeDroppedFiles();
     });
     void listen('desktop:file-drop-rejected', () => {
-      onDropError?.('AURA is still processing earlier dropped files. Try again in a moment.');
+      onDropError?.('Kuractus is still processing earlier dropped files. Try again in a moment.');
     }).then((unlisten) => {
       unlistenDropRejected = unlisten;
       if (!active) unlisten();
@@ -167,13 +186,13 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
       const previous = previousRunEvents.current.get(event.eventId);
       if (!previous) continue;
       if (event.status === 'waiting_for_approval' && previous.status !== 'waiting_for_approval') {
-        notify('AURA approval requested', 'Open AURA to review the pending approval.');
+        notify('Kuractus approval requested', 'Open Kuractus to review the pending approval.');
       } else if (event.approvalPending && !previous.approvalPending && event.status !== 'waiting_for_approval') {
-        notify('AURA approval requested', 'Open AURA to review the pending approval.');
+        notify('Kuractus approval requested', 'Open Kuractus to review the pending approval.');
       } else if (event.status === 'completed' && ['running', 'cancellation_requested', 'resuming_routing'].includes(previous.status)) {
-        notify('AURA run completed', 'A local AURA run finished.');
+        notify('Kuractus run completed', 'A local Kuractus run finished.');
       } else if (event.status === 'failed' && ['running', 'cancellation_requested', 'resuming_routing'].includes(previous.status)) {
-        notify('AURA run failed', 'Open AURA to review the runtime status.');
+        notify('Kuractus run failed', 'Open Kuractus to review the runtime status.');
       }
     }
     previousRunEvents.current = currentRunEvents;
@@ -182,8 +201,8 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
     for (const event of automationRuns) {
       const previousStatus = previousAutomationRuns.current.get(event.eventId);
       if ((previousStatus === 'queued' || previousStatus === 'running') && event.status !== previousStatus) {
-        if (event.status === 'completed') notify('AURA automation completed', 'An automation run finished.');
-        if (event.status === 'failed') notify('AURA automation failed', 'Open AURA to review the automation status.');
+        if (event.status === 'completed') notify('Kuractus automation completed', 'An automation run finished.');
+        if (event.status === 'failed') notify('Kuractus automation failed', 'Open Kuractus to review the automation status.');
       }
     }
     previousAutomationRuns.current = currentAutomationRuns;
@@ -229,8 +248,8 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
 
   const restoreBackup = async () => {
     const accepted = await confirm(
-      'Restoring replaces the AURA database, workspace files and checkpoints with the selected backup. AURA creates a safety backup first. Continue?',
-      { title: 'Restore AURA Desktop backup', kind: 'warning' },
+      'Restoring replaces the Kuractus database, workspace files and checkpoints with the selected backup. Kuractus creates a safety backup first. Continue?',
+      { title: 'Restore Kuractus Desktop backup', kind: 'warning' },
     );
     if (!accepted) return;
     setBusy(true);
@@ -248,8 +267,9 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
 
   const saveSettings = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (provider === 'openai' && (!baseUrl.trim() || !model.trim())) {
-      setError('Enter the endpoint URL and exact model ID reported by that endpoint.');
+    const activeConnection = snapshot?.providerConnections?.find((item) => item.id === snapshot.activeProviderConnectionId);
+    if (provider === 'openai' && (!activeConnection || !activeConnection.baseUrl || !activeConnection.model)) {
+      setError('Save and activate a named API connection before selecting it as the active provider.');
       return;
     }
     setBusy(true);
@@ -258,25 +278,25 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
       if (autostart) await enableAutostart(); else await disableAutostart();
       if (notifications) {
         const granted = await isPermissionGranted();
-        if (!granted && await requestPermission() !== 'granted') throw new Error('Allow AURA notifications in Windows Settings to enable this option.');
+        if (!granted && await requestPermission() !== 'granted') throw new Error('Allow Kuractus notifications in Windows Settings to enable this option.');
       }
       window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
       const next = await invoke<RuntimeSnapshot>('desktop_save_preferences', {
         provider,
-        baseUrl,
-        model,
+        baseUrl: provider === 'openai' ? activeConnection!.baseUrl : '',
+        model: provider === 'openai' ? activeConnection!.model : '',
         closeToTray,
         autostart,
         notifications,
         globalShortcut,
-        providerApiKey: providerKey || null,
+        providerApiKey: null,
       });
       setApiToken(await invoke<string>('desktop_api_token'));
       setProviderKey('');
       setSnapshot(next);
       if (notifications) {
         const granted = await isPermissionGranted();
-        if (granted) sendNotification({ title: 'AURA', body: 'AURA Desktop notifications are enabled.' });
+        if (granted) sendNotification({ title: 'Kuractus', body: 'Kuractus Desktop notifications are enabled.' });
       }
     } catch (cause) {
       window.sessionStorage.removeItem(AUTO_RELOAD_KEY);
@@ -285,13 +305,66 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
     } finally { setBusy(false); }
   };
 
-  const forgetProviderKey = async () => {
+  const selectConnection = (id: string) => {
+    setConnectionId(id);
+    setProviderKey('');
+    const connection = snapshot?.providerConnections?.find((item) => item.id === id);
+    if (!connection) {
+      setProviderName('');
+      setBaseUrl('');
+      setModel('');
+      return;
+    }
+    setProviderName(connection.name);
+    setBaseUrl(connection.baseUrl);
+    setModel(connection.model);
+  };
+
+  const saveProviderConnection = async (activate: boolean) => {
+    if (!providerName.trim() || !baseUrl.trim() || !model.trim()) {
+      setError('Add a name, endpoint URL, and exact model ID for this API connection.');
+      return;
+    }
+    const id = connectionId === '__new__'
+      ? globalThis.crypto?.randomUUID?.().replace(/-/g, '') ?? `api-${Date.now()}`
+      : connectionId;
     setBusy(true);
+    setError(null);
+    if (activate) window.sessionStorage.setItem(AUTO_RELOAD_KEY, '1');
     try {
-      setSnapshot(await invoke<RuntimeSnapshot>('desktop_forget_provider_key'));
-      setError('Provider key removed from Windows Credential Manager. Save settings to restart with the change.');
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
-    finally { setBusy(false); }
+      const next = await invoke<RuntimeSnapshot>('desktop_save_provider_connection', {
+        connectionId: id,
+        name: providerName,
+        baseUrl,
+        model,
+        providerApiKey: providerKey || null,
+        activate,
+      });
+      setSnapshot(next);
+      setConnectionId(id);
+      if (activate) {
+        setProvider('openai');
+        setApiToken(await invoke<string>('desktop_api_token'));
+      }
+      setProviderKey('');
+    } catch (cause) {
+      if (activate) window.sessionStorage.removeItem(AUTO_RELOAD_KEY);
+      setError(cause instanceof Error ? cause.message : String(cause));
+      try { await refresh(); } catch { /* Keep the connection error visible. */ }
+    } finally { setBusy(false); }
+  };
+
+  const forgetSelectedApiKey = async () => {
+    if (connectionId === '__new__') return;
+    setBusy(true);
+    setError(null);
+    try {
+      setSnapshot(await invoke<RuntimeSnapshot>('desktop_forget_provider_key', { connectionId }));
+      setProviderKey('');
+      setError('The saved key for this API was removed from Windows Credential Manager.');
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally { setBusy(false); }
   };
 
   const phase = snapshot?.phase ?? 'starting';
@@ -300,17 +373,17 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
 
   return (
     <>
-      <button className={`desktop-runtime-pill desktop-runtime-pill--${phase}`} type="button" onClick={() => setOpen(true)} aria-label={`AURA Desktop runtime: ${phaseLabel}. Open runtime settings`}>
+      <button className={`desktop-runtime-pill desktop-runtime-pill--${phase}`} type="button" onClick={() => setOpen(true)} aria-label={`Kuractus Desktop runtime: ${phaseLabel}. Open runtime settings`}>
         <span className="desktop-runtime-pill__led" />
         <StatusIcon size={14} />
-        <span>AURA · {phaseLabel}</span>
+        <span>Kuractus · {phaseLabel}</span>
         <ChevronDown size={13} />
       </button>
       {open ? (
         <div className="desktop-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
           <section className="desktop-panel" role="dialog" aria-modal="true" aria-labelledby="desktop-runtime-title">
             <header className="desktop-panel__header">
-              <div><span className="eyebrow">WINDOWS APP</span><h2 id="desktop-runtime-title">AURA Desktop</h2><p>Local runtime, data and Windows settings</p></div>
+              <div><span className="eyebrow">WINDOWS APP</span><h2 id="desktop-runtime-title">Kuractus Desktop</h2><p>Local runtime, data and Windows settings</p></div>
               <button className="icon-button" type="button" aria-label="Close desktop settings" onClick={() => setOpen(false)}><X size={17} /></button>
             </header>
             <div className={`desktop-runtime-summary desktop-runtime-summary--${phase}`}>
@@ -327,25 +400,30 @@ export function DesktopRuntimeControl({ runEvents = [], automationRuns = [], set
               <button className="secondary-button" type="button" disabled={busy || !snapshot?.dockerAvailable} onClick={() => void restoreBackup()}><FolderSync size={14} /> Restore backup</button>
               <small>Includes PostgreSQL, workspace files and checkpoints. Windows Credential Manager secrets are excluded.</small>
             </div>
-            {phase === 'error' && !snapshot?.dockerAvailable ? <p className="desktop-prerequisite">AURA Desktop needs Docker Desktop with the Linux engine running. Open Docker Desktop, wait for “Engine running”, then choose Start runtime. AURA will not install Docker.</p> : null}
+            {phase === 'error' && !snapshot?.dockerAvailable ? <p className="desktop-prerequisite">Kuractus Desktop needs Docker Desktop with the Linux engine running. Open Docker Desktop, wait for “Engine running”, then choose Start runtime. Kuractus will not install Docker.</p> : null}
             <details className="desktop-log-disclosure"><summary>Runtime log</summary><pre>{snapshot?.logs.length ? snapshot.logs.join('\n') : 'No runtime log entries yet.'}</pre></details>
             <form className="desktop-settings-form" onSubmit={(event) => void saveSettings(event)}>
               <div className="desktop-settings-section"><div><strong>Model provider</strong><small>No model is assumed on first launch. Mock returns deterministic demo answers; API keys are kept in Windows Credential Manager.</small></div>
                 <label className="desktop-field"><span>Provider</span><select value={provider} onChange={(event) => setProvider(event.target.value as 'unconfigured' | 'mock' | 'openai')}><option value="unconfigured">Not configured</option><option value="mock">Offline demo · Mock</option><option value="openai">OpenAI-compatible cloud endpoint</option></select></label>
                 {provider === 'unconfigured' ? <p className="desktop-prerequisite">Auto routing stays disabled until a provider is selected. Local Ollama and LM Studio models can be discovered and selected in Routing Studio.</p> : null}
-                {provider === 'openai' ? <>
+                <div className="desktop-api-connections">
+                  <div><strong>Named API connections</strong><small>Keep multiple OpenAI-compatible endpoints. Name each one; API keys stay in Windows Credential Manager.</small></div>
+                  <label className="desktop-field"><span>Saved APIs</span><select value={connectionId} onChange={(event) => selectConnection(event.target.value)}><option value="__new__">Add a new API…</option>{(snapshot?.providerConnections ?? []).map((connection) => <option key={connection.id} value={connection.id}>{connection.name}{connection.id === snapshot?.activeProviderConnectionId ? ' · active' : ''}{connection.hasApiKey ? ' · key saved' : ''}</option>)}</select></label>
+                  <button className="desktop-text-button desktop-api-connections__add" type="button" disabled={busy} onClick={() => selectConnection('__new__')}>+ Add API connection</button>
+                  <label className="desktop-field"><span>Connection name</span><input value={providerName} onChange={(event) => setProviderName(event.target.value)} placeholder="e.g. Work endpoint, Local proxy" autoComplete="off" /></label>
                   <label className="desktop-field"><span>Endpoint URL</span><input value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} placeholder="https://provider.example/v1" autoComplete="url" /></label>
                   <label className="desktop-field"><span>Exact model ID</span><input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Copy the ID reported by your provider" autoComplete="off" /></label>
-                  <label className="desktop-field"><span>API key {snapshot?.hasProviderKey ? '· already stored' : '· optional for endpoints that need none'}</span><input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={snapshot?.hasProviderKey ? 'Leave blank to keep the saved key' : 'Paste provider key if required'} autoComplete="new-password" /></label>
-                  {snapshot?.hasProviderKey ? <button className="desktop-text-button" type="button" disabled={busy} onClick={() => void forgetProviderKey()}>Forget saved provider key</button> : null}
-                </> : null}
+                  <label className="desktop-field"><span>API key {snapshot?.providerConnections?.find((item) => item.id === connectionId)?.hasApiKey ? '· already stored' : '· optional for endpoints that need none'}</span><input type="password" value={providerKey} onChange={(event) => setProviderKey(event.target.value)} placeholder={snapshot?.providerConnections?.find((item) => item.id === connectionId)?.hasApiKey ? 'Leave blank to keep this saved key' : 'Paste provider key if required'} autoComplete="new-password" /></label>
+                  {snapshot?.providerConnections?.find((item) => item.id === connectionId)?.hasApiKey ? <button className="desktop-text-button" type="button" disabled={busy} onClick={() => void forgetSelectedApiKey()}>Forget this API key</button> : null}
+                  <div className="desktop-api-connections__actions"><button className="secondary-button" type="button" disabled={busy} onClick={() => void saveProviderConnection(false)}>Save API</button><button className="primary-soft-button" type="button" disabled={busy} onClick={() => void saveProviderConnection(true)}>Save and use API · restart</button></div>
+                </div>
               </div>
-              {notifications ? <button className="desktop-text-button" type="button" onClick={() => notify('AURA Desktop test', 'Desktop notifications are working.')}>Send test notification</button> : null}
+              {notifications ? <button className="desktop-text-button" type="button" onClick={() => notify('Kuractus Desktop test', 'Desktop notifications are working.')}>Send test notification</button> : null}
               <div className="desktop-settings-section desktop-settings-section--toggles">
                 <label><span><strong>Close to tray</strong><small>Closing the window keeps the runtime running.</small></span><input type="checkbox" checked={closeToTray} onChange={(event) => setCloseToTray(event.target.checked)} /></label>
                 <label><span><strong>Start with Windows</strong><small>Disabled by default.</small></span><input type="checkbox" checked={autostart} onChange={(event) => setAutostart(event.target.checked)} /></label>
                 <label><span><strong>Desktop notifications</strong><small>Uses generic text; no chat content is included.</small></span><input type="checkbox" checked={notifications} onChange={(event) => setNotifications(event.target.checked)} /></label>
-                <label><span><strong>Global shortcut</strong><small>Show the AURA window.</small></span><select value={globalShortcut} onChange={(event) => setGlobalShortcut(event.target.value)}><option value="CommandOrControl+Alt+A">Ctrl + Alt + A</option><option value="CommandOrControl+Shift+A">Ctrl + Shift + A</option><option value="none">Disabled</option></select></label>
+                <label><span><strong>Global shortcut</strong><small>Show the Kuractus window.</small></span><select value={globalShortcut} onChange={(event) => setGlobalShortcut(event.target.value)}><option value="CommandOrControl+Alt+A">Ctrl + Alt + A</option><option value="CommandOrControl+Shift+A">Ctrl + Shift + A</option><option value="none">Disabled</option></select></label>
               </div>
               <footer className="desktop-panel__footer"><span><Cog size={14} /> Postgres data is stored in a dedicated Docker volume.</span><button className="primary-button" type="submit" disabled={busy}>{busy ? 'Applying…' : 'Save settings & restart'}</button></footer>
             </form>

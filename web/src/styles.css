@@ -2269,7 +2269,7 @@ input:focus-visible {
 }
 
 /* ========================================================================== */
-/* AURA v3 — integrated interaction language inspired by the 9 reference UIs */
+/* Kuractus v3 — integrated interaction language inspired by the 9 reference UIs */
 /* ========================================================================== */
 
 /* Expand-on-hover sidebar */
@@ -4498,7 +4498,7 @@ input:focus-visible {
   .ai-run-strip__steps span svg { width: 11px; height: 11px; }
 }
 
-/* ===== v5 · global AURA Quick Ask ===== */
+/* ===== v5 · global Kuractus Quick Ask ===== */
 .aura-quick-trigger {
   border-color: rgba(103, 201, 218, 0.09);
   background: rgba(103, 201, 218, 0.035);
@@ -5725,7 +5725,7 @@ input:focus-visible {
 
 /* =========================================================
    v9 · comfortable reading + intentional tab model
-   Tabs = working set. Navigator pages reuse the AURA tab;
+   Tabs = working set. Navigator pages reuse the Kuractus tab;
    every project owns one tab and switches views internally.
    ========================================================= */
 :root {
@@ -6418,7 +6418,7 @@ html {
 
 
 
-/* AURA V16 — compact Conversation workspace, deeper Board inspection, true Split. */
+/* Kuractus V16 — compact Conversation workspace, deeper Board inspection, true Split. */
 .project-chat-workspace {
   grid-template-columns: 194px minmax(0, 1fr);
 }

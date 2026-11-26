@@ -64,7 +64,7 @@ describe('DesktopRuntimeControl settings', () => {
     render(<DesktopRuntimeControl />);
     await waitFor(() => expect(desktop.invoke).toHaveBeenCalledWith('desktop_status'));
 
-    fireEvent.click(screen.getByRole('button', { name: 'AURA Desktop runtime: Ready. Open runtime settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kuractus Desktop runtime: Ready. Open runtime settings' }));
     fireEvent.click(screen.getByRole('button', { name: 'Restart runtime' }));
 
     await waitFor(() => expect(desktop.invoke).toHaveBeenCalledWith('desktop_restart'));
@@ -74,7 +74,7 @@ describe('DesktopRuntimeControl settings', () => {
     const view = render(<DesktopRuntimeControl />);
     await waitFor(() => expect(desktop.register).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: 'AURA Desktop runtime: Ready. Open runtime settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kuractus Desktop runtime: Ready. Open runtime settings' }));
     fireEvent.click(screen.getByRole('checkbox', { name: /Close to tray/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Save settings & restart' }));
 

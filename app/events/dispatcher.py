@@ -54,7 +54,7 @@ async def _finalize_cancelled_run(
     run.status = RunStatus.CANCELLED.value
     run.final_response = (
         "Run cancelled. An operation already in progress may have completed "
-        "before AURA observed the request."
+        "before Kuractus observed the request."
     )
     run.error_message = None
     final_state["execution_status"] = RunStatus.CANCELLED.value

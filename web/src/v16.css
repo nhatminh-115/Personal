@@ -1,4 +1,4 @@
-/* AURA V16 visual system. The React views remain the source of truth for data and actions. */
+/* Kuractus V16 visual system. The React views remain the source of truth for data and actions. */
 :root {
   color-scheme: dark;
   --bg-primary: #090a10;
@@ -69,7 +69,7 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 .aura-menu-select__trigger:focus-visible {
-  outline: 2px solid rgba(220, 236, 160, .65);
+  outline: 2px solid rgba(184, 171, 245, .48);
   outline-offset: 2px;
 }
 
@@ -659,7 +659,7 @@ select:focus-visible,
 .chat-message__status-row,.chat-message__footer { color: #a3a5b2; font-size: 9.5px !important; }
 .chat-composer-wrap { padding: 12px 20px 16px; border-top-color: rgba(213,219,238,.07); background: linear-gradient(180deg, rgba(9,10,16,0), rgba(9,10,16,.92) 20%); }
 .chat-composer { width: min(870px, 100%); border-color: rgba(213,219,238,.14); border-radius: 15px; background: #141722; box-shadow: 0 14px 45px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.025); }
-.chat-composer:focus-within { border-color: rgba(184,171,245,.28); box-shadow: 0 14px 45px rgba(0,0,0,.3), 0 0 0 3px rgba(184,171,245,.055); }
+.chat-composer:focus-within { border-color: rgba(213,219,238,.14); box-shadow: 0 14px 45px rgba(0,0,0,.3); }
 .chat-composer textarea { min-height: 68px; padding: 14px 16px 5px; color: #f0eef1; font-size: 13px !important; line-height: 1.6 !important; }
 .chat-composer textarea::placeholder { color: #9698a7; }
 .composer-context { border-color: rgba(213,219,238,.08); }
@@ -876,7 +876,6 @@ select:focus-visible,
   .sidebar:not(.sidebar--collapsed) .sidebar-project-child { justify-content: center; padding-inline: 0; }
   .sidebar:not(.sidebar--collapsed) .sidebar-project-child .project-tree-line { display: none; }
   .sidebar:not(.sidebar--collapsed) .sidebar-hint,.sidebar:not(.sidebar--collapsed) .profile-row { justify-content: center; padding-inline: 0; }
-  .sidebar-collapse { display: none; }
   .topbar { gap: 8px; padding-inline: 12px; }
   .topbar__project { min-width: 0; flex: 0 1 150px; }
   .topbar__label { display: none; }

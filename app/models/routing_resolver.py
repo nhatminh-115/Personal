@@ -1,4 +1,4 @@
-"""Scope resolution and precedence for AURA routing policies."""
+"""Scope resolution and precedence for Kuractus routing policies."""
 
 from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession

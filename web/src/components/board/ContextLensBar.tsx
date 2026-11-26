@@ -44,7 +44,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
         <strong>{nodes.length} objects selected</strong>
         <div className="context-lens__actions">
           <button type="button" onClick={() => setComposerOpen(!composerOpen)}>
-            <Bot size={13} /> Ask AURA
+            <Bot size={13} /> Ask Kuractus
           </button>
           {onPreviewContext ? (
             <button type="button" aria-expanded={previewOpen} disabled={contextPreviewLoading} onClick={() => {
@@ -100,7 +100,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
               <span>Privacy: {contextPreview.privacy_requirement ?? 'Unclassified'}</span>
               {(contextPreview.required_capabilities?.length ?? 0) > 0 ? <span>Capabilities: {contextPreview.required_capabilities?.join(', ')}</span> : null}
               {(contextPreview.available_capabilities?.length ?? 0) > 0 ? <span>Available providers: {contextPreview.available_capabilities?.join(', ')}</span> : null}
-              {(contextPreview.missing_capabilities?.length ?? 0) > 0 ? <p className="context-preview__error" role="alert">Unavailable required capabilities: {contextPreview.missing_capabilities?.join(', ')}. Configure a capability provider before asking AURA to use this context.</p> : null}
+              {(contextPreview.missing_capabilities?.length ?? 0) > 0 ? <p className="context-preview__error" role="alert">Unavailable required capabilities: {contextPreview.missing_capabilities?.join(', ')}. Configure a capability provider before asking Kuractus to use this context.</p> : null}
               {contextPreview.requires_tools || contextPreview.requires_vision || contextPreview.requires_structured_output || contextPreview.requires_long_context ? (
                 <span>Requirements: {[
                   contextPreview.requires_tools && 'tools',
@@ -141,7 +141,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
                   setComposerOpen(false);
                 }
               }}
-              placeholder="Ask AURA about selected context…"
+              placeholder="Ask Kuractus about selected context…"
             />
             <button
               type="button"
@@ -163,7 +163,7 @@ export function ContextLensBar({ nodes, onAsk, onCreateNote, onCreateBridge, onC
             <small>{counts.evidence} research evidence {counts.evidence === 1 ? 'item' : 'items'}</small>
             <small>{counts.claims} research claim{counts.claims === 1 ? '' : 's'}</small>
             <small>{counts.code} code result{counts.code === 1 ? '' : 's'}</small>
-            <strong>Ask AURA includes only selected objects and their explicit context links.</strong>
+            <strong>Ask Kuractus includes only selected objects and their explicit context links.</strong>
           </div>
         </div>
       ) : null}

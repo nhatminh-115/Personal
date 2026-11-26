@@ -25,7 +25,7 @@ export async function extractImageText(blob: Blob): Promise<string> {
     canvas.width = Math.max(1, Math.round(bitmap.width * scale));
     canvas.height = Math.max(1, Math.round(bitmap.height * scale));
     const context = canvas.getContext('2d');
-    if (!context) throw new Error('AURA could not prepare this image for local OCR.');
+    if (!context) throw new Error('Kuractus could not prepare this image for local OCR.');
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
 
     ocrWorker = await createLocalOcrWorker();
@@ -42,7 +42,7 @@ export async function extractImageText(blob: Blob): Promise<string> {
     )) {
       throw error;
     }
-    throw new Error('AURA could not extract text from this image in the browser.');
+    throw new Error('Kuractus could not extract text from this image in the browser.');
   } finally {
     if (canvas) {
       canvas.width = 0;

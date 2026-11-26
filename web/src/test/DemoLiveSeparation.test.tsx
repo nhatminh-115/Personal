@@ -54,7 +54,7 @@ describe('Demo / Live Separation', () => {
     await openStatefulChats();
 
     // The active thread is a demo thread — type and press Enter
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Test from demo' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -73,13 +73,13 @@ describe('Demo / Live Separation', () => {
 
   it('keeps Stop available for a local demo run', async () => {
     await openStatefulChats();
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     fireEvent.change(textarea, { target: { value: 'Stop this local demo response' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
 
-    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus is working')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Stop/i })); });
-    expect(screen.queryByText('AURA is working')).not.toBeInTheDocument();
+    expect(screen.queryByText('Kuractus is working')).not.toBeInTheDocument();
     expect(postCalls).toHaveLength(0);
   });
 
@@ -109,17 +109,17 @@ describe('Demo / Live Separation', () => {
     global.fetch = fetchMock;
     await openStatefulChats();
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat/i), { target: { value: 'Start a live turn that can be stopped' } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Kuractus in this chat/i), { target: { value: 'Start a live turn that can be stopped' } });
     await act(async () => { fireEvent.click(screen.getByText('Start live chat')); });
 
-    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus is working')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Stop$/i })); });
     expect(await screen.findByRole('button', { name: 'Stop requested' })).toBeDisabled();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/runs/cancel-turn'))).toBe(true);
     expect(postCalls).toHaveLength(1);
 
     await act(async () => { completeChat?.(); });
-    await waitFor(() => expect(screen.queryByText('AURA is working')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Kuractus is working')).not.toBeInTheDocument());
   });
 
   it('newThread creates a live thread (source: live)', async () => {
@@ -138,7 +138,7 @@ describe('Demo / Live Separation', () => {
     await openStatefulChats();
 
     // Type a draft message
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     const draftText = 'Explain the architecture';
     await act(async () => {
       fireEvent.change(textarea, { target: { value: draftText } });
@@ -165,7 +165,7 @@ describe('Demo / Live Separation', () => {
     await openStatefulChats();
 
     // Ensure textarea is empty
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: '' } });
     });

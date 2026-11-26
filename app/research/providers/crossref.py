@@ -39,7 +39,7 @@ class CrossrefResearchProvider(ResearchSourceProvider):
                 ) as client:
                     response = await client.get(url, params=params, headers={
                         "Accept": "application/json",
-                        "User-Agent": "AURA-Research-Specialist/1.0",
+                        "User-Agent": "Kuractus-Research-Specialist/1.0",
                     })
                 if response.status_code == 200:
                     payload = response.json()

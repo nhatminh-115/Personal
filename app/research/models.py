@@ -1,4 +1,4 @@
-"""Typed domain models for the AURA Research Specialist."""
+"""Typed domain models for the Kuractus Research Specialist."""
 
 from enum import Enum
 import time

@@ -40,6 +40,7 @@ interface LibraryViewProps {
   onConnectFolder: () => void;
   onOpenConnection: (connection: DirectoryConnection) => void;
   onDisconnectConnection: (connection: DirectoryConnection) => void;
+  onOpenStudy?: () => void;
   onStudyResearchClaim?: (objectId: string, title: string, projectName: string) => void;
   onOpenProjectObject?: (objectId: string, projectName: string) => void;
   hasMoreLibrary?: boolean;
@@ -85,6 +86,7 @@ export function LibraryView({
   onConnectFolder,
   onOpenConnection,
   onDisconnectConnection,
+  onOpenStudy,
   onStudyResearchClaim,
   onOpenProjectObject,
   hasMoreLibrary = false,
@@ -139,7 +141,7 @@ export function LibraryView({
         <div>
           <span className="eyebrow">PERSONAL LIBRARY</span>
           <h1>Your files can stay where they already live.</h1>
-          <p>Connect real folders from anywhere on your computer, or import individual files into AURA's browser-local index. Projects and collections only reference them.</p>
+          <p>Connect real folders from anywhere on your computer, or import individual files into Kuractus's browser-local index. Projects and collections only reference them.</p>
         </div>
         <div className="library-header-actions">
           <input
@@ -153,6 +155,7 @@ export function LibraryView({
               event.target.value = '';
             }}
           />
+          {onOpenStudy ? <button className="secondary-button secondary-button--lg" type="button" onClick={onOpenStudy}><BookOpen size={16} /> Study</button> : null}
           <button className="primary-soft-button primary-soft-button--lg" type="button" onClick={onConnectFolder}><FolderOpen size={17} /> Connect folder</button>
           <button className="secondary-button secondary-button--lg" type="button" onClick={() => inputRef.current?.click()}><Upload size={16} /> Add files</button>
         </div>
@@ -177,7 +180,7 @@ export function LibraryView({
                 </button>
                 <div className="folder-connection-card__actions">
                   <button type="button" className="secondary-button" onClick={() => onOpenConnection(connection)}>Open</button>
-                  <button type="button" className="icon-button" onClick={() => onDisconnectConnection(connection)} title="Disconnect from AURA"><Unplug size={16} /></button>
+                  <button type="button" className="icon-button" onClick={() => onDisconnectConnection(connection)} title="Disconnect from Kuractus"><Unplug size={16} /></button>
                 </div>
               </article>
             ))}
@@ -185,7 +188,7 @@ export function LibraryView({
         ) : (
           <button className="connect-folder-empty" type="button" onClick={onConnectFolder}>
             <FolderOpen size={26} />
-            <span><strong>Connect your first folder</strong><small>Pick Books, Downloads, Papers, TOEIC, a project folder, or any other directory. AURA keeps a permission handle instead of moving the data.</small></span>
+            <span><strong>Connect your first folder</strong><small>Pick Books, Downloads, Papers, TOEIC, a project folder, or any other directory. Kuractus keeps a permission handle instead of moving the data.</small></span>
             <Plus size={18} />
           </button>
         )}
@@ -227,7 +230,7 @@ export function LibraryView({
                 </button>
 
                 <div className="library-item__links">
-                  <span className="library-origin">{item.source === 'imported' ? 'AURA INDEX' : item.kind}</span>
+                  <span className="library-origin">{item.source === 'imported' ? 'Kuractus INDEX' : item.kind}</span>
                   {linkedProjects.slice(0, 2).map((project) => project ? <span key={project.id} className={`library-project-chip library-project-chip--${project.accent}`}><span className={`project-dot project-dot--${project.accent}`} />{project.name}</span> : null)}
                   {linkedProjects.length > 2 ? <span className="library-project-more">+{linkedProjects.length - 2}</span> : null}
                   <button className="library-link-trigger" type="button" onClick={() => { setLinkingId(linkingId === item.id ? null : item.id); setMenuId(null); }}><Link2 size={14} /> Link</button>
@@ -237,7 +240,7 @@ export function LibraryView({
                 {menuId === item.id ? (
                   <div className="library-action-popover">
                     <button type="button" onClick={() => { onOpenItem(item); setMenuId(null); }}><ExternalLink size={15} /><span><strong>Open</strong><small>Open this file or artifact</small></span></button>
-                    <button type="button" className="is-danger" onClick={() => { onRemoveItem(item); setMenuId(null); }}><Trash2 size={15} /><span><strong>Remove from Library</strong><small>{item.source === 'imported' ? 'Delete AURA’s indexed copy, not an external folder' : 'Remove this reference from the prototype'}</small></span></button>
+                    <button type="button" className="is-danger" onClick={() => { onRemoveItem(item); setMenuId(null); }}><Trash2 size={15} /><span><strong>Remove from Library</strong><small>{item.source === 'imported' ? 'Delete Kuractus’s indexed copy, not an external folder' : 'Remove this reference from the prototype'}</small></span></button>
                   </div>
                 ) : null}
 

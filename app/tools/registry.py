@@ -52,7 +52,7 @@ class ToolRegistry:
         self.register_capability_provider(
             CapabilityProviderMetadata(
                 provider_id="aura.workspace",
-                name="AURA Workspace",
+                name="Kuractus Workspace",
                 health=CapabilityProviderHealth.UNKNOWN,
                 capabilities=["workspace.files.read", "workspace.files.write"],
                 privacy_boundary=PrivacyBoundary.LOCAL,
@@ -69,7 +69,7 @@ class ToolRegistry:
         self.register_capability_provider(
             CapabilityProviderMetadata(
                 provider_id="aura.sandbox",
-                name="AURA Sandboxed Execution",
+                name="Kuractus Sandboxed Execution",
                 health=CapabilityProviderHealth.UNKNOWN,
                 capabilities=["sandbox.execute"],
                 privacy_boundary=PrivacyBoundary.LOCAL,
@@ -83,7 +83,7 @@ class ToolRegistry:
         self.register_capability_provider(
             CapabilityProviderMetadata(
                 provider_id="aura.research",
-                name="AURA Research Sources",
+                name="Kuractus Research Sources",
                 health=CapabilityProviderHealth.UNKNOWN,
                 capabilities=["research.search", "research.sources.read", "research.evidence.extract", "research.claims.write"],
                 privacy_boundary=PrivacyBoundary.UNKNOWN,

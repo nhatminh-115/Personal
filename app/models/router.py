@@ -106,7 +106,7 @@ class ModelRouter:
             context and context.explicit_model_override
         ):
             raise ProviderError(
-                "No model provider is configured. Open AURA Desktop settings and choose a provider before starting an AI run."
+                "No model provider is configured. Open Kuractus Desktop settings and choose a provider before starting an AI run."
             )
         selection = self._policy.select(
             context=context,

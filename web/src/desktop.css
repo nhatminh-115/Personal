@@ -54,6 +54,11 @@
 .desktop-settings-section--toggles strong,.desktop-settings-section--toggles small { display: block; }
 .desktop-settings-section--toggles input[type=checkbox] { width: 17px; height: 17px; accent-color: #7ea8f4; }
 .desktop-settings-section--toggles select { width: auto; min-width: 170px; }
+.desktop-api-connections { display: grid; gap: 11px; padding: 13px; border: 1px solid rgba(151,173,211,.15); border-radius: 12px; background: rgba(8,13,22,.42); }
+.desktop-api-connections > div:first-child strong,.desktop-api-connections > div:first-child small { display: block; }
+.desktop-api-connections > div:first-child small { margin-top: 4px; color: #8998af; font-size: 11px; line-height: 1.4; }
+.desktop-api-connections__add { color: #aebde0; }
+.desktop-api-connections__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .desktop-text-button { justify-self: start; border: 0; background: none; color: #f0a0a7; font-size: 11px; cursor: pointer; }
 .desktop-panel__footer { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding-top: 14px; border-top: 1px solid rgba(151, 173, 211, .13); }
 .desktop-panel__footer > span { display: flex; align-items: center; gap: 7px; color: #8796ad; font-size: 10px; }

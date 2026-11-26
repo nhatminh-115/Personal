@@ -242,14 +242,14 @@ describe('workspace collection pagination', () => {
   it('fetches canonical workspace collection counts for the active project', async () => {
     const summary = {
       note_count: 42, library_count: 18, linked_library_count: 9,
-      project_name: 'AURA', project_note_count: 3, project_library_count: 5,
+      project_name: 'Kuractus', project_note_count: 3, project_library_count: 5,
     };
     const fetch = vi.fn().mockResolvedValue(jsonResponse(summary));
     vi.stubGlobal('fetch', fetch);
 
-    await expect(api.fetchWorkspaceSummary('AURA')).resolves.toEqual(summary);
+    await expect(api.fetchWorkspaceSummary('Kuractus')).resolves.toEqual(summary);
     const url = new URL(fetch.mock.calls[0][0] as string, 'http://aura.test');
     expect(url.pathname).toBe('/v1/workspace/summary');
-    expect(url.searchParams.get('project_name')).toBe('AURA');
+    expect(url.searchParams.get('project_name')).toBe('Kuractus');
   });
 });

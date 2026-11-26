@@ -110,7 +110,7 @@ export function AuraCommandPalette({ projectName, onClose, onOpenResult, onOpenF
       <section className="aura-command" role="dialog" aria-modal="true" aria-label="Search workspace" onMouseDown={(event) => event.stopPropagation()}>
         <div className="aura-command__head">
           <span className="aura-command__mark"><Sparkles size={15} /></span>
-          <div><span className="eyebrow">AURA WORKSPACE SEARCH</span><strong>{scope}</strong></div>
+          <div><span className="eyebrow">Kuractus WORKSPACE SEARCH</span><strong>{scope}</strong></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close"><X size={15} /></button>
         </div>
 

@@ -171,7 +171,7 @@ class ArxivResearchProvider(ResearchSourceProvider):
     async def _execute_arxiv_request(self, params: Dict[str, Any]) -> Optional[str]:
         """Execute request against arXiv API with strict rate limiting and retries."""
         await self.rate_limiter.acquire()
-        headers = {"User-Agent": "AURA-Research-Specialist/1.0 (academic; polite)"}
+        headers = {"User-Agent": "Kuractus-Research-Specialist/1.0 (academic; polite)"}
         failure_reason = "temporarily unavailable"
 
         for attempt in range(3):

@@ -40,6 +40,6 @@ describe('browser-local Word document text extraction', () => {
   it('hides parser internals when a document is malformed', async () => {
     vi.mocked(mammoth.extractRawText).mockRejectedValue(new Error('private ZIP parser detail'));
 
-    await expect(extractDocxText(new Blob(['not a docx']))).rejects.toThrow('AURA could not extract text from this Word document in the browser.');
+    await expect(extractDocxText(new Blob(['not a docx']))).rejects.toThrow('Kuractus could not extract text from this Word document in the browser.');
   });
 });

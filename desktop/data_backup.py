@@ -30,9 +30,9 @@ def _desktop_path(variable: str) -> Path:
 def _compose_prefix() -> list[str]:
     compose = _desktop_path("AURA_DESKTOP_COMPOSE_FILE")
     if not compose.is_file():
-        raise RuntimeError("AURA Desktop's Compose runtime definition is unavailable.")
+        raise RuntimeError("Kuractus Desktop's Compose runtime definition is unavailable.")
     if not os.environ.get("AURA_DESKTOP_POSTGRES_PASSWORD"):
-        raise RuntimeError("AURA Desktop database credential is unavailable.")
+        raise RuntimeError("Kuractus Desktop database credential is unavailable.")
     return ["docker", "compose", "--project-name", "aura-desktop", "--file", str(compose), "exec", "-T", "postgres"]
 
 
@@ -158,7 +158,7 @@ def _checked_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     except (json.JSONDecodeError, KeyError, OSError) as error:
         raise RuntimeError("Backup manifest is invalid.") from error
     if manifest.get("format") != "aura-desktop-backup" or manifest.get("format_version") != FORMAT_VERSION:
-        raise RuntimeError("This AURA Desktop backup format is not supported.")
+        raise RuntimeError("This Kuractus Desktop backup format is not supported.")
     return members
 
 
@@ -203,12 +203,12 @@ def _replace_tree(source: Path, destination: Path, rollback: Path) -> None:
 def restore_backup(source: Path) -> dict[str, object]:
     source = source.expanduser().absolute()
     if not source.is_file():
-        raise RuntimeError("Choose an existing AURA Desktop backup file.")
+        raise RuntimeError("Choose an existing Kuractus Desktop backup file.")
     try:
         with zipfile.ZipFile(source, "r") as archive:
             _checked_members(archive)
     except zipfile.BadZipFile as error:
-        raise RuntimeError("This file is not a valid AURA Desktop backup.") from error
+        raise RuntimeError("This file is not a valid Kuractus Desktop backup.") from error
     local_root = _desktop_path("AURA_LOCAL_DATA_DIR")
     workspace = _desktop_path("AURA_WORKSPACE_ROOT")
     checkpoint = _desktop_path("CHECKPOINT_DB_PATH")

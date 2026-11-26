@@ -30,23 +30,23 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       }
       if (url.includes('/v1/workspace/projects/') && url.includes('/graph')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [], edges: [], layout: { project_name: 'AURA', layout: {}, revision: 0 }, execution_traces: [] }) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ objects: [], edges: [], layout: { project_name: 'Kuractus', layout: {}, revision: 0 }, execution_traces: [] }) });
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
     });
     global.fetch = fetchMock;
 
     await act(async () => { render(<App />); });
-    const projectButton = screen.getByTitle('AURA');
+    const projectButton = screen.getByTitle('Kuractus');
     await act(async () => { fireEvent.click(projectButton); });
     const chatsButton = await screen.findByRole('button', { name: 'Conversations' });
     await act(async () => { fireEvent.click(chatsButton); });
     await act(async () => { fireEvent.click(screen.getByTitle('New chat')); });
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep running until the backend responds' } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Kuractus in this chat…/i), { target: { value: 'Keep running until the backend responds' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
 
-    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus is working')).toBeInTheDocument();
     const stopButton = screen.getByRole('button', { name: /^Stop$/i });
     await act(async () => { fireEvent.click(stopButton); });
     expect(await screen.findByRole('button', { name: 'Stop requested' })).toBeDisabled();
@@ -56,7 +56,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(screen.getByRole('button', { name: /Send/i })).toBeDisabled();
 
     await act(async () => { completeChat?.(); });
-    await waitFor(() => expect(screen.queryByText('AURA is working')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Kuractus is working')).not.toBeInTheDocument());
   });
 
   it('sends chat request to /v1/chat and renders completed response with real execution events', async () => {
@@ -87,7 +87,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
         }, {
           id: 'research-claim-1', object_type: 'research_claim', title: 'Restartability claim',
           content: 'Verified claim text.', metadata_json: { verification_status: 'verified' }, created_by: 'research', session_id: null, source_message_id: null,
-        }], edges: [], layout: { project_name: 'AURA', layout: {}, revision: 0 }, execution_traces: [] }) });
+        }], edges: [], layout: { project_name: 'Kuractus', layout: {}, revision: 0 }, execution_traces: [] }) });
       }
       if (url.includes('/v1/models')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
@@ -170,7 +170,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Open project chat
-    const projectButton = screen.getByTitle('AURA');
+    const projectButton = screen.getByTitle('Kuractus');
     await act(async () => {
       fireEvent.click(projectButton);
     });
@@ -204,8 +204,8 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     reactErrors.mockRestore();
 
     // Type prompt into textarea and send
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat…/i);
-    fireEvent.change(textarea, { target: { value: 'Explain state persistence in AURA' } });
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat…/i);
+    fireEvent.change(textarea, { target: { value: 'Explain state persistence in Kuractus' } });
     fireEvent.click(screen.getByRole('button', { name: /Code/i }));
 
     const sendBtn = screen.getByRole('button', { name: /Send/i });
@@ -215,7 +215,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
 
     // Verify chat payload sent to /v1/chat
     expect(chatPayload).not.toBeNull();
-    expect(chatPayload.message).toBe('Explain state persistence in AURA');
+    expect(chatPayload.message).toBe('Explain state persistence in Kuractus');
     expect(chatPayload.session_id).toBeDefined();
     expect(chatPayload.client_turn_id).toEqual(expect.any(String));
     expect(chatPayload.context_object_ids).toEqual(['workspace-note-1', 'research-claim-1']);
@@ -231,7 +231,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(screen.getByRole('button', { name: /Research claim.*research-claim-1/i })).toBeInTheDocument();
 
     // Verify execution badge
-    expect(await screen.findByText(/AURA · 4 steps/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Kuractus · 4 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Context Project objects/i }));
     fireEvent.click(await screen.findByRole('button', { name: 'Show Restartability claim on Board' }));
@@ -347,7 +347,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     });
 
     // Send command requiring approval
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat…/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat…/i);
     fireEvent.change(textarea, { target: { value: 'Execute deploy script' } });
     const sendBtn = screen.getByRole('button', { name: /Send/i });
     await act(async () => {
@@ -383,7 +383,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     fireEvent.click(screen.getAllByText(/Stateful Architecture/i)[0]);
     fireEvent.click(await screen.findByRole('button', { name: 'Conversations' }));
     fireEvent.click(screen.getByTitle('New chat'));
-    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat…/i), { target: { value: 'Keep this local' } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Kuractus in this chat…/i), { target: { value: 'Keep this local' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
     expect(await screen.findByText(/No local model is eligible\. Privacy policy blocked this route/i)).toBeInTheDocument();
     expect(screen.getByText(/Review the profile scope and select a route that meets its privacy boundary/i)).toBeInTheDocument();
@@ -456,9 +456,9 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
       .find((button) => button.textContent?.includes('Continue in Chat'));
     expect(continueInChat).not.toBeNull();
     fireEvent.click(continueInChat!);
-    const textarea = await screen.findByPlaceholderText(/Ask AURA in this chat…/i);
+    const textarea = await screen.findByPlaceholderText(/Ask Kuractus in this chat…/i);
     expect(screen.getByText(/1 selected · open Context to inspect/i)).toBeInTheDocument();
-    expect(screen.queryByText('What AURA can use')).not.toBeInTheDocument();
+    expect(screen.queryByText('What Kuractus can use')).not.toBeInTheDocument();
     fireEvent.change(textarea, { target: { value: 'Continue this branch.' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
 

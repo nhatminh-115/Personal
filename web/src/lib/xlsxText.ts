@@ -70,6 +70,6 @@ export async function extractXlsxText(blob: Blob): Promise<string> {
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('This spreadsheet')) throw error;
     if (error instanceof Error && error.message.startsWith('The selected spreadsheet')) throw error;
-    throw new Error('AURA could not extract text from this spreadsheet in the browser.');
+    throw new Error('Kuractus could not extract text from this spreadsheet in the browser.');
   }
 }

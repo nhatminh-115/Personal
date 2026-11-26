@@ -151,7 +151,7 @@ describe('Thread-Scoped Live State', () => {
 
     // Activate thread A and send a message
     await selectThread('Thread A');
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Do something risky' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -186,7 +186,7 @@ describe('Thread-Scoped Live State', () => {
 
     // Send from A to raise approval
     await selectThread('Thread A');
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Run the script' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -231,7 +231,7 @@ describe('Thread-Scoped Live State', () => {
 
     // Send from A
     await selectThread('Thread A');
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Execute task' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -266,7 +266,7 @@ describe('Thread-Scoped Live State', () => {
 
     // Send from A — this creates run data for thread A
     await selectThread('Thread A');
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Show run data' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -325,7 +325,7 @@ describe('Thread-Scoped Live State', () => {
     expect(modelLock).toHaveTextContent('Local · Model A');
 
     const send = async (message: string) => {
-      const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+      const input = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
       await act(async () => {
         fireEvent.change(input, { target: { value: message } });
         fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });
@@ -375,7 +375,7 @@ describe('Thread-Scoped Live State', () => {
         .toHaveTextContent(reasoningSupport === 'fixed_by_model' ? 'Fixed by model' : 'Unsupported'));
       expect(screen.getByRole('button', { name: 'Temporary reasoning' })).toBeDisabled();
 
-      const input = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+      const input = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
       await act(async () => {
         fireEvent.change(input, { target: { value: 'Use locked model' } });
         fireEvent.keyDown(input, { key: 'Enter', shiftKey: false });

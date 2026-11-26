@@ -8,16 +8,16 @@ import { projects } from '../data/workspaceData';
 import type { AuraFlowNode, WorkspaceExecutionHistory, WorkspaceGraph, WorkspaceObject } from '../types';
 
 const savedGraph: WorkspaceGraph = {
-  project_name: 'AURA Project',
+  project_name: 'Kuractus Project',
   objects: [{
-    id: 'turn-1', project_name: 'AURA Project', session_id: 'session-1', source_message_id: 'message-1',
+    id: 'turn-1', project_name: 'Kuractus Project', session_id: 'session-1', source_message_id: 'message-1',
     object_type: 'conversation_turn', created_by: 'assistant', title: 'Persistent answer',
     content: 'Loaded from the shared workspace object graph.', metadata_json: { role: 'assistant' },
     revision: 1,
     created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
   }],
   edges: [],
-  layout: { project_name: 'AURA Project', layout: { positions: { 'turn-1': { x: 80, y: 60 } } }, revision: 3 },
+  layout: { project_name: 'Kuractus Project', layout: { positions: { 'turn-1': { x: 80, y: 60 } } }, revision: 3 },
 };
 
 describe('Persistent workspace graph Board projection', () => {
@@ -48,7 +48,7 @@ describe('Persistent workspace graph Board projection', () => {
 
   it('hydrates the project Board from backend objects and does not mix in demo seed nodes', async () => {
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(savedGraph);
-    const attachSession = vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    const attachSession = vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const seedNodes: AuraFlowNode[] = [{
       id: 'demo-only', type: 'aura', position: { x: 0, y: 0 },
       data: { kind: 'answer', title: 'Demo seed transcript', body: 'Demo', density: 'compact', layer: 'conversation' },
@@ -56,14 +56,14 @@ describe('Persistent workspace graph Board projection', () => {
 
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="aura-project" seedNodes={seedNodes} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="aura-project" seedNodes={seedNodes} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
     expect(await screen.findByText('Persistent answer')).toBeInTheDocument();
     expect(screen.getByText('Loaded from the shared workspace object graph.')).toBeInTheDocument();
-    await waitFor(() => expect(attachSession).toHaveBeenCalledWith('AURA Project', 'session-1'));
-    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith('AURA Project'));
+    await waitFor(() => expect(attachSession).toHaveBeenCalledWith('Kuractus Project', 'session-1'));
+    await waitFor(() => expect(fetchGraph).toHaveBeenCalledWith('Kuractus Project'));
     expect(screen.queryByText('Demo seed transcript')).not.toBeInTheDocument();
   });
 
@@ -87,12 +87,12 @@ describe('Persistent workspace graph Board projection', () => {
       .mockResolvedValueOnce(savedGraph)
       .mockResolvedValueOnce(updatedGraph);
     const fetchOlderExecution = vi.spyOn(api, 'fetchWorkspaceExecutionHistory').mockResolvedValue({ execution_traces: [], execution_history_truncated: false, execution_next_cursor: null });
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
 
     const renderBoard = (sessionIds: string[], revision = 0) => (
       <ReactFlowProvider>
-        <BoardCanvas boardKey="revision-refresh" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={sessionIds} workspaceGraphRevision={revision} executionExpanded />
+        <BoardCanvas boardKey="revision-refresh" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={sessionIds} workspaceGraphRevision={revision} executionExpanded />
       </ReactFlowProvider>
     );
     const view = render(renderBoard(['session-1']));
@@ -106,7 +106,7 @@ describe('Persistent workspace graph Board projection', () => {
     expect(await screen.findByText('New live answer')).toBeInTheDocument();
     expect(await screen.findByText('Root · live-test-model')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
-    await waitFor(() => expect(fetchOlderExecution).toHaveBeenCalledWith('AURA Project', 'older-execution-page'));
+    await waitFor(() => expect(fetchOlderExecution).toHaveBeenCalledWith('Kuractus Project', 'older-execution-page'));
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(view.container.querySelector('[data-id="turn-1"]')).toHaveStyle({ transform: 'translate(80px,60px)' });
   });
@@ -117,12 +117,12 @@ describe('Persistent workspace graph Board projection', () => {
     const fetchPage = vi.spyOn(api, 'fetchWorkspaceGraphPage')
       .mockResolvedValueOnce(savedGraph)
       .mockResolvedValueOnce(secondSessionGraph);
-    const attachSession = vi.spyOn(api, 'attachWorkspaceSession').mockImplementation(async (_projectName, sessionId) => ({ session_id: sessionId, project_name: 'AURA Project' }));
+    const attachSession = vi.spyOn(api, 'attachWorkspaceSession').mockImplementation(async (_projectName, sessionId) => ({ session_id: sessionId, project_name: 'Kuractus Project' }));
     vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
 
     const renderBoard = (sessionIds: string[]) => (
       <ReactFlowProvider>
-        <BoardCanvas boardKey="session-attach" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={sessionIds} />
+        <BoardCanvas boardKey="session-attach" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={sessionIds} />
       </ReactFlowProvider>
     );
     const view = render(renderBoard(['session-1']));
@@ -132,7 +132,7 @@ describe('Persistent workspace graph Board projection', () => {
     view.rerender(renderBoard(['session-1', 'session-2']));
     expect(await screen.findByText('Second session answer')).toBeInTheDocument();
     expect(attachSession).toHaveBeenCalledTimes(2);
-    expect(attachSession).toHaveBeenCalledWith('AURA Project', 'session-2');
+    expect(attachSession).toHaveBeenCalledWith('Kuractus Project', 'session-2');
     expect(fetchPage).toHaveBeenCalledTimes(2);
     expect(view.container.querySelector('[data-id="turn-1"]')).toHaveStyle({ transform: 'translate(80px,60px)' });
   });
@@ -148,11 +148,11 @@ describe('Persistent workspace graph Board projection', () => {
       .mockResolvedValueOnce(initial)
       .mockResolvedValueOnce(older);
     vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(savedGraph.layout);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
 
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="paged-graph" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="paged-graph" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -160,7 +160,7 @@ describe('Persistent workspace graph Board projection', () => {
     expect(screen.queryByText('Older saved answer')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Load older objects' }));
     expect(await screen.findByText('Older saved answer')).toBeInTheDocument();
-    expect(fetchPage).toHaveBeenLastCalledWith('AURA Project', { object: 'older-object-cursor', edge: null });
+    expect(fetchPage).toHaveBeenLastCalledWith('Kuractus Project', { object: 'older-object-cursor', edge: null });
   });
 
   it('loads older execution runs from a paged execution history response', async () => {
@@ -183,17 +183,17 @@ describe('Persistent workspace graph Board projection', () => {
     const initialGraph: WorkspaceGraph = { ...savedGraph, ...recentGraph };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(initialGraph);
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceExecutionHistory').mockImplementation(async (_projectName, cursor) => cursor ? olderGraph : recentGraph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
 
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="paged-execution" workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="paged-execution" workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
     const loadOlder = await screen.findByRole('button', { name: 'Load older runs' });
     fireEvent.click(loadOlder);
-    await waitFor(() => expect(fetchGraph).toHaveBeenLastCalledWith('AURA Project', 'older-page-token'));
+    await waitFor(() => expect(fetchGraph).toHaveBeenLastCalledWith('Kuractus Project', 'older-page-token'));
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Load older runs' })).not.toBeInTheDocument());
   });
 
@@ -201,7 +201,7 @@ describe('Persistent workspace graph Board projection', () => {
     const studySession: WorkspaceObject = {
       id: 'study-session-1', project_name: null, object_type: 'study_session', created_by: 'user',
       title: 'Verified finding', content: '',
-      metadata_json: { material_id: 'turn-1', material_project_name: 'AURA Project', status: 'in_progress' },
+      metadata_json: { material_id: 'turn-1', material_project_name: 'Kuractus Project', status: 'in_progress' },
       revision: 1,
       created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
     };
@@ -209,17 +209,17 @@ describe('Persistent workspace graph Board projection', () => {
       ...savedGraph,
       objects: [...savedGraph.objects, studySession],
       edges: [{
-        id: 'study-provenance-1', project_name: 'AURA Project', source_object_id: 'turn-1',
+        id: 'study-provenance-1', project_name: 'Kuractus Project', source_object_id: 'turn-1',
         target_object_id: 'study-session-1', relation_type: 'studied_in', edge_family: 'provenance',
         created_by: 'user', metadata_json: {}, created_at: '2026-10-01T00:00:00Z',
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
 
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="study-provenance" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="study-provenance" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -239,11 +239,11 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
 
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="aura-project-trace" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} executionExpanded />
+        <BoardCanvas boardKey="aura-project-trace" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} executionExpanded />
       </ReactFlowProvider>,
     );
 
@@ -255,7 +255,7 @@ describe('Persistent workspace graph Board projection', () => {
     const graph: WorkspaceGraph = {
       ...savedGraph,
       objects: [{
-        id: 'bridge-1', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        id: 'bridge-1', project_name: 'Kuractus Project', session_id: null, source_message_id: null,
         object_type: 'context_bridge', created_by: 'user', title: 'Migration handoff',
         content: 'Keep the rollout reversible.',
         metadata_json: {
@@ -269,13 +269,13 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     let revision = 1;
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
 
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="bridge-hydration" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="bridge-hydration" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -287,7 +287,7 @@ describe('Persistent workspace graph Board projection', () => {
     expect(container.querySelector('textarea[aria-label="Context Bridge Important observations"]')).toBeNull();
     fireEvent.change(section!, { target: { value: 'Keep rollback available.' } });
 
-    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'bridge-1', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('Kuractus Project', 'bridge-1', expect.objectContaining({
       metadata_json: expect.objectContaining({
         privacy_policy: 'confidential',
         required_capabilities: ['document_parse'],
@@ -312,12 +312,12 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     let revision = 1;
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="classified-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="classified-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -326,14 +326,14 @@ describe('Persistent workspace graph Board projection', () => {
     await waitFor(() => expect(container.querySelector('.aura-node--full')).toBeInTheDocument());
     fireEvent.change(container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Edit manual note"]')!, { target: { value: 'Updated internal wording.' } });
 
-    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'classified-note', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('Kuractus Project', 'classified-note', expect.objectContaining({
       content: 'Updated internal wording.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
       expected_revision: 1,
     })), { timeout: 2000 });
 
     fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
-    await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('AURA Project', 'classified-note', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('Kuractus Project', 'classified-note', expect.objectContaining({
       content: 'Keep this internal.',
       metadata_json: { privacy_policy: 'confidential', required_capabilities: ['code_graph.read'] },
       expected_revision: 2,
@@ -354,12 +354,12 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     let revision = 1;
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => ({ revision: ++revision } as never));
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="privacy-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="privacy-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -370,13 +370,13 @@ describe('Persistent workspace graph Board projection', () => {
     expect(privacySelect).toHaveValue('');
 
     fireEvent.change(privacySelect, { target: { value: 'local_only' } });
-    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('Kuractus Project', 'privacy-note', expect.objectContaining({
       metadata_json: { required_capabilities: ['document_parse'], privacy_policy: 'local_only' },
       expected_revision: 1,
     })));
 
     fireEvent.change(privacySelect, { target: { value: '' } });
-    await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenLastCalledWith('Kuractus Project', 'privacy-note', expect.objectContaining({
       metadata_json: { required_capabilities: ['document_parse'] },
       expected_revision: 2,
     })));
@@ -396,12 +396,12 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockRejectedValue(new Error('offline'));
     const onToast = vi.fn();
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="privacy-update-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="privacy-update-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
@@ -412,7 +412,7 @@ describe('Persistent workspace graph Board projection', () => {
     expect(privacySelect).toHaveValue('confidential');
 
     fireEvent.change(privacySelect, { target: { value: 'local_only' } });
-    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('AURA Project', 'privacy-note', expect.objectContaining({
+    await waitFor(() => expect(updateObject).toHaveBeenCalledWith('Kuractus Project', 'privacy-note', expect.objectContaining({
       metadata_json: { privacy_policy: 'local_only' },
     })));
     await waitFor(() => expect(privacySelect).toHaveValue('confidential'));
@@ -433,7 +433,7 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     let releaseFirstSave!: () => void;
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject').mockImplementation(async () => {
       if (updateObject.mock.calls.length === 1) {
@@ -443,7 +443,7 @@ describe('Persistent workspace graph Board projection', () => {
     });
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="note-save-order" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="note-save-order" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -481,14 +481,14 @@ describe('Persistent workspace graph Board projection', () => {
       }],
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const updateObject = vi.spyOn(api, 'updateWorkspaceObject')
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ revision: 2 } as never);
     const onToast = vi.fn();
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="retryable-note-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="retryable-note-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
@@ -518,7 +518,7 @@ describe('Persistent workspace graph Board projection', () => {
   it('persists undo and redo for a user-created note using its stable workspace ID', async () => {
     let graph: WorkspaceGraph = { ...savedGraph, objects: [...savedGraph.objects] };
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     vi.spyOn(api, 'putWorkspaceLayout').mockImplementation(async (_project, layout, expectedRevision) => {
       const revision = expectedRevision + 1;
       graph = { ...graph, layout: { ...graph.layout, layout, revision } };
@@ -526,7 +526,7 @@ describe('Persistent workspace graph Board projection', () => {
     });
     const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
       const object = {
-        id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        id: input.id ?? 'restored-note-id', project_name: 'Kuractus Project', session_id: null, source_message_id: null,
         object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
         metadata_json: input.metadata_json ?? {}, revision: 1, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       } as WorkspaceObject;
@@ -539,7 +539,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="undo-persistent-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="undo-persistent-note" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
     await screen.findByText('Persistent answer');
@@ -551,7 +551,7 @@ describe('Persistent workspace graph Board projection', () => {
     const undoButton = screen.getByTitle('Undo · Ctrl Z');
     await waitFor(() => expect(undoButton).toBeEnabled());
     fireEvent.click(undoButton);
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId!, 1));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('Kuractus Project', createdId!, 1));
     await waitFor(() => expect(screen.queryByText('Untitled note')).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByTitle('Redo · Ctrl ⇧ Z'));
@@ -570,11 +570,11 @@ describe('Persistent workspace graph Board projection', () => {
       },
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     vi.spyOn(api, 'putWorkspaceLayout').mockResolvedValue(graph.layout);
     const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
       const object = {
-        id: input.id ?? 'failed-undo-note', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        id: input.id ?? 'failed-undo-note', project_name: 'Kuractus Project', session_id: null, source_message_id: null,
         object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
         metadata_json: input.metadata_json ?? {}, revision: 1,
         created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
@@ -586,7 +586,7 @@ describe('Persistent workspace graph Board projection', () => {
     const onToast = vi.fn();
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="failed-undo-history" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="failed-undo-history" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
@@ -599,7 +599,7 @@ describe('Persistent workspace graph Board projection', () => {
     fireEvent.click(undoButton);
 
     const createdId = createObject.mock.calls[0][1].id ?? 'failed-undo-note';
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', createdId, 1));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('Kuractus Project', createdId, 1));
     await waitFor(() => expect(onToast).toHaveBeenCalledWith('Undo/redo could not be saved', expect.anything()));
     expect(await screen.findByText('Untitled note')).toBeInTheDocument();
     expect(screen.getByTitle('Undo · Ctrl Z')).toBeDisabled();
@@ -622,12 +622,12 @@ describe('Persistent workspace graph Board projection', () => {
       },
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const createEdge = vi.spyOn(api, 'createWorkspaceEdge').mockRejectedValue(new Error('offline'));
     const onToast = vi.fn();
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="failed-semantic-link" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="failed-semantic-link" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
@@ -660,14 +660,14 @@ describe('Persistent workspace graph Board projection', () => {
     vi.spyOn(api, 'fetchWorkspaceGraphPage')
       .mockResolvedValueOnce(graph)
       .mockRejectedValueOnce(new Error('offline during refresh'));
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({
       ...graph.objects[0], id: 'saved-context-set', object_type: 'context_set', title: 'Saved context selection',
     });
     const onToast = vi.fn();
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="context-set-refresh-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="context-set-refresh-failure" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
@@ -689,20 +689,20 @@ describe('Persistent workspace graph Board projection', () => {
     vi.spyOn(api, 'fetchWorkspaceGraphPage')
       .mockResolvedValueOnce(savedGraph)
       .mockRejectedValueOnce(new Error('offline during refresh'));
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const createObject = vi.spyOn(api, 'createWorkspaceObject').mockResolvedValue({
       ...savedGraph.objects[0], id: 'saved-branch', object_type: 'conversation_branch', title: 'Continue from this point…',
     });
     const onToast = vi.fn();
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="branch-refresh-failure" seedNodes={[]} seedEdges={[]} branchRequest={{ nodeId: 'turn-1', nonce: 1 }} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} onToast={onToast} />
+        <BoardCanvas boardKey="branch-refresh-failure" seedNodes={[]} seedEdges={[]} branchRequest={{ nodeId: 'turn-1', nonce: 1 }} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} onToast={onToast} />
       </ReactFlowProvider>,
     );
 
     await screen.findByText('Persistent answer');
 
-    await waitFor(() => expect(createObject).toHaveBeenCalledWith('AURA Project', expect.objectContaining({
+    await waitFor(() => expect(createObject).toHaveBeenCalledWith('Kuractus Project', expect.objectContaining({
       object_type: 'conversation_branch', source_object_ids: ['turn-1'],
     })));
     await waitFor(() => expect(onToast).toHaveBeenCalledWith('Branch saved, but Board could not refresh', expect.anything()));
@@ -723,7 +723,7 @@ describe('Persistent workspace graph Board projection', () => {
     };
     let graph = initialGraph;
     const fetchGraph = vi.spyOn(api, 'fetchWorkspaceGraph').mockImplementation(async () => graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
 
     let releaseFirstSave!: () => void;
     const saveCalls: number[] = [];
@@ -739,7 +739,7 @@ describe('Persistent workspace graph Board projection', () => {
     });
     const createObject = vi.spyOn(api, 'createWorkspaceObject').mockImplementation(async (_project, input) => {
       const object = {
-        id: input.id ?? 'restored-note-id', project_name: 'AURA Project', session_id: null, source_message_id: null,
+        id: input.id ?? 'restored-note-id', project_name: 'Kuractus Project', session_id: null, source_message_id: null,
         object_type: input.object_type, created_by: 'user', title: input.title, content: input.content,
         metadata_json: input.metadata_json ?? {}, revision: 1, created_at: '2026-10-01T00:00:00Z', updated_at: '2026-10-01T00:00:00Z',
       } as WorkspaceObject;
@@ -753,7 +753,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     const renderBoard = (revision: number) => (
       <ReactFlowProvider>
-        <BoardCanvas boardKey="serialized-layout-writes" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} workspaceGraphRevision={revision} onToast={onToast} />
+        <BoardCanvas boardKey="serialized-layout-writes" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} workspaceGraphRevision={revision} onToast={onToast} />
       </ReactFlowProvider>
     );
     const view = render(renderBoard(0));
@@ -770,7 +770,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     fireEvent.click(screen.getByTitle('Undo · Ctrl Z'));
     const noteId = createObject.mock.calls[0][1].id ?? 'restored-note-id';
-    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('AURA Project', noteId, 1));
+    await waitFor(() => expect(deleteObject).toHaveBeenCalledWith('Kuractus Project', noteId, 1));
     expect(saveCalls).toEqual([3]);
 
     releaseFirstSave();
@@ -791,7 +791,7 @@ describe('Persistent workspace graph Board projection', () => {
       },
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const saveLayout = vi.spyOn(api, 'putWorkspaceLayout')
       .mockRejectedValueOnce(new Error('offline'))
       .mockImplementationOnce(async (_project, layout, expectedRevision) => ({
@@ -801,7 +801,7 @@ describe('Persistent workspace graph Board projection', () => {
       }));
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="retryable-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="retryable-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -834,11 +834,11 @@ describe('Persistent workspace graph Board projection', () => {
       },
     };
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(graph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const saveLayout = vi.spyOn(api, 'putWorkspaceLayout').mockRejectedValue(new ApiError(409, 'Workspace layout changed elsewhere'));
     const { container } = render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="conflicted-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="conflicted-layout-save" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 
@@ -852,13 +852,13 @@ describe('Persistent workspace graph Board projection', () => {
 
   it('offers retry when the initial Board layout bootstrap save fails', async () => {
     vi.spyOn(api, 'fetchWorkspaceGraph').mockResolvedValue(savedGraph);
-    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'AURA Project' });
+    vi.spyOn(api, 'attachWorkspaceSession').mockResolvedValue({ session_id: 'session-1', project_name: 'Kuractus Project' });
     const saveLayout = vi.spyOn(api, 'putWorkspaceLayout')
       .mockRejectedValueOnce(new Error('offline'))
       .mockResolvedValueOnce({ ...savedGraph.layout, revision: 4 });
     render(
       <ReactFlowProvider>
-        <BoardCanvas boardKey="retryable-layout-bootstrap" seedNodes={[]} seedEdges={[]} workspaceProjectName="AURA Project" workspaceSessionIds={['session-1']} />
+        <BoardCanvas boardKey="retryable-layout-bootstrap" seedNodes={[]} seedEdges={[]} workspaceProjectName="Kuractus Project" workspaceSessionIds={['session-1']} />
       </ReactFlowProvider>,
     );
 

@@ -20,6 +20,6 @@ export async function extractDocxText(blob: Blob): Promise<string> {
   } catch (error) {
     if (error instanceof Error && error.message.startsWith('This Word document')) throw error;
     if (error instanceof Error && error.message.startsWith('The selected Word document')) throw error;
-    throw new Error('AURA could not extract text from this Word document in the browser.');
+    throw new Error('Kuractus could not extract text from this Word document in the browser.');
   }
 }

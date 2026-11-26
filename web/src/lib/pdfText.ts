@@ -56,7 +56,7 @@ export async function extractPdfText(blob: Blob): Promise<string> {
         canvas.width = Math.ceil(renderViewport.width);
         canvas.height = Math.ceil(renderViewport.height);
         const canvasContext = canvas.getContext('2d');
-        if (!canvasContext) throw new Error('AURA could not prepare this PDF page for local OCR.');
+        if (!canvasContext) throw new Error('Kuractus could not prepare this PDF page for local OCR.');
         await page.render({ canvas, canvasContext, viewport: renderViewport }).promise;
         let recognizedText = '';
         try {
@@ -89,7 +89,7 @@ export async function extractPdfText(blob: Blob): Promise<string> {
     )) {
       throw error;
     }
-    throw new Error('AURA could not extract text from this PDF in the browser.');
+    throw new Error('Kuractus could not extract text from this PDF in the browser.');
   } finally {
     await ocrWorker?.terminate().catch(() => undefined);
     await loadingTask.destroy();

@@ -79,8 +79,8 @@ function mapWorkspaceGraph(graph: Awaited<ReturnType<typeof api.fetchWorkspaceGr
       position: positions[object.id] ?? { x: 120 + (index % 3) * 390, y: 100 + Math.floor(index / 3) * 210 },
       data: {
         kind,
-        eyebrow: studyCard ? 'STUDY CARD' : researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : object.object_type === 'study_session' ? 'STUDY SESSION' : kind === 'user' ? 'USER' : kind === 'answer' ? 'AURA' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
-        title: object.title || (kind === 'user' ? 'User turn' : 'AURA response'),
+        eyebrow: studyCard ? 'STUDY CARD' : researchObject ? object.object_type.replace(/_/g, ' ').toUpperCase() : object.object_type === 'conversation_branch' ? 'NEW BRANCH' : object.object_type === 'study_session' ? 'STUDY SESSION' : kind === 'user' ? 'USER' : kind === 'answer' ? 'Kuractus' : kind === 'note' ? 'MANUAL NOTE' : kind === 'bridge' ? 'CONTEXT BRIDGE' : 'SAVED CONTEXT SET',
+        title: object.title || (kind === 'user' ? 'User turn' : 'Kuractus response'),
         body: object.content || (kind === 'merge' ? 'Selected objects remain individually inspectable. No summary was generated.' : object.object_type === 'conversation_branch' ? 'Saved branch point. Add a user-authored prompt to start this conversation.' : object.object_type === 'study_session' ? 'Learning session linked to verified research.' : ''),
         summary: object.content ? object.content.slice(0, 160) : object.object_type === 'study_session' ? 'Learning session linked to verified research.' : undefined,
         density: graph.layout.layout?.densities?.[object.id] ?? 'compact',
@@ -654,7 +654,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       lastRefreshedGraphRevision.current = revisionAtLoadStart;
       setWorkspaceLoadVersion((current) => current + 1);
     }).catch(() => {
-      if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from AURA.');
+      if (!cancelled) toast('Could not load saved Board', 'The workspace graph could not be loaded from Kuractus.');
     });
     return () => { cancelled = true; };
   }, [attachWorkspaceSessions, saveWorkspaceLayout, workspaceProjectName, setEdges, setNodes, toast]);
@@ -925,7 +925,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
               source_object_ids: [source.id],
             });
           } catch {
-            toast('Branch was not saved', 'AURA could not link the selected turn in this project graph.');
+            toast('Branch was not saved', 'Kuractus could not link the selected turn in this project graph.');
             return;
           }
           recordHistory();
@@ -967,7 +967,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       };
       setNodes((current) => [...current, newNode]);
       setEdges((current) => [...current, newEdge]);
-      toast('Branch created', 'A user placeholder was added from the selected AURA turn.');
+      toast('Branch created', 'A user placeholder was added from the selected Kuractus turn.');
     },
     [recordHistory, setEdges, setNodes, toast, workspaceProjectName],
   );
@@ -1035,7 +1035,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       );
       const deletableIds = new Set([...ids].filter((id) => !protectedIds.has(id)));
       if (deletableIds.size === 0) {
-        toast('System link protected', 'AURA-owned graph links cannot be deleted.');
+        toast('System link protected', 'Kuractus-owned graph links cannot be deleted.');
         return;
       }
       if (workspaceProjectName) {
@@ -1045,7 +1045,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
             await api.deleteWorkspaceEdges(workspaceProjectName, persistedUserEdges.map((edge) => edge.id));
           }
         } catch {
-          toast('Link was not deleted', 'AURA could not update the saved workspace graph.');
+          toast('Link was not deleted', 'Kuractus could not update the saved workspace graph.');
           return;
         }
       }
@@ -1055,7 +1055,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       if (protectedCount > 0) {
         toast(
           'User links deleted',
-          `${protectedCount} AURA-owned ${protectedCount === 1 ? 'link was' : 'links were'} kept in the graph.`,
+          `${protectedCount} Kuractus-owned ${protectedCount === 1 ? 'link was' : 'links were'} kept in the graph.`,
         );
       } else {
         toast(deletableIds.size === 1 ? 'Link deleted' : `${deletableIds.size} links deleted`, 'Ctrl+Z restores the removed relation.');
@@ -1183,7 +1183,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
           workspaceRevision = created.revision;
           workspaceObjectRevisions.current.set(id, created.revision);
         } catch {
-          toast('Manual note was not saved', 'AURA could not create this note in the project graph.');
+          toast('Manual note was not saved', 'Kuractus could not create this note in the project graph.');
           return null;
         }
       }
@@ -1234,7 +1234,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       } catch (error) {
         toast('Context Bridge was not saved', error instanceof ApiError && error.status === 409
           ? 'This bridge would create a cycle in the context-flow graph.'
-          : 'AURA could not link all selected objects in the project graph.');
+          : 'Kuractus could not link all selected objects in the project graph.');
         return;
       }
       recordHistory();
@@ -1286,7 +1286,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       } catch (error) {
         toast('Context Set was not saved', error instanceof ApiError && error.status === 409
           ? 'This selection would create a cycle in the context-flow graph.'
-          : 'AURA could not link all selected objects in the project graph.');
+          : 'Kuractus could not link all selected objects in the project graph.');
         return;
       }
       recordHistory();
@@ -1348,7 +1348,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       } catch (error) {
         toast('Merge was not saved', error instanceof ApiError && error.status === 409
           ? 'This merge would create a cycle in the context-flow graph.'
-          : 'AURA could not link the selected objects into a new branch.');
+          : 'Kuractus could not link the selected objects into a new branch.');
         return;
       }
       recordHistory();
@@ -1397,7 +1397,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
         position: anchor,
         data: {
           kind: 'answer',
-          eyebrow: 'AURA · CONTEXT LENS',
+          eyebrow: 'Kuractus · CONTEXT LENS',
           title: prompt,
           body: 'Mock synthesis: selected research and coding evidence point toward the fixed-size state representation as the stronger novelty boundary; update dynamics alone overlap existing work.',
           summary: 'Lens synthesis across the selected context.',
@@ -1416,7 +1416,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
       }));
       setNodes((current) => [...current, answerNode]);
       setEdges((current) => [...current, ...answerEdges]);
-      toast('AURA answered from the lens', 'The generated node is mock content based on selected objects.');
+      toast('Kuractus answered from the lens', 'The generated node is mock content based on selected objects.');
     },
     [getSelectionAnchor, onAskWithContext, recordHistory, selectedNodes, setEdges, setNodes, toast, workspaceProjectName],
   );
@@ -1597,7 +1597,7 @@ export function BoardCanvas({ compact = false, boardKey = 'stateful', seedNodes,
                     }]);
                     toast('Semantic link created', 'The relationship is saved in this project graph.');
                   } catch {
-                    toast('Link was not saved', 'AURA could not create that semantic relationship.');
+                    toast('Link was not saved', 'Kuractus could not create that semantic relationship.');
                   }
                 } else {
                   recordHistory();

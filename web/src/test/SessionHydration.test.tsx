@@ -334,7 +334,7 @@ describe('Session Hydration', () => {
     await act(async () => { fireEvent.click(screen.getByTitle('Toggle inspector')); });
     await screen.findByTestId('inspector-panel');
     await act(async () => { fireEvent.click(screen.getByTestId('inspector-tab-memory')); });
-    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Why AURA remembers this' })); });
+    await act(async () => { fireEvent.click(await screen.findByRole('button', { name: 'Why Kuractus remembers this' })); });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Open source run' })); });
 
     expect(await screen.findByTestId('inspector-execution')).toBeInTheDocument();

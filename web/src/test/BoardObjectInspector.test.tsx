@@ -9,7 +9,7 @@ function makeNode(id: string, title: string): AuraFlowNode {
     position: { x: 0, y: 0 },
     data: {
       kind: 'answer',
-      eyebrow: 'AURA RESPONSE',
+      eyebrow: 'Kuractus RESPONSE',
       title,
       body: `${title} description`,
       density: 'compact',
@@ -37,13 +37,13 @@ describe('BoardObjectInspector', () => {
     );
 
     expect(screen.getByText('Root response')).toBeInTheDocument();
-    expect(screen.getByText('AURA-generated')).toBeInTheDocument();
+    expect(screen.getByText('Kuractus-generated')).toBeInTheDocument();
     expect(screen.getByText('conversation branch')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open related object Follow-up branch' }));
     expect(onSelectRelationship).toHaveBeenCalledWith(related);
   });
 
-  it('sends the selected object to AURA and can be dismissed', () => {
+  it('sends the selected object to Kuractus and can be dismissed', () => {
     const node = makeNode('object-1', 'Root response');
     const onAskWithContext = vi.fn();
     const onClose = vi.fn();
@@ -57,7 +57,7 @@ describe('BoardObjectInspector', () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Ask AURA with this object/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Ask Kuractus with this object/ }));
     expect(onAskWithContext).toHaveBeenCalledWith(
       'Review “Root response” and explain its relationship to the surrounding project context.',
       ['object-1'],

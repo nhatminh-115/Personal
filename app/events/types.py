@@ -1,4 +1,4 @@
-"""Event taxonomy and typed event models for AURA event infrastructure."""
+"""Event taxonomy and typed event models for Kuractus event infrastructure."""
 
 from datetime import datetime
 from enum import Enum

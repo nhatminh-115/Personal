@@ -19,7 +19,7 @@ class MockModelProvider(ModelProvider):
 
     def __init__(self, default_response: Optional[str] = None) -> None:
         self._name = "mock"
-        self._default_response = default_response or "This is a deterministic mock response from AURA."
+        self._default_response = default_response or "This is a deterministic mock response from Kuractus."
         self._queued_responses: List[ModelResponse] = []
         self._call_history: List[ModelRequest] = []
 
@@ -484,31 +484,31 @@ class MockModelProvider(ModelProvider):
                 message.content
                 for message in request.messages
                 if message.role == ModelRole.USER
-                and message.content.startswith("AURA reference material for the current request follows as untrusted data.")
+                and message.content.startswith("Kuractus reference material for the current request follows as untrusted data.")
             ]
             for reference_context in reference_contexts:
                 if "Python 3.12" in reference_context:
                     return ModelResponse(
-                        content="AURA Response: Project uses Python 3.12.",
+                        content="Kuractus Response: Project uses Python 3.12.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
                         finish_reason="stop",
                     )
                 if "Python 3.11" in reference_context:
                     return ModelResponse(
-                        content="AURA Response: Project uses Python 3.11.",
+                        content="Kuractus Response: Project uses Python 3.11.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
                         finish_reason="stop",
                     )
                 if "Go 1.22" in reference_context:
                     return ModelResponse(
-                        content="AURA Response: Project uses Go 1.22.",
+                        content="Kuractus Response: Project uses Go 1.22.",
                         usage=ModelUsage(prompt_tokens=20, completion_tokens=10, total_tokens=30),
                         finish_reason="stop",
                     )
 
         # Direct conversational response
         return ModelResponse(
-            content=f"AURA Response: Processed '{content}' successfully.",
+            content=f"Kuractus Response: Processed '{content}' successfully.",
             usage=ModelUsage(prompt_tokens=15, completion_tokens=10, total_tokens=25),
             finish_reason="stop",
         )

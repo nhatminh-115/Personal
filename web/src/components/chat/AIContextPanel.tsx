@@ -34,7 +34,7 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
       <div className="ai-context-panel__head">
         <div>
           <span className="eyebrow">CONTEXT</span>
-          <strong>What AURA can use</strong>
+          <strong>What Kuractus can use</strong>
         </div>
         <button className="icon-button" type="button" onClick={onClose} aria-label="Close context panel">
           <X size={14} />
@@ -82,7 +82,7 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
                   className={`ai-context-item__content ${item.fileContentIncluded ? 'is-enabled' : ''}`}
                   type="button"
                   aria-pressed={Boolean(item.fileContentIncluded)}
-                  aria-label={`${item.fileContentIncluded ? 'Stop sending' : 'Send'} ${item.title} text to AURA`}
+                  aria-label={`${item.fileContentIncluded ? 'Stop sending' : 'Send'} ${item.title} text to Kuractus`}
                   title={item.fileContentIncluded ? 'File text will be sent with the next message' : 'Send this browser-local text file with the next message'}
                   onClick={() => onToggleFileContent(item.nodeId!, !item.fileContentIncluded)}
                 >
@@ -97,7 +97,7 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
       <div className="ai-context-panel__foot">
         {loadError && onRetry ? <button type="button" onClick={onRetry}>Retry</button> : null}
         {hasMore && onLoadOlder ? <button type="button" onClick={() => void onLoadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older objects…' : 'Load older objects'}</button> : null}
-        <small>{contextIsLive ? 'File text stays in this browser until you choose Send text. Included text is copied into the durable AURA run; cloud routing pauses for confirmation. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
+        <small>{contextIsLive ? 'File text stays in this browser until you choose Send text. Included text is copied into the durable Kuractus run; cloud routing pauses for confirmation. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-"""Dogfood entrypoints resolve AURA from their checkout rather than the caller's cwd."""
+"""Dogfood entrypoints resolve Kuractus from their checkout rather than the caller's cwd."""
 
 import sys
 from pathlib import Path

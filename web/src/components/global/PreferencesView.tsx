@@ -13,14 +13,14 @@ export function PreferencesView({ apiTokenConfigured, onOpenApiAccess, onOpenDes
       <header className="preferences-v16__intro">
         <span className="eyebrow">YOUR WORKSPACE</span>
         <h1 id="preferences-v16-title">Preferences</h1>
-        <p>Connection, privacy, and desktop behavior for this AURA workspace.</p>
+        <p>Connection, privacy, and desktop behavior for this Kuractus workspace.</p>
       </header>
 
       <div className="preferences-v16__grid">
         <section className="preferences-card-v16">
           <span className="preferences-card-v16__icon"><KeyRound size={17} /></span>
-          <div><span className="eyebrow">CONNECTION</span><h2>API access</h2><p>{apiTokenConfigured ? 'A server token is saved for this browser session.' : 'Connect to an AURA server that requires a shared API token.'}</p></div>
-          <button type="button" onClick={onOpenApiAccess}>{apiTokenConfigured ? 'Manage token' : 'Set up access'} <ArrowRight size={14} /></button>
+          <div><span className="eyebrow">SERVER ACCESS</span><h2>Server API token</h2><p>{apiTokenConfigured ? 'A shared token is saved for this browser session.' : 'Set the shared access token required by this Kuractus server.'}</p></div>
+          <button type="button" onClick={onOpenApiAccess}>{apiTokenConfigured ? 'Manage server token' : 'Set up server access'} <ArrowRight size={14} /></button>
         </section>
 
         <section className="preferences-card-v16">
@@ -31,8 +31,8 @@ export function PreferencesView({ apiTokenConfigured, onOpenApiAccess, onOpenDes
 
         <section className="preferences-card-v16 preferences-card-v16--wide">
           <span className="preferences-card-v16__icon"><MonitorCog size={17} /></span>
-          <div><span className="eyebrow">WINDOWS DESKTOP</span><h2>Desktop and local runtime</h2><p>Configure the local provider, Docker runtime, startup behavior, notifications, and global shortcut. API keys remain in Windows Credential Manager.</p></div>
-          <button type="button" onClick={onOpenDesktopSettings}>Open desktop settings <ArrowRight size={14} /></button>
+          <div><span className="eyebrow">WINDOWS DESKTOP</span><h2>Model APIs and local runtime</h2><p>Add named OpenAI-compatible API connections and choose the active one. Keys stay in Windows Credential Manager alongside Docker runtime and startup settings.</p></div>
+          <button type="button" onClick={onOpenDesktopSettings}>Manage model APIs <ArrowRight size={14} /></button>
         </section>
 
         <section className="preferences-card-v16 preferences-card-v16--wide preferences-card-v16--privacy">

@@ -7,7 +7,7 @@ describe('structured routing error guidance', () => {
     ['PrivacyBoundaryViolation', 'Review the profile scope'],
     ['ModelCapabilityMismatch', 'Choose a compatible model'],
     ['ReasoningControlUnsupported', 'Use Profile reasoning'],
-    ['ModelUnavailable', 'AURA did not substitute another model'],
+    ['ModelUnavailable', 'Kuractus did not substitute another model'],
     ['NoEligibleRoute', 'Review the profile in Routing Studio'],
   ])('gives actionable guidance for %s without exposing raw details', (code, guidance) => {
     const message = executionErrorText(new ApiError(422, 'Routing request failed.', code, { raw: 'internal diagnostic' }));
@@ -29,8 +29,8 @@ describe('structured routing error guidance', () => {
     expect(executionErrorText(new ApiError(409, 'Assignment changed.', 'RoutingAssignmentRevisionConflict')))
       .toContain('Close and reopen Routing Studio');
     expect(executionErrorText(new ApiError(409, 'Library reference changed.', 'WorkspaceLibraryRevisionConflict')))
-      .toContain('Refresh the AURA workspace');
+      .toContain('Refresh the Kuractus workspace');
     expect(executionErrorText(new ApiError(409, 'Project archive state changed.', 'WorkspaceProjectRevisionConflict')))
-      .toContain('Reload AURA');
+      .toContain('Reload Kuractus');
   });
 });

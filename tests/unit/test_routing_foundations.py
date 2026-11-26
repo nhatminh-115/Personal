@@ -1,4 +1,4 @@
-"""Comprehensive unit and integration test suite for AURA Routing Foundations v1."""
+"""Comprehensive unit and integration test suite for Kuractus Routing Foundations v1."""
 
 import uuid
 import pytest

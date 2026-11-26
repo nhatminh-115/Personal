@@ -43,7 +43,7 @@ export const projects: ProjectRecord[] = [
   },
   {
     id: 'aura',
-    name: 'AURA',
+    name: 'Kuractus',
     subtitle: 'Personal AI workspace and routing studio',
     status: 'active',
     accent: 'purple',
@@ -260,7 +260,7 @@ export const initialNotes: WorkspaceNote[] = [
   },
   {
     id: 'note-aura-principle',
-    title: 'AURA product principle',
+    title: 'Kuractus product principle',
     body: 'Project is a context container, not the root of the whole personal workspace. Global files and study artifacts must stay first-class.',
     updated: 'today',
     tags: ['aura', 'ux'],
@@ -399,7 +399,7 @@ export const initialChatThreads: ChatThreadRecord[] = [
   { id: 'stateful-ttt', projectId: 'stateful', title: 'TTT overlap deep-dive', summary: 'Where update dynamics overlap and state representation diverges.', updated: '1h ago', source: 'demo', messages: researchSeed },
   { id: 'stateful-code', projectId: 'stateful', title: 'Toy prototype benchmark', summary: 'Fixed memory, 16k context sweep and retrieval failure.', updated: '2h ago', source: 'demo', messages: codingSeed },
   { id: 'stateful-paper', projectId: 'stateful', title: 'Paper framing', summary: 'Turn evidence into a conservative novelty claim.', updated: 'yesterday', source: 'demo', messages: emptySeed('stateful-paper', 'Help me frame the novelty claim conservatively for a paper.') },
-  { id: 'aura-main', projectId: 'aura', title: 'Workspace architecture', summary: 'Global workspace vs project-scoped AI interactions.', updated: 'today', pinned: true, source: 'demo', messages: emptySeed('aura-main', 'Design AURA as a personal AI workspace, not just a chatbot frontend.') },
+  { id: 'aura-main', projectId: 'aura', title: 'Workspace architecture', summary: 'Global workspace vs project-scoped AI interactions.', updated: 'today', pinned: true, source: 'demo', messages: emptySeed('aura-main', 'Design Kuractus as a personal AI workspace, not just a chatbot frontend.') },
   { id: 'aura-board', projectId: 'aura', title: 'Conversation Board UX', summary: 'Branching, context bridges, merge and smart edges.', updated: 'today', source: 'demo', messages: emptySeed('aura-board', 'Pressure-test the Conversation Board UX and interaction model.') },
   { id: 'aura-routing', projectId: 'aura', title: 'Routing studio', summary: 'Profiles, model locks, reasoning and inspectability.', updated: 'yesterday', source: 'demo', messages: emptySeed('aura-routing', 'What should a routing studio expose without becoming an admin dashboard?') },
   { id: 'transport-main', projectId: 'transportability', title: 'Discussion rewrite', summary: 'Connect observed failures back to transportability preconditions.', updated: 'yesterday', pinned: true, source: 'demo', messages: emptySeed('transport-main', 'Help tighten the Discussion around P1–P3 and deployment failures.') },

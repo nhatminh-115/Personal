@@ -28,7 +28,7 @@ async def test_health_check(async_client: AsyncClient):
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "healthy"
-    assert "AURA" in data["app"]
+    assert "Kuractus" in data["app"]
 
 
 @pytest.mark.asyncio
@@ -91,7 +91,7 @@ async def test_direct_chat_turn(async_client: AsyncClient):
     session_id = "test-direct-sess"
     resp = await async_client.post(
         "/v1/chat",
-        json={"session_id": session_id, "project_name": "AURA Project", "message": "Hello AURA, who are you?"},
+        json={"session_id": session_id, "project_name": "Kuractus Project", "message": "Hello Kuractus, who are you?"},
     )
     assert resp.status_code == 200
     data = resp.json()
@@ -99,9 +99,9 @@ async def test_direct_chat_turn(async_client: AsyncClient):
     assert data["approval_id"] is None
     assert data["user_message_id"]
     assert data["assistant_message_id"]
-    assert "AURA Response" in data["response"]
+    assert "Kuractus Response" in data["response"]
 
-    graph_resp = await async_client.get("/v1/workspace/projects/AURA%20Project/graph")
+    graph_resp = await async_client.get("/v1/workspace/projects/Kuractus%20Project/graph")
     assert graph_resp.status_code == 200
     graph = graph_resp.json()
     assert {item["source_message_id"] for item in graph["objects"]} == {data["user_message_id"], data["assistant_message_id"]}

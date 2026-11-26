@@ -77,7 +77,7 @@ export function Topbar({
   return (
     <header className="topbar">
       <div className="topbar__breadcrumb" aria-label="Current location">
-        <span>AURA</span><span className="topbar__separator">/</span>
+        <span>Kuractus</span><span className="topbar__separator">/</span>
         {projectName ? <><span>{projectName}</span><span className="topbar__separator">/</span></> : null}
         <strong>{globalTitle}</strong>
       </div>
