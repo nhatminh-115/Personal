@@ -69,10 +69,9 @@ export function Sidebar({ projects, collapsed, active, activeProjectId, onCollap
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <div className="sidebar-personal-space">
-        <div className="sidebar-personal-space__mark"><PrototypeMark /></div>
-        {visuallyExpanded ? <div className="sidebar-personal-space__copy"><strong>Personal space</strong><small>Private by design</small></div> : null}
-        {visuallyExpanded ? <span className="sidebar-personal-space__indicator" aria-hidden="true" /> : null}
+      <div className="sidebar-brand" role="img" aria-label="Kuractus">
+        <div className="sidebar-brand__mark"><PrototypeMark /></div>
+        {visuallyExpanded ? <strong className="sidebar-brand__name">KURACTUS</strong> : null}
       </div>
 
       <div className="sidebar-nav-label">YOUR SPACE</div>
