@@ -553,6 +553,17 @@ export interface CompiledContextObject {
 export interface CompiledContextManifest {
   project_name?: string;
   objects?: CompiledContextObject[];
+  version?: number;
+  budget?: ContextBudgetManifest;
+  candidate_count?: number;
+  included_item_count?: number;
+  excluded_item_count?: number;
+  selected_item_ids?: string[];
+  priority_classes?: Record<string, string[]>;
+  scores?: Record<string, ContextScoreBreakdown>;
+  transformations?: ContextTransformation[];
+  exclusions?: ContextExclusion[];
+  included_objects?: ContextIncludedItem[];
   estimated_tokens?: number;
   character_count?: number;
   privacy_requirement?: string | null;
@@ -561,6 +572,57 @@ export interface CompiledContextManifest {
   required_tool_capabilities?: string[];
   resolved_tool_names?: string[];
   capability_requirements?: Record<string, boolean>;
+}
+
+export interface ContextBudgetManifest {
+  model_context_window?: number | null;
+  effective_context_window?: number;
+  context_window_source?: 'model_metadata' | 'conservative_fallback';
+  tokenizer?: string;
+  system_tokens?: number;
+  tool_tokens?: number;
+  user_tokens?: number;
+  conversation_tokens?: number;
+  reserved_output_tokens?: number;
+  safety_margin_tokens?: number;
+  available_context_tokens?: number;
+  estimated_context_tokens?: number;
+  remaining_context_tokens?: number;
+}
+
+export interface ContextScoreBreakdown {
+  relevance?: number | null;
+  freshness?: number | null;
+  authority?: number | null;
+  utility?: number | null;
+  weighted_total?: number;
+  priority_class?: string;
+}
+
+export interface ContextIncludedItem {
+  item_id: string;
+  source_type: string;
+  source_id?: string | null;
+  object_id?: string | null;
+  project_id?: string | null;
+  priority_class?: string;
+  estimated_tokens?: number;
+  source_object_ids?: string[];
+  selected_by_user?: boolean;
+  selected_sections?: Record<string, boolean | null> | null;
+}
+
+export interface ContextExclusion {
+  item_id: string;
+  reason: string;
+}
+
+export interface ContextTransformation {
+  item_id: string;
+  transformation: string;
+  original_tokens: number;
+  final_tokens: number;
+  provenance?: string[];
 }
 
 export interface WorkspaceContextPreview extends CompiledContextManifest {

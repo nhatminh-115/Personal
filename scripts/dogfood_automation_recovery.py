@@ -1,6 +1,6 @@
 """Exercise Automation webhook recovery across an API process restart.
 
-The isolated local API uses AURA's deterministic mock model. A webhook body
+The isolated local API uses Kuractus's deterministic mock model. A webhook body
 contains an untrusted instruction, while the saved Automation instruction
 requests a harmless workspace write. The run must pause for approval, survive
 an API restart, and complete only after the persisted approval is granted.

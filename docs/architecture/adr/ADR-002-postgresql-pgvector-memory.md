@@ -12,7 +12,7 @@ A personal AI agent must maintain long-term, durable persistence across reboots.
 5. Semantic vector similarity search over accumulated knowledge without introducing an uncoordinated secondary database (e.g., Pinecone, Weaviate, Qdrant).
 
 ## Decision
-We select **PostgreSQL 16** with the **pgvector** extension as the primary operational and memory database for AURA, accessed via **SQLAlchemy 2.x** (async mode) with **Alembic** migrations.
+We select **PostgreSQL 16** with the **pgvector** extension as the primary operational and memory database for Kuractus, accessed via **SQLAlchemy 2.x** (async mode) with **Alembic** migrations.
 
 For automated testing and offline development environments, the persistence layer abstractly relies on SQLAlchemy 2.x async interfaces, allowing testing either against PostgreSQL or against an async SQLite (`aiosqlite`) test database with JSON-serialized embeddings.
 

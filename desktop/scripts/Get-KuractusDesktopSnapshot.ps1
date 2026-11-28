@@ -1,11 +1,11 @@
 [CmdletBinding()]
 param(
     [string]$ApiBaseUrl = "http://127.0.0.1:17890",
-    [string]$AppExePath = (Join-Path $env:LOCALAPPDATA "AURA\aura-desktop.exe"),
+    [string]$AppExePath = (Join-Path $env:LOCALAPPDATA "Kuractus\kuractus-desktop.exe"),
     [string]$ArtifactZip,
     [string]$ExpectedArtifactSha256,
     [string]$BackupPath,
-    [string]$OutputDirectory = (Join-Path $env:TEMP "aura-desktop-dogfood")
+    [string]$OutputDirectory = (Join-Path $env:TEMP "kuractus-desktop-dogfood")
 )
 
 $ErrorActionPreference = "Stop"
@@ -50,20 +50,20 @@ $appVersion = $null
 if (Test-Path -LiteralPath $AppExePath -PathType Leaf) {
     $appFile = Get-Item -LiteralPath $AppExePath
     $appVersion = $appFile.VersionInfo.ProductVersion
-    Add-ReadOnlySnapshot "installed_app" "PASS" "AURA executable exists; productVersion=$appVersion"
+    Add-ReadOnlySnapshot "installed_app" "PASS" "Kuractus executable exists; productVersion=$appVersion"
 } else {
-    Add-ReadOnlySnapshot "installed_app" "FAIL" "AURA executable not found at the configured per-user install path"
+    Add-ReadOnlySnapshot "installed_app" "FAIL" "Kuractus executable not found at the configured per-user install path"
 }
 
 $appProcesses = @()
 try {
-    $appProcesses = @(Get-Process -Name "aura-desktop" -ErrorAction SilentlyContinue | ForEach-Object {
+    $appProcesses = @(Get-Process -Name "aura-desktop", "kuractus-desktop" -ErrorAction SilentlyContinue | ForEach-Object {
         [pscustomobject]@{ processId = $_.Id; processName = $_.ProcessName }
     })
     $processEvidence = if ($appProcesses.Count) {
         "running process IDs=$(@($appProcesses | ForEach-Object processId) -join ',')"
     } else {
-        "no AURA desktop process is running"
+        "no Kuractus desktop process is running"
     }
     Add-ReadOnlySnapshot "app_process" $(if ($appProcesses.Count) { "PASS" } else { "NOT TESTED" }) $processEvidence
 } catch {
@@ -92,13 +92,13 @@ try {
     $dockerExitCode = $LASTEXITCODE
     if ($dockerExitCode -eq 0) {
         $dockerAvailable = $true
-        $containerEvidence = if ($containerLines.Count) { $containerLines -join "; " } else { "Docker CLI reachable; AURA PostgreSQL container is not running" }
-        Add-ReadOnlySnapshot "aura_postgres_container" $(if ($containerLines.Count -and ($containerLines -join " ") -match "healthy") { "PASS" } elseif ($containerLines.Count) { "FAIL" } else { "FAIL" }) $containerEvidence
+        $containerEvidence = if ($containerLines.Count) { $containerLines -join "; " } else { "Docker CLI reachable; Kuractus PostgreSQL container is not running (legacy container ID retained)" }
+        Add-ReadOnlySnapshot "kuractus_postgres_container" $(if ($containerLines.Count -and ($containerLines -join " ") -match "healthy") { "PASS" } elseif ($containerLines.Count) { "FAIL" } else { "FAIL" }) $containerEvidence
     } else {
-        Add-ReadOnlySnapshot "aura_postgres_container" "UNAVAILABLE" "Docker CLI returned exit code $dockerExitCode"
+        Add-ReadOnlySnapshot "kuractus_postgres_container" "UNAVAILABLE" "Docker CLI returned exit code $dockerExitCode"
     }
 } catch {
-    Add-ReadOnlySnapshot "aura_postgres_container" "UNAVAILABLE" "Docker CLI or engine could not be queried: $($_.Exception.GetType().Name)"
+    Add-ReadOnlySnapshot "kuractus_postgres_container" "UNAVAILABLE" "Docker CLI or engine could not be queried: $($_.Exception.GetType().Name)"
 }
 
 $listeners = @()
@@ -111,11 +111,11 @@ try {
     $listenerEvidence = if ($listeners.Count) {
         ($listeners | ForEach-Object { "$($_.localAddress):$($_.localPort)/pid=$($_.processId)" }) -join "; "
     } else {
-        "no listeners on AURA ports 17890 or 15432"
+        "no Kuractus runtime listeners on ports 17890 or 15432"
     }
-    Add-ReadOnlySnapshot "aura_port_listeners" "PASS" $listenerEvidence
+    Add-ReadOnlySnapshot "kuractus_port_listeners" "PASS" $listenerEvidence
 } catch {
-    Add-ReadOnlySnapshot "aura_port_listeners" "UNAVAILABLE" "listener metadata could not be read: $($_.Exception.GetType().Name)"
+    Add-ReadOnlySnapshot "kuractus_port_listeners" "UNAVAILABLE" "listener metadata could not be read: $($_.Exception.GetType().Name)"
 }
 
 if ($ArtifactZip) {

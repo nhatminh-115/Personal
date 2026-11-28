@@ -160,6 +160,7 @@ async def get_session_details(
                 RunEventModel.run_id.in_(run_ids),
                 RunEventModel.event_type.in_({
                     "context_compiled",
+                    "context_package_compiled",
                     "model_selected",
                     "reasoning_effort_selected",
                 }),
@@ -178,6 +179,10 @@ async def get_session_details(
                 effort = payload.get("selected_effort")
                 if isinstance(effort, str):
                     routing_by_run.setdefault(event.run_id, {})["reasoning_effort"] = effort
+            if event.event_type == "context_package_compiled":
+                from app.observability.payloads import sanitize_trace_payload
+                manifest_by_run[event.run_id] = sanitize_trace_payload(event.event_type, payload)
+                continue
             if event.event_type != "context_compiled":
                 continue
             raw_objects = payload.get("objects")

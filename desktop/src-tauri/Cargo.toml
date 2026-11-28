@@ -1,8 +1,8 @@
 [package]
-name = "aura-desktop"
+name = "kuractus-desktop"
 version = "0.2.0"
-description = "AURA Personal Windows desktop workspace"
-authors = ["AURA"]
+description = "Kuractus Personal Windows desktop workspace"
+authors = ["Kuractus"]
 edition = "2021"
 
 [build-dependencies]

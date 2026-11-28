@@ -29,4 +29,4 @@ We establish a strict, provider-neutral model layer in `app.models`:
 - Ability to switch from cloud models to private local LLMs (via Ollama/vLLM) via environment variables alone.
 
 ### Negative / Trade-offs
-- Requires maintaining an adapter layer that maps provider-specific JSON formats into AURA's normalized schemas.
+- Requires maintaining an adapter layer that maps provider-specific JSON formats into Kuractus's normalized schemas.

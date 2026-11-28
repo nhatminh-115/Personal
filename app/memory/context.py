@@ -1,6 +1,7 @@
 """Typed context assembly combining multi-tier memory for orchestrator reasoning."""
 
 import json
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from pydantic import BaseModel, Field
 
@@ -8,6 +9,7 @@ from app.core.errors import ContextSelectionError
 from app.db.models import MemoryModel
 from app.memory.base import MemoryService, MemoryType
 from app.memory.context_compiler import PRIVACY_REQUIREMENT_ORDER, stricter_privacy_requirement
+from app.memory.context_engineering import ContextItem, GRAPH_RELATION_RELEVANCE
 from app.memory.embeddings.router import EmbeddingPrivacyBoundaryError
 
 
@@ -36,6 +38,7 @@ class AssembledContext(BaseModel):
     project_fact_memory_ids: List[str] = Field(default_factory=list)
     privacy_requirement: Optional[str] = None
     privacy_memory_sources: List[Dict[str, str]] = Field(default_factory=list)
+    context_candidates: List[ContextItem] = Field(default_factory=list)
 
     def format_for_system_prompt(self) -> str:
         """Format non-working memory context into a deterministic, human-readable system prompt section."""
@@ -140,6 +143,49 @@ class ContextAssembler:
     def __init__(self, memory_service: MemoryService) -> None:
         self.mem_service = memory_service
 
+    @staticmethod
+    def _candidate(memory: MemoryModel, source_type: str, relevance: float | None = None) -> ContextItem:
+        raw_metadata = getattr(memory, "metadata_json", {})
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        provenance: list[str] = []
+        for key in ("source_object_ids", "claim_ids", "evidence_ids", "source_references"):
+            values = metadata.get(key)
+            if isinstance(values, list):
+                provenance.extend(value for value in values if isinstance(value, str) and value.strip())
+        if isinstance(metadata.get("source_run_id"), str):
+            provenance.append(metadata["source_run_id"])
+        if isinstance(metadata.get("source_session_id"), str):
+            provenance.append(metadata["source_session_id"])
+        authority = metadata.get("authority_score")
+        utility = metadata.get("utility_score")
+        expires_at = None
+        if isinstance(metadata.get("expires_at"), str):
+            try:
+                expires_at = datetime.fromisoformat(metadata["expires_at"])
+            except ValueError:
+                expires_at = None
+        return ContextItem(
+            item_id=f"memory:{getattr(memory, 'id', 'unknown')}",
+            source_type=source_type,
+            source_id=getattr(memory, "id", None),
+            project_id=getattr(memory, "project_name", None),
+            scope="global" if getattr(memory, "project_name", None) is None else "project",
+            content=getattr(memory, "content", ""),
+            created_at=getattr(memory, "created_at", None),
+            updated_at=getattr(memory, "updated_at", None),
+            authority=authority if isinstance(authority, (int, float)) and not isinstance(authority, bool) else None,
+            relevance=relevance if relevance is not None else (GRAPH_RELATION_RELEVANCE if provenance else None),
+            utility=utility if isinstance(utility, (int, float)) and not isinstance(utility, bool) else None,
+            privacy_classification=(
+                metadata.get("privacy_policy")
+                if isinstance(metadata.get("privacy_policy"), str)
+                else "local_only"
+            ),
+            user_authored=metadata.get("explicit") is True or metadata.get("created_by") == "user",
+            provenance=list(dict.fromkeys(provenance)),
+            expires_at=expires_at,
+        )
+
     async def assemble_context(
         self,
         session_id: str,
@@ -173,14 +219,28 @@ class ContextAssembler:
             profile_memories = await profile_memory_loader(limit=MAX_PROFILE_MEMORY_ITEMS)
             profile_chars = 0
             for memory in profile_memories:
-                if not memory.key or profile_chars + len(memory.content) > MAX_PROFILE_MEMORY_CHARS:
+                if not memory.key:
+                    continue
+                if profile_chars + len(memory.content) > MAX_PROFILE_MEMORY_CHARS:
+                    context.context_candidates.append(self._candidate(memory, "profile_memory").model_copy(update={
+                        "pre_exclusion_reason": "over_budget",
+                    }))
                     continue
                 _apply_memory_privacy(context, memory, "Profile memory")
                 context.profile_facts[memory.key] = memory.content
                 context.profile_memory_ids[memory.key] = memory.id
+                context.context_candidates.append(self._candidate(memory, "profile_memory"))
                 profile_chars += len(memory.content)
         else:
             context.profile_facts = await self.mem_service.get_all_profile_facts()
+            for key, value in sorted(context.profile_facts.items()):
+                context.context_candidates.append(ContextItem(
+                    item_id=f"profile-fact:{key}",
+                    source_type="profile_memory",
+                    scope="global",
+                    content=value,
+                    privacy_classification="local_only",
+                ))
 
         # 3. Project Memory: Strictly scoped to project_name if provided
         if project_name:
@@ -194,24 +254,34 @@ class ContextAssembler:
             for pm in proj_memories:
                 already_included = pm.content in seen_facts
                 if not already_included and project_memory_chars + len(pm.content) > MAX_PROJECT_MEMORY_CHARS:
+                    context.context_candidates.append(self._candidate(pm, "project_memory").model_copy(update={
+                        "pre_exclusion_reason": "over_budget",
+                    }))
                     continue
                 _apply_memory_privacy(context, pm, "Project memory")
                 context.project_memory_ids.append(pm.id)
+                context.context_candidates.append(self._candidate(pm, "project_memory"))
                 if not already_included:
                     context.project_facts.append(pm.content)
                     context.project_fact_memory_ids.append(pm.id)
-                    project_memory_chars += len(pm.content)
                     seen_facts.add(pm.content)
+                    project_memory_chars += len(pm.content)
 
         # 4. Episodic Memory: Narrative records of recent milestones
         episodes = await self.mem_service.get_recent_episodes(session_id=session_id, limit=recent_episodes_limit)
         episode_chars = 0
         for episode in episodes:
-            if not episode.content or episode_chars + len(episode.content) > MAX_EPISODE_MEMORY_CHARS:
+            if not episode.content:
+                continue
+            if episode_chars + len(episode.content) > MAX_EPISODE_MEMORY_CHARS:
+                context.context_candidates.append(self._candidate(episode, "episodic_memory").model_copy(update={
+                    "pre_exclusion_reason": "over_budget",
+                }))
                 continue
             _apply_memory_privacy(context, episode, "Episodic memory")
             context.episodes.append(episode.content)
             context.episode_memory_ids.append(episode.id)
+            context.context_candidates.append(self._candidate(episode, "episodic_memory"))
             episode_chars += len(episode.content)
 
         # 5. Semantic Memory: Nearest-neighbor vector similarity
@@ -262,16 +332,24 @@ class ContextAssembler:
                     and not already_in_project_context
                     and semantic_memory_chars + len(mem.content) > MAX_SEMANTIC_MEMORY_CHARS
                 ):
+                    context.context_candidates.append(
+                        self._candidate(mem, "semantic_memory", relevance=sim).model_copy(update={
+                            "pre_exclusion_reason": "over_budget",
+                        })
+                    )
                     continue
                 _apply_memory_privacy(context, mem, "Semantic memory")
                 if already_in_project_context:
+                    context.context_candidates.append(self._candidate(mem, "semantic_memory", relevance=sim))
                     continue
                 if existing_index is not None:
                     context.semantic_memory_ids[existing_index].append(mem.id)
+                    context.context_candidates.append(self._candidate(mem, "semantic_memory", relevance=sim))
                     continue
                 context.semantic_items.append((mem.content, sim))
                 context.semantic_memory_ids.append([mem.id])
-                semantic_memory_chars += len(mem.content)
                 seen_semantic[mem.content] = len(context.semantic_items) - 1
+                context.context_candidates.append(self._candidate(mem, "semantic_memory", relevance=sim))
+                semantic_memory_chars += len(mem.content)
 
         return context

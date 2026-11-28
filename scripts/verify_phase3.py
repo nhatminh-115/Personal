@@ -52,7 +52,7 @@ from app.tools.scoped import ScopedToolRegistry
 
 async def run_phase3_verification():
     print("=" * 80, flush=True)
-    print("AURA PHASE 3 VERIFICATION: MULTI-STEP AGENT RUNTIME & SPECIALIST DELEGATION", flush=True)
+    print("KURACTUS PHASE 3 VERIFICATION: MULTI-STEP AGENT RUNTIME & SPECIALIST DELEGATION", flush=True)
     print("=" * 80, flush=True)
 
     app = create_app()

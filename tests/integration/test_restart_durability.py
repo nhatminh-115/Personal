@@ -5,10 +5,12 @@ import aiosqlite
 import pytest
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.types import Command
+from sqlalchemy import select
 
 from app.approvals.service import ApprovalService
-from app.db.models import RunStatus
+from app.db.models import RunEventModel, RunStatus
 from app.memory.service import SQLMemoryService
+from app.memory.context_engineering import ContextItem
 from app.models.router import model_router
 from app.observability.tracer import TraceService
 from app.orchestrator.graph import build_orchestrator_graph
@@ -39,6 +41,14 @@ async def test_waiting_approval_survives_restart(test_db_session, setup_test_wor
         "user_message": "Write persistent test to durable_output.txt",
         "messages": [],
         "retrieved_context": ["User preferences: durable checkpointing"],
+        "context_candidates": [ContextItem(
+            item_id="durable-note-1",
+            source_type="manual_note",
+            source_id="durable-note-1",
+            scope="global",
+            content="Durable context candidate survives process restart.",
+            user_authored=True,
+        ).model_dump(mode="json")],
         "current_plan": None,
         "tool_requests": [],
         "tool_results": [],
@@ -81,8 +91,27 @@ async def test_waiting_approval_survives_restart(test_db_session, setup_test_wor
     saved_snapshot = await app2.aget_state(config)
     assert saved_snapshot is not None
     assert saved_snapshot.values["run_id"] == run_id
-    assert saved_snapshot.values["retrieved_context"] == ["User preferences: durable checkpointing"]
+    assert saved_snapshot.values["retrieved_context"] == []
     assert len(saved_snapshot.values["tool_requests"]) == 1
+    restored_candidates = saved_snapshot.values["context_candidates"]
+    assert any(
+        (candidate.item_id if isinstance(candidate, ContextItem) else candidate.get("item_id")) == "durable-note-1"
+        for candidate in restored_candidates
+    )
+    assert any(
+        "User preferences: durable checkpointing" in (
+            candidate.content if isinstance(candidate, ContextItem) else candidate.get("content", "")
+        )
+        for candidate in restored_candidates
+    )
+    context_events = list((await test_db_session.execute(
+        select(RunEventModel).where(
+            RunEventModel.run_id == run_id,
+            RunEventModel.event_type == "context_package_compiled",
+        )
+    )).scalars())
+    assert context_events
+    assert "durable-note-1" in context_events[-1].payload["selected_item_ids"]
 
     # Resume the SAME graph execution via Command(resume=...)
     res2 = await app2.ainvoke(Command(resume={"decision": "approved"}), config=config)

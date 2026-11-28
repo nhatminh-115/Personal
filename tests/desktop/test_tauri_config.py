@@ -19,16 +19,32 @@ def test_tauri_csp_allows_sandboxed_blob_html_previews_without_inline_scripts() 
     assert "'unsafe-eval'" not in directives["script-src"]
 
 
-def test_windows_branding_keeps_aura_install_identity_and_uses_kuractus_shortcuts() -> None:
+def test_windows_branding_uses_kuractus_install_identity_and_preserves_legacy_data_ids() -> None:
     config_path = REPOSITORY_ROOT / "desktop" / "src-tauri" / "tauri.conf.json"
     config = json.loads(config_path.read_text(encoding="utf-8"))
     nsis = config["bundle"]["windows"]["nsis"]
     hooks_path = config_path.parent / nsis["installerHooks"]
     hooks = hooks_path.read_text(encoding="utf-8")
 
-    assert config["productName"] == "AURA"
+    assert config["productName"] == "Kuractus"
     assert config["identifier"] == "com.aura.personal.desktop"
     assert nsis["installMode"] == "currentUser"
-    assert 'Rename "$SMPROGRAMS\\AURA.lnk" "$SMPROGRAMS\\Kuractus.lnk"' in hooks
-    assert 'Rename "$DESKTOP\\AURA.lnk" "$DESKTOP\\Kuractus.lnk"' in hooks
+    assert "Get-Process -Name aura-desktop,kuractus-desktop" in hooks
+    assert "ExecWait" in hooks
+    assert "nsis_tauri_utils" not in hooks
+    assert 'Delete "$SMPROGRAMS\\AURA.lnk"' in hooks
+    assert 'Delete "$DESKTOP\\AURA.lnk"' in hooks
+    assert "RmDir /r" not in hooks
     assert '"DisplayName" "Kuractus"' in hooks
+
+    runtime_path = config_path.parent / "src" / "runtime.rs"
+    runtime = runtime_path.read_text(encoding="utf-8")
+    assert '.join("AURA")' in runtime
+    assert 'const COMPOSE_PROJECT: &str = "aura-desktop"' in runtime
+
+    cargo_manifest = (config_path.parent / "Cargo.toml").read_text(encoding="utf-8")
+    assert 'name = "kuractus-desktop"' in cargo_manifest
+    assert '"binaries/kuractus-api.exe": "kuractus-api.exe"' in config_path.read_text(encoding="utf-8")
+
+    compose = (config_path.parent.parent / "runtime" / "compose.yaml").read_text(encoding="utf-8")
+    assert "name: aura_desktop_postgres_data" in compose

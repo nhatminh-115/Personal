@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-In AURA Phase 1, human-in-the-loop (HITL) tool approvals were initially handled via manual state reconstruction:
+In Kuractus Phase 1, human-in-the-loop (HITL) tool approvals were initially handled via manual state reconstruction:
 1. The graph entered an `approval_pause` node and terminated.
 2. An API endpoint (`/v1/approvals/{approval_id}/approve`) manually queried the database, extracted parameters, reconstructed an `AgentState`, and called `execute_tool_node()`, `verify_result_node()`, and `update_memory_node()` sequentially outside the graph engine.
 

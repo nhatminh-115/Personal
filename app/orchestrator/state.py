@@ -13,6 +13,7 @@ class AgentState(TypedDict, total=False):
     user_message: str
     messages: List[Dict[str, Any]]
     retrieved_context: List[str]
+    context_candidates: List[Any]
     current_plan: Optional[str]
     tool_requests: List[Dict[str, Any]]
     tool_results: List[Dict[str, Any]]
@@ -67,6 +68,7 @@ def create_initial_agent_state(
         "user_message": user_message,
         "messages": [],
         "retrieved_context": [],
+        "context_candidates": [],
         "current_plan": None,
         "tool_requests": [],
         "tool_results": [],

@@ -1,6 +1,13 @@
-# AURA Personal v1 — Operational Status
+# Kuractus Personal v1 — Operational Status
 
 Updated: 2026-11-22
+
+> **Status note:** The v1 closeout described below is historical. The
+> `aura-personal-v1` tag is preserved at `cc85f402f055a6b858704c7b42b705492c01bb5b`;
+> the post-v1 Context Engineering and Windows desktop milestones are separate
+> work and do not change that tag or retroactively reopen v1. Entries below
+> that say PR #400 or tagging is still pending record the status at the time of
+> this v1 closeout, not the current repository release action.
 
 ## Mission and stop condition
 
@@ -8,18 +15,18 @@ Complete the finite release contract in [Product Vision and v1 Roadmap](PRODUCT_
 
 ## Repository state at start of A2 closeout (2026-11-22)
 
-- Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
-- Canonical `main` at the start of this closeout: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Personal/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`). PR #400 is the current release-candidate change from that base.
-- PR [#397](https://github.com/nhatminh-115/Personal/pull/397) made empty model responses fail truthfully; exact-head Actions run [#44930471247](https://github.com/nhatminh-115/Personal/actions/runs/44930471247), job `136925752700`, passed; merged before PR #398.
-- PR #398 fixed PostgreSQL delegation insertion ordering and added a real-PostgreSQL regression. Exact tested head `ff0c025ca9aeb1123e4bc92dcd853f34857760e9`; Actions run [#44931924075](https://github.com/nhatminh-115/Personal/actions/runs/44931924075), job `136930207418`, passed; merged as `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`.
-- PR [#392](https://github.com/nhatminh-115/Personal/pull/392) closed the Docker sandbox temporary-storage gap; exact-head Actions run [#44920179781](https://github.com/nhatminh-115/Personal/actions/runs/44920179781), job `136894288628`, passed.
-- PR [#393](https://github.com/nhatminh-115/Personal/pull/393) closed the explicit-provider privacy bypass; exact-head Actions run [#44921277243](https://github.com/nhatminh-115/Personal/actions/runs/44921277243), job `136897630752`, passed.
-- PR #394 verified clean-volume backup restoration; exact-head Actions run [#44923216657](https://github.com/nhatminh-115/Personal/actions/runs/44923216657), job `136903540122`, passed.
-- PR #395 completed A8 on exact head `0daa66487bee01076e32cb7e03a69046fdd665bd`; full Actions run [#44925681798](https://github.com/nhatminh-115/Personal/actions/runs/44925681798), job `136911117433`, passed before merge.
+- Repository: [nhatminh-115/Kuractus](https://github.com/nhatminh-115/Kuractus)
+- Canonical `main` at the start of this closeout: `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36` (PR [#398](https://github.com/nhatminh-115/Kuractus/pull/398) merged after exact-head CI; parent `42f1f8c6fe354cec64798c55e303097ad0492dd4`). PR #400 is the current release-candidate change from that base.
+- PR [#397](https://github.com/nhatminh-115/Kuractus/pull/397) made empty model responses fail truthfully; exact-head Actions run [#44930471247](https://github.com/nhatminh-115/Kuractus/actions/runs/44930471247), job `136925752700`, passed; merged before PR #398.
+- PR #398 fixed PostgreSQL delegation insertion ordering and added a real-PostgreSQL regression. Exact tested head `ff0c025ca9aeb1123e4bc92dcd853f34857760e9`; Actions run [#44931924075](https://github.com/nhatminh-115/Kuractus/actions/runs/44931924075), job `136930207418`, passed; merged as `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`.
+- PR [#392](https://github.com/nhatminh-115/Kuractus/pull/392) closed the Docker sandbox temporary-storage gap; exact-head Actions run [#44920179781](https://github.com/nhatminh-115/Kuractus/actions/runs/44920179781), job `136894288628`, passed.
+- PR [#393](https://github.com/nhatminh-115/Kuractus/pull/393) closed the explicit-provider privacy bypass; exact-head Actions run [#44921277243](https://github.com/nhatminh-115/Kuractus/actions/runs/44921277243), job `136897630752`, passed.
+- PR #394 verified clean-volume backup restoration; exact-head Actions run [#44923216657](https://github.com/nhatminh-115/Kuractus/actions/runs/44923216657), job `136903540122`, passed.
+- PR #395 completed A8 on exact head `0daa66487bee01076e32cb7e03a69046fdd665bd`; full Actions run [#44925681798](https://github.com/nhatminh-115/Kuractus/actions/runs/44925681798), job `136911117433`, passed before merge.
 - That run completed 807 backend tests in 73.52s with four warnings; A6 restore and A8 Compose acceptance passed; Phases 1, 2.1, 3, and 4 passed; frontend 48 files / 329 tests passed; Vite build completed in 9.75s.
-- PR #390's exact green head was `34749fb1bc3c5e29590c5a383cccfcdd9715bbd3`; full Actions run [#44913776814](https://github.com/nhatminh-115/Personal/actions/runs/44913776814), job `136874905650`, passed before merge.
+- PR #390's exact green head was `34749fb1bc3c5e29590c5a383cccfcdd9715bbd3`; full Actions run [#44913776814](https://github.com/nhatminh-115/Kuractus/actions/runs/44913776814), job `136874905650`, passed before merge.
 - That run completed 770 backend tests in 67.76s with four warnings; Phase 1, 2.1, 3, and 4 passed; frontend 48 files / 328 tests passed; Vite build completed in 9.74s.
-- PR #388's exact green head was `44789f6372d9185fe99157338af2cd5f0698a9d4`; full Actions run [#44911360621](https://github.com/nhatminh-115/Personal/actions/runs/44911360621), job `136867681622`, passed before merge.
+- PR #388's exact green head was `44789f6372d9185fe99157338af2cd5f0698a9d4`; full Actions run [#44911360621](https://github.com/nhatminh-115/Kuractus/actions/runs/44911360621), job `136867681622`, passed before merge.
 - That run completed 769 backend tests in 81.05s with four warnings; Phase 1, 2.1, 3, and 4 passed; frontend 48 files / 328 tests passed; Vite build completed in 12.18s and the Docker UI stage in 12.07s.
 - Earlier baseline run #1014 tested `cf64f3435b03210f72c40a70ca3158d41362bfcb`, not later code. Do not attribute its counts to current `main`.
 
@@ -66,7 +73,7 @@ PR #388 packages the production React UI in Docker Compose and serves it from th
 
 | Gate | Status | Evidence |
 | --- | --- | --- |
-| Required CI on the release candidate | **PR #400 CHECKS REQUIRED BEFORE MERGE** | The Research Inspector terminal-status fix passed the full workflow on exact code head `abf8e1355679047f68683226bd957591b3ec8fff`, run `44935743242`, job `136941847025`. The A2 evidence/docs update is on [PR #400](https://github.com/nhatminh-115/Personal/pull/400), and its final exact head must pass the same workflow before merge. |
+| Required CI on the release candidate | **PR #400 CHECKS REQUIRED BEFORE MERGE** | The Research Inspector terminal-status fix passed the full workflow on exact code head `abf8e1355679047f68683226bd957591b3ec8fff`, run `44935743242`, job `136941847025`. The A2 evidence/docs update is on [PR #400](https://github.com/nhatminh-115/Kuractus/pull/400), and its final exact head must pass the same workflow before merge. |
 | Clean-environment backup and restore | **PASS** | A6 restored PostgreSQL, LangGraph checkpoints, and workspace files into empty volumes; the same Compose restore ran again in PR #395 CI. |
 | Security, privacy, provider, migration, and network configuration review | **REVIEWED** | Compose publishes API/Postgres only on loopback; credentials are passed to the API container, not the web bundle; defaults remain mock/deterministic; Compose startup migrates to Alembic head; backup restore requires an explicit replace flag and documents rollback/failure behavior. No additional P3 blocker found in this review. |
 | Live provider acceptance | **A1–A8 PASS** | A2 and A7 both passed with the exact installed local Ollama model and no hosted model calls. A2’s broad research result remains `insufficient_evidence`; its verified claim is explicitly source-backed and eligible for Study. |

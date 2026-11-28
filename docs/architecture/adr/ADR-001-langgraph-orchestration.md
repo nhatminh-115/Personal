@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-AURA requires a stateful, predictable, observable agent orchestration runtime capable of:
+Kuractus requires a stateful, predictable, observable agent orchestration runtime capable of:
 1. Managing complex workflows with conditional routing (direct response vs tool execution vs human approval).
 2. Pausing execution cleanly when human approval is required and resuming without loss of state.
 3. Providing inspectable, deterministic state transitions rather than opaque autonomous loops.
@@ -13,7 +13,7 @@ AURA requires a stateful, predictable, observable agent orchestration runtime ca
 Traditional agent loops (such as ReAct loops with raw while-loops or unstructured LangChain chains) suffer from unpredictable recursion, state mutations hidden in closures, difficult persistence, and fragile breakpoint handling.
 
 ## Decision
-We select **LangGraph** (`langgraph`) as the core orchestration runtime for AURA.
+We select **LangGraph** (`langgraph`) as the core orchestration runtime for Kuractus.
 
 Specifically:
 - We model the agent as a compiled `StateGraph` over an explicit typed `AgentState`.

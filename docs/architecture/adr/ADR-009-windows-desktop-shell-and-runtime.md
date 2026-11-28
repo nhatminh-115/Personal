@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-AURA's production UI is React/Vite and its local full-featured data layer uses
+Kuractus's production UI is React/Vite and its local full-featured data layer uses
 PostgreSQL with pgvector, LangGraph checkpoints, workspace files, and the
 existing Docker sandbox runtime. A desktop release must run outside the source
 checkout, keep data durable, preserve the sandbox boundary, and expose native
@@ -24,7 +24,7 @@ Two backend packaging options were considered:
 
 - **Full Compose runtime:** package a Compose definition for the API,
   PostgreSQL, and workspace/checkpoint storage. The API container would need
-  Docker daemon access to keep AURA's current sandbox execution available.
+  Docker daemon access to keep Kuractus's current sandbox execution available.
 - **Packaged Python sidecar:** ship the existing FastAPI/LangGraph runtime as
   a Windows executable and manage PostgreSQL/pgvector through a small Compose
   project. The API runs as the desktop user's child process and uses the
@@ -43,7 +43,7 @@ mounting the Docker socket into an API container. The Postgres image is pinned
 by version and manifest digest. The desktop process starts the sidecar with
 loopback binding, a generated API token, AppData checkpoint/workspace paths,
 and the configured provider settings. Docker Desktop is a stated runtime
-prerequisite; AURA does not install or bundle Docker Engine.
+prerequisite; Kuractus does not install or bundle Docker Engine.
 
 The sidecar lifecycle is owned by one Rust runtime manager. It starts the
 Postgres Compose service, waits for database health, applies Alembic migrations,
@@ -70,7 +70,7 @@ credential manager. The app passes them only to the local child processes.
 - Docker Desktop remains required for PostgreSQL and Docker sandbox execution.
 - The packaged Python sidecar and Tauri shell increase installer size.
 - The API sidecar runs with the user's Windows account and can access the
-  configured Docker daemon; AURA continues to require all user code to pass
+  configured Docker daemon; Kuractus continues to require all user code to pass
   through the existing restricted sandbox runtime.
 - Windows Credential Manager protects secrets at rest. Docker stores the
   PostgreSQL credential in its container configuration while the database is
@@ -81,7 +81,7 @@ credential manager. The app passes them only to the local child processes.
 ## Alternatives rejected
 
 - **Electron:** capable but adds a bundled Chromium/Node runtime and a broader
-  renderer IPC security surface without a feature AURA needs over Tauri.
+  renderer IPC security surface without a feature Kuractus needs over Tauri.
 - **API inside Compose with a mounted Docker socket:** would give the API
   container daemon-level control and weaken the boundary between the runtime
   and sandbox execution.

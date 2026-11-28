@@ -223,7 +223,7 @@ impl DesktopRuntime {
         Ok(Self::read_secret(&secret_key)?.unwrap_or_default())
     }
 
-    pub fn aura_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    pub fn kuractus_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
         let directory = std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .unwrap_or(
@@ -236,7 +236,7 @@ impl DesktopRuntime {
         Ok(directory)
     }
 
-    pub fn aura_local_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    pub fn kuractus_local_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
         let directory = std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or(
@@ -250,7 +250,7 @@ impl DesktopRuntime {
     }
 
     fn preference_path(app: &AppHandle) -> Result<PathBuf, String> {
-        Ok(Self::aura_config_dir(app)?.join("desktop-preferences.json"))
+        Ok(Self::kuractus_config_dir(app)?.join("desktop-preferences.json"))
     }
 
     pub fn load_preferences(app: &AppHandle) -> DesktopPreferences {
@@ -556,10 +556,10 @@ impl DesktopRuntime {
         }
         self.log("PostgreSQL/pgvector is healthy on loopback port 15432.");
 
-        let local_data = Self::aura_local_data_dir(app)?;
+        let local_data = Self::kuractus_local_data_dir(app)?;
         let workspace = local_data.join("workspace");
         let checkpoints = local_data.join("checkpoints");
-        let configuration = Self::aura_config_dir(app)?;
+        let configuration = Self::kuractus_config_dir(app)?;
         for directory in [&workspace, &checkpoints, &configuration] {
             std::fs::create_dir_all(directory)
                 .map_err(|error| format!("Could not prepare Kuractus data directory: {error}"))?;
@@ -570,7 +570,7 @@ impl DesktopRuntime {
         self.apply_preferences(Self::load_preferences(app));
         let settings = self.settings();
         let provider_key = Self::active_provider_key(&settings)?;
-        let sidecar = resource_dir.join("aura-api.exe");
+        let sidecar = resource_dir.join("kuractus-api.exe");
         if !sidecar.is_file() {
             let message = format!(
                 "The packaged Kuractus runtime is missing: {}",
@@ -738,11 +738,11 @@ impl DesktopRuntime {
             .path()
             .resource_dir()
             .map_err(|error| error.to_string())?;
-        let sidecar = resource_dir.join("aura-api.exe");
-        let local_data = Self::aura_local_data_dir(app)?;
+        let sidecar = resource_dir.join("kuractus-api.exe");
+        let local_data = Self::kuractus_local_data_dir(app)?;
         let workspace = local_data.join("workspace");
         let checkpoints = local_data.join("checkpoints");
-        let configuration = Self::aura_config_dir(app)?;
+        let configuration = Self::kuractus_config_dir(app)?;
         let compose_file = resource_dir.join("runtime").join("compose.yaml");
         let postgres_password = Self::ensure_secret("postgres_password")?;
         let api_token = self.api_token()?;
@@ -1385,7 +1385,7 @@ async fn choose_backup_path(app: &AppHandle, save: bool) -> Result<Option<PathBu
         .add_filter("Kuractus Desktop backup", &["aurabackup"]);
     if save {
         dialog
-            .set_file_name("aura-backup.aurabackup")
+            .set_file_name("Kuractus-backup.aurabackup")
             .save_file(move |path| {
                 let _ = sender.send(path);
             });

@@ -1,4 +1,4 @@
-"""Restore AURA Docker Compose data, checkpoints, and workspace from an archive."""
+"""Restore Kuractus Docker Compose data, checkpoints, and workspace from an archive."""
 
 from __future__ import annotations
 
@@ -157,8 +157,8 @@ def restore_backup(archive_path: Path, *, replace_current_data: bool = False) ->
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Restore AURA Compose database, checkpoints, and workspace files from a verified archive.")
-    parser.add_argument("archive", type=Path, help="Verified AURA .tar.gz backup")
+    parser = argparse.ArgumentParser(description="Restore Kuractus Compose database, checkpoints, and workspace files from a verified archive.")
+    parser.add_argument("archive", type=Path, help="Verified Kuractus .tar.gz backup")
     parser.add_argument(
         "--replace-current-data",
         action="store_true",
@@ -168,9 +168,9 @@ def main() -> int:
     try:
         restore_backup(args.archive, replace_current_data=args.replace_current_data)
     except (OSError, RuntimeError, ValueError, KeyError, tarfile.TarError, subprocess.CalledProcessError) as exc:
-        print(f"AURA Compose restore failed: {exc}", file=sys.stderr)
+        print(f"Kuractus Compose restore failed: {exc}", file=sys.stderr)
         return 1
-    print(f"AURA Compose backup restored: {args.archive}")
+    print(f"Kuractus Compose backup restored: {args.archive}")
     return 0
 
 

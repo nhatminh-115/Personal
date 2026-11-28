@@ -14,7 +14,7 @@ from app.orchestrator.graph import close_checkpointer, init_checkpointer
 
 async def main():
     print("=" * 60)
-    print("AURA LIVE VERTICAL SLICE VERIFICATION")
+    print("KURACTUS LIVE VERTICAL SLICE VERIFICATION")
     print("=" * 60)
 
     # Initialize tables and checkpointer for standalone script run
@@ -33,7 +33,7 @@ async def main():
         workspace = Path(settings.AURA_WORKSPACE_ROOT)
         workspace.mkdir(parents=True, exist_ok=True)
         sample_file = workspace / "demo_doc.txt"
-        sample_file.write_text("AURA: Adaptive User Runtime Agent verified in production mode!", encoding="utf-8")
+        sample_file.write_text("Kuractus personal intelligence runtime verified in production mode!", encoding="utf-8")
         output_file = workspace / "live_output.txt"
         output_file.unlink(missing_ok=True)
         print(f"\n[Step 2] Created sample file at {sample_file}")

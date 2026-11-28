@@ -7,14 +7,14 @@ $OutputDirectory = Join-Path $RepoRoot 'desktop\src-tauri\binaries'
 $AlembicConfig = (Join-Path $RepoRoot 'alembic.ini') + ';.'
 $Migrations = (Join-Path $RepoRoot 'migrations') + ';migrations'
 $TempRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
-$WorkDirectory = Join-Path $TempRoot 'aura-sidecar-pyinstaller'
+$WorkDirectory = Join-Path $TempRoot 'kuractus-sidecar-pyinstaller'
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 New-Item -ItemType Directory -Force -Path $WorkDirectory | Out-Null
 
 $Arguments = @(
     '-m', 'PyInstaller',
     '--noconfirm', '--clean', '--onefile', '--noconsole',
-    '--name', 'aura-api',
+    '--name', 'kuractus-api',
     '--distpath', $OutputDirectory,
     '--workpath', $WorkDirectory,
     '--specpath', $WorkDirectory,

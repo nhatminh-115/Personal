@@ -1,20 +1,20 @@
-# AURA — Adaptive User Runtime Agent
+# Kuractus — Personal Intelligence Workspace
 
 > **Production-grade personal AI agent runtime with persistent memory, capability-based security, durable LangGraph orchestration, and native human-in-the-loop authorization.**
 
-The product vision, v1 objectives, release acceptance criteria, and finite roadmap are defined in [AURA Product Vision and AURA Personal v1 Roadmap](docs/PRODUCT_VISION_AND_V1_ROADMAP.md).
+The product vision, v1 objectives, release acceptance criteria, and finite roadmap are defined in [Kuractus Product Vision and Personal v1 Roadmap](docs/PRODUCT_VISION_AND_V1_ROADMAP.md).
 
 ---
 
 ## Architecture Overview
 
-AURA is designed as a stateful, predictable operating process rather than an ephemeral completion chatbot.
+Kuractus is designed as a stateful, predictable operating process rather than an ephemeral completion chatbot.
 
 The web app presents a persistent workspace with **Home, Library, Notes, Study,
 Automations, and Projects**. A project is one reusable workspace tab; its
 Overview, Chat, Board, Split, and Files are views within that project. Chat and
 Board share the persisted project conversation graph. External Library files
-are referenced and indexed rather than moved into an AURA-owned vault.
+are referenced and indexed rather than moved into a Kuractus-managed vault.
 
 ```
                                       +---------------------------------------------+
@@ -44,7 +44,7 @@ are referenced and indexed rather than moved into an AURA-owned vault.
 
 1. **Personal Orchestrator (LangGraph):**
    - Pure state machine compiling discrete nodes: `load_context` -> `reason` -> `route_decision` -> `execute_tool` -> `verify_result` -> `update_memory`.
-   - **Durable Interruption:** Approval-gated actions call `interrupt()`, persisting LangGraph state to `AsyncSqliteSaver`. AURA resumes through `Command(resume=...)` using the run ID as the graph thread ID.
+   - **Durable Interruption:** Approval-gated actions call `interrupt()`, persisting LangGraph state to `AsyncSqliteSaver`. Kuractus resumes through `Command(resume=...)` using the run ID as the graph thread ID.
    - **Canonical Message Schema:** True multi-turn conversation turns (`system`, `user`, `assistant(tool_calls=...)`, `tool(tool_call_id=...)`, `assistant`).
 
 2. **Multi-Tier Memory Architecture:**
@@ -79,8 +79,8 @@ are referenced and indexed rather than moved into an AURA-owned vault.
 ### Installation
 ```powershell
 # Clone repository
-git clone https://github.com/nhatminh-115/Personal.git aura
-cd aura
+git clone https://github.com/nhatminh-115/Kuractus.git kuractus
+cd kuractus
 
 # Create a Python 3.12 virtual environment
 py -3.12 -m venv .venv
@@ -131,7 +131,7 @@ For a production-style local run with the browser interface, start the stack wit
 docker compose up -d --build
 ```
 
-Then open `http://localhost:8000`. The API container serves both the built AURA UI
+Then open `http://localhost:8000`. The API container serves both the built Kuractus UI
 and its `/v1` API, so a separate Vite server is not needed for this setup. Stop the
 services with `docker compose down`; named data volumes remain available for the
 next start.
@@ -166,7 +166,7 @@ Open `http://localhost:5173`. Vite proxies `/v1` requests to the API at
 
 The API and PostgreSQL ports in Docker Compose are also bound to loopback.
 `CORS_ALLOWED_ORIGINS` accepts a comma-separated list for the browser UI; its
-default allows the local Vite origins only. By default, AURA is an unauthenticated
+default allows the local Vite origins only. By default, Kuractus is an unauthenticated
 single-user local service and should stay on loopback. For a deployment that
 accepts network requests, configure a strong shared `AURA_API_TOKEN` with at
 least 32 ASCII characters matching [HTTP Bearer token syntax](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.1), and TLS. Generate a
@@ -191,7 +191,7 @@ Before using sandbox execution, build the trusted local image once:
 ```powershell
 docker build -t aura-coding-sandbox:latest -f docker/coding_sandbox.Dockerfile .
 ```
-AURA does not pull a missing sandbox image automatically. If you set
+Kuractus does not pull a missing sandbox image automatically. If you set
 `AURA_SANDBOX_IMAGE`, build or provide that trusted image locally first.
 
 Interactive OpenAPI documentation is available at:
@@ -337,7 +337,7 @@ All model invocations pass through `ModelRouter.route(ModelRequest)`. Each reque
 
 
 ### Checkpoint Security (`LANGGRAPH_STRICT_MSGPACK`)
-AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This restricts LangGraph msgpack deserialization strictly to `SAFE_MSGPACK_TYPES`, preventing remote code execution via untrusted callables stored in checkpoint databases.
+Kuractus enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This restricts LangGraph msgpack deserialization strictly to `SAFE_MSGPACK_TYPES`, preventing remote code execution via untrusted callables stored in checkpoint databases.
 
 ### Phase 2 Platform Capabilities
 1. **Production Long-Term Memory & Vector Persistence:**
@@ -349,7 +349,7 @@ AURA enforces `LANGGRAPH_STRICT_MSGPACK=true` in `app/core/settings.py`. This re
 2. **Model Context Protocol (MCP) Tool Bus:**
    - Official Python MCP SDK v2 (`mcp>=2.0.0`) integration supporting stdio, SSE, and Streamable HTTP; tools are discovered via `tools/list` and dispatched via `tools/call`.
    - Capability mappings are explicit; undiscovered provider tools do not satisfy specialist capability requests.
-   - AURA applies a conservative risk policy to external MCP tools, validates inputs against JSON schema, and still applies per-tool permissions and approvals. Read-only and auto-approval behavior must be explicitly configured.
+   - Kuractus applies a conservative risk policy to external MCP tools, validates inputs against JSON schema, and still applies per-tool permissions and approvals. Read-only and auto-approval behavior must be explicitly configured.
    - See the [optional code graph provider guide](docs/capabilities/code-graph-providers.md) for setup boundaries and candidate notes.
    - Server-level crash and fault isolation: external server failures produce structured error results without crashing the orchestrator.
 

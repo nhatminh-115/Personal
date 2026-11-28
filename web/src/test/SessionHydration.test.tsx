@@ -276,7 +276,7 @@ describe('Session Hydration', () => {
     expect(stopRequested).toBeDisabled();
     await waitFor(() => expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument(), { timeout: 12_000 });
     expect(stateCalls).toBeGreaterThanOrEqual(3);
-  });
+  }, 15_000);
 
   it('restores backend sessions into the matching project chat rail', async () => {
     await act(async () => { render(<App />); });

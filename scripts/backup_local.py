@@ -1,4 +1,4 @@
-"""Back up and restore AURA's local SQLite database, checkpoints, and workspace."""
+"""Back up and restore Kuractus's local SQLite database, checkpoints, and workspace."""
 
 from __future__ import annotations
 
@@ -178,7 +178,7 @@ def verify_backup(archive_path: Path) -> dict:
         if names != allowed:
             raise ValueError("Local backup contains missing, duplicate, or unexpected files")
         if not isinstance(manifest, dict) or manifest.get("format_version") != FORMAT_VERSION:
-            raise ValueError("Unsupported local AURA backup format")
+            raise ValueError("Unsupported local Kuractus backup format")
         payload_names = allowed - {MANIFEST_FILE}
         hashes = manifest.get("files")
         if not isinstance(hashes, dict) or set(hashes) != payload_names:
@@ -191,7 +191,7 @@ def verify_backup(archive_path: Path) -> dict:
 
 def create_backup(destination: Path, *, api_stopped: bool = False) -> Path:
     if not api_stopped:
-        raise ValueError("Stop the local AURA API first, then pass --api-stopped to confirm both SQLite stores are idle")
+        raise ValueError("Stop the local Kuractus API first, then pass --api-stopped to confirm both SQLite stores are idle")
     database_path, checkpoint_path, workspace_path = _configured_paths()
     destination = destination.expanduser().resolve()
     if destination.exists():
@@ -290,11 +290,11 @@ def restore_backup(
     if not replace_current_data:
         raise ValueError("Restoring replaces current SQLite data and workspace files; pass --replace-current-data to continue")
     if not api_stopped:
-        raise ValueError("Stop the local AURA API first, then pass --api-stopped to confirm its stores are idle")
+        raise ValueError("Stop the local Kuractus API first, then pass --api-stopped to confirm its stores are idle")
     archive_path = archive_path.expanduser().resolve()
     manifest = verify_backup(archive_path)
     if manifest.get("format_version") != FORMAT_VERSION:
-        raise ValueError("Unsupported local AURA backup format")
+        raise ValueError("Unsupported local Kuractus backup format")
     database_path, checkpoint_path, workspace_path = _configured_paths()
     restore_id = uuid.uuid4().hex
 
@@ -366,7 +366,7 @@ def restore_backup(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Back up or restore local AURA SQLite stores and workspace files.")
+    parser = argparse.ArgumentParser(description="Back up or restore local Kuractus SQLite stores and workspace files.")
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--verify", type=Path, metavar="ARCHIVE", help="Verify a local backup without extracting it")
     actions.add_argument("--restore", type=Path, metavar="ARCHIVE", help="Restore all stores from a local backup")
@@ -377,17 +377,17 @@ def main() -> int:
     try:
         if args.verify:
             manifest = verify_backup(args.verify.expanduser().resolve())
-            print(f"VERIFIED local AURA backup from {manifest.get('created_at', 'unknown')}: {args.verify}")
+            print(f"VERIFIED local Kuractus backup from {manifest.get('created_at', 'unknown')}: {args.verify}")
         elif args.restore:
             restore_backup(args.restore, replace_current_data=args.replace_current_data, api_stopped=args.api_stopped)
-            print(f"Local AURA backup restored: {args.restore}")
+            print(f"Local Kuractus backup restored: {args.restore}")
         elif args.destination:
             result = create_backup(args.destination, api_stopped=args.api_stopped)
-            print(f"Local AURA backup created: {result} ({result.stat().st_size} bytes)")
+            print(f"Local Kuractus backup created: {result} ({result.stat().st_size} bytes)")
         else:
             parser.error("provide a backup destination, --verify ARCHIVE, or --restore ARCHIVE")
     except (OSError, RuntimeError, ValueError, KeyError, tarfile.TarError, sqlite3.Error) as exc:
-        print(f"Local AURA backup operation failed: {exc}", file=sys.stderr)
+        print(f"Local Kuractus backup operation failed: {exc}", file=sys.stderr)
         return 1
     return 0
 

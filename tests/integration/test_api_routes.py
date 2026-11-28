@@ -234,13 +234,17 @@ async def test_session_hydration_returns_sanitized_context_manifest(async_client
     assistant = next(message for message in session_response.json()["messages"] if message["role"] == "assistant")
     assert assistant["run_id"] == chat_response.json()["run_id"]
     manifest = assistant["context_manifest"]
-    assert manifest["objects"] == [{
-        "object_id": object_response.json()["id"],
-        "object_type": "manual_note",
-        "selected_by_user": True,
-        "source_object_ids": [],
-    }]
-    assert isinstance(manifest["estimated_tokens"], int)
+    assert manifest["selected_item_ids"] == [f"workspace:{object_response.json()['id']}"]
+    assert len(manifest["included_objects"]) == 1
+    included = manifest["included_objects"][0]
+    assert included["item_id"] == f"workspace:{object_response.json()['id']}"
+    assert included["source_type"] == "manual_note"
+    assert included["object_id"] == object_response.json()["id"]
+    assert included["priority_class"] == "explicit_selection"
+    assert included["source_object_ids"] == []
+    assert included["selected_by_user"] is True
+    assert isinstance(included["estimated_tokens"], int)
+    assert isinstance(manifest["budget"]["estimated_context_tokens"], int)
     assert "prompt_text" not in manifest
     routing = assistant["routing_provenance"]
     assert routing["provider"] == "mock"
@@ -314,7 +318,13 @@ async def test_explicit_local_file_text_requires_cloud_confirmation_and_stays_ou
 
     graph = await get_compiled_graph()
     snapshot = await graph.aget_state({"configurable": {"thread_id": run_id}})
-    assert private_file_text in "\n".join(snapshot.values["retrieved_context"])
+    file_candidate = next(
+        candidate for candidate in snapshot.values["context_candidates"]
+        if (candidate.get("object_id") if isinstance(candidate, dict) else candidate.object_id) == object_id
+    )
+    assert file_candidate["content_reference"] == f"chat-attachment:{object_id}"
+    assert private_file_text not in file_candidate["content"]
+    assert snapshot.values["context_attachments"][0]["text"] == private_file_text
 
     event_result = await test_db_session.execute(select(RunEventModel).where(RunEventModel.run_id == run_id))
     events = list(event_result.scalars())

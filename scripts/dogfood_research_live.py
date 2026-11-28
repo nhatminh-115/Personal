@@ -1,6 +1,6 @@
-"""AURA Real-World Scholarly Research Specialist Live Agent Dogfood Script.
+"""Kuractus Real-World Scholarly Research Specialist Live Agent Dogfood Script.
 
-Executes the REAL AURA Agent through the canonical FastAPI /v1/chat API:
+Executes the real Kuractus agent through the canonical FastAPI /v1/chat API:
 User Request
   -> /v1/chat API
   -> Root Personal Orchestrator
@@ -21,7 +21,7 @@ CRITICAL REQUIREMENTS:
 - Must NOT run when OPENAI_API_KEY is missing (fails fast with explicit notice).
 - Must NOT manually invoke research tools, screen papers with hardcoded strings, or create synthetic claims.
 - The real non-mock model decides queries, source selection, evidence extraction, and claims.
-- Module-level imports must remain safe and NOT initialize AURA settings or databases.
+- Module-level imports must remain safe and NOT initialize Kuractus settings or databases.
 """
 
 import asyncio
@@ -47,7 +47,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 RESEARCH_WORKLOAD = (
-    "You are the AURA root orchestrator. Delegate this request now to the Research Specialist "
+    "You are the Kuractus root orchestrator. Delegate this request now to the Research Specialist "
     "using delegate_task with specialist_name='research'; do not investigate or answer directly. "
     "Ask the specialist to investigate prior work on LLM architectures that maintain or update a compact persistent "
     "internal state during inference instead of relying only on an ever-growing KV cache. "
@@ -460,7 +460,7 @@ async def run_live_agent_dogfood():
 
     overall_start_time = time.time()
     print("=" * 80)
-    print("AURA SCHOLARLY RESEARCH SPECIALIST: LIVE END-TO-END AGENT DOGFOOD")
+    print("KURACTUS SCHOLARLY RESEARCH SPECIALIST: LIVE END-TO-END AGENT DOGFOOD")
     selected_model = os.environ.get("AURA_DOGFOOD_MODEL_OVERRIDE") or (
         f"{settings.MODEL_PROVIDER}:{settings.OPENAI_MODEL_NAME}"
     )

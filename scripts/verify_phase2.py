@@ -45,7 +45,7 @@ from app.sandbox.tools import SandboxPythonExecuteTool
 
 async def run_phase2_verification():
     print("=" * 75, flush=True)
-    print("AURA PHASE 2.1 VERIFICATION: END-TO-END VERTICAL SLICE THROUGH REAL API", flush=True)
+    print("KURACTUS PHASE 2.1 VERIFICATION: END-TO-END VERTICAL SLICE THROUGH REAL API", flush=True)
     print("=" * 75, flush=True)
 
     app = create_app()
