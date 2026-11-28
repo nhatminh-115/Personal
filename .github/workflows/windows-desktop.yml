@@ -70,7 +70,7 @@ jobs:
           LANGGRAPH_STRICT_MSGPACK: "true"
         run: python -m pytest -q tests/api/test_desktop_runtime.py tests/desktop/test_backup_archive.py tests/desktop/test_tauri_config.py
 
-      - name: Generate Windows app icon
+      - name: Generate Kuractus Windows app icon
         run: python desktop/scripts/make_icon.py
 
       - name: Build frozen AURA API sidecar
