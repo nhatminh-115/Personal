@@ -10,7 +10,7 @@ export function makeProjectBoard(project: ProjectRecord): { nodes: AuraFlowNode[
     },
     {
       id: `${prefix}-root-answer`, type: 'aura', position: { x: 410, y: 200 },
-      data: { kind: 'answer', branch: 'Root', eyebrow: 'AURA · PROJECT SYNTHESIS', title: 'Current project state', body: project.thesis, summary: project.thesis, density: 'compact', accent: 'cyan', chip: 'Project context', layer: 'conversation' },
+      data: { kind: 'answer', branch: 'Root', eyebrow: 'Kuractus · PROJECT SYNTHESIS', title: 'Current project state', body: project.thesis, summary: project.thesis, density: 'compact', accent: 'cyan', chip: 'Project context', layer: 'conversation' },
     },
     {
       id: `${prefix}-note`, type: 'aura', position: { x: 805, y: 95 },

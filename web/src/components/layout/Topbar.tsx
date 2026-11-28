@@ -1,157 +1,44 @@
-import { ChevronDown, Command, Files, KeyRound, LayoutDashboard, PanelRightOpen, Sparkles } from 'lucide-react';
-import type { CSSProperties } from 'react';
-import type { EffectiveRouting, ModelCatalog, ReasoningEffort, WorkspaceMode } from '../../types';
-import { RoutingPopover } from '../ui/RoutingPopover';
+import { Command, LockKeyhole, PanelRightOpen, Plus, Search } from 'lucide-react';
 
 interface TopbarProps {
   projectName: string | null;
-  projectSection: 'overview' | 'workspace' | 'files' | null;
   globalTitle: string;
-  mode: WorkspaceMode;
-  onModeChange: (mode: WorkspaceMode) => void;
-  onOpenProjectOverview: () => void;
-  onOpenProjectFiles: () => void;
-  routingOpen: boolean;
-  onRoutingOpenChange: (open: boolean) => void;
-  effectiveRouting: EffectiveRouting | null;
-  catalog: ModelCatalog;
-  sessionAvailable: boolean;
-  demoThread: boolean;
-  lockedModel: string | null;
-  reasoningOverride: ReasoningEffort | null;
-  onSetModelLock: (value: string | null) => void;
-  onSetReasoningOverride: (value: ReasoningEffort | null) => void;
-  onOpenRoutingStudio: () => void;
+  projectWorkspace: boolean;
+  createLabel: string;
   inspectorOpen: boolean;
   onToggleInspector: () => void;
-  onOpenAura: () => void;
-  apiTokenConfigured: boolean;
-  onOpenApiAccess: () => void;
+  onOpenSearch: () => void;
+  onCreate: () => void;
+  onOpenPreferences: () => void;
 }
-
-const modes: WorkspaceMode[] = ['chat', 'board', 'split'];
 
 export function Topbar({
   projectName,
-  projectSection,
   globalTitle,
-  mode,
-  onModeChange,
-  onOpenProjectOverview,
-  onOpenProjectFiles,
-  routingOpen,
-  onRoutingOpenChange,
-  effectiveRouting,
-  catalog,
-  sessionAvailable,
-  demoThread,
-  lockedModel,
-  reasoningOverride,
-  onSetModelLock,
-  onSetReasoningOverride,
-  onOpenRoutingStudio,
+  projectWorkspace,
+  createLabel,
   inspectorOpen,
   onToggleInspector,
-  onOpenAura,
-  apiTokenConfigured,
-  onOpenApiAccess,
+  onOpenSearch,
+  onCreate,
+  onOpenPreferences,
 }: TopbarProps) {
-  const activeIndex = modes.indexOf(mode);
-  const inProject = Boolean(projectName);
-  const lockedParts = lockedModel?.split(':');
-  const lockedModelInfo = lockedParts?.length === 2
-    ? catalog.providers.find((provider) => provider.id === lockedParts[0])?.models.find((model) => model.id === lockedParts[1])
-    : undefined;
-  const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
-  const unsupportedReasoning = lockedModelInfo?.reasoning_support === 'unsupported';
-  const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
-
   return (
     <header className="topbar">
-      <div className="topbar__project">
-        <span className="topbar__label">{inProject ? 'Project' : 'Personal workspace'}</span>
-        <strong>{projectName ?? globalTitle}</strong>
+      <div className="topbar__breadcrumb" aria-label="Current location">
+        <span>Kuractus</span><span className="topbar__separator">/</span>
+        {projectName ? <><span>{projectName}</span><span className="topbar__separator">/</span></> : null}
+        <strong>{globalTitle}</strong>
       </div>
 
-      {inProject ? (
-        <div className="project-topnav" aria-label="Project navigation">
-          <button className={projectSection === 'overview' ? 'is-active' : ''} type="button" onClick={onOpenProjectOverview}><LayoutDashboard size={13} /> Overview</button>
-          <div className={`view-switch view-switch--tubelight ${projectSection !== 'workspace' ? 'view-switch--idle' : ''}`} role="group" aria-label="Workspace mode" style={{ '--active-index': activeIndex } as CSSProperties}>
-            <span className="view-switch__lamp" aria-hidden="true" />
-            {modes.map((value) => (
-              <button
-                type="button"
-                key={value}
-                className={projectSection === 'workspace' && mode === value ? 'is-active' : ''}
-                aria-pressed={projectSection === 'workspace' && mode === value}
-                onClick={() => onModeChange(value)}
-              >
-                {value[0].toUpperCase() + value.slice(1)}
-              </button>
-            ))}
-          </div>
-          <button className={projectSection === 'files' ? 'is-active' : ''} type="button" onClick={onOpenProjectFiles}><Files size={13} /> Files</button>
-        </div>
-      ) : <div className="topbar__global-spacer" />}
-
       <div className="topbar__actions">
-        <button className="soft-pill aura-quick-trigger" type="button" onClick={onOpenAura} title="Search workspace · Ctrl/⌘ K">
-          <Sparkles size={13} />
-          <span>Search</span>
-          <Command size={11} />
+        <button className="topbar-v16__search" type="button" onClick={onOpenSearch} title="Search anything · Ctrl+K">
+          <Search size={14} /><span>Search anything</span><kbd><Command size={10} /> K</kbd>
         </button>
-        <button
-          className={`soft-pill api-access-trigger ${apiTokenConfigured ? 'is-active' : ''}`}
-          type="button"
-          onClick={onOpenApiAccess}
-          title={apiTokenConfigured ? 'Replace the API token saved for this tab' : 'Enter an API token if this server requires one'}
-        >
-          <KeyRound size={13} />
-          <span>{apiTokenConfigured ? 'API key set' : 'API access'}</span>
-        </button>
-        {inProject ? (
-          <div className="routing-trigger-wrap">
-            <button
-              className={`soft-pill ${routingOpen ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onRoutingOpenChange(!routingOpen)}
-            >
-              <span>{effectiveRouting?.profile?.name ? `${effectiveRouting.profile.name} · ${effectiveRouting.winning_scope}` : 'Routing…'}</span>
-              <ChevronDown size={13} />
-            </button>
-            {routingOpen ? <RoutingPopover
-              effective={effectiveRouting}
-              catalog={catalog}
-              sessionAvailable={sessionAvailable}
-              demoThread={demoThread}
-              lockedModel={lockedModel}
-              reasoningOverride={reasoningOverride}
-              onSetModel={onSetModelLock}
-              onSetReasoning={onSetReasoningOverride}
-              onOpenStudio={onOpenRoutingStudio}
-              onClose={() => onRoutingOpenChange(false)}
-            /> : null}
-          </div>
-        ) : null}
+        <button className="topbar-v16__icon" type="button" onClick={onCreate} title={createLabel} aria-label={createLabel}><Plus size={17} /></button>
+        <button className="topbar-v16__icon topbar-v16__privacy" type="button" onClick={onOpenPreferences} title="Privacy and preferences" aria-label="Privacy and preferences"><LockKeyhole size={15} /></button>
 
-        {inProject ? (
-        <select aria-label="Temporary reasoning override" className="topbar-reasoning-select" value={reasoningOverride ?? ''} disabled={demoThread || fixedReasoning || unsupportedReasoning} title={demoThread ? 'Start a live chat to use temporary reasoning overrides.' : fixedReasoning ? 'The locked model controls reasoning internally.' : unsupportedReasoning ? 'The locked model does not support reasoning controls.' : reasoningUnknown ? 'Reasoning support for this exact model is unknown; the backend may reject an override.' : undefined} onChange={(event) => onSetReasoningOverride((event.target.value || null) as ReasoningEffort | null)}>
-            <option value="">Reasoning: {fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile'}</option>
-            {fixedReasoning || unsupportedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>Reasoning: {reasoningOverride} · unavailable</option> : null : (['instant', 'low', 'medium', 'high', 'max'] as const).map((value) => <option key={value} value={value}>Reasoning: {value[0].toUpperCase() + value.slice(1)}</option>)}
-          </select>
-        ) : null}
-
-        {inProject && projectSection === 'workspace' ? (
-          <button
-            className={`soft-pill inspector-toggle inspector-toggle--labeled ${inspectorOpen ? 'is-active' : ''}`}
-            type="button"
-            onClick={onToggleInspector}
-            title="Toggle inspector"
-          >
-            <PanelRightOpen size={15} />
-            <span>Inspector</span>
-          </button>
-        ) : null}
+        {projectWorkspace ? <button className={`soft-pill inspector-toggle inspector-toggle--labeled ${inspectorOpen ? 'is-active' : ''}`} type="button" onClick={onToggleInspector} title="Toggle inspector"><PanelRightOpen size={14} /><span>Context</span></button> : null}
       </div>
     </header>
   );

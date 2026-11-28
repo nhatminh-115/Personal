@@ -36,7 +36,7 @@ class SemanticScholarResearchProvider(ResearchSourceProvider):
     def _get_headers(self) -> Dict[str, str]:
         headers = {
             "Accept": "application/json",
-            "User-Agent": "AURA-Research-Specialist/1.0",
+            "User-Agent": "Kuractus-Research-Specialist/1.0",
         }
         if self.api_key:
             headers["x-api-key"] = self.api_key

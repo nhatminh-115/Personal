@@ -1,4 +1,4 @@
-"""Sandbox execution tools exposing isolated container execution to the AURA agent."""
+"""Sandbox execution tools exposing isolated container execution to the Kuractus agent."""
 
 from typing import Any, Dict, List, Optional
 from app.approvals.capabilities import Capability

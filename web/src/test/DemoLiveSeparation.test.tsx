@@ -29,7 +29,7 @@ describe('Demo / Live Separation', () => {
           json: () => Promise.resolve({ run_id: 'run-1', session_id: 'sess-1', status: 'completed', response: 'Reply', tool_results: [] }),
         });
       }
-      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [{ id: 'test-provider', label: 'Test Provider', kind: 'cloud', available: true, base_url: '', privacy_status: 'cloud', models: [{ id: 'test-model', label: 'Test Model', capabilities: ['general'], tool_support: 'supported', reasoning_support: 'high' }] }] }) });
       if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
@@ -54,7 +54,7 @@ describe('Demo / Live Separation', () => {
     await openStatefulChats();
 
     // The active thread is a demo thread — type and press Enter
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: 'Test from demo' } });
       fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
@@ -73,13 +73,13 @@ describe('Demo / Live Separation', () => {
 
   it('keeps Stop available for a local demo run', async () => {
     await openStatefulChats();
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     fireEvent.change(textarea, { target: { value: 'Stop this local demo response' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
 
-    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus is working')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Stop/i })); });
-    expect(screen.queryByText('AURA is working')).not.toBeInTheDocument();
+    expect(screen.queryByText('Kuractus is working')).not.toBeInTheDocument();
     expect(postCalls).toHaveLength(0);
   });
 
@@ -109,17 +109,17 @@ describe('Demo / Live Separation', () => {
     global.fetch = fetchMock;
     await openStatefulChats();
 
-    fireEvent.change(screen.getByPlaceholderText(/Ask AURA in this chat/i), { target: { value: 'Start a live turn that can be stopped' } });
+    fireEvent.change(screen.getByPlaceholderText(/Ask Kuractus in this chat/i), { target: { value: 'Start a live turn that can be stopped' } });
     await act(async () => { fireEvent.click(screen.getByText('Start live chat')); });
 
-    expect(await screen.findByText('AURA is working')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus is working')).toBeInTheDocument();
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^Stop$/i })); });
     expect(await screen.findByRole('button', { name: 'Stop requested' })).toBeDisabled();
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/v1/runs/cancel-turn'))).toBe(true);
     expect(postCalls).toHaveLength(1);
 
     await act(async () => { completeChat?.(); });
-    await waitFor(() => expect(screen.queryByText('AURA is working')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Kuractus is working')).not.toBeInTheDocument());
   });
 
   it('newThread creates a live thread (source: live)', async () => {
@@ -138,12 +138,19 @@ describe('Demo / Live Separation', () => {
     await openStatefulChats();
 
     // Type a draft message
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     const draftText = 'Explain the architecture';
     await act(async () => {
       fireEvent.change(textarea, { target: { value: draftText } });
     });
-    fireEvent.click(screen.getByRole('button', { name: /Code/i }));
+    const modelControl = screen.getByRole('button', { name: 'Conversation model' });
+    fireEvent.click(modelControl);
+    fireEvent.click(screen.getByRole('option', { name: /Test Model · Test Provider/ }));
+    expect(modelControl).toHaveTextContent('Test Model · Test Provider');
+    const reasoningControl = screen.getByRole('button', { name: 'Conversation reasoning' });
+    fireEvent.click(reasoningControl);
+    fireEvent.click(screen.getByRole('option', { name: 'High' }));
+    expect(reasoningControl).toHaveTextContent('High');
 
     // Click "Start live chat" CTA button
     const ctaBtn = screen.getByText('Start live chat');
@@ -152,20 +159,29 @@ describe('Demo / Live Separation', () => {
     // Wait for async backend call
     await act(async () => { await new Promise((r) => window.setTimeout(r, 100)); });
 
-    // Backend was called exactly once
+    // The CTA created a fresh live thread instead of promoting the demo thread.
+    expect(await screen.findByRole('heading', { name: draftText })).toBeInTheDocument();
+    expect(screen.queryByText(/demo thread/i)).not.toBeInTheDocument();
+    // Backend was called exactly once.
     expect(postCalls).toHaveLength(1);
-    // The exact draft text was sent — NOT literal "Start live chat"
-    expect(postCalls[0].body).toContain(draftText);
-    expect(postCalls[0].body).not.toContain('Start live chat');
-    expect(JSON.parse(postCalls[0].body).task_type).toBe('coding');
-    expect(JSON.parse(postCalls[0].body).context_object_ids).toBeUndefined();
+    // The exact draft text was sent — NOT the literal CTA label.
+    const payload = JSON.parse(postCalls[0].body);
+    expect(payload.message).toBe(draftText);
+    expect(payload.message).not.toBe('Start live chat');
+    expect(payload.session_id).toMatch(/^sess-/);
+    expect(payload.client_turn_id).toEqual(expect.any(String));
+    expect(payload.model_override).toBe('test-provider:test-model');
+    expect(payload.reasoning_override).toBe('high');
+    expect(payload).not.toHaveProperty('task_type');
+    expect(payload.context_object_ids).toBeUndefined();
+    expect(await screen.findByText('Reply')).toBeInTheDocument();
   });
 
   it('CTA with empty draft creates live thread WITHOUT calling backend', async () => {
     await openStatefulChats();
 
     // Ensure textarea is empty
-    const textarea = screen.getByPlaceholderText(/Ask AURA in this chat/i);
+    const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
     await act(async () => {
       fireEvent.change(textarea, { target: { value: '' } });
     });

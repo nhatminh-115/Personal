@@ -89,7 +89,7 @@ describe('Context Lens actions', () => {
       onMergeInto={vi.fn()}
       onClear={vi.fn()}
     />);
-    fireEvent.click(screen.getByRole('button', { name: /Ask AURA/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Ask Kuractus/i }));
     expect(screen.getByText('1 paper')).toBeInTheDocument();
     expect(screen.getByText('1 research evidence item')).toBeInTheDocument();
     expect(screen.getByText('1 research claim')).toBeInTheDocument();

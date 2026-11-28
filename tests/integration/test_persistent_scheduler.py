@@ -240,4 +240,4 @@ async def test_event_to_agent_bridge_triggers_orchestrator(test_db_session):
     assert final_state is not None
     assert final_state.get("execution_status") == "completed"
     assert final_state.get("final_response") is not None
-    assert "AURA Response" in final_state.get("final_response")
+    assert "Kuractus Response" in final_state.get("final_response")

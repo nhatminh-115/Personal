@@ -4,10 +4,10 @@ import { AutomationsView } from '../components/global/AutomationsView';
 import { api } from '../services/api';
 import type { AutomationRecord, ProjectRecord } from '../data/workspaceData';
 
-const projects: ProjectRecord[] = [{ id: 'p1', name: 'AURA', subtitle: 'Workspace', status: 'active', accent: 'cyan', updated: 'today', meta: '', thesis: '', next: '' }];
+const projects: ProjectRecord[] = [{ id: 'p1', name: 'Kuractus', subtitle: 'Workspace', status: 'active', accent: 'cyan', updated: 'today', meta: '', thesis: '', next: '' }];
 const liveAutomation: AutomationRecord = {
   id: 'auto-1', revision: 1, name: 'Daily digest', description: 'Summarize changes', instruction: 'Summarize updates.',
-  enabled: true, scope: 'global', trigger: 'Every 1 day', actions: ['Run through AURA'],
+  enabled: true, scope: 'global', trigger: 'Every 1 day', actions: ['Run through Kuractus'],
   lastRun: 'Never', nextRun: 'Tomorrow', status: 'ready', source: 'live', intervalSeconds: 86400,
   latestExecution: { eventId: 'event-1', runId: 'run-1', queuedAt: '2026-10-01T00:00:00Z', status: 'waiting_for_approval', retryCount: 0 },
 };
@@ -44,30 +44,30 @@ describe('AutomationsView', () => {
     fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project digest' } });
     fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'A short summary' } });
-    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Review the latest project activity.' } });
+    fireEvent.change(screen.getByLabelText('Instruction for Kuractus'), { target: { value: 'Review the latest project activity.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Project' }));
     fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('Run every').parentElement!.querySelector('select')!, { target: { value: 'hours' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create automation' }));
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith({
       name: 'Project digest', description: 'A short summary', instruction: 'Review the latest project activity.',
-      scope: 'project', project_name: 'AURA', interval_seconds: 7200,
+      scope: 'project', project_name: 'Kuractus', interval_seconds: 7200,
       webhook_enabled: false,
       schedule: { mode: 'interval', local_time: null, weekdays: [], timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' },
     }));
   });
 
   it('edits a live automation while preserving its project scope', async () => {
-    const projectAutomation = { ...liveAutomation, scope: 'project' as const, projectId: 'p1', projectName: 'AURA' };
+    const projectAutomation = { ...liveAutomation, scope: 'project' as const, projectId: 'p1', projectName: 'Kuractus' };
     const onUpdate = vi.fn().mockResolvedValue(projectAutomation);
     render(<AutomationsView projects={projects} automations={[projectAutomation]} onCreate={vi.fn()} onUpdate={onUpdate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Daily digest' }));
     expect(await screen.findByRole('dialog', { name: 'Update this routine' })).toBeInTheDocument();
-    expect(screen.getByText(/Scope stays in AURA/)).toBeInTheDocument();
+    expect(screen.getByText(/Scope stays in Kuractus/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Global' })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Project review' } });
-    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Summarize decisions and owners.' } });
+    fireEvent.change(screen.getByLabelText('Instruction for Kuractus'), { target: { value: 'Summarize decisions and owners.' } });
     fireEvent.change(screen.getByLabelText('Run every'), { target: { value: '2' } });
     fireEvent.change(screen.getByLabelText('Run every').parentElement!.querySelector('select')!, { target: { value: 'hours' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
@@ -86,7 +86,7 @@ describe('AutomationsView', () => {
     render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Deploy signal' } });
-    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Check deployment status.' } });
+    fireEvent.change(screen.getByLabelText('Instruction for Kuractus'), { target: { value: 'Check deployment status.' } });
     fireEvent.click(screen.getByRole('checkbox'));
     fireEvent.click(screen.getByRole('button', { name: 'Create automation' }));
 
@@ -110,7 +110,7 @@ describe('AutomationsView', () => {
     render(<AutomationsView projects={projects} automations={[]} onCreate={onCreate} onToggle={vi.fn()} onRunNow={vi.fn()} onApprovalResolved={vi.fn()} />);
     fireEvent.click(screen.getByRole('button', { name: /new automation/i }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Weekly review' } });
-    fireEvent.change(screen.getByLabelText('Instruction for AURA'), { target: { value: 'Review the week.' } });
+    fireEvent.change(screen.getByLabelText('Instruction for Kuractus'), { target: { value: 'Review the week.' } });
     fireEvent.change(screen.getByLabelText('Schedule'), { target: { value: 'weekly' } });
     fireEvent.change(screen.getByLabelText('Local time'), { target: { value: '08:30' } });
     fireEvent.change(screen.getByLabelText('Timezone'), { target: { value: 'Asia/Saigon' } });
@@ -169,7 +169,7 @@ describe('AutomationsView', () => {
     await waitFor(() => expect(onCancelRun).toHaveBeenCalledWith(liveAutomation.id, activeRun.event_id));
     expect(await screen.findByText('Stop requested · waiting for a safe boundary')).toHaveAttribute(
       'title',
-      'An operation already in progress may finish before AURA observes the request.',
+      'An operation already in progress may finish before Kuractus observes the request.',
     );
     historySpy.mockRestore();
   });

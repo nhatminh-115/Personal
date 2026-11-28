@@ -1,4 +1,4 @@
-"""Docker and isolated execution sandbox subsystem for AURA."""
+"""Docker and isolated execution sandbox subsystem for Kuractus."""
 
 from app.sandbox.spec import SandboxConfig, ExecutionResult
 from app.sandbox.base import SandboxRuntime

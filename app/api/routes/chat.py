@@ -216,7 +216,7 @@ async def _persist_cancelled_chat_turn(
     run.status = RunStatus.CANCELLED.value
     run.final_response = (
         "Run cancelled. An operation already in progress may have completed "
-        "before AURA observed the request."
+        "before Kuractus observed the request."
     )
     run.error_message = None
     await _replace_cancelled_run_response(db, session_id, run.id, run.final_response)

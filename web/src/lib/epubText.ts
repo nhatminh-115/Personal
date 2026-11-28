@@ -184,6 +184,6 @@ export async function extractEpubText(blob: Blob): Promise<string> {
     )) {
       throw error;
     }
-    throw new Error('AURA could not extract chapter text from this e-book in the browser.');
+    throw new Error('Kuractus could not extract chapter text from this e-book in the browser.');
   }
 }

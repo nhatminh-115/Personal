@@ -207,5 +207,5 @@ jobs:
         run: |
           cd web
           npm ci
-          npm test
+          npm test -- --maxWorkers=2
           npm run build

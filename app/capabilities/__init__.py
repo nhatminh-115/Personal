@@ -1,4 +1,4 @@
-"""Typed capability-provider contracts used by the AURA control plane."""
+"""Typed capability-provider contracts used by the Kuractus control plane."""
 
 from app.capabilities.registry import (
     CapabilityProvider,

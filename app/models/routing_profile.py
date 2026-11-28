@@ -1,4 +1,4 @@
-"""Domain models and Pydantic schemas for AURA Routing Profiles."""
+"""Domain models and Pydantic schemas for Kuractus Routing Profiles."""
 
 from typing import Dict, Literal, Optional
 from pydantic import BaseModel, Field, model_validator

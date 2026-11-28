@@ -53,9 +53,9 @@ export function ApiAccessDialog({ open, tokenConfigured, onClose, onSave, onForg
           <button className="icon-button" type="button" aria-label="Close API access" onClick={onClose}><X size={16} /></button>
         </div>
         <p className="api-access-dialog__copy">
-          Enter the shared <code>AURA_API_TOKEN</code> configured on the AURA server. The browser keeps it in this tab’s session storage and sends it only with AURA API requests.
+          Enter the shared <code>AURA_API_TOKEN</code> configured on the Kuractus server. The browser keeps it in this tab’s session storage and sends it only with Kuractus API requests.
         </p>
-        {tokenConfigured ? <p className="api-access-dialog__status">A token is saved for this browser tab. Enter a replacement if the server rejected it, or forget it to remove it. AURA will ask again if the server still requires a token.</p> : null}
+        {tokenConfigured ? <p className="api-access-dialog__status">A token is saved for this browser tab. Enter a replacement if the server rejected it, or forget it to remove it. Kuractus will ask again if the server still requires a token.</p> : null}
         <form onSubmit={handleSubmit}>
           <label htmlFor="aura-api-token">Bearer token</label>
           <input
@@ -69,7 +69,7 @@ export function ApiAccessDialog({ open, tokenConfigured, onClose, onSave, onForg
           />
           {error ? <p className="api-access-dialog__error" role="alert">{error}</p> : null}
           <p className="modal-note">
-            AURA requires at least 32 characters. Generate one with <code>python -c "import secrets; print(secrets.token_urlsafe(32))"</code>. This shared token gates the API; it does not create separate user accounts.
+            Kuractus requires at least 32 characters. Generate one with <code>python -c "import secrets; print(secrets.token_urlsafe(32))"</code>. This shared token gates the API; it does not create separate user accounts.
           </p>
           <div className="api-access-dialog__actions">
             {tokenConfigured ? (

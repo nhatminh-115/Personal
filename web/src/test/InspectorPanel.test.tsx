@@ -80,7 +80,7 @@ const sampleMemories: MemoryItem[] = [
     key: 'project_architecture_thesis',
     memory_type: 'core_thesis',
     is_active: true,
-    content: 'AURA workspace maintains explicit project-level context manifests.',
+    content: 'Kuractus workspace maintains explicit project-level context manifests.',
     confidence: 0.98,
     created_at: new Date().toISOString(),
   },
@@ -116,16 +116,17 @@ describe('InspectorPanel Component', () => {
     fireEvent.click(screen.getByTestId('inspector-tab-execution'));
 
     expect(screen.getByText(/run-inspect/i)).toBeInTheDocument();
-    expect(screen.getByText('routing_profile_resolved')).toBeInTheDocument();
-    expect(screen.getByText('model_selected')).toBeInTheDocument();
-    expect(screen.getByText('tool_executed')).toBeInTheDocument();
+    expect(screen.getByText('Model settings applied')).toBeInTheDocument();
+    expect(screen.getByText('Model selected')).toBeInTheDocument();
+    expect(screen.getByText('tool executed')).toBeInTheDocument();
 
     // Toggle payload
     const toggleButtons = screen.getAllByText(/View operational details/i);
-    expect(toggleButtons.length).toBeGreaterThan(0);
+    expect(toggleButtons).toHaveLength(1);
     fireEvent.click(toggleButtons[0]);
     expect(screen.getByText(/Hide details/i)).toBeInTheDocument();
-    expect(screen.getByText((content) => content.includes('"profile_name": "Balanced"'))).toBeInTheDocument();
+    expect(screen.getByText((content) => content.includes('"tool_name": "retrieve_sources"'))).toBeInTheDocument();
+    expect(screen.queryByText(/Profile|winning_scope|fallback_policy/i)).not.toBeInTheDocument();
   });
 
   it('renders detailed Research Specialist data in the research tab', () => {
@@ -159,7 +160,7 @@ describe('InspectorPanel Component', () => {
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
 
     expect(screen.getByText('project_architecture_thesis')).toBeInTheDocument();
-    expect(screen.getByText(/AURA workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
+    expect(screen.getByText(/Kuractus workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
     expect(screen.getByText(/Confidence: 98%/i)).toBeInTheDocument();
   });
 
@@ -182,7 +183,7 @@ describe('InspectorPanel Component', () => {
     };
     render(<InspectorPanel memories={[memory]} onOpenSourceChat={onOpenSourceChat} onOpenSourceRun={onOpenSourceRun} onClose={vi.fn()} />);
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
-    fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Why Kuractus remembers this' }));
 
     expect(screen.getByText('Explicit remember request')).toBeInTheDocument();
     expect(screen.getByText('source-session-1')).toBeInTheDocument();
@@ -212,42 +213,34 @@ describe('InspectorPanel Component', () => {
 
     expect(screen.getByTestId('inspector-execution')).toBeInTheDocument();
     expect(screen.getByText(/Run ID: source-run-1/)).toBeInTheDocument();
-    expect(screen.getByText('model_selected')).toBeInTheDocument();
+    expect(screen.getByText('Model selected')).toBeInTheDocument();
   });
 
-  it('renders routing tab without invented prototype routing data', () => {
+  it('does not expose internal routing profiles as an inspector tab', () => {
     render(
       <InspectorPanel
         onClose={vi.fn()}
       />
     );
 
-    fireEvent.click(screen.getByTestId('inspector-tab-routing'));
-    expect(screen.getByText(/Effective routing profile is unavailable/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('inspector-tab-routing')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Routing Profile|Winning scope|System Balanced/i)).not.toBeInTheDocument();
   });
 
-  it('renders persisted parent and specialist routing plus blocked fallback events', () => {
+  it('uses persisted execution records to show compiled context without a routing settings tab', () => {
     render(<InspectorPanel
-      effectiveRouting={{ profile: { id: 'p', name: 'Private', version: 4, is_active: true, is_default: true, global_privacy_policy: 'local_only', global_fallback_policy: 'none', cost_preference: 'normal', latency_preference: 'normal', routes: {} }, winning_scope: 'project' }}
       routingData={[
         { run_id: 'root-run', snapshot: { role: 'root', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'root-model', context_window: 8192, estimated_input_tokens: 2048, reserved_output_tokens: 1024, requires_vision: true, required_capabilities: ['code_graph'] }, reasoning_selection: { selected_effort: 'medium' }, memory_privacy_sources: [{ memory_id: 'memory-profile-1', privacy_policy: 'local_only' }], fallback_events: [] },
-        { run_id: 'child-run', parent_run_id: 'root-run', snapshot: { role: 'research', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'research-model' }, context_manifest: { required_tool_capabilities: ['code_graph.read'], resolved_tool_names: ['read_workspace_file'] }, reasoning_selection: { selected_effort: 'high' }, fallback_events: [{ event_type: 'fallback_blocked', payload: { reason: 'local_only boundary' } }] },
+        { run_id: 'child-run', parent_run_id: 'root-run', snapshot: { role: 'research', profile_id: 'p', profile_version: 4, winning_scope: 'project', privacy_policy: 'local_only', fallback_policy: 'none' }, model_selection: { provider: 'ollama', model: 'research-model' }, context_manifest: { required_tool_capabilities: ['code_graph.read'], resolved_tool_names: ['read_workspace_file'], objects: [{ object_id: 'source-note', object_type: 'manual_note', selected_by_user: true }], estimated_tokens: 2048 }, reasoning_selection: { selected_effort: 'high' }, fallback_events: [{ event_type: 'fallback_blocked', payload: { reason: 'local_only boundary' } }] },
       ]}
       onClose={vi.fn()}
     />);
-    fireEvent.click(screen.getByTestId('inspector-tab-routing'));
-    expect(screen.getByText('root routing')).toBeInTheDocument();
-    expect(screen.getByText('research routing')).toBeInTheDocument();
-    expect(screen.getByText('ollama:research-model')).toBeInTheDocument();
-    expect(screen.getByText('code_graph.read')).toBeInTheDocument();
-    expect(screen.getByText('read_workspace_file')).toBeInTheDocument();
-    expect(screen.getByText('code_graph · vision')).toBeInTheDocument();
-    expect(screen.getByText('memory-profile-1 · local_only')).toBeInTheDocument();
-    expect(screen.getByText((text) => text.replace(/[.,]/g, '') === '2048 input + 1024 reserved / 8192 tokens')).toBeInTheDocument();
-    expect(screen.getByText('fallback_blocked')).toBeInTheDocument();
-    expect(screen.getByText('local_only boundary')).toBeInTheDocument();
-    expect(screen.getByText(/Persisted routing decisions/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('inspector-tab-context'));
+    expect(screen.queryByTestId('inspector-tab-routing')).not.toBeInTheDocument();
+    expect(screen.getByText('Persisted context manifest')).toBeInTheDocument();
+    expect(screen.getByText('source-note')).toBeInTheDocument();
+    expect(screen.getByText('manual note')).toBeInTheDocument();
+    expect(screen.queryByText(/Winning scope|System Balanced|Routing Profile/i)).not.toBeInTheDocument();
   });
 
   it('renders the persisted compiled context manifest without exposing source text', () => {
@@ -353,7 +346,7 @@ describe('InspectorPanel Component', () => {
     expect(screen.queryByText(/Private profile memory content/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Review memory project_architecture_thesis' }));
-    expect(screen.getByText(/AURA workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
+    expect(screen.getByText(/Kuractus workspace maintains explicit project-level context manifests/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Hide provenance' })).toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('inspector-tab-context'));
@@ -394,7 +387,7 @@ describe('InspectorPanel Component', () => {
     const fetchProviders = vi.spyOn(api, 'fetchCapabilityProviders').mockResolvedValue({
       providers: [{
         provider_id: 'aura.workspace',
-        name: 'AURA Workspace',
+        name: 'Kuractus Workspace',
         version: null,
         health: 'unknown',
         health_checked_at: null,
@@ -415,12 +408,12 @@ describe('InspectorPanel Component', () => {
     fireEvent.click(screen.getByTestId('inspector-tab-capabilities'));
     await waitFor(() => expect(fetchProviders).toHaveBeenCalledOnce());
     expect(screen.getByText(/refresh checks tool discovery only/i)).toBeInTheDocument();
-    expect(await screen.findByText('AURA Workspace')).toBeInTheDocument();
+    expect(await screen.findByText('Kuractus Workspace')).toBeInTheDocument();
     expect(screen.getByText('aura.workspace')).toBeInTheDocument();
     expect(screen.getByText('Local')).toBeInTheDocument();
     expect(screen.getByText('workspace.read · code_graph.query')).toBeInTheDocument();
-    expect(screen.getByText('Configured capability → AURA tools')).toBeInTheDocument();
-    expect(screen.getByText('Verified available capability → AURA tools')).toBeInTheDocument();
+    expect(screen.getByText('Configured capability → Kuractus tools')).toBeInTheDocument();
+    expect(screen.getByText('Verified available capability → Kuractus tools')).toBeInTheDocument();
     expect(screen.getByText('mcp_graph_symbol_search')).toBeInTheDocument();
     expect(screen.getByText('No tools verified available')).toBeInTheDocument();
     expect(screen.getAllByText('Unknown').length).toBeGreaterThan(1);
@@ -479,7 +472,7 @@ describe('InspectorPanel Component', () => {
     };
     render(<InspectorPanel memories={[correctedMemory]} onClose={vi.fn()} />);
     fireEvent.click(screen.getByTestId('inspector-tab-memory'));
-    fireEvent.click(screen.getByRole('button', { name: 'Why AURA remembers this' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Why Kuractus remembers this' }));
     expect(screen.getByText('User correction')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Open source run' })).not.toBeInTheDocument();
   });

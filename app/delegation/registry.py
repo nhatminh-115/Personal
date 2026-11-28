@@ -1,4 +1,4 @@
-"""Registry for authorized specialist definitions in AURA."""
+"""Registry for authorized specialist definitions in Kuractus."""
 
 from typing import Dict, List, Optional
 from app.delegation.types import SpecialistDefinition
@@ -14,7 +14,7 @@ class SpecialistRegistry:
                 name="coding",
                 description="Specialist for inspecting code, running test suites in sandbox, diagnosing failures, modifying files, and validating fixes.",
                 system_prompt_template=(
-                    "You are AURA's dedicated Coding Specialist. "
+                    "You are Kuractus's dedicated Coding Specialist. "
                     "Your mission is to inspect the codebase, run tests, diagnose failures, "
                     "edit the appropriate files, re-run tests to verify the fix, and return a clear summary. "
                     "When code-graph tools are present in your available tools, use them for symbol lookup, "
@@ -43,7 +43,7 @@ class SpecialistRegistry:
                     "evidence extraction, citation tracking, and structured research synthesis."
                 ),
                 system_prompt_template=(
-                    "You are AURA's dedicated Research Specialist. "
+                    "You are Kuractus's dedicated Research Specialist. "
                     "Your mission is to rigorously investigate technical questions, discover prior art, "
                     "inspect full-text paper methods, extract verifiable evidence, and produce structured, evidence-backed syntheses.\n"
                     "Guidelines:\n"

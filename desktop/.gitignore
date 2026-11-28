@@ -1,0 +1,6 @@
+/src-tauri/target/
+/src-tauri/binaries/aura-api.exe
+/src-tauri/resources/runtime/
+/build/
+/.venv/
+__pycache__/

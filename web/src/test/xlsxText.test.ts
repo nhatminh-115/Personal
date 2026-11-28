@@ -56,7 +56,7 @@ describe('browser-local spreadsheet text extraction', () => {
     expect(Array.from(text)).toHaveLength(MAX_CONTEXT_FILE_CHARS);
 
     load.mockRejectedValueOnce(new Error('private ZIP parser detail'));
-    await expect(extractXlsxText(new Blob(['not xlsx']))).rejects.toThrow('AURA could not extract text from this spreadsheet in the browser.');
+    await expect(extractXlsxText(new Blob(['not xlsx']))).rejects.toThrow('Kuractus could not extract text from this spreadsheet in the browser.');
   });
 
   it('bounds the number of visible sheets and rows included', async () => {

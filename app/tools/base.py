@@ -26,7 +26,7 @@ class ToolResult(BaseModel):
 
 
 class Tool(ABC):
-    """Abstract interface for all AURA tools."""
+    """Abstract interface for all Kuractus tools."""
 
     @property
     @abstractmethod

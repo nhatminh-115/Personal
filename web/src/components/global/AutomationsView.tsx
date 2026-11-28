@@ -329,8 +329,8 @@ export function AutomationsView({ projects, automations, totalCount = automation
       <div className="library-view__header">
         <div>
           <span className="eyebrow">AUTOMATIONS</span>
-          <h1>Background routines without turning AURA into Zapier.</h1>
-          <p>Scheduled instructions and secret-authenticated webhook signals run through AURA, scoped to your workspace or one project.</p>
+          <h1>Background routines without turning Kuractus into Zapier.</h1>
+          <p>Scheduled instructions and secret-authenticated webhook signals run through Kuractus, scoped to your workspace or one project.</p>
         </div>
         <div className="automations-view__header-actions">
           {onToggleArchived ? <button className="secondary-button" type="button" onClick={onToggleArchived} disabled={loadingPage}>{includeArchived ? 'Hide archived' : 'Include archived'}</button> : null}
@@ -340,14 +340,14 @@ export function AutomationsView({ projects, automations, totalCount = automation
 
       <div className="automation-summary-row">
         <div><Workflow size={15} /><span><strong>{enabledCount} active</strong><small>{totalCount} scheduled routines</small></span></div>
-        <div><BellRing size={15} /><span><strong>Persistent scheduler</strong><small>Runs are queued through AURA</small></span></div>
+        <div><BellRing size={15} /><span><strong>Persistent scheduler</strong><small>Runs are queued through Kuractus</small></span></div>
       </div>
 
       {webhookSetup ? (
         <div className="modal-scrim" role="presentation">
           <div className="automation-create-modal automation-webhook-secret" role="dialog" aria-modal="true" aria-labelledby="automation-webhook-title">
             <div className="modal-head"><div><span className="eyebrow">WEBHOOK SECRET</span><strong id="automation-webhook-title">Save this secret now</strong></div><button className="icon-button" type="button" onClick={() => setWebhookSetup(null)} aria-label="Close"><X size={15} /></button></div>
-            <p>This secret is shown once. Send a POST request with <code>Authorization: Bearer &lt;secret&gt;</code> and a unique <code>X-Aura-Event-Id</code>. The request body is ignored; AURA runs only the saved instruction.</p>
+            <p>This secret is shown once. Send a POST request with <code>Authorization: Bearer &lt;secret&gt;</code> and a unique <code>X-Aura-Event-Id</code>. The request body is ignored; Kuractus runs only the saved instruction.</p>
             <label><span>Webhook path</span><code>{webhookSetup.path}</code></label>
             <label><span>Secret</span><code>{webhookSetup.secret}</code></label>
             <div className="automation-approval-actions"><button type="button" className="secondary-button" onClick={() => void navigator.clipboard?.writeText(webhookSetup.secret)}>Copy secret</button><button type="button" className="primary-soft-button" onClick={() => setWebhookSetup(null)}>Done</button></div>
@@ -399,7 +399,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                                 <strong>{run.status.replace(/_/g, ' ')}</strong>
                                 {run.retry_count > 0 ? <small>{run.retry_count} retries</small> : null}
                                 {run.retry_of_event_id ? <small>Retry of {run.retry_of_event_id.slice(0, 8)}</small> : null}
-                                {['failed', 'dead_letter'].includes(run.status) && onRetryRun && automation.enabled && !automation.archived ? <button type="button" onClick={() => void retryFailedRun(automation, run)} disabled={retryingEventId !== null || runInProgress} title={runInProgress ? 'Wait for the current Automation run to finish' : "Queue a fresh run using the Automation's saved instruction"}>{retryingEventId === run.event_id ? 'Queueing retry…' : 'Retry run'}</button> : ['queued', 'running'].includes(run.status) && onCancelRun ? <button type="button" onClick={() => void cancelAutomationRun(automation, run)} disabled={cancellingEventId !== null} title={run.status === 'queued' ? 'Cancel before execution starts' : 'Request cooperative cancellation at the next safe execution boundary'}>{cancellingEventId === run.event_id ? 'Sending request…' : run.status === 'queued' ? 'Cancel queued run' : 'Stop active run'}</button> : run.status === 'cancellation_requested' ? <span title="An operation already in progress may finish before AURA observes the request.">Stop requested · waiting for a safe boundary</span> : run.status === 'cancelled' ? <span title="An operation already in progress may have completed before cancellation took effect.">Run cancelled</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
+                                {['failed', 'dead_letter'].includes(run.status) && onRetryRun && automation.enabled && !automation.archived ? <button type="button" onClick={() => void retryFailedRun(automation, run)} disabled={retryingEventId !== null || runInProgress} title={runInProgress ? 'Wait for the current Automation run to finish' : "Queue a fresh run using the Automation's saved instruction"}>{retryingEventId === run.event_id ? 'Queueing retry…' : 'Retry run'}</button> : ['queued', 'running'].includes(run.status) && onCancelRun ? <button type="button" onClick={() => void cancelAutomationRun(automation, run)} disabled={cancellingEventId !== null} title={run.status === 'queued' ? 'Cancel before execution starts' : 'Request cooperative cancellation at the next safe execution boundary'}>{cancellingEventId === run.event_id ? 'Sending request…' : run.status === 'queued' ? 'Cancel queued run' : 'Stop active run'}</button> : run.status === 'cancellation_requested' ? <span title="An operation already in progress may finish before Kuractus observes the request.">Stop requested · waiting for a safe boundary</span> : run.status === 'cancelled' ? <span title="An operation already in progress may have completed before cancellation took effect.">Run cancelled</span> : <button type="button" onClick={() => void inspectRun(automation, run.run_id)} disabled={runLoadingId !== null || run.status === 'queued'} title="Inspect persisted run result and operational provenance">{runLoadingId === run.run_id ? 'Loading run…' : 'Inspect run'}</button>}
                               </li>
                             ))}
                           </ol>
@@ -416,7 +416,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
                 {live ? <button className="secondary-button" type="button" aria-label={`Edit ${automation.name}`} onClick={() => openEditor(automation)} disabled={!onUpdate || automation.archived}><Pencil size={13} /> Edit</button> : null}
                 {live && onDuplicate ? <button className="secondary-button" type="button" onClick={() => onDuplicate(automation)} title="Create a paused copy with independent run history"><Copy size={13} /> Duplicate</button> : null}
                 {live && onSetArchived ? <button className="secondary-button" type="button" onClick={() => onSetArchived(automation, !automation.archived)} title={automation.archived ? 'Restore this paused routine; its history is preserved' : 'Stop future schedules and keep run history; already queued runs can still finish'}>{automation.archived ? 'Restore' : 'Archive'}</button> : null}
-                <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || automation.archived || runInProgress} title={automation.archived ? 'Archived routines cannot run' : runInProgress ? 'A run is already active' : live ? 'Queue a run through AURA' : 'Examples do not run'}>{automation.enabled && !automation.archived ? <Play size={13} /> : <Pause size={13} />} Run now</button>
+                <button className="automation-run" type="button" onClick={() => onRunNow(automation)} disabled={!live || !automation.enabled || automation.archived || runInProgress} title={automation.archived ? 'Archived routines cannot run' : runInProgress ? 'A run is already active' : live ? 'Queue a run through Kuractus' : 'Examples do not run'}>{automation.enabled && !automation.archived ? <Play size={13} /> : <Pause size={13} />} Run now</button>
               </div>
             </article>
           );
@@ -458,7 +458,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
         <div className="modal-scrim" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !approvalLoading) setApprovalReview(null); }}>
           <div className="automation-create-modal automation-approval-modal" role="dialog" aria-modal="true" aria-labelledby="automation-approval-title">
             <div className="modal-head"><div><span className="eyebrow">TOOL APPROVAL</span><strong id="automation-approval-title">{approvalReview.automation.name}</strong></div><button className="icon-button" type="button" onClick={() => { setApprovalReview(null); setApprovalError(''); }} disabled={approvalLoading} aria-label="Close"><X size={15} /></button></div>
-            <p>This automation run is paused until you decide whether AURA may continue.</p>
+            <p>This automation run is paused until you decide whether Kuractus may continue.</p>
             <div className="automation-approval-detail"><span>Tool</span><strong>{approvalReview.approval.tool_name}</strong></div>
             <div className="automation-approval-detail"><span>Risk</span><strong>{approvalReview.approval.risk_level}</strong></div>
             <label>
@@ -499,7 +499,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
             <div className="modal-head"><div><span className="eyebrow">{editingAutomation ? 'EDIT AUTOMATION' : 'NEW AUTOMATION'}</span><strong id="automation-create-title">{editingAutomation ? 'Update this routine' : 'Create a routine'}</strong></div><button className="icon-button" type="button" onClick={closeEditor} disabled={saving} aria-label="Close"><X size={15} /></button></div>
             <label><span>Name</span><input autoFocus value={name} onChange={(event) => setName(event.target.value)} placeholder="e.g. Weekly literature scan" /></label>
             <label><span>Description</span><input value={description} onChange={(event) => setDescription(event.target.value)} placeholder="What this routine is for" /></label>
-            <label><span>Instruction for AURA</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what AURA should do each time it runs" rows={4} /></label>
+            <label><span>Instruction for Kuractus</span><textarea value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Describe what Kuractus should do each time it runs" rows={4} /></label>
             <label className="automation-webhook-option"><input type="checkbox" checked={webhookEnabled} onChange={(event) => setWebhookEnabled(event.target.checked)} /><span><strong>Allow secret-authenticated webhook triggers</strong><small>External services can queue this saved instruction. Request bodies are ignored.</small></span></label>
             {editingAutomation ? <p className="modal-note">Scope stays {editingAutomation.scope === 'global' ? 'global' : `in ${editingAutomation.projectName ?? 'its current project'}`} so this routine keeps its existing session and history.</p> : <><div className="automation-scope-switch"><button type="button" className={scope === 'global' ? 'is-active' : ''} onClick={() => setScope('global')}>Global</button><button type="button" className={scope === 'project' ? 'is-active' : ''} onClick={() => setScope('project')}>Project</button></div>{scope === 'project' ? <label><span>Project</span><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label> : null}</>}
             <label><span>Schedule</span><select aria-label="Schedule" value={scheduleMode} onChange={(event) => setScheduleMode(event.target.value as typeof scheduleMode)}><option value="interval">Repeat after an interval</option><option value="daily">Every day at a local time</option><option value="weekly">Selected weekdays at a local time</option></select></label>
@@ -510,7 +510,7 @@ export function AutomationsView({ projects, automations, totalCount = automation
               {scheduleMode === 'weekly' && scheduleWeekdays.length === 0 ? <p className="automation-form-error" role="alert">Choose at least one weekday.</p> : null}
             </>}
             {error ? <p className="automation-form-error" role="alert">{error}</p> : null}
-            <div className="modal-note">AURA queues scheduled runs through its durable event system. Tool actions still follow their normal approval rules.{editingAutomation ? ' Changing the interval starts a new countdown from save time. Already queued runs keep the instruction snapshot they started with.' : ''}</div>
+            <div className="modal-note">Kuractus queues scheduled runs through its durable event system. Tool actions still follow their normal approval rules.{editingAutomation ? ' Changing the interval starts a new countdown from save time. Already queued runs keep the instruction snapshot they started with.' : ''}</div>
             <button className="primary-soft-button" type="button" onClick={() => void save()} disabled={saving || !name.trim() || !instruction.trim() || (!editingAutomation && scope === 'project' && !projectId) || (scheduleMode === 'weekly' && scheduleWeekdays.length === 0) || !scheduleTimezone.trim()}>{saving ? 'Saving…' : editingAutomation ? 'Save changes' : 'Create automation'}</button>
           </div>
         </div>

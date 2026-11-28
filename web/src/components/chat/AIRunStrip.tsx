@@ -1,6 +1,6 @@
-import { Check, LoaderCircle, Route, Search, Sparkles, Square } from 'lucide-react';
+import { Check, CircleDot, LoaderCircle, Search, Sparkles, Square } from 'lucide-react';
 
-type RunPhase = 'routing' | 'context' | 'synthesizing';
+type RunPhase = 'preparing' | 'context' | 'synthesizing';
 
 interface AIRunStripProps {
   phase: RunPhase;
@@ -10,13 +10,13 @@ interface AIRunStripProps {
   stopRequested?: boolean;
 }
 
-const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
-  { id: 'routing', label: 'Route task', icon: Route },
+const steps: { id: RunPhase; label: string; icon: typeof CircleDot }[] = [
+  { id: 'preparing', label: 'Prepare request', icon: CircleDot },
   { id: 'context', label: 'Gather context', icon: Search },
   { id: 'synthesizing', label: 'Synthesize answer', icon: Sparkles },
 ];
 
-const order: RunPhase[] = ['routing', 'context', 'synthesizing'];
+const order: RunPhase[] = ['preparing', 'context', 'synthesizing'];
 
 export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRequested = false }: AIRunStripProps) {
   const activeIndex = order.indexOf(phase);
@@ -26,7 +26,7 @@ export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRe
       <div className="ai-run-strip__title">
         <span className="running-dot" />
         <div>
-          <strong>AURA is working</strong>
+          <strong>Kuractus is working</strong>
           <small>{specialist}</small>
         </div>
       </div>
@@ -50,7 +50,7 @@ export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRe
           className="ai-run-strip__stop"
           onClick={onStop}
           disabled={stopping || stopRequested}
-          title={stopRequested ? 'AURA will stop at the next safe execution boundary.' : undefined}
+          title={stopRequested ? 'Kuractus will stop at the next safe execution boundary.' : undefined}
         >
           <Square size={10} /> {stopping ? 'Stopping…' : stopRequested ? 'Stop requested' : 'Stop'}
         </button>

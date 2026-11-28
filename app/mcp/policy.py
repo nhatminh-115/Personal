@@ -1,4 +1,4 @@
-"""AURA local security policy overlay for MCP tools."""
+"""Kuractus local security policy overlay for MCP tools."""
 
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -18,7 +18,7 @@ class MCPValidationError(AURAError):
 
 class MCPSecurityPolicy:
     """
-    Enforces AURA's local security boundaries over external MCP tools.
+    Enforces Kuractus's local security boundaries over external MCP tools.
     MCP tools are never inherently trusted:
     - Inputs are strictly validated against tool schemas.
     - Default posture is conservative: high risk with human approval required.

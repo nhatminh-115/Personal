@@ -19,6 +19,7 @@ import {
   RoutingProfileValidation,
   RunRoutingDecision,
   ReasoningEffort,
+  ReasoningSelection,
   WorkspaceEdge,
   WorkspaceGraph,
   WorkspaceExecutionHistory,
@@ -38,6 +39,7 @@ import {
   AutomationExecutionRecord,
   AutomationRunResponse,
 } from '../types';
+import { isTauri } from '@tauri-apps/api/core';
 
 export class ApiError extends Error {
   status: number;
@@ -53,11 +55,21 @@ export class ApiError extends Error {
   }
 }
 
-const BASE_URL = ''; // Proxy forwards /v1 to FastAPI in dev
+const DESKTOP_API_BASE_URL = 'http://127.0.0.1:17890';
+
+export function resolveApiBaseUrl(mode: string, configuredBaseUrl?: string): string {
+  const configured = configuredBaseUrl?.trim();
+  if (configured) return configured.replace(/\/+$/, '');
+  return mode === 'desktop' ? DESKTOP_API_BASE_URL : '';
+}
+
+const BASE_URL = resolveApiBaseUrl(import.meta.env.MODE, import.meta.env.VITE_AURA_API_BASE_URL);
 const API_TOKEN_SESSION_KEY = 'aura-api-token';
 export const API_AUTH_REQUIRED_EVENT = 'aura:api-auth-required';
+let desktopApiToken: string | null = null;
 
 export function getApiToken(): string | null {
+  if (isTauri()) return desktopApiToken;
   if (typeof window === 'undefined') return null;
   try {
     return window.sessionStorage.getItem(API_TOKEN_SESSION_KEY);
@@ -67,6 +79,10 @@ export function getApiToken(): string | null {
 }
 
 export function setApiToken(token: string | null): boolean {
+  if (isTauri()) {
+    desktopApiToken = token || null;
+    return true;
+  }
   if (typeof window === 'undefined') return false;
   try {
     if (token) window.sessionStorage.setItem(API_TOKEN_SESSION_KEY, token);
@@ -774,7 +790,7 @@ export const api = {
     message: string,
     projectName?: string,
     modelOverride?: string | null,
-    reasoningOverride?: ReasoningEffort | null,
+    reasoningOverride?: ReasoningSelection | null,
     contextObjectIds: string[] = [],
     taskType?: 'research' | 'coding' | 'writing' | null,
     contextAttachments: ChatContextAttachment[] = [],
@@ -793,7 +809,7 @@ export const api = {
     if (modelOverride) {
       payload.model_override = modelOverride;
     }
-    if (reasoningOverride) payload.reasoning_override = reasoningOverride;
+    if (reasoningOverride && (reasoningOverride !== 'auto' || modelOverride)) payload.reasoning_override = reasoningOverride;
     if (contextObjectIds.length > 0) payload.context_object_ids = [...new Set(contextObjectIds)];
     if (contextAttachments.length > 0) payload.context_attachments = contextAttachments;
     if (taskType) payload.task_type = taskType;

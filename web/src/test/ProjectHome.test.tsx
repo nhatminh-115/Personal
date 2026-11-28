@@ -10,27 +10,26 @@ describe('ProjectHome', () => {
       accent: 'cyan', updated: 'today', meta: '0 chats', thesis: '', next: '', source: 'user',
     };
     const onOpenNotes = vi.fn();
-    const onMockObject = vi.fn();
 
     render(
       <ProjectHome
         projects={[project]}
         projectId={project.id}
+        threads={[]}
         chatCount={0}
         fileCount={0}
         noteCount={2}
-        onBack={vi.fn()}
-        onOpenNode={vi.fn()}
         onOpenChats={vi.fn()}
+        onOpenThread={vi.fn()}
+        onNewThread={vi.fn()}
+        onOpenBoard={vi.fn()}
         onOpenFiles={vi.fn()}
         onOpenNotes={onOpenNotes}
-        onMockObject={onMockObject}
       />,
     );
 
     fireEvent.click(screen.getByRole('button', { name: /Notes 2 Linked workspace notes/i }));
 
     expect(onOpenNotes).toHaveBeenCalledOnce();
-    expect(onMockObject).not.toHaveBeenCalled();
   });
 });

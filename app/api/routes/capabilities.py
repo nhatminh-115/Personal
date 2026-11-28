@@ -1,4 +1,4 @@
-"""AURA control-plane inventory for abstract runtime capabilities."""
+"""Kuractus control-plane inventory for abstract runtime capabilities."""
 
 from fastapi import APIRouter, HTTPException, status
 

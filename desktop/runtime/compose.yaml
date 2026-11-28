@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16@sha256:484e838076e04939d27d3e176e91c86eea96236126023be8d3059761122e579f
+    environment:
+      POSTGRES_USER: aura_desktop
+      POSTGRES_PASSWORD: ${AURA_DESKTOP_POSTGRES_PASSWORD:?AURA Desktop must supply the credential}
+      POSTGRES_DB: aura_desktop
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - aura_desktop_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura_desktop -d aura_desktop"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  aura_desktop_postgres_data:
+    name: aura_desktop_postgres_data

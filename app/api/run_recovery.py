@@ -41,13 +41,13 @@ _TERMINAL_STATUSES = {
 _VALID_APPROVAL_STATUSES = {"pending", "approved", "edited", "rejected"}
 _VALID_CONFIRMATION_STATUSES = {"pending", "approved", "rejected"}
 _INTERRUPTED_RESPONSE = (
-    "Run interrupted because its executor stopped before AURA reached a safe recovery point. "
+    "Run interrupted because its executor stopped before Kuractus reached a safe recovery point. "
     "Review the run history before retrying."
 )
 _INTERRUPTED_ERROR = "The run executor stopped before the run could be safely recovered."
 _CANCELLED_RESPONSE = (
     "Run cancelled. An operation already in progress may have completed "
-    "before AURA observed the request."
+    "before Kuractus observed the request."
 )
 _CHILD_CANCELLED_RESPONSE = "Run cancelled with its parent agent turn."
 _LEGACY_RECOVERY_GRACE = timedelta(minutes=2)

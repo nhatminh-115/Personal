@@ -1,4 +1,4 @@
-"""Deterministic task and model routing policy for AURA."""
+"""Deterministic task and model routing policy for Kuractus."""
 
 from abc import ABC, abstractmethod
 from typing import Dict, List, Literal, Optional

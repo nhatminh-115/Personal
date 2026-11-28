@@ -71,12 +71,20 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
   };
 
   return (
-    <section className="notes-view">
+    <section className="notes-page-v16" aria-labelledby="notes-v16-title">
+      <header className="notes-page-v16__intro">
+        <div>
+          <span className="eyebrow">THOUGHTS WORTH KEEPING</span>
+          <h1 id="notes-v16-title">Notes that feel <span>nearby.</span></h1>
+          <p>Notes are part of the working environment, not an afterthought.</p>
+        </div>
+        <button className="notes-page-v16__new" type="button" title="New note" onClick={() => setCreating(true)}><Plus size={15} /> New note</button>
+      </header>
+      <section className="notes-view" aria-label="Notes and editor">
       <aside className="notes-list-panel">
         <div className="notes-list-panel__head">
-          <div><span className="eyebrow">NOTES</span><h2>{selectedProject ? `${selectedProject.name} notes` : 'Personal notes'}</h2></div>
+          <div><span className="eyebrow">NOTE LIST</span><h2>{selectedProject ? `${selectedProject.name} notes` : 'Recent notes'}</h2></div>
           {selectedProject && onShowAllNotes ? <button className="notes-show-all" type="button" onClick={onShowAllNotes}>All notes</button> : null}
-          <button className="icon-button" type="button" title="New note" onClick={() => setCreating(true)}><Plus size={15} /></button>
         </div>
         <label className="notes-search"><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search notes" /></label>
         {creating ? (
@@ -164,6 +172,7 @@ export function NotesView({ projects, notes, projectId, focusNoteId, onNotesChan
           </>
         ) : <div className="empty-note-editor"><NotebookPen size={24} /><strong>Select a note</strong></div>}
       </div>
+      </section>
     </section>
   );
 }

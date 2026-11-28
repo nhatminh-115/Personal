@@ -1,4 +1,4 @@
-"""Event infrastructure and persistent scheduler for AURA."""
+"""Event infrastructure and persistent scheduler for Kuractus."""
 
 from app.events.types import EventType, AURAEvent
 from app.events.bus import EventBus, event_bus

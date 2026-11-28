@@ -11,7 +11,7 @@ from app.db.models import WorkspaceEdgeModel, WorkspaceObjectModel, WorkspaceObj
 EXPANDABLE_CONTEXT_OBJECTS = {"context_bridge", "context_set", "conversation_branch", "conversation_turn"}
 MAX_COMPILED_CONTEXT_CHARS = 40_000
 MAX_COMPILED_OBJECTS = 200
-# Model traits and AURA tool-provider capabilities share one workspace metadata
+# Model traits and Kuractus tool-provider capabilities share one workspace metadata
 # field today. Split them before routing so tool namespaces are never required
 # to appear in a model's capability list.
 MODEL_ROUTING_CAPABILITIES = frozenset({"general", "code", "reasoning", "research", "fast", "local"})
@@ -25,7 +25,7 @@ CAPABILITY_ROUTING_FLAGS = {
 
 
 def split_context_capabilities(capabilities: list[str]) -> tuple[list[str], list[str], dict[str, bool]]:
-    """Separate model-routing constraints from abstract AURA tool capabilities."""
+    """Separate model-routing constraints from abstract Kuractus tool capabilities."""
     model_capabilities: set[str] = set()
     tool_capabilities: set[str] = set()
     flags = {

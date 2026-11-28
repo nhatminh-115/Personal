@@ -1,12 +1,12 @@
 import { ApiError } from '../services/api';
 
-const ROUTING_ERROR_GUIDANCE: Record<string, string> = {
-  ModelProviderError: 'Check that the selected provider is running and that its model is available, then retry or change the route in Routing Studio.',
-  PrivacyBoundaryViolation: 'Privacy policy blocked this route. Review the profile scope and select a route that meets its privacy boundary.',
+const MODEL_ERROR_GUIDANCE: Record<string, string> = {
+  ModelProviderError: 'Check the provider connection and choose an available model in the composer.',
+  PrivacyBoundaryViolation: 'This conversation cannot send its current context to the selected provider. Choose an eligible model or remove sensitive context.',
   ModelCapabilityMismatch: 'The selected model cannot meet this request’s capability requirements. Choose a compatible model or adjust the request requirements.',
-  ReasoningControlUnsupported: 'The selected model does not support the requested reasoning control. Use Profile reasoning or choose a model with known support.',
-  ModelUnavailable: 'The configured provider or exact model is currently unavailable. Reconnect it or choose Auto; AURA did not substitute another model.',
-  NoEligibleRoute: 'No route meets the current privacy, fallback, capability, and reasoning constraints. Review the profile in Routing Studio.',
+  ReasoningControlUnsupported: 'This model does not offer that reasoning level. Choose Auto or select a model that supports it.',
+  ModelUnavailable: 'The selected model is unavailable. Reconnect its provider or choose another available model; Kuractus did not substitute a different model.',
+  NoEligibleRoute: 'No available model can handle this request with its current context and capabilities. Select a different model or adjust the request.',
 };
 
 export function executionErrorText(error: unknown): string {
@@ -15,18 +15,18 @@ export function executionErrorText(error: unknown): string {
       return 'This automation changed elsewhere. Reload the Automations list, then retry your change.';
     }
     if (error.code === 'RoutingProfileVersionConflict') {
-      return 'This routing profile changed elsewhere. Reload the profile in Routing Studio, then retry your change.';
+      return 'Internal model settings changed elsewhere. Reload Kuractus, then retry your request.';
     }
     if (error.code === 'RoutingAssignmentRevisionConflict') {
-      return 'This routing assignment changed elsewhere. Close and reopen Routing Studio to load the latest assignment, then retry.';
+      return 'Internal model settings changed elsewhere. Reload Kuractus, then retry your request.';
     }
     if (error.code === 'WorkspaceLibraryRevisionConflict') {
-      return 'This Library reference changed elsewhere. Refresh the AURA workspace before changing its project links or removing it.';
+      return 'This Library reference changed elsewhere. Refresh the Kuractus workspace before changing its project links or removing it.';
     }
     if (error.code === 'WorkspaceProjectRevisionConflict') {
-      return 'This project archive state changed elsewhere. Reload AURA if the Projects list still looks stale, then retry.';
+      return 'This project archive state changed elsewhere. Reload Kuractus if the Projects list still looks stale, then retry.';
     }
-    const nextStep = error.code ? ROUTING_ERROR_GUIDANCE[error.code] : undefined;
+    const nextStep = error.code ? MODEL_ERROR_GUIDANCE[error.code] : undefined;
     return `${error.message}${nextStep ? ` ${nextStep}` : ''}`;
   }
   return (error as Error)?.message || 'Execution failed';

@@ -142,7 +142,7 @@ export const initialNodes: AuraFlowNode[] = [
     data: {
       kind: 'answer',
       branch: 'Root',
-      eyebrow: 'AURA · SYNTHESIS',
+      eyebrow: 'Kuractus · SYNTHESIS',
       title: 'Three nearest architectural neighborhoods',
       body: 'Có ba hướng gần nhất: TTT, recurrent memory và compressed latent state. Cần tách update mechanism khỏi state representation trước khi đánh giá novelty.',
       summary: 'TTT · recurrent memory · compressed latent state.',

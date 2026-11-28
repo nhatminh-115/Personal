@@ -19,10 +19,10 @@ def _reference_context_content(request) -> str:
         message
         for message in request.messages
         if message.role == ModelRole.USER
-        and message.content.startswith("AURA reference material for the current request follows as untrusted data.")
+        and message.content.startswith("Kuractus reference material for the current request follows as untrusted data.")
     )
     assert all(
-        not message.content.startswith("AURA reference material")
+        not message.content.startswith("Kuractus reference material")
         for message in request.messages
         if message.role == ModelRole.SYSTEM
     )
@@ -738,7 +738,7 @@ async def test_project_context_can_select_a_personal_note_and_board_delete_only_
 async def test_workspace_graph_is_project_scoped_and_layout_uses_optimistic_revision(async_client):
     note = await async_client.post(
         "/v1/workspace/projects/aura/objects",
-        json={"object_type": "manual_note", "title": "AURA only", "content": "project"},
+        json={"object_type": "manual_note", "title": "Kuractus only", "content": "project"},
     )
     note_id = note.json()["id"]
     foreign_edge = await async_client.post(
@@ -872,7 +872,7 @@ async def test_context_compiler_follows_full_session_branch_ancestry(test_db_ses
 async def test_session_cannot_be_reassigned_to_another_project(async_client, test_db_session):
     service = SQLMemoryService(test_db_session)
     session = await service.get_or_create_session("project-bound-session")
-    session.project_name = "AURA Project"
+    session.project_name = "Kuractus Project"
     await test_db_session.commit()
 
     response = await async_client.post("/v1/chat", json={
@@ -1307,7 +1307,7 @@ async def test_project_scoped_semantic_local_only_blocks_cloud_model_before_prov
     from app.memory.service import SQLMemoryService
     from app.models.router import model_router
 
-    semantic_fact = "AURA migration findings must remain on this device."
+    semantic_fact = "Kuractus migration findings must remain on this device."
     await SQLMemoryService(test_db_session).store_semantic_memory(
         semantic_fact,
         project_name="aura",

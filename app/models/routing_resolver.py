@@ -1,4 +1,4 @@
-"""Scope resolution and precedence for AURA routing policies."""
+"""Scope resolution and precedence for Kuractus routing policies."""
 
 from typing import Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -185,7 +185,15 @@ def apply_routing_profile_to_context(
             else route_config.provider_override
         )
 
-    if reasoning_override:
+    if reasoning_override == "auto":
+        # An explicit model plus Auto reasoning means let that model use its own
+        # default behavior instead of inheriting profile effort bounds.
+        context.reasoning_policy = None
+        context.reasoning_effort = None
+        context.reasoning_effort_min = None
+        context.reasoning_effort_max = None
+        context.winning_scope = "message"
+    elif reasoning_override:
         context.reasoning_policy = ReasoningPolicy.FIXED
         context.reasoning_effort = ReasoningEffort(reasoning_override)
         context.reasoning_effort_min = None

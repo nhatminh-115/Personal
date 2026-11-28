@@ -26,7 +26,7 @@ describe('Persistent workspace projects', () => {
 
   it('creates a durable project and opens it in one reusable project tab', async () => {
     await act(async () => { render(<App />); });
-    fireEvent.click(screen.getByTitle('All projects'));
+    fireEvent.click(screen.getByTitle('Projects'));
     await screen.findByRole('heading', { name: 'Separate contexts, one personal workspace.' });
     fireEvent.click(screen.getAllByRole('button', { name: /New project/i }).at(-1)!);
     fireEvent.change(screen.getByLabelText(/Project name/i), { target: { value: 'Field Notes' } });
@@ -39,14 +39,14 @@ describe('Persistent workspace projects', () => {
       .map(([url, init]) => [String(url), init] as const)
       .find(([url, init]) => url.endsWith('/v1/workspace/projects') && init?.method === 'POST');
     expect(JSON.parse(String(createCall?.[1]?.body))).toMatchObject({ name: 'Field Notes', subtitle: 'A durable project context' });
-    expect(screen.getAllByRole('button').filter((button) => button.closest('.workspace-chrome') && button.textContent?.includes('Field Notes'))).toHaveLength(1);
+    expect(screen.getByRole('navigation', { name: 'Project navigation' })).toBeInTheDocument();
     expect(screen.getByTitle('Field Notes')).toBeInTheDocument();
     expect(screen.getByText('Your project is ready.')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Notes 0 Linked workspace notes/i }));
     expect(await screen.findByRole('heading', { name: 'Field Notes notes' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All notes' }));
-    expect(await screen.findByRole('heading', { name: 'Personal notes' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Recent notes' })).toBeInTheDocument();
   });
 
   it('hides archived projects by default and offers a restore action', async () => {

@@ -1,4 +1,11 @@
 import type { ExecutionStep, RunEvent } from '../types';
+import { friendlyModelName } from './modelName';
+
+function friendlyProviderName(provider?: unknown): string {
+  if (typeof provider !== 'string') return 'Connected provider';
+  const known: Record<string, string> = { openai: 'OpenAI', ollama: 'Ollama', lmstudio: 'LM Studio', mock: 'Demo mode' };
+  return known[provider.toLowerCase()] ?? 'Connected provider';
+}
 
 export function mapRunEventsToExecutionSteps(events: RunEvent[]): ExecutionStep[] {
   if (!events || events.length === 0) {
@@ -23,28 +30,28 @@ export function mapRunEventsToExecutionSteps(events: RunEvent[]): ExecutionStep[
         detail = p.session_id ? `Session ${String(p.session_id).slice(0, 8)}…` : 'Session initialized';
         break;
       case 'routing_profile_resolved':
-        label = 'Routing profile resolved';
-        detail = p.profile_name ? `${p.profile_name} (v${p.profile_version ?? 1})` : 'Profile loaded';
+        label = 'Model settings applied';
+        detail = 'Conversation preferences are ready';
         break;
       case 'model_selected':
         label = 'Model selected';
-        detail = p.model_id ? `${p.model_id} (${p.provider_id || 'provider'})` : 'Auto candidate selected';
+        detail = p.model_id ? `${friendlyModelName(String(p.model_id))} · ${friendlyProviderName(p.provider_id)}` : 'Automatic model choice';
         break;
       case 'reasoning_effort_selected':
-        label = 'Reasoning effort selected';
-        detail = p.reasoning_effort || 'Adaptive';
+        label = 'Reasoning selected';
+        detail = p.reasoning_effort || 'Automatic';
         break;
       case 'fallback_considered':
-        label = 'Fallback candidate evaluated';
-        detail = p.candidate_model || 'Alternative provider candidate';
+        label = 'Checking another available model';
+        detail = 'Kuractus is checking compatible options';
         break;
       case 'fallback_blocked':
-        label = 'Fallback blocked';
-        detail = p.reason || 'Privacy or capability boundary violation';
+        label = p.error_type === 'RoutingConfirmationRequired' ? 'Cloud model needs your approval' : 'No suitable alternate model';
+        detail = p.error_type === 'RoutingConfirmationRequired' ? 'Your message has not been sent to the provider yet' : 'Available models could not handle this request';
         break;
       case 'model_called':
         label = 'Model invocation';
-        detail = p.model ? `Called ${p.model}` : 'Synthesis execution';
+        detail = p.model ? `Called ${friendlyModelName(String(p.model))}` : 'Synthesis execution';
         break;
       case 'tool_requested':
         label = `Tool requested: ${p.tool_name || 'action'}`;

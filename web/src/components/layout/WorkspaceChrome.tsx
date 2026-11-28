@@ -61,7 +61,7 @@ export function WorkspaceChrome({
 
   return (
     <div className="workspace-chrome">
-      <div className="workspace-tab-strip" role="tablist" aria-label="AURA tabs">
+      <div className="workspace-tab-strip" role="tablist" aria-label="Kuractus tabs">
         {tabs.map((tab) => {
           const Icon = tabIcon(tab.kind);
           return (

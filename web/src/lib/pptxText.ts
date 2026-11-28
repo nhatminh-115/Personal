@@ -98,6 +98,6 @@ export async function extractPptxText(blob: Blob): Promise<string> {
     )) {
       throw error;
     }
-    throw new Error('AURA could not extract slide text from this presentation in the browser.');
+    throw new Error('Kuractus could not extract slide text from this presentation in the browser.');
   }
 }

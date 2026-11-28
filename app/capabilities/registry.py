@@ -1,6 +1,6 @@
 """Typed inventory and capability-to-tool bindings for runtime providers.
 
-Provider metadata is descriptive. Existing AURA tool permission and approval
+Provider metadata is descriptive. Existing Kuractus tool permission and approval
 checks remain authoritative for every invocation.
 """
 
@@ -46,7 +46,7 @@ class ProviderApprovalRequirement(str, Enum):
 
 
 class CapabilityProviderMetadata(BaseModel):
-    """Sanitized provider facts surfaced by the AURA control plane."""
+    """Sanitized provider facts surfaced by the Kuractus control plane."""
 
     model_config = ConfigDict(frozen=True)
 
@@ -73,7 +73,7 @@ class CapabilityProviderRegistration(BaseModel):
 
 @runtime_checkable
 class CapabilityProvider(Protocol):
-    """Provider boundary: describe capabilities and bind them to canonical AURA tools."""
+    """Provider boundary: describe capabilities and bind them to canonical Kuractus tools."""
 
     @property
     def metadata(self) -> CapabilityProviderMetadata: ...
@@ -105,7 +105,7 @@ class CapabilityProviderRegistry:
         if undeclared:
             raise ValueError(f"Provider '{metadata.provider_id}' binds undeclared capabilities: {sorted(undeclared)}")
         if any(not names for mapping in (bindings, declared) for names in mapping.values()):
-            raise ValueError("Capability bindings must reference at least one canonical AURA tool.")
+            raise ValueError("Capability bindings must reference at least one canonical Kuractus tool.")
         # Pydantic's frozen models can still contain mutable lists. Keep the
         # inventory isolated from both registration inputs and read results.
         self._metadata[metadata.provider_id] = metadata.model_copy(deep=True)

@@ -1,5 +1,6 @@
 import { Lock, SlidersHorizontal, X } from 'lucide-react';
 import type { EffectiveRouting, ModelCatalog, ReasoningEffort } from '../../types';
+import { CustomSelect } from './CustomSelect';
 
 interface RoutingPopoverProps {
   effective: EffectiveRouting | null;
@@ -31,6 +32,24 @@ export function RoutingPopover({
   const fixedReasoning = lockedModelInfo?.reasoning_support === 'fixed_by_model';
   const unsupportedReasoning = lockedModelInfo?.reasoning_support === 'unsupported';
   const reasoningUnknown = Boolean(lockedModel && (!lockedModelInfo?.reasoning_support || lockedModelInfo.reasoning_support === 'unknown'));
+  const reasoningOptions = [
+    {
+      value: '',
+      label: fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile',
+      description: fixedReasoning
+        ? 'The model controls reasoning internally.'
+        : unsupportedReasoning
+          ? 'This model has no reasoning control.'
+          : 'Use the project profile',
+    },
+    ...(fixedReasoning || unsupportedReasoning
+      ? reasoningOverride ? [{ value: reasoningOverride, label: `${reasoningOverride} · unavailable`, disabled: true }] : []
+      : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => ({
+        value: effort,
+        label: effort[0].toUpperCase() + effort.slice(1),
+        description: effort === 'instant' ? 'Prioritize response speed' : effort === 'max' ? 'Use the maximum available effort' : `Use ${effort} reasoning effort`,
+      }))),
+  ];
 
   return (
     <div className="popover routing-popover" role="dialog" aria-label="Routing controls">
@@ -41,17 +60,32 @@ export function RoutingPopover({
       <div className="routing-scope-row"><span>Winning scope</span><strong>{effective?.winning_scope ?? '—'}</strong></div>
       {profile ? <div className="routing-scope-row"><span>Privacy · fallback</span><strong>{profile.global_privacy_policy} · {profile.global_fallback_policy}</strong></div> : null}
       {demoThread ? <p className="routing-note">Temporary controls apply only to live chats. Start a live chat before setting a model or reasoning override.</p> : null}
-      <label className="routing-control-label" htmlFor="routing-model-lock">Temporary exact model lock</label>
-      <select id="routing-model-lock" value={lockedModel ?? ''} disabled={demoThread} onChange={(event) => onSetModel(event.target.value || null)}>
-        <option value="">Unlocked · follow profile</option>
-        {availableModels.map((model) => <option key={model.value} value={model.value} disabled={model.disabled}>{model.label}{model.disabled ? ' · unavailable' : ''}</option>)}
-      </select>
+      <span className="routing-control-label">Temporary exact model lock</span>
+      <CustomSelect
+        ariaLabel="Temporary exact model lock"
+        value={lockedModel ?? ''}
+        disabled={demoThread}
+        className="routing-popover-select"
+        onChange={(value) => onSetModel(value || null)}
+        options={[
+          { value: '', label: 'Unlocked · follow profile', description: 'Let the project profile select the model.' },
+          ...availableModels.map((model) => ({
+            ...model,
+            label: model.disabled ? `${model.label} · unavailable` : model.label,
+            description: model.disabled ? 'This provider is currently unavailable.' : 'Available for a temporary model lock',
+          })),
+        ]}
+      />
       {lockedModel ? <button type="button" className="secondary-button routing-clear-lock" disabled={demoThread} onClick={() => onSetModel(null)}><Lock size={14} /> Clear model lock</button> : null}
-      <label className="routing-control-label" htmlFor="routing-reasoning">Temporary reasoning</label>
-      <select id="routing-reasoning" value={reasoningOverride ?? ''} disabled={demoThread || fixedReasoning || unsupportedReasoning} onChange={(event) => onSetReasoning((event.target.value || null) as ReasoningEffort | null)}>
-        <option value="">{fixedReasoning ? 'Fixed by model' : unsupportedReasoning ? 'Unsupported' : 'Profile'}</option>
-        {fixedReasoning || unsupportedReasoning ? reasoningOverride ? <option value={reasoningOverride} disabled>{reasoningOverride} · unavailable for this model</option> : null : (['instant', 'low', 'medium', 'high', 'max'] as const).map((effort) => <option key={effort} value={effort}>{effort[0].toUpperCase() + effort.slice(1)}</option>)}
-      </select>
+      <span className="routing-control-label">Temporary reasoning</span>
+      <CustomSelect
+        ariaLabel="Temporary reasoning"
+        value={reasoningOverride ?? ''}
+        disabled={demoThread || fixedReasoning || unsupportedReasoning}
+        className="routing-popover-select"
+        onChange={(value) => onSetReasoning((value || null) as ReasoningEffort | null)}
+        options={reasoningOptions}
+      />
       {fixedReasoning ? <p className="routing-note">This exact model controls reasoning internally; temporary effort overrides are unavailable.</p> : null}
       {unsupportedReasoning ? <p className="routing-note">This exact model does not support reasoning controls.</p> : null}
       {reasoningUnknown ? <p className="routing-note">Reasoning support for this exact model is unknown; the backend may reject a temporary effort request.</p> : null}

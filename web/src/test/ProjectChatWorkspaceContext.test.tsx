@@ -28,7 +28,7 @@ vi.mock('../components/chat/ChatPane', () => ({
   ),
 }));
 
-const project = { id: 'project-1', name: 'AURA', title: 'AURA' } as any;
+const project = { id: 'project-1', name: 'Kuractus', title: 'Kuractus' } as any;
 const thread = {
   id: 'thread-1',
   title: 'Live chat',
@@ -63,7 +63,7 @@ describe('live chat context loading', () => {
     vi.mocked(api.fetchWorkspaceObjectPage).mockResolvedValue({
       objects: [{
         id: 'object-1',
-        project_name: 'AURA',
+        project_name: 'Kuractus',
         object_type: 'manual_note',
         created_by: 'user',
         title: 'Saved note',
@@ -79,7 +79,7 @@ describe('live chat context loading', () => {
     expect(api.fetchWorkspaceObjectPage).not.toHaveBeenCalled();
 
     fireEvent.click(view.getByRole('button', { name: 'Open context' }));
-    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledWith('AURA', null));
+    await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledWith('Kuractus', null));
 
     fireEvent.click(view.getByRole('button', { name: 'Select object' }));
     await waitFor(() => expect(api.fetchWorkspaceObjectPage).toHaveBeenCalledTimes(1));

@@ -592,6 +592,7 @@ export interface RunDetail {
 export type RoutingPrivacy = 'public' | 'internal' | 'confidential' | 'local_only';
 export type RoutingFallback = 'none' | 'same_provider_only' | 'local_only' | 'cloud_allowed' | 'ask_before_cloud';
 export type ReasoningEffort = 'instant' | 'low' | 'medium' | 'high' | 'max';
+export type ReasoningSelection = 'auto' | ReasoningEffort;
 export type WinningScope = 'message' | 'session' | 'project' | 'default' | 'system' | 'draft';
 export interface RoutingReasoningConfig {
   policy: 'fixed' | 'adaptive';

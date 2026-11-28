@@ -2,11 +2,15 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { AuraCommandPalette } from './components/chat/AuraCommandPalette';
 import { ProjectChatWorkspace } from './components/chat/ProjectChatWorkspace';
 import { ApiAccessDialog } from './components/global/ApiAccessDialog';
+import { ConversationView } from './components/global/ConversationView';
 import type { FilePreviewRecord } from './components/global/FilePreviewView';
+import { PreferencesView } from './components/global/PreferencesView';
 import { Sidebar, type SidebarDestination } from './components/layout/Sidebar';
 import { Topbar } from './components/layout/Topbar';
-import { WorkspaceChrome, type AuraTab } from './components/layout/WorkspaceChrome';
+import type { AuraTab } from './components/layout/WorkspaceChrome';
 import { ToastStack } from './components/ui/ToastStack';
+import { DesktopRuntimeControl } from './components/global/DesktopRuntimeControl';
+import { isTauri } from '@tauri-apps/api/core';
 import { RoutingConfirmationNotice } from './components/routing/RoutingConfirmationNotice';
 import { initialNodes } from './data/mockData';
 import { makeProjectBoard } from './data/projectBoards';
@@ -35,6 +39,7 @@ import { extractHtmlText, MAX_HTML_INPUT_BYTES } from './lib/htmlText';
 import { extractLocalTextFile, MAX_LOCAL_TEXT_FILE_BYTES } from './lib/localTextFile';
 import { extractRtfText, MAX_LOCAL_RTF_BYTES } from './lib/rtfText';
 import { executionErrorText } from './lib/executionError';
+import { workspaceRecordsForRuntime } from './lib/workspaceBootstrap';
 import {
   compiledContextTokenCount,
   compiledContextTokenCountFromManifest,
@@ -75,8 +80,7 @@ import type {
   WorkspaceSearchResult,
   AutomationRecordResponse,
   WorkspaceMode,
-  EffectiveRouting,
-  ReasoningEffort,
+  ReasoningSelection,
   RunRoutingDecision,
   SessionMessage,
 } from './types';
@@ -96,11 +100,13 @@ const StudyView = lazy(() => import('./components/global/StudyView').then((modul
 const WorkspaceSearchView = lazy(() => import('./components/global/WorkspaceSearchView').then((module) => ({ default: module.WorkspaceSearchView })));
 const ProjectFilesView = lazy(() => import('./components/home/ProjectFilesView').then((module) => ({ default: module.ProjectFilesView })));
 const ProjectHome = lazy(() => import('./components/home/ProjectHome').then((module) => ({ default: module.ProjectHome })));
+const ProjectNavigation = lazy(() => import('./components/home/ProjectNavigation').then((module) => ({ default: module.ProjectNavigation })));
 const InspectorPanel = lazy(() => import('./components/layout/InspectorPanel').then((module) => ({ default: module.InspectorPanel })));
-const RoutingStudio = lazy(() => import('./components/routing/RoutingStudio').then((module) => ({ default: module.RoutingStudio })));
 
 type WorkspaceSurface =
   | 'global-home'
+  | 'conversation'
+  | 'preferences'
   | 'search-results'
   | 'library'
   | 'notes'
@@ -118,7 +124,48 @@ const STORAGE = {
   notes: 'aura-v7-notes',
   automations: 'aura-v7-automations',
   chats: 'aura-v7-chats',
+  conversationModelSettings: 'kuractus-v16-conversation-model-settings',
 };
+
+async function buildContextAttachments(contextFileContentIds: string[], libraryItems: LibraryItem[]): Promise<ChatContextAttachment[]> {
+  const uniqueIds = [...new Set(contextFileContentIds)];
+  if (uniqueIds.length > 5) throw new Error('Choose up to five local files for one message.');
+
+  const attachments: ChatContextAttachment[] = [];
+  let totalAttachmentChars = 0;
+  for (const objectId of uniqueIds) {
+    const item = libraryItems.find((candidate) => candidate.id === objectId);
+    const isPdf = item?.kind === 'PDF';
+    const isDocx = item?.kind === 'DOCX';
+    const isXlsx = item?.kind === 'XLSX';
+    const isImage = item?.kind === 'IMAGE';
+    const isPptx = item?.kind === 'PPTX';
+    const isEpub = item?.kind === 'EPUB';
+    const isRtf = item?.kind === 'RTF';
+    const isHtml = item?.kind === 'HTML';
+    const isPlainText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON'].includes(item.kind));
+    const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(item.kind));
+    if (!item?.blobKey || (!supportedText && !isPdf && !isDocx && !isXlsx && !isImage && !isPptx && !isEpub)) {
+      throw new Error('This browser does not have a supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy of one selected file.');
+    }
+    const blob = await getLocalFile(item.blobKey);
+    const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : isRtf ? MAX_LOCAL_RTF_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
+    if (!blob || blob.size > maxBytes) {
+      throw new Error(isPdf || isDocx || isXlsx || isImage || isPptx || isEpub
+        ? `A selected local ${isPdf ? 'PDF' : isDocx ? 'Word document' : isXlsx ? 'spreadsheet' : isImage ? 'image' : isPptx ? 'presentation' : 'e-book'} is missing or exceeds the 10 MB browser parsing limit.`
+        : isHtml || isRtf || isPlainText ? `A selected local ${isHtml ? 'HTML' : isRtf ? 'RTF' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
+    }
+    const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : isRtf ? await extractRtfText(blob) : await extractLocalTextFile(blob);
+    const fileCharacterCount = Array.from(fileText).length;
+    if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
+      throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
+    }
+    totalAttachmentChars += fileCharacterCount;
+    if (totalAttachmentChars > 40_000) throw new Error('Selected file text exceeds the 40,000-character total limit.');
+    attachments.push({ object_id: objectId, text: fileText });
+  }
+  return attachments;
+}
 
 function initialModeFromUrl(): WorkspaceMode {
   const value = new URLSearchParams(window.location.search).get('mode');
@@ -258,11 +305,12 @@ function projectFromRecord(record: WorkspaceProjectRecord, index: number): Proje
   };
 }
 
-function loadLibrary(): LibraryItem[] {
-  const stored = loadStored<LibraryItem[]>(STORAGE.library, []);
-  if (!stored.length) return initialLibraryItems.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
+function loadLibrary(isDesktop: boolean): LibraryItem[] {
+  const stored = workspaceRecordsForRuntime(loadStored<LibraryItem[]>(STORAGE.library, []), isDesktop);
+  const fixtures = isDesktop ? [] : initialLibraryItems;
+  if (!stored.length) return fixtures.map((item) => ({ ...item, projectLinks: [...(item.projectLinks ?? [])] }));
   const storedById = new Map(stored.map((item) => [item.id, item]));
-  const builtIns = initialLibraryItems.map((item) => ({ ...item, ...(storedById.get(item.id) ?? {}), href: item.href, source: 'bundled' as const }));
+  const builtIns = fixtures.map((item) => ({ ...item, ...(storedById.get(item.id) ?? {}), href: item.href, source: 'bundled' as const }));
   const imported = stored.filter((item) => item.source === 'imported');
   return [...builtIns, ...imported];
 }
@@ -296,11 +344,10 @@ interface AppTab extends AuraTab {
   mode?: WorkspaceMode;
 }
 
-const AURA_TAB: AppTab = { id: 'aura', title: 'AURA', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
-
-function tabStateKey(tab: AppTab) {
-  return [tab.id, tab.surface, tab.projectId ?? '', tab.connectionId ?? '', tab.previewId ?? '', tab.mode ?? ''].join('|');
-}
+const AURA_TAB: AppTab = { id: 'aura', title: 'Kuractus', subtitle: 'Personal workspace', kind: 'home', surface: 'global-home', closable: false, projectId: null, connectionId: null, previewId: null };
+const isDesktopApp = isTauri();
+const runtimeProjects = isDesktopApp ? [] : projects;
+const DESKTOP_API_READY_KEY = 'aura:desktop-awaiting-api-ready';
 
 export default function App() {
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -309,20 +356,26 @@ export default function App() {
   const [activeNav, setActiveNav] = useState<SidebarDestination | null>('home');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
+  const [desktopSettingsRequest, setDesktopSettingsRequest] = useState(0);
+  const [providerSettingsRequest, setProviderSettingsRequest] = useState(0);
+  const [pendingConversationAction, setPendingConversationAction] = useState<
+    | { kind: 'start'; projectId: string; prompt: string; taskType?: 'research' | 'coding' | 'writing'; contextFileContentIds?: string[] }
+    | { kind: 'open'; projectId: string; threadId: string }
+    | { kind: 'new'; projectId: string }
+    | null
+  >(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
-  const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
-  const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
   const [apiAccessOpen, setApiAccessOpen] = useState(false);
   const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
   const [inspectorFocusRunId, setInspectorFocusRunId] = useState<string | null>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [focusNodeId, setFocusNodeId] = useState<string | null>(params.get('focus'));
-  const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => initialNodes.find((node) => node.id === params.get('focus')));
+  const [selectedNode, setSelectedNode] = useState<AuraFlowNode | undefined>(() => isDesktopApp ? undefined : initialNodes.find((node) => node.id === params.get('focus')));
   const [branchRequest, setBranchRequest] = useState<{ nodeId: string; nonce: number } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const toastTimers = useRef(new Map<number, number>());
+  const toastKeys = useRef(new Set<string>());
   useEffect(() => {
     const requestApiAccess = () => setApiAccessOpen(true);
     window.addEventListener(API_AUTH_REQUIRED_EVENT, requestApiAccess);
@@ -334,7 +387,7 @@ export default function App() {
   const [focusedStudySessionId, setFocusedStudySessionId] = useState<string | null>(null);
   const workspaceSearchRequest = useRef(0);
 
-  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(loadLibrary);
+  const [libraryItems, setLibraryItems] = useState<LibraryItem[]>(() => loadLibrary(isDesktopApp));
   const [libraryNextCursor, setLibraryNextCursor] = useState<string | null>(null);
   const [libraryPageLoading, setLibraryPageLoading] = useState(false);
   const [libraryPageError, setLibraryPageError] = useState<string | null>(null);
@@ -370,9 +423,7 @@ export default function App() {
   const [filePreviews, setFilePreviews] = useState<Record<string, FilePreviewRecord>>({});
   const [tabs, setTabs] = useState<AppTab[]>([AURA_TAB]);
   const [activeTabId, setActiveTabId] = useState(AURA_TAB.id);
-  const [tabHistory, setTabHistory] = useState<AppTab[]>([AURA_TAB]);
-  const [tabHistoryIndex, setTabHistoryIndex] = useState(0);
-  const [notes, setNotes] = useState<WorkspaceNote[]>(() => loadStored(STORAGE.notes, initialNotes));
+  const [notes, setNotes] = useState<WorkspaceNote[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.notes, initialNotes), isDesktopApp));
   const [notesProjectScopeId, setNotesProjectScopeId] = useState<string | null>(null);
   const [noteConflicts, setNoteConflicts] = useState<Record<string, { loading: boolean; error?: string }>>({});
   const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof api.fetchWorkspaceSummary>>>(() => ({
@@ -411,10 +462,11 @@ export default function App() {
   const savedNotePrivacyPolicies = useRef(new Map<string, WorkspaceNote['privacyPolicy']>());
   const savedNoteRevisions = useRef(new Map<string, number>());
   const deletedWorkspaceNoteIds = useRef(new Set<string>());
-  const [automations, setAutomations] = useState<AutomationRecord[]>(() => loadStored(STORAGE.automations, initialAutomations));
+  const [automations, setAutomations] = useState<AutomationRecord[]>(() => workspaceRecordsForRuntime(loadStored(STORAGE.automations, initialAutomations), isDesktopApp));
   const automationsLoaded = useRef(false);
+  const automationInitialAttempted = useRef(false);
   const [automationSummary, setAutomationSummary] = useState(() => {
-    const initial = loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations);
+    const initial = workspaceRecordsForRuntime(loadStored<AutomationRecord[]>(STORAGE.automations, initialAutomations), isDesktopApp);
     const live = initial.filter((item) => item.source === 'live');
     return { total: live.length, enabled: live.filter((item) => item.enabled).length };
   });
@@ -425,7 +477,7 @@ export default function App() {
   const automationPageRequest = useRef(false);
   const automationArchiveRequests = useRef(new Set<string>());
   const [chatThreads, setChatThreads] = useState<ChatThreadRecord[]>(() =>
-    loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads)
+    workspaceRecordsForRuntime(loadStored<ChatThreadRecord[]>(STORAGE.chats, initialChatThreads), isDesktopApp)
       .map((thread) => ({ ...thread, loadingOlderMessages: false }))
   );
   const [workspaceGraphRevisions, setWorkspaceGraphRevisions] = useState<Record<string, number>>({});
@@ -434,14 +486,14 @@ export default function App() {
   }, []);
   const [activeThreadByProject, setActiveThreadByProject] = useState<Record<string, string>>(() => {
     const map: Record<string, string> = {};
-    projects.forEach((project) => {
+    runtimeProjects.forEach((project) => {
       const first = initialChatThreads.find((thread) => thread.projectId === project.id);
       if (first) map[project.id] = first.id;
     });
     return map;
   });
 
-  const projectCatalog = useMemo(() => [...userProjects, ...projects], [userProjects]);
+  const projectCatalog = useMemo(() => [...userProjects, ...runtimeProjects], [userProjects]);
   const activeProjectCatalog = useMemo(() => projectCatalog.filter((project) => !project.archived), [projectCatalog]);
   const activeProject = projectCatalog.find((project) => project.id === activeProjectId) ?? null;
 
@@ -468,6 +520,35 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (surface !== 'global-home') return;
+    const liveProjects = activeProjectCatalog.filter((project) => project.source === 'user');
+    if (!liveProjects.length) return;
+    let active = true;
+    void Promise.allSettled(liveProjects.map(async (project) => ({ project, page: await api.fetchSessions(project.name) }))).then((results) => {
+      if (!active) return;
+      const restored = results.flatMap((result) => result.status === 'fulfilled'
+        ? result.value.page.items
+          .filter((item) => item.project_name === result.value.project.name)
+          .map((item): ChatThreadRecord => ({
+            id: `session-${item.id}`,
+            projectId: result.value.project.id,
+            title: item.title && item.title !== 'New Session' ? item.title : 'Restored conversation',
+            summary: 'Saved live conversation',
+            updated: new Date(item.updated_at).toLocaleDateString(),
+            messages: [],
+            sessionId: item.id,
+            source: 'live',
+          }))
+        : []);
+      setChatThreads((current) => {
+        const knownSessions = new Set(current.map((thread) => thread.sessionId).filter((id): id is string => Boolean(id)));
+        return [...restored.filter((thread) => thread.sessionId && !knownSessions.has(thread.sessionId)), ...current];
+      });
+    });
+    return () => { active = false; };
+  }, [activeProjectCatalog, surface]);
+
+  useEffect(() => {
     if (!userProjects.length) return;
     const idByName = new Map(userProjects.map((project) => [project.name, project.id]));
     setLibraryItems((current) => current.map((item) => ({
@@ -490,8 +571,7 @@ export default function App() {
     .map((thread) => thread.sessionId!), [projectThreads]);
   const workspaceGraphRevision = activeProject ? workspaceGraphRevisions[activeProject.name] ?? 0 : 0;
   const activeThreadId = activeProjectId ? activeThreadByProject[activeProjectId] ?? projectThreads[0]?.id ?? null : null;
-  const projectSection = surface === 'project-overview' ? 'overview' : surface === 'project-files' ? 'files' : surface === 'workspace' ? 'workspace' : null;
-  const genericBoard = useMemo(() => activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
+  const genericBoard = useMemo(() => !isDesktopApp && activeProject && activeProject.id !== 'stateful' ? makeProjectBoard(activeProject) : null, [activeProject]);
 
   useEffect(() => window.localStorage.setItem(STORAGE.library, JSON.stringify(libraryItems)), [libraryItems]);
   useEffect(() => window.localStorage.setItem(STORAGE.notes, JSON.stringify(notes)), [notes]);
@@ -519,7 +599,6 @@ export default function App() {
 
   // Live Backend State
   const [catalog, setCatalog] = useState<ModelCatalog>({ providers: [] });
-  const [effectiveRouting, setEffectiveRouting] = useState<EffectiveRouting | null>(null);
   const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null);
   const [sessionPageLoading, setSessionPageLoading] = useState(false);
   const [sessionPageError, setSessionPageError] = useState<string | null>(null);
@@ -534,7 +613,10 @@ export default function App() {
   const [memoryPageError, setMemoryPageError] = useState<string | null>(null);
   const memoryPageRequestId = useRef(0);
   const profileMemoryRequestId = useRef(0);
-  const [threadRoutingOverrides, setThreadRoutingOverrides] = useState<Record<string, { model: string | null; reasoning: ReasoningEffort | null }>>({});
+  const [conversationModelSettings, setConversationModelSettings] = useState<Record<string, { model: string | null; reasoning: ReasoningSelection | null }>>(() => loadStored(STORAGE.conversationModelSettings, {}));
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE.conversationModelSettings, JSON.stringify(conversationModelSettings));
+  }, [conversationModelSettings]);
 
   const loadMemoryPage = useCallback(async (projectName: string, cursor?: string | null, append = false) => {
     const requestId = ++memoryPageRequestId.current;
@@ -614,11 +696,6 @@ export default function App() {
     await loadProjectSessionPage(activeProject, sessionNextCursor, Boolean(sessionNextCursor));
   }, [activeProject, loadProjectSessionPage, sessionNextCursor, sessionPageLoading]);
 
-  const openRoutingStudio = () => {
-    setRoutingOpen(false);
-    setRoutingStudioLoaded(true);
-    setRoutingStudioOpen(true);
-  };
   const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
   /**
    * approvalOrigins — typed binding: approval.id → originatingThreadId.
@@ -659,38 +736,78 @@ export default function App() {
     ].filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index));
     return replacement;
   }, [activeProject?.name]);
-  const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
-  const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
+  const activeConversationModelSettings = activeThreadId ? conversationModelSettings[activeThreadId] : undefined;
 
-  const setActiveModelLock = useCallback((model: string | null) => {
+  const setActiveConversationModel = useCallback((model: string | null) => {
     if (!activeThreadId) return;
     const [providerId, modelId] = model?.split(':') ?? [];
     const reasoningSupport = catalog.providers
       .find((provider) => provider.id === providerId)
       ?.models.find((item) => item.id === modelId)?.reasoning_support;
-    const clearsReasoning = reasoningSupport === 'fixed_by_model' || reasoningSupport === 'unsupported';
-    setThreadRoutingOverrides((current) => ({
+    const clearsReasoning = !reasoningSupport || reasoningSupport === 'fixed_by_model' || reasoningSupport === 'unsupported' || reasoningSupport === 'unknown';
+    const supportedEfforts = ['low', 'medium', 'high', 'max'];
+    setConversationModelSettings((current) => ({
       ...current,
       [activeThreadId]: {
         model,
-        reasoning: clearsReasoning ? null : current[activeThreadId]?.reasoning ?? null,
+        reasoning: (() => {
+          const previous = current[activeThreadId]?.reasoning ?? 'auto';
+          if (clearsReasoning || previous === 'auto') return 'auto';
+          const selectedIndex = supportedEfforts.indexOf(previous);
+          const ceilingIndex = reasoningSupport ? supportedEfforts.indexOf(reasoningSupport) : -1;
+          return selectedIndex < 0 || ceilingIndex < 0 || selectedIndex > ceilingIndex ? 'auto' : previous;
+        })(),
       },
     }));
   }, [activeThreadId, catalog.providers]);
-  const setActiveReasoningOverride = useCallback((reasoning: ReasoningEffort | null) => {
+  const setActiveConversationReasoning = useCallback((reasoning: ReasoningSelection) => {
     if (!activeThreadId) return;
-    setThreadRoutingOverrides((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning } }));
+    setConversationModelSettings((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning: reasoning ?? 'auto' } }));
   }, [activeThreadId]);
 
-  function patchThreadLive(threadId: string, patch: Partial<ThreadLiveState>) {
+  const patchThreadLive = useCallback((threadId: string, patch: Partial<ThreadLiveState>) => {
     setThreadLiveStates((prev) => ({
       ...prev,
       [threadId]: { ...{ runId: null, runStatus: null, approval: null, runDetail: null, researchData: null, routingData: null, routingConfirmation: null }, ...(prev[threadId] ?? {}), ...patch },
     }));
-  }
+  }, []);
+
+  const liveRunTracking = useRef({ threadLiveStates, chatThreads, activeThreadId });
+  liveRunTracking.current = { threadLiveStates, chatThreads, activeThreadId };
 
   useEffect(() => {
-    api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
+    if (!isDesktopApp) return;
+    const pollBackgroundRuns = () => {
+      const current = liveRunTracking.current;
+      for (const [threadId, live] of Object.entries(current.threadLiveStates)) {
+        if (threadId === current.activeThreadId || !live.runId || !['running', 'cancellation_requested', 'resuming_routing'].includes(live.runStatus ?? '')) continue;
+        const thread = current.chatThreads.find((candidate) => candidate.id === threadId && candidate.source === 'live' && candidate.sessionId);
+        if (!thread?.sessionId) continue;
+        const runId = live.runId;
+        void api.fetchSessionExecutionState(thread.sessionId).then((execution) => {
+          if (execution.run_id !== runId || !['waiting_for_approval', 'completed', 'failed', 'cancelled'].includes(execution.run_status ?? '')) return;
+          setThreadLiveStates((states) => {
+            const existing = states[threadId];
+            if (!existing || existing.runId !== runId) return states;
+            return {
+              ...states,
+              [threadId]: {
+                ...existing,
+                runStatus: execution.run_status ?? existing.runStatus,
+                approval: execution.run_status === 'waiting_for_approval' ? execution.approval ?? null : null,
+              },
+            };
+          });
+        }).catch(() => {});
+      }
+    };
+    pollBackgroundRuns();
+    const timer = window.setInterval(pollBackgroundRuns, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    api.fetchModels().then((value) => setCatalog(value && Array.isArray(value.providers) ? value : { providers: [] })).catch(() => setCatalog({ providers: [] }));
   }, []);
 
   useEffect(() => {
@@ -725,16 +842,6 @@ export default function App() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [activeThread?.id, activeThread?.sessionId, activeThread?.source]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeProject?.name) { setEffectiveRouting(null); return; }
-    const sessionId = sessionAvailable ? activeThread?.sessionId : undefined;
-    void api.fetchEffectiveRouting(activeProject.name, sessionId).then((value) => {
-      if (!cancelled) setEffectiveRouting(value);
-    }).catch(() => { if (!cancelled) setEffectiveRouting(null); });
-    return () => { cancelled = true; };
-  }, [activeProject?.name, activeThread?.id, activeThread?.sessionId, sessionAvailable]);
 
   useEffect(() => {
     if (!activeProject?.name) {
@@ -806,14 +913,27 @@ export default function App() {
   void activeThreadLive;
 
   const pushToast = useCallback((title: string, detail?: string) => {
+    const key = `${title}\u0000${detail ?? ''}`;
+    if (toastKeys.current.has(key)) return;
     const id = Date.now() + Math.floor(Math.random() * 999);
-    setToasts((current) => [...current, { id, title, detail }]);
+    toastKeys.current.add(key);
+    setToasts((current) => [...current.slice(-3), { id, title, detail }]);
     const timer = window.setTimeout(() => {
       toastTimers.current.delete(id);
+      toastKeys.current.delete(key);
       setToasts((current) => current.filter((toast) => toast.id !== id));
-    }, 3200);
+    }, 3600);
     toastTimers.current.set(id, timer);
   }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    const toast = toasts.find((item) => item.id === id);
+    const timer = toastTimers.current.get(id);
+    if (timer !== undefined) window.clearTimeout(timer);
+    toastTimers.current.delete(id);
+    if (toast) toastKeys.current.delete(`${toast.title}\u0000${toast.detail ?? ''}`);
+    setToasts((current) => current.filter((item) => item.id !== id));
+  }, [toasts]);
 
   useEffect(() => () => {
     toastTimers.current.forEach((timer) => window.clearTimeout(timer));
@@ -827,6 +947,8 @@ export default function App() {
     setActiveConnectionId(tab.connectionId ?? null);
     if (tab.mode) setMode(tab.mode);
     if (tab.surface === 'global-home') setActiveNav('home');
+    else if (tab.surface === 'conversation') setActiveNav('conversation');
+    else if (tab.surface === 'preferences') setActiveNav('preferences');
     else if (tab.surface === 'library' || tab.surface === 'folder-viewer' || tab.surface === 'file-viewer') setActiveNav('library');
     else if (tab.surface === 'notes') setActiveNav('notes');
     else if (tab.surface === 'study') setActiveNav('study');
@@ -835,66 +957,10 @@ export default function App() {
     else setActiveNav(null);
   }, []);
 
-  const openOrActivateTab = useCallback((tab: AppTab, recordHistory = true) => {
+  const openOrActivateTab = useCallback((tab: AppTab) => {
     setTabs((current) => current.some((item) => item.id === tab.id) ? current.map((item) => item.id === tab.id ? { ...item, ...tab } : item) : [...current, tab]);
     applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex]);
-
-  const selectTab = useCallback((tabId: string, recordHistory = true) => {
-    const tab = tabs.find((item) => item.id === tabId);
-    if (!tab) return;
-    applyTab(tab);
-    if (recordHistory) {
-      const currentSnapshot = tabHistory[tabHistoryIndex];
-      if (!currentSnapshot || tabStateKey(currentSnapshot) !== tabStateKey(tab)) {
-        const nextIndex = tabHistoryIndex + 1;
-        setTabHistory((current) => [...current.slice(0, nextIndex), { ...tab }]);
-        setTabHistoryIndex(nextIndex);
-      }
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
-
-  const closeTab = useCallback((tabId: string) => {
-    if (tabId === AURA_TAB.id) return;
-    const closing = tabs.find((tab) => tab.id === tabId);
-    if (closing?.previewId) {
-      const preview = filePreviews[closing.previewId];
-      if (preview?.url.startsWith('blob:')) URL.revokeObjectURL(preview.url);
-      setFilePreviews((current) => { const next = { ...current }; delete next[closing.previewId!]; return next; });
-    }
-    setTabs((current) => {
-      if (current.length <= 1) return current;
-      const index = current.findIndex((item) => item.id === tabId);
-      const next = current.filter((item) => item.id !== tabId);
-      if (tabId === activeTabId) {
-        const fallback = next[Math.max(0, Math.min(index - 1, next.length - 1))] ?? AURA_TAB;
-        window.setTimeout(() => applyTab(fallback), 0);
-      }
-      return next;
-    });
-  }, [activeTabId, applyTab, filePreviews, tabs]);
-
-  const goTabHistory = useCallback((direction: -1 | 1) => {
-    let nextIndex = tabHistoryIndex + direction;
-    while (nextIndex >= 0 && nextIndex < tabHistory.length) {
-      const snapshot = tabHistory[nextIndex];
-      if (tabs.some((tab) => tab.id === snapshot.id)) {
-        setTabHistoryIndex(nextIndex);
-        setTabs((current) => current.map((tab) => tab.id === snapshot.id ? { ...tab, ...snapshot } : tab));
-        applyTab(snapshot);
-        return;
-      }
-      nextIndex += direction;
-    }
-  }, [applyTab, tabHistory, tabHistoryIndex, tabs]);
+  }, [applyTab]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -904,7 +970,6 @@ export default function App() {
         return;
       }
       if (event.key !== 'Escape') return;
-      setRoutingOpen(false);
       setAuraOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -915,7 +980,6 @@ export default function App() {
     const project = projectCatalog.find((item) => item.id === projectId);
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
   }, [openOrActivateTab, projectCatalog]);
 
@@ -929,7 +993,6 @@ export default function App() {
     const project = projectCatalog.find((item) => item.name === projectName && item.source === 'user');
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({
       id: `project-${project.id}`,
       title: project.name,
@@ -950,7 +1013,6 @@ export default function App() {
     const project = projectFromRecord(record, userProjects.length);
     setUserProjects((current) => [...current.filter((item) => item.id !== project.id), project]);
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId: project.id });
   }, [openOrActivateTab, projectCatalog, userProjects.length]);
 
@@ -1039,10 +1101,27 @@ export default function App() {
     pushToast('Branch point requested', workspaceGraphProjectName ? 'The Board will save a link from this persisted conversation turn.' : 'The Board opened at the nearest project turn.');
   }, [activeProject, activeProjectId, openOrActivateTab, projectRootNodeId, pushToast, workspaceGraphProjectName]);
 
+  const openAllConversations = useCallback(() => {
+    const firstThread = chatThreads.find((thread) => activeProjectCatalog.some((project) => project.id === thread.projectId));
+    const currentProjectHasThread = Boolean(activeProjectId && chatThreads.some((thread) => thread.projectId === activeProjectId));
+    const selectedProjectId = currentProjectHasThread
+      ? activeProjectId
+      : firstThread?.projectId ?? (activeProjectCatalog.some((project) => project.id === activeProjectId) ? activeProjectId : activeProjectCatalog[0]?.id ?? null);
+    const selectedThread = selectedProjectId ? chatThreads.find((thread) => thread.projectId === selectedProjectId) : null;
+    setInspectorOpen(false);
+    if (selectedProjectId && selectedThread) {
+      setActiveThreadByProject((current) => ({ ...current, [selectedProjectId]: selectedThread.id }));
+    }
+    openOrActivateTab({ id: 'conversations', title: 'Conversation', subtitle: 'All projects', kind: 'home', surface: 'conversation', projectId: selectedProjectId, mode: 'chat' });
+  }, [activeProjectCatalog, activeProjectId, chatThreads, openOrActivateTab]);
+
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
-    setRoutingOpen(false);
     if (destination === 'notes') setNotesProjectScopeId(null);
+    if (destination === 'conversation') {
+      openAllConversations();
+      return;
+    }
     const map: Record<SidebarDestination, AppTab> = {
       home: { ...AURA_TAB, subtitle: 'Home', surface: 'global-home' },
       library: { ...AURA_TAB, subtitle: 'Library', surface: 'library' },
@@ -1050,14 +1129,50 @@ export default function App() {
       study: { ...AURA_TAB, subtitle: 'Study', surface: 'study' },
       projects: { ...AURA_TAB, subtitle: 'Projects', surface: 'projects' },
       automations: { ...AURA_TAB, subtitle: 'Automations', surface: 'automations' },
+      preferences: { ...AURA_TAB, subtitle: 'Preferences', surface: 'preferences' },
+      conversation: { ...AURA_TAB, subtitle: 'Conversation', surface: 'conversation' },
     };
     openOrActivateTab(map[destination]);
-  }, [openOrActivateTab]);
+  }, [openAllConversations, openOrActivateTab]);
+
+  const openConversationForProject = useCallback((projectId: string) => {
+    const project = activeProjectCatalog.find((item) => item.id === projectId);
+    if (!project) return;
+    setInspectorOpen(false);
+    openOrActivateTab({ id: `conversation-${project.id}`, title: 'Conversation', subtitle: project.name, kind: 'project', surface: 'conversation', projectId: project.id, mode: 'chat' });
+  }, [activeProjectCatalog, openOrActivateTab]);
+
+  const startConversationFromHome = useCallback((projectId: string, prompt: string, taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
+    setPendingConversationAction({ kind: 'start', projectId, prompt, taskType, contextFileContentIds });
+    openConversationForProject(projectId);
+  }, [openConversationForProject]);
+
+  const openHomeConversation = useCallback((projectId: string, threadId: string) => {
+    setPendingConversationAction({ kind: 'open', projectId, threadId });
+    openConversationForProject(projectId);
+  }, [openConversationForProject]);
+
+  const selectAllProjectConversation = useCallback((projectId: string, threadId: string) => {
+    if (!activeProjectCatalog.some((project) => project.id === projectId)) return;
+    setActiveThreadByProject((current) => ({ ...current, [projectId]: threadId }));
+    setActiveProjectId(projectId);
+    setTabs((current) => current.map((tab) => tab.id === 'conversations' ? { ...tab, projectId } : tab));
+  }, [activeProjectCatalog]);
 
   const handleModeChange = useCallback((nextMode: WorkspaceMode) => {
     if (!activeProjectId || !activeProject) return;
-    openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: nextMode[0].toUpperCase() + nextMode.slice(1), kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: nextMode });
-  }, [activeProject, activeProjectId, openOrActivateTab]);
+    const globalConversation = surface === 'conversation';
+    const allProjectsHub = globalConversation && activeTabId === 'conversations';
+    openOrActivateTab({
+      id: allProjectsHub ? 'conversations' : globalConversation ? `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+      title: globalConversation ? 'Conversation' : activeProject.name,
+      subtitle: allProjectsHub ? 'All projects' : globalConversation ? activeProject.name : nextMode[0].toUpperCase() + nextMode.slice(1),
+      kind: allProjectsHub ? 'home' : 'project',
+      surface: globalConversation ? 'conversation' : 'workspace',
+      projectId: activeProjectId,
+      mode: nextMode,
+    });
+  }, [activeProject, activeProjectId, activeTabId, openOrActivateTab, surface]);
 
   const openFilePreview = useCallback((preview: FilePreviewRecord) => {
     setFilePreviews((current) => {
@@ -1085,7 +1200,7 @@ export default function App() {
       openFilePreview({ id: item.id, name: item.name, url: item.href, mimeType: item.mimeType || (item.kind === 'HTML' ? 'text/html' : 'application/octet-stream'), virtualPath: `Library / ${item.collection} / ${item.name}` });
       return;
     }
-    pushToast(`${item.kind} preview is mocked`, 'This bundled placeholder has metadata only. Your own imported files and connected-folder files open inside AURA tabs.');
+    pushToast(`${item.kind} preview is mocked`, 'This bundled placeholder has metadata only. Your own imported files and connected-folder files open inside Kuractus tabs.');
   }, [openFilePreview, pushToast]);
 
   const handleConnectedFile = useCallback((file: File, virtualPath: string) => {
@@ -1104,7 +1219,7 @@ export default function App() {
       const next = await listDirectoryConnections();
       setDirectoryConnections(next);
       openOrActivateTab({ ...AURA_TAB, subtitle: connection.name, surface: 'folder-viewer', connectionId: connection.id });
-      pushToast('Folder connected', `${connection.name} stays in its original location. AURA stores only a browser permission handle.`);
+      pushToast('Folder connected', `${connection.name} stays in its original location. Kuractus stores only a browser permission handle.`);
     } catch (error) {
       if ((error as DOMException)?.name !== 'AbortError') pushToast('Could not connect folder', 'The folder picker was cancelled or the browser denied access.');
     }
@@ -1118,7 +1233,7 @@ export default function App() {
     await removeDirectoryConnection(connection.id);
     setDirectoryConnections((current) => current.filter((item) => item.id !== connection.id));
     if (activeConnectionId === connection.id) openOrActivateTab({ ...AURA_TAB, subtitle: 'Library', surface: 'library' });
-    pushToast('Disconnected from AURA', `${connection.name} was not deleted from disk.`);
+    pushToast('Disconnected from Kuractus', `${connection.name} was not deleted from disk.`);
   }, [activeConnectionId, openOrActivateTab, pushToast]);
 
   const removeLibraryItem = useCallback(async (item: LibraryItem) => {
@@ -1137,8 +1252,8 @@ export default function App() {
     }
   }, [pushToast]);
 
-  const importFiles = useCallback(async (files: File[], projectId?: string, connectedSourcePath?: string) => {
-    if (!files.length) return;
+  const importFiles = useCallback(async (files: File[], projectId?: string, connectedSourcePath?: string): Promise<LibraryItem[]> => {
+    if (!files.length) return [];
     const imported: LibraryItem[] = [];
     for (const file of files) {
       const id = crypto.randomUUID();
@@ -1178,6 +1293,7 @@ export default function App() {
       }
       pushToast(`${imported.length} file${imported.length === 1 ? '' : 's'} added`, `${savedCount} reference${savedCount === 1 ? '' : 's'} saved to the workspace graph; file contents remain in this browser.`);
     }
+    return imported;
   }, [projectCatalog, pushToast]);
 
   const toggleProjectLink = useCallback(async (itemId: string, projectId: string, candidate?: LibraryItem) => {
@@ -1521,9 +1637,32 @@ export default function App() {
     };
     setChatThreads((current) => [thread, ...current]);
     setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-    if (activeProject) openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
+    if (activeProject) openOrActivateTab({
+      id: surface === 'conversation' ? activeTabId === 'conversations' ? 'conversations' : `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+      title: surface === 'conversation' ? 'Conversation' : activeProject.name,
+      subtitle: surface === 'conversation' ? activeTabId === 'conversations' ? 'All projects' : activeProject.name : 'Chat',
+      kind: surface === 'conversation' && activeTabId === 'conversations' ? 'home' : 'project',
+      surface: surface === 'conversation' ? 'conversation' : 'workspace',
+      projectId: activeProjectId,
+      mode: 'chat',
+    });
     pushToast('New project chat', 'This thread starts clean and connects to live backend.');
-  }, [activeProject, activeProjectId, chatThreads, openOrActivateTab, pushToast]);
+  }, [activeProject, activeProjectId, activeTabId, chatThreads, openOrActivateTab, pushToast, surface]);
+
+  const startNewConversationFromHub = useCallback((projectId: string | null) => {
+    const targetProjectId = projectId ?? activeProjectId ?? activeProjectCatalog[0]?.id ?? null;
+    if (!targetProjectId) {
+      handleSidebarNavigate('projects');
+      setProjectCreateRequest((current) => current + 1);
+      return;
+    }
+    if (surface === 'conversation' && activeProjectId === targetProjectId) {
+      newThread();
+      return;
+    }
+    setPendingConversationAction({ kind: 'new', projectId: targetProjectId });
+    openConversationForProject(targetProjectId);
+  }, [activeProjectCatalog, activeProjectId, handleSidebarNavigate, newThread, openConversationForProject, surface]);
 
   const updateThreadMessages = useCallback((threadId: string, updater: (messages: ChatMessage[]) => ChatMessage[]) => {
     setChatThreads((current) => current.map((thread) => {
@@ -1542,7 +1681,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = [], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -1552,53 +1691,17 @@ export default function App() {
       // The caller (ChatPane) shows a CTA instead; this is a hard guard in case
       // it is bypassed.
       if (currentThread?.source === 'demo') {
-        pushToast('Demo thread', 'Start a live chat to use the AURA backend with this project.');
+        pushToast('Demo thread', 'Start a live chat to use the Kuractus backend with this project.');
         return;
       }
 
       const contextAttachments: ChatContextAttachment[] = [];
-      let totalAttachmentChars = 0;
       const uniqueContextFileIds = [...new Set([
         ...contextFileContentIds,
         ...(currentThread?.initialContextFileContentIds ?? []),
       ])];
       try {
-        if (uniqueContextFileIds.length > 5) {
-          throw new Error('Choose up to five local files for one message.');
-        }
-        for (const objectId of uniqueContextFileIds) {
-          const item = libraryItems.find((candidate) => candidate.id === objectId);
-          const isPdf = item?.kind === 'PDF';
-          const isDocx = item?.kind === 'DOCX';
-          const isXlsx = item?.kind === 'XLSX';
-          const isImage = item?.kind === 'IMAGE';
-          const isPptx = item?.kind === 'PPTX';
-          const isEpub = item?.kind === 'EPUB';
-          const isRtf = item?.kind === 'RTF';
-          const isHtml = item?.kind === 'HTML';
-          const isPlainText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON'].includes(item.kind));
-          const supportedText = Boolean(item && ['TXT', 'MD', 'CSV', 'JSON', 'HTML', 'RTF'].includes(item.kind));
-          if (!item?.blobKey || (!supportedText && !isPdf && !isDocx && !isXlsx && !isImage && !isPptx && !isEpub)) {
-            throw new Error('This browser does not have a supported local text, PDF, Word document, spreadsheet, presentation, e-book, or image copy of one selected file.');
-          }
-          const blob = await getLocalFile(item.blobKey);
-          const maxBytes = isPdf ? MAX_LOCAL_PDF_BYTES : isDocx ? MAX_LOCAL_DOCX_BYTES : isXlsx ? MAX_LOCAL_XLSX_BYTES : isImage ? MAX_LOCAL_IMAGE_BYTES : isPptx ? MAX_LOCAL_PPTX_BYTES : isEpub ? MAX_LOCAL_EPUB_BYTES : isHtml ? MAX_HTML_INPUT_BYTES : isRtf ? MAX_LOCAL_RTF_BYTES : MAX_LOCAL_TEXT_FILE_BYTES;
-          if (!blob || blob.size > maxBytes) {
-            throw new Error(isPdf || isDocx || isXlsx || isImage || isPptx || isEpub
-              ? `A selected local ${isPdf ? 'PDF' : isDocx ? 'Word document' : isXlsx ? 'spreadsheet' : isImage ? 'image' : isPptx ? 'presentation' : 'e-book'} is missing or exceeds the 10 MB browser parsing limit.`
-              : isHtml || isRtf || isPlainText ? `A selected local ${isHtml ? 'HTML' : isRtf ? 'RTF' : 'text'} file is missing or exceeds the 80,000-byte browser parsing limit.` : 'A selected local file is missing or exceeds the 20,000-character text limit.');
-          }
-          const fileText = isPdf ? await extractPdfText(blob) : isDocx ? await extractDocxText(blob) : isXlsx ? await extractXlsxText(blob) : isImage ? await extractImageText(blob) : isPptx ? await extractPptxText(blob) : isEpub ? await extractEpubText(blob) : isHtml ? await extractHtmlText(blob) : isRtf ? await extractRtfText(blob) : await extractLocalTextFile(blob);
-          const fileCharacterCount = Array.from(fileText).length;
-          if (!fileText.trim() || fileCharacterCount > MAX_CONTEXT_FILE_CHARS) {
-            throw new Error(`A selected local file is empty or exceeds the ${MAX_CONTEXT_FILE_CHARS.toLocaleString('en-US')}-character text limit.`);
-          }
-          totalAttachmentChars += fileCharacterCount;
-          if (totalAttachmentChars > 40_000) {
-            throw new Error('Selected file text exceeds the 40,000-character total limit.');
-          }
-          contextAttachments.push({ object_id: objectId, text: fileText });
-        }
+        contextAttachments.push(...await buildContextAttachments(uniqueContextFileIds, libraryItems));
       } catch (error) {
         pushToast('Could not include file text', executionErrorText(error));
         return;
@@ -1637,8 +1740,8 @@ export default function App() {
           sessionId,
           text,
           activeProject?.name || undefined,
-          activeThreadOverrides?.model,
-          activeThreadOverrides?.reasoning,
+          modelOverride === undefined ? activeConversationModelSettings?.model : modelOverride,
+          reasoningOverride === undefined ? activeConversationModelSettings?.reasoning : reasoningOverride,
           selectedObjectIds,
           taskType,
           contextAttachments,
@@ -1691,7 +1794,7 @@ export default function App() {
               timestamp: 'just now',
               created_at: new Date().toISOString(),
               status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
+              executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
@@ -1727,7 +1830,7 @@ export default function App() {
       activeThreadId,
       chatThreads,
       activeProject?.name,
-      activeThreadOverrides,
+      activeConversationModelSettings,
       libraryItems,
       loadProjectSessionPage,
       updateThreadMessages,
@@ -1746,7 +1849,7 @@ export default function App() {
     patchThreadLive(activeThreadId, { runStatus: 'cancellation_requested' });
     try {
       await api.cancelChatTurn(currentThread.sessionId, clientTurnId);
-      pushToast('Stopping run', 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.');
+      pushToast('Stopping run', 'Kuractus will stop at the next safe execution boundary; an operation already in progress may finish.');
       return true;
     } catch (error) {
       patchThreadLive(activeThreadId, { runStatus: 'running' });
@@ -1764,10 +1867,21 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing') => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = [], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
+      const uniqueContextFileIds = [...new Set(contextFileContentIds)];
+      let contextAttachments: ChatContextAttachment[] = [];
+      try {
+        contextAttachments = await buildContextAttachments(uniqueContextFileIds, libraryItems);
+      } catch (error) {
+        pushToast('Could not include file text', executionErrorText(error));
+        return;
+      }
+      const selectedObjectIds = [...new Set([...contextObjectIds, ...uniqueContextFileIds])];
       const id = `${activeProjectId}-live-${Date.now()}`;
+      const initialModel = modelOverride === undefined ? null : modelOverride;
+      const initialReasoning = reasoningOverride === undefined ? null : reasoningOverride;
       const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
       // Title: use draft text if provided, otherwise a generic label
@@ -1784,11 +1898,27 @@ export default function App() {
         sessionId,
         source: 'live',
         initialContextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined,
+        initialContextFileContentIds: uniqueContextFileIds.length > 0 ? uniqueContextFileIds : undefined,
       };
       setChatThreads((current) => [thread, ...current]);
       setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
-      openOrActivateTab({ id: `project-${activeProjectId}`, title: activeProject.name, subtitle: 'Chat', kind: 'project', surface: 'workspace', projectId: activeProjectId, mode: 'chat' });
-      pushToast('Live chat started', 'A new thread is connected to the AURA backend.');
+      if (modelOverride !== undefined || reasoningOverride !== undefined) {
+        setConversationModelSettings((current) => ({
+          ...current,
+          [id]: { model: initialModel, reasoning: initialReasoning },
+        }));
+      }
+      const allProjectsHub = surface === 'conversation' && activeTabId === 'conversations';
+      openOrActivateTab({
+        id: surface === 'conversation' ? allProjectsHub ? 'conversations' : `conversation-${activeProjectId}` : `project-${activeProjectId}`,
+        title: surface === 'conversation' ? 'Conversation' : activeProject.name,
+        subtitle: surface === 'conversation' ? allProjectsHub ? 'All projects' : activeProject.name : 'Chat',
+        kind: allProjectsHub ? 'home' : 'project',
+        surface: surface === 'conversation' ? 'conversation' : 'workspace',
+        projectId: activeProjectId,
+        mode: 'chat',
+      });
+      pushToast('Live chat started', 'A new thread is connected to the Kuractus backend.');
 
       // If there is no prompt text, we only create the thread — no backend call.
       if (!promptText) return;
@@ -1798,15 +1928,13 @@ export default function App() {
       void (async () => {
         const originatingThreadId = id;
         const nonce = Date.now();
-        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: contextObjectIds.length > 0 ? [...new Set(contextObjectIds)] : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
+        const userMsg: ChatMessage = { id: `live-user-${nonce}`, role: 'user', branch: 'Root', nodeId: `live-user-node-${nonce}`, content: promptText, contextObjectIds: selectedObjectIds.length > 0 ? selectedObjectIds : undefined, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Sent' };
         updateThreadMessages(originatingThreadId, (prev) => [...prev, userMsg]);
         patchThreadLive(originatingThreadId, { runStatus: 'running' });
         try {
           const clientTurnId = createClientTurnId();
           patchThreadLive(originatingThreadId, { runStatus: 'running', clientTurnId });
-          // A new live thread starts with profile routing; thread-local temporary
-          // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, contextObjectIds, taskType, [], clientTurnId);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, initialModel, initialReasoning, selectedObjectIds, taskType, contextAttachments, clientTurnId);
           notifyWorkspaceGraphChanged(activeProject.name);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status, clientTurnId: null });
           if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
@@ -1834,7 +1962,7 @@ export default function App() {
                   patchThreadLive(originatingThreadId, { runDetail: rDetail });
                 } catch {}
               }
-              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds, ...routingSummary };
+              const assistantMsg: ChatMessage = { id: resp.assistant_message_id || `live-assistant-${nonce}`, role: 'assistant', branch: 'Root', nodeId: `live-assistant-node-${nonce}`, content: resp.response, timestamp: 'just now', created_at: new Date().toISOString(), status: 'Completed', executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined, execution: steps.length > 0 ? steps : undefined, provenance, contextTokens, contextObjectIds: selectedObjectIds, ...routingSummary };
               updateThreadMessages(originatingThreadId, (prev) => [...prev, assistantMsg]);
             }
           }
@@ -1846,8 +1974,17 @@ export default function App() {
       })();
       void count; // suppress lint — count used for UI naming above
     },
-    [activeProject, activeProjectId, chatThreads, notifyWorkspaceGraphChanged, openOrActivateTab, pushToast, refreshInspectorData, updateThreadMessages]
+    [activeProject, activeProjectId, activeTabId, chatThreads, libraryItems, notifyWorkspaceGraphChanged, openOrActivateTab, pushToast, refreshInspectorData, surface, updateThreadMessages]
   );
+
+  useEffect(() => {
+    const action = pendingConversationAction;
+    if (!action || surface !== 'conversation' || activeProjectId !== action.projectId) return;
+    setPendingConversationAction(null);
+    if (action.kind === 'start') void handleStartLiveChat(action.prompt, [], action.taskType, action.contextFileContentIds);
+    else if (action.kind === 'open') selectThread(action.threadId);
+    else newThread();
+  }, [activeProjectId, handleStartLiveChat, newThread, pendingConversationAction, selectThread, surface]);
 
   const handleBoardAskWithContext = useCallback(async (prompt: string, objectIds: string[]) => {
     const currentThread = chatThreads.find((thread) => thread.id === activeThreadId);
@@ -2184,7 +2321,7 @@ export default function App() {
       replaceWorkspaceNote(note.id, liveNote);
       if (workspaceNoteFingerprint(latest) !== submittedFingerprint) queueWorkspaceNoteUpdate(liveNote);
     }).catch((error: unknown) => {
-      pushToast('Note is still local', `AURA could not sync it to the workspace: ${executionErrorText(error)}`);
+      pushToast('Note is still local', `Kuractus could not sync it to the workspace: ${executionErrorText(error)}`);
     }).finally(() => {
       noteCreateInFlight.current.delete(note.id);
     });
@@ -2569,7 +2706,7 @@ export default function App() {
               timestamp: 'just now',
               created_at: new Date().toISOString(),
               status: 'Completed',
-              executionLabel: steps.length > 0 ? `AURA · ${steps.length} steps` : undefined,
+              executionLabel: steps.length > 0 ? `Kuractus · ${steps.length} steps` : undefined,
               execution: steps.length > 0 ? steps : undefined,
               provenance,
               contextTokens,
@@ -2687,7 +2824,7 @@ export default function App() {
       enabled: record.enabled, scope: record.scope, projectId: project?.id, projectName: record.project_name ?? undefined, intervalSeconds: seconds,
       webhookEnabled: record.webhook_enabled, webhookPath: record.webhook_path, webhookSecret: record.webhook_secret,
       archived: record.archived,
-      trigger: intervalLabel, actions: ['Run through AURA'],
+      trigger: intervalLabel, actions: ['Run through Kuractus'],
       lastRun: lastAt ? new Date(lastAt).toLocaleString() : 'Never',
       nextRun: record.enabled ? new Date(record.next_run_at).toLocaleString() : 'Paused',
       lastRunAt: record.last_run_at, nextRunAt: record.next_run_at,
@@ -2785,7 +2922,7 @@ export default function App() {
         const item = automationFromRecord(updated, projectCatalog);
         setAutomations((current) => current.map((entry) => entry.id === item.id ? item : entry));
       }).catch(() => {});
-      pushToast(`Queued · ${automation.name}`, `AURA accepted the run (${result.event_id.slice(0, 8)}).`);
+      pushToast(`Queued · ${automation.name}`, `Kuractus accepted the run (${result.event_id.slice(0, 8)}).`);
     } catch (error) {
       pushToast('Could not queue automation', executionErrorText(error));
     }
@@ -2803,8 +2940,8 @@ export default function App() {
     pushToast(
       cancelled.status === 'cancelled' ? 'Queued run cancelled' : 'Stop requested',
       cancelled.status === 'cancelled'
-        ? 'AURA had not started this run. Its history is preserved.'
-        : 'AURA will stop at the next safe execution boundary; an operation already in progress may finish.',
+        ? 'Kuractus had not started this run. Its history is preserved.'
+        : 'Kuractus will stop at the next safe execution boundary; an operation already in progress may finish.',
     );
     return cancelled;
   }, [pushToast]);
@@ -2843,7 +2980,7 @@ export default function App() {
         status: 'queued',
       }
       : item));
-    pushToast('Retry queued', 'AURA created a fresh run using the saved Automation instruction.');
+    pushToast('Retry queued', 'Kuractus created a fresh run using the saved Automation instruction.');
     return retried;
   }, [pushToast]);
 
@@ -2877,13 +3014,17 @@ export default function App() {
       setAutomationCursor(page.nextCursor);
       automationsLoaded.current = true;
     } catch (error) {
-      setAutomationPageError(executionErrorText(error));
-      if (!cursor) pushToast('Could not load automations', executionErrorText(error));
+      const detail = executionErrorText(error);
+      setAutomationPageError(error instanceof ApiError && error.status >= 500
+        ? `HTTP ${error.status} while reading saved automations. This read-only request did not start or change any automation. ${isDesktopApp
+          ? `Check Desktop Runtime → Runtime log for details, then retry. (${detail})`
+          : `The web preview's API proxy cannot reach the backend at 127.0.0.1:8000; check that service, then retry. (${detail})`}`
+        : `The saved automation list could not be reached. This request did not run or change any automations. ${detail}`);
     } finally {
       automationPageRequest.current = false;
       setAutomationPageLoading(false);
     }
-  }, [automationFromRecord, includeArchivedAutomations, projectCatalog, pushToast]);
+  }, [automationFromRecord, includeArchivedAutomations, isDesktopApp, projectCatalog]);
 
   const toggleArchivedAutomations = useCallback(() => {
     const next = !includeArchivedAutomations;
@@ -2895,7 +3036,9 @@ export default function App() {
   }, [includeArchivedAutomations, loadAutomationPage]);
 
   useEffect(() => {
-    if (surface !== 'automations' || automationsLoaded.current || automationPageLoading) return;
+    const waitingForDesktopApi = isDesktopApp && window.sessionStorage.getItem(DESKTOP_API_READY_KEY) === '1';
+    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || automationsLoaded.current || automationInitialAttempted.current || automationPageLoading) return;
+    automationInitialAttempted.current = true;
     void loadAutomationPage();
   }, [automationPageLoading, loadAutomationPage, surface]);
 
@@ -2904,7 +3047,8 @@ export default function App() {
     .map((item) => item.id);
   const inFlightAutomationKey = inFlightAutomationIds.join('|');
   useEffect(() => {
-    if (surface !== 'automations' || !automationsLoaded.current || !inFlightAutomationKey) return;
+    const waitingForDesktopApi = isDesktopApp && window.sessionStorage.getItem(DESKTOP_API_READY_KEY) === '1';
+    if (waitingForDesktopApi || (!isDesktopApp && surface !== 'automations') || !automationsLoaded.current || !inFlightAutomationKey) return;
     const timer = window.setInterval(() => {
       void api.fetchAutomationStatuses(inFlightAutomationKey.split('|')).then((records) => {
         const updates = new Map(records.map((record) => [record.id, automationFromRecord(record, projectCatalog)]));
@@ -2918,73 +3062,26 @@ export default function App() {
 
   const activeConnection = directoryConnections.find((item) => item.id === activeConnectionId) ?? null;
   const title = surface === 'global-home' ? 'Home'
+    : surface === 'conversation' ? 'Conversation'
+    : surface === 'preferences' ? 'Preferences'
     : surface === 'search-results' ? 'Workspace Search'
     : surface === 'library' ? 'Library'
     : surface === 'notes' ? 'Notes'
     : surface === 'study' ? 'Study'
     : surface === 'automations' ? 'Automations'
     : surface === 'projects' ? 'Projects'
+    : surface === 'project-overview' ? 'Overview'
+    : surface === 'project-files' ? 'Files'
+    : surface === 'workspace' ? mode === 'chat' ? 'Conversations' : mode === 'board' ? 'Board' : 'Split'
     : surface === 'folder-viewer' ? activeConnection?.name ?? 'Connected folder'
     : surface === 'file-viewer' ? activeFilePreview?.name ?? 'File'
     : 'Home';
 
-  const locationValue = surface === 'global-home' ? 'aura://home'
-    : surface === 'search-results' ? `aura://search?q=${encodeURIComponent(workspaceSearch.query)}`
-    : surface === 'library' ? 'aura://library'
-    : surface === 'folder-viewer' ? `folder://${activeConnection?.name ?? 'connected'}`
-    : surface === 'file-viewer' ? activeFilePreview?.virtualPath ?? 'aura://file'
-    : activeProject ? `aura://projects/${activeProject.name.replace(/\s+/g, '-').toLowerCase()}/${surface === 'workspace' ? mode : surface.replace('project-', '')}`
-    : `aura://${surface}`;
-
-  const handleLocationSubmit = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    if (/^https?:\/\//i.test(trimmed)) {
-      window.open(trimmed, '_blank', 'noopener,noreferrer');
-      pushToast('Opened URL', trimmed);
-      return;
-    }
-    const normalized = trimmed.toLowerCase();
-    if (normalized.includes('library')) { handleSidebarNavigate('library'); return; }
-    if (normalized.includes('home')) { handleSidebarNavigate('home'); return; }
-    const matchingProject = projectCatalog.find((project) => project.name.toLowerCase().includes(normalized) || normalized.includes(project.name.toLowerCase()));
-    if (matchingProject) { openProject(matchingProject.id); return; }
-    const matchingConnection = directoryConnections.find((connection) => connection.name.toLowerCase().includes(normalized));
-    if (matchingConnection) { openConnection(matchingConnection); return; }
-    const requestId = ++workspaceSearchRequest.current;
-    const projectName = activeProject?.name ?? null;
-    setWorkspaceSearch({ query: trimmed, projectName, results: [], nextCursor: null, loading: true, loadingMore: false, error: null });
-    openOrActivateTab({ ...AURA_TAB, subtitle: 'Search', surface: 'search-results' });
-    void Promise.allSettled([
-      api.searchWorkspace(trimmed, projectName ?? undefined),
-      activeProject ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(trimmed),
-    ]).then(([workspace, folderFiles]) => {
-      if (workspaceSearchRequest.current !== requestId) return;
-      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value.items] : [];
-      if (folderFiles.status === 'fulfilled') {
-        results.push(...folderFiles.value.map((file) => ({
-          object_id: `external:${file.connectionId}:${file.relativePath}`,
-          object_type: 'file_reference',
-          title: file.name,
-          excerpt: `${file.connectionName} / ${file.relativePath}`,
-          project_name: null,
-          created_by: 'external',
-          updated_at: new Date(file.lastModified).toISOString(),
-          source: 'connected-folder' as const,
-          connection_id: file.connectionId,
-          connection_name: file.connectionName,
-          relative_path: file.relativePath,
-          size: file.size,
-          mime_type: file.mimeType,
-        })));
-      }
-      const errors = [
-        ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
-        ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
-      ];
-      setWorkspaceSearch({ query: trimmed, projectName, results, nextCursor: workspace.status === 'fulfilled' ? workspace.value.nextCursor : null, loading: false, loadingMore: false, error: errors.length ? errors.join(' ') : null });
-    });
-  };
+  const homeConversations = useMemo(() => chatThreads.flatMap((thread) => {
+    if (thread.source === 'demo') return [];
+    const project = activeProjectCatalog.find((item) => item.id === thread.projectId);
+    return project ? [{ thread, project }] : [];
+  }), [activeProjectCatalog, chatThreads]);
 
   const loadMoreWorkspaceSearch = async () => {
     if (!workspaceSearch.query || !workspaceSearch.nextCursor || workspaceSearch.loading || workspaceSearch.loadingMore) return;
@@ -3012,11 +3109,47 @@ export default function App() {
     }
   };
 
+  const retryWorkspaceSearch = () => {
+    const query = workspaceSearch.query.trim();
+    if (!query) return;
+    const projectName = workspaceSearch.projectName;
+    const requestId = ++workspaceSearchRequest.current;
+    setWorkspaceSearch((current) => ({ ...current, loading: true, loadingMore: false, error: null }));
+    void Promise.allSettled([
+      api.searchWorkspace(query, projectName ?? undefined),
+      projectName ? Promise.resolve([] as IndexedFolderFile[]) : searchDirectoryIndexes(query),
+    ]).then(([workspace, folderFiles]) => {
+      if (workspaceSearchRequest.current !== requestId) return;
+      const results: WorkspaceSearchResult[] = workspace.status === 'fulfilled' ? [...workspace.value.items] : [];
+      if (folderFiles.status === 'fulfilled') {
+        results.push(...folderFiles.value.map((file) => ({
+          object_id: `external:${file.connectionId}:${file.relativePath}`,
+          object_type: 'file_reference',
+          title: file.name,
+          excerpt: `${file.connectionName} / ${file.relativePath}`,
+          project_name: null,
+          created_by: 'external',
+          updated_at: new Date(file.lastModified).toISOString(),
+          source: 'connected-folder' as const,
+          connection_id: file.connectionId,
+          connection_name: file.connectionName,
+          relative_path: file.relativePath,
+          size: file.size,
+          mime_type: file.mimeType,
+        })));
+      }
+      const errors = [
+        ...(workspace.status === 'rejected' ? [executionErrorText(workspace.reason)] : []),
+        ...(folderFiles.status === 'rejected' ? ['Connected-folder search is unavailable in this browser.'] : []),
+      ];
+      setWorkspaceSearch({ query, projectName, results, nextCursor: workspace.status === 'fulfilled' ? workspace.value.nextCursor : null, loading: false, loadingMore: false, error: errors.length ? errors.join(' ') : null });
+    });
+  };
+
   const handleOpenWorkspaceSearchResult = (projectName: string, objectId: string) => {
     const project = projectCatalog.find((item) => item.name === projectName);
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     setFocusNodeId(objectId);
     openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: project.id, mode: 'board' });
   };
@@ -3070,21 +3203,38 @@ export default function App() {
   };
 
   const hasActiveProjectSummary = Boolean(activeProject && workspaceSummary.project_name === activeProject.name);
+  const desktopRunEvents = useMemo(() => Object.entries(threadLiveStates).flatMap(([threadId, live]) => {
+    if (!live.runStatus) return [];
+    return [{
+      eventId: `${threadId}:${live.runId ?? live.clientTurnId ?? 'run'}`,
+      status: live.runStatus,
+      approvalPending: Boolean(live.approval),
+    }];
+  }), [threadLiveStates]);
+  const desktopAutomationRuns = useMemo(() => automations.flatMap((automation) => {
+    if (automation.source !== 'live' || !automation.latestExecution) return [];
+    return [{ eventId: automation.latestExecution.eventId, status: automation.latestExecution.status }];
+  }), [automations]);
   const projectFileCount = activeProjectId
     ? (hasActiveProjectSummary ? workspaceSummary.project_library_count : 0) + projectArtifacts.filter((item) => item.projectId === activeProjectId).length
     : 0;
   const projectNoteCount = activeProjectId
     ? (hasActiveProjectSummary ? workspaceSummary.project_note_count : 0) + notes.filter((note) => note.source === 'demo' && note.projectIds.includes(activeProjectId)).length
     : 0;
+  const projectWorkspaceActive = surface === 'workspace' || surface === 'conversation';
+  const projectNavigationActive = surface === 'project-overview' ? 'overview'
+    : surface === 'project-files' ? 'files'
+    : surface === 'workspace' && mode === 'board' ? 'board'
+    : surface === 'workspace' && mode === 'split' ? 'split'
+    : 'conversations';
 
   return (
-    <div className={`app-shell ${inspectorOpen && surface === 'workspace' ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
+    <div className={`app-shell ${inspectorOpen && projectWorkspaceActive ? 'with-inspector' : ''} ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
       <Sidebar
         projects={activeProjectCatalog}
         collapsed={sidebarCollapsed}
         active={activeNav}
         activeProjectId={activeProjectId}
-        libraryCount={workspaceSummary.library_count}
         onCollapsedChange={setSidebarCollapsed}
         onNavigate={handleSidebarNavigate}
         onProjectOpen={openProject}
@@ -3092,29 +3242,19 @@ export default function App() {
       />
 
       <Topbar
-        projectName={activeProject?.name ?? null}
-        projectSection={projectSection}
+        projectName={activeTabId === 'conversations' ? null : activeProject?.name ?? null}
         globalTitle={title}
-        mode={mode}
-        onModeChange={handleModeChange}
-        onOpenProjectOverview={openProjectOverview}
-        onOpenProjectFiles={openProjectFiles}
-        routingOpen={routingOpen}
-        onRoutingOpenChange={setRoutingOpen}
-        effectiveRouting={effectiveRouting}
-        catalog={catalog}
-        sessionAvailable={sessionAvailable}
-        demoThread={activeThread?.source === 'demo'}
-        lockedModel={activeThreadOverrides?.model ?? null}
-        reasoningOverride={activeThreadOverrides?.reasoning ?? null}
-        onSetModelLock={setActiveModelLock}
-        onSetReasoningOverride={setActiveReasoningOverride}
-        onOpenRoutingStudio={openRoutingStudio}
+        projectWorkspace={Boolean(activeProject && projectWorkspaceActive && mode === 'chat' && !(surface === 'conversation' && activeTabId === 'conversations'))}
+        createLabel={surface === 'conversation' || (activeProject && surface === 'workspace') ? 'New conversation' : 'New project'}
+        onCreate={() => {
+          if (surface === 'conversation' && !activeProject) startNewConversationFromHub(null);
+          else if (activeProject && (surface === 'workspace' || surface === 'conversation')) newThread();
+          else { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }
+        }}
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((value) => !value)}
-        onOpenAura={() => setAuraOpen(true)}
-        apiTokenConfigured={Boolean(getApiToken())}
-        onOpenApiAccess={() => setApiAccessOpen(true)}
+        onOpenSearch={() => setAuraOpen(true)}
+        onOpenPreferences={() => handleSidebarNavigate('preferences')}
       />
       <ApiAccessDialog
         open={apiAccessOpen}
@@ -3137,23 +3277,6 @@ export default function App() {
           window.location.reload();
         }}
       />
-      {routingStudioLoaded ? <Suspense fallback={null}>
-        <RoutingStudio
-          open={routingStudioOpen}
-          projectName={activeProject?.name ?? ''}
-          sessionId={activeThread?.sessionId}
-          sessionAvailable={sessionAvailable}
-          demoThread={activeThread?.source === 'demo'}
-          effective={effectiveRouting}
-          catalog={catalog}
-          onClose={() => setRoutingStudioOpen(false)}
-          onSaved={() => {
-            if (activeProject?.name) void api.fetchEffectiveRouting(activeProject.name, sessionAvailable ? activeThread?.sessionId : undefined).then(setEffectiveRouting).catch(() => {});
-          }}
-          onSetModelLock={setActiveModelLock}
-          onRefreshModels={async () => { try { setCatalog(await api.refreshModels()); } catch (error) { pushToast('Model discovery failed', executionErrorText(error)); } }}
-        />
-      </Suspense> : null}
       {activeThreadLive.routingConfirmation ? <RoutingConfirmationNotice
         proposal={{ provider: activeThreadLive.routingConfirmation.provider, model: activeThreadLive.routingConfirmation.model }}
         busy={activeThreadLive.runStatus === 'resuming_routing'}
@@ -3161,36 +3284,60 @@ export default function App() {
         onConfirm={() => void handleRoutingConfirmationDecision('approved')}
       /> : null}
 
-      <WorkspaceChrome
-        tabs={tabs}
-        activeTabId={activeTabId}
-        locationValue={locationValue}
-        canGoBack={tabHistoryIndex > 0}
-        canGoForward={tabHistoryIndex < tabHistory.length - 1}
-        onGoBack={() => goTabHistory(-1)}
-        onGoForward={() => goTabHistory(1)}
-        onSelectTab={selectTab}
-        onCloseTab={closeTab}
-        onSubmitLocation={handleLocationSubmit}
-      />
-
-      <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}`}>
+      <main className={`workspace workspace--${surface === 'workspace' ? mode : surface}${surface === 'conversation' && activeTabId === 'conversations' && activeProject ? ' workspace--conversation-all' : ''}`}>
         <Suspense fallback={<div className="workspace-loading" role="status">Loading workspace…</div>}>
         {surface === 'global-home' ? (
           <GlobalHome
             projects={activeProjectCatalog}
-            libraryItems={libraryItems}
-            libraryCount={workspaceSummary.library_count}
-            linkedLibraryCount={workspaceSummary.linked_library_count}
-            activeAutomationCount={automationSummary.enabled}
-            noteCount={workspaceSummary.note_count}
-            onOpenProject={openProject}
+            conversations={homeConversations}
+            defaultProjectId={activeProjectId}
+            onStartConversation={startConversationFromHome}
+            onImportContextFiles={async (files, projectId) => (await importFiles(files, projectId)).map(({ id, name }) => ({ id, name }))}
+            onOpenConversation={openHomeConversation}
+            onOpenConversations={() => handleSidebarNavigate('conversation')}
             onOpenProjects={() => handleSidebarNavigate('projects')}
-            onOpenLibrary={() => handleSidebarNavigate('library')}
-            onOpenFile={(id) => {
-              const item = libraryItems.find((entry) => entry.id === id);
-              if (item) void handleLibraryItem(item);
-            }}
+          />
+        ) : null}
+
+        {surface === 'conversation' ? (
+          <ConversationView
+            projects={activeProjectCatalog}
+            conversations={homeConversations}
+            projectId={activeTabId === 'conversations' ? null : activeProjectId}
+            activeProjectId={activeProjectId}
+            activeThreadId={activeThreadId}
+            mode={mode}
+            onSelectProject={(projectId) => projectId ? openConversationForProject(projectId) : openAllConversations()}
+            onChangeMode={handleModeChange}
+            onNewConversation={startNewConversationFromHub}
+            onOpenConversation={selectAllProjectConversation}
+            showInspectorToggle={activeTabId === 'conversations'}
+            inspectorOpen={inspectorOpen}
+            onToggleInspector={() => setInspectorOpen((value) => !value)}
+            onCreateProject={() => { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }}
+          />
+        ) : null}
+
+        {surface === 'preferences' ? (
+          <PreferencesView
+            apiTokenConfigured={Boolean(getApiToken())}
+            desktop={isDesktopApp}
+            onOpenApiAccess={() => setApiAccessOpen(true)}
+            onOpenAIProvider={() => setProviderSettingsRequest((current) => current + 1)}
+            onOpenDesktopSettings={() => setDesktopSettingsRequest((current) => current + 1)}
+          />
+        ) : null}
+
+        {activeProject && ['project-files', 'workspace'].includes(surface) ? (
+          <ProjectNavigation
+            project={activeProject}
+            showProjectHeading
+            active={projectNavigationActive}
+            onOverview={openProjectOverview}
+            onConversations={openProjectChats}
+            onModeChange={handleModeChange}
+            onFiles={openProjectFiles}
+            onNewConversation={newThread}
           />
         ) : null}
 
@@ -3218,6 +3365,7 @@ export default function App() {
             onConnectFolder={() => void connectFolder()}
             onOpenConnection={openConnection}
             onDisconnectConnection={(connection) => void disconnectConnection(connection)}
+            onOpenStudy={() => handleSidebarNavigate('study')}
             onStudyResearchClaim={(objectId, title, projectName) => void startStudyFromResearchClaim(objectId, title, projectName)}
             onOpenProjectObject={openResearchProjectObject}
           />
@@ -3242,15 +3390,25 @@ export default function App() {
           <ProjectHome
             projects={projectCatalog}
             projectId={activeProject.id}
+            threads={projectThreads}
             chatCount={projectThreads.length}
             fileCount={projectFileCount}
             noteCount={projectNoteCount}
-            onBack={() => handleSidebarNavigate('projects')}
-            onOpenNode={openBoardNode}
             onOpenChats={openProjectChats}
+            onOpenThread={(threadId) => { selectThread(threadId); openProjectChats(); }}
+            onNewThread={newThread}
+            onOpenBoard={() => handleModeChange('board')}
             onOpenFiles={openProjectFiles}
             onOpenNotes={() => openProjectNotes(activeProject.id)}
-            onMockObject={(label) => pushToast(label, 'Open Chats, Files or Board to continue working with this object.')}
+            navigation={<ProjectNavigation
+              project={activeProject}
+              active={projectNavigationActive}
+              onOverview={openProjectOverview}
+              onConversations={openProjectChats}
+              onModeChange={handleModeChange}
+              onFiles={openProjectFiles}
+              onNewConversation={newThread}
+            />}
           />
         ) : null}
 
@@ -3281,8 +3439,9 @@ export default function App() {
           />
         ) : null}
 
-        {surface === 'workspace' && mode === 'chat' && activeProject ? (
+        {projectWorkspaceActive && mode === 'chat' && activeProject ? (
           <ProjectChatWorkspace
+            hideThreadRail={surface === 'conversation' && activeTabId === 'conversations'}
             project={activeProject}
             threads={projectThreads}
             activeThreadId={activeThreadId}
@@ -3305,6 +3464,12 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
             onStartLiveChat={handleStartLiveChat}
+            modelCatalog={catalog}
+            selectedModel={activeConversationModelSettings?.model ?? null}
+            selectedReasoning={activeConversationModelSettings?.reasoning ?? 'auto'}
+            onSelectModel={setActiveConversationModel}
+            onSelectReasoning={setActiveConversationReasoning}
+            onConnectProvider={() => { if (isDesktopApp) setProviderSettingsRequest((current) => current + 1); else handleSidebarNavigate('preferences'); }}
             onContextObjectIdsChange={handleContextObjectIdsChange}
             onContextFileContentIdsChange={handleContextFileContentIdsChange}
             currentApproval={activeThreadLive.approval}
@@ -3314,13 +3479,13 @@ export default function App() {
           />
         ) : null}
 
-        {surface === 'workspace' && mode === 'board' && activeProject ? (
+        {projectWorkspaceActive && mode === 'board' && activeProject ? (
           <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
             <BoardCanvas
               key={activeProject.id}
               boardKey={activeProject.id}
-              seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes}
-              seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges}
+              seedNodes={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.nodes}
+              seedEdges={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.edges}
               workspaceProjectName={workspaceGraphProjectName}
               workspaceSessionIds={workspaceSessionIds}
               workspaceGraphRevision={workspaceGraphRevision}
@@ -3336,7 +3501,7 @@ export default function App() {
           </Suspense>
         ) : null}
 
-        {surface === 'workspace' && mode === 'split' && activeProject ? (
+        {projectWorkspaceActive && mode === 'split' && activeProject ? (
           <div className="split-workspace">
             <div className="split-workspace__chat">
               <ProjectChatWorkspace
@@ -3363,6 +3528,12 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
                 onStartLiveChat={handleStartLiveChat}
+                modelCatalog={catalog}
+                selectedModel={activeConversationModelSettings?.model ?? null}
+                selectedReasoning={activeConversationModelSettings?.reasoning ?? 'auto'}
+                onSelectModel={setActiveConversationModel}
+                onSelectReasoning={setActiveConversationReasoning}
+                onConnectProvider={() => { if (isDesktopApp) setProviderSettingsRequest((current) => current + 1); else handleSidebarNavigate('preferences'); }}
                 onContextObjectIdsChange={handleContextObjectIdsChange}
                 onContextFileContentIdsChange={handleContextFileContentIdsChange}
                 currentApproval={activeThreadLive.approval}
@@ -3373,7 +3544,7 @@ export default function App() {
             </div>
             <div className="split-workspace__board">
               <Suspense fallback={<div className="board-canvas board-canvas--loading" role="status">Loading Board…</div>}>
-                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} workspaceGraphRevision={workspaceGraphRevision} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
+                <BoardCanvas key={`split-${activeProject.id}`} compact boardKey={activeProject.id} seedNodes={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.nodes} seedEdges={workspaceGraphProjectName || isDesktopApp ? [] : genericBoard?.edges} workspaceProjectName={workspaceGraphProjectName} workspaceSessionIds={workspaceSessionIds} workspaceGraphRevision={workspaceGraphRevision} showBranchLabels={!workspaceGraphProjectName && activeProject.id === 'stateful'} focusNodeId={focusNodeId} onNodeFocus={handleBoardNodeFocus} onToast={pushToast} branchRequest={branchRequest} executionExpanded={params.get('execution') === '1'} onAskWithContext={handleBoardAskWithContext} onUseWorkspaceContext={(objectId) => { void handleStartLiveChat('', [objectId]); }} />
               </Suspense>
             </div>
           </div>
@@ -3388,7 +3559,7 @@ export default function App() {
             hasMore={Boolean(workspaceSearch.nextCursor)}
             loadingMore={workspaceSearch.loadingMore}
             onLoadMore={() => void loadMoreWorkspaceSearch()}
-            onRetry={() => handleLocationSubmit(workspaceSearch.query)}
+            onRetry={() => retryWorkspaceSearch()}
             onOpenProject={handleOpenWorkspaceSearchResult}
             onOpenNote={handleOpenWorkspaceSearchNote}
             onOpenLibraryItem={handleOpenWorkspaceSearchLibraryItem}
@@ -3400,14 +3571,13 @@ export default function App() {
         </Suspense>
       </main>
 
-      {inspectorOpen ? (
+      {inspectorOpen && projectWorkspaceActive ? (
         <Suspense fallback={<aside className="inspector-panel inspector-panel--loading" role="status">Loading Inspector…</aside>}>
           <InspectorPanel
             selectedNode={selectedNode}
             projectName={activeProject?.name}
             runDetail={activeThreadLive.runDetail}
             focusRunId={inspectorFocusRunId}
-            effectiveRouting={effectiveRouting}
             routingData={activeThreadLive.routingData}
             researchData={activeThreadLive.researchData}
             memories={memories}
@@ -3438,7 +3608,16 @@ export default function App() {
             onOpenFile={handleOpenConnectedSearchResult}
           />
       ) : null}
-      <ToastStack toasts={toasts} />
+      <ToastStack toasts={toasts} onDismiss={dismissToast} />
+      <DesktopRuntimeControl
+        runEvents={desktopRunEvents}
+        automationRuns={desktopAutomationRuns}
+        settingsRequest={desktopSettingsRequest}
+        providerSettingsRequest={providerSettingsRequest}
+        onModelsChanged={setCatalog}
+        onDroppedFiles={(files) => importFiles(files).then(() => undefined)}
+        onDropError={(message) => pushToast('Could not import dropped files', message)}
+      />
     </div>
   );
 }

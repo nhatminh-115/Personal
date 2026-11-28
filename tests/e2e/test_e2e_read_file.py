@@ -19,7 +19,7 @@ from httpx import AsyncClient
 async def test_e2e_read_file_flow(async_client: AsyncClient, setup_test_workspace: Path):
     # 1. Create hello.txt in the workspace
     hello_file = setup_test_workspace / "hello.txt"
-    hello_file.write_text("Hello from AURA E2E Testing!", encoding="utf-8")
+    hello_file.write_text("Hello from Kuractus E2E Testing!", encoding="utf-8")
 
     session_id = "e2e-read-sess-1"
 
@@ -37,8 +37,8 @@ async def test_e2e_read_file_flow(async_client: AsyncClient, setup_test_workspac
     assert len(data["tool_results"]) == 1
     assert data["tool_results"][0]["name"] == "read_workspace_file"
     assert data["tool_results"][0]["result"]["success"] is True
-    assert "Hello from AURA E2E Testing!" in data["tool_results"][0]["result"]["output"]
-    assert "Hello from AURA E2E Testing!" in data["response"]
+    assert "Hello from Kuractus E2E Testing!" in data["tool_results"][0]["result"]["output"]
+    assert "Hello from Kuractus E2E Testing!" in data["response"]
 
     run_id = data["run_id"]
 

@@ -1,4 +1,4 @@
-"""Dynamic model and local provider discovery service for AURA."""
+"""Dynamic model and local provider discovery service for Kuractus."""
 
 import json
 import re
@@ -373,6 +373,55 @@ class ModelDiscoveryService:
             privacy_status="cloud",
         )
 
+    async def discover_cloud_openai(self, timeout: float = 8.0) -> ProviderEntry:
+        """Verify the configured cloud endpoint and expose only models it reports."""
+        api_key = (settings.OPENAI_API_KEY or "").strip()
+        base_url = (settings.OPENAI_BASE_URL or "https://api.openai.com/v1").rstrip("/")
+        if not api_key:
+            return ProviderEntry(
+                id="openai", label="OpenAI", kind="cloud", available=False,
+                base_url=base_url, models=[], privacy_status="cloud",
+            )
+
+        models: List[ModelEntry] = []
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                status_code, data = await _request_bounded_json(
+                    client,
+                    "GET",
+                    f"{base_url}/models",
+                    max_bytes=MAX_PROVIDER_JSON_RESPONSE_BYTES,
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+            raw_models = data.get("data", []) if status_code == 200 and isinstance(data, dict) else []
+            if isinstance(raw_models, list):
+                seen: set[str] = set()
+                for raw_model in raw_models[:MAX_DISCOVERED_MODELS]:
+                    if not isinstance(raw_model, dict):
+                        continue
+                    model_id = raw_model.get("id")
+                    if not isinstance(model_id, str) or not model_id or len(model_id) > MAX_MODEL_ID_CHARS or model_id in seen:
+                        continue
+                    seen.add(model_id)
+                    models.append(ModelEntry(
+                        id=model_id,
+                        label=model_id,
+                        capabilities=["general"],
+                        tool_support="unknown",
+                    ))
+        except (httpx.RequestError, httpx.HTTPError, OSError, ValueError) as exc:
+            logger.info("Configured cloud model discovery failed (%s).", type(exc).__name__)
+
+        return ProviderEntry(
+            id="openai",
+            label="OpenAI" if base_url.startswith("https://api.openai.com/") else "Connected provider",
+            kind="cloud",
+            available=bool(models),
+            base_url=base_url,
+            models=models,
+            privacy_status="cloud",
+        )
+
     def get_mock_provider(self) -> Optional[ProviderEntry]:
         """Expose mock provider when in mock testing mode."""
         if settings.MODEL_PROVIDER == "mock":
@@ -416,9 +465,9 @@ class ModelDiscoveryService:
 
         ollama_task = self.discover_ollama(ollama_url or settings.OLLAMA_BASE_URL)
         lmstudio_task = self.discover_lmstudio(lmstudio_url or settings.LMSTUDIO_BASE_URL)
+        openai_task = self.discover_cloud_openai()
 
-        ollama_entry, lmstudio_entry = await asyncio.gather(ollama_task, lmstudio_task)
-        openai_entry = self.get_cloud_openai()
+        ollama_entry, lmstudio_entry, openai_entry = await asyncio.gather(ollama_task, lmstudio_task, openai_task)
 
         providers = [ollama_entry, lmstudio_entry, openai_entry]
         mock_entry = self.get_mock_provider()

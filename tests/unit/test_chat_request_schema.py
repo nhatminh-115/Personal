@@ -21,6 +21,15 @@ def test_chat_request_accepts_database_sized_scope_identifiers():
     assert request.context_object_ids == ["o" * 36]
 
 
+def test_chat_request_accepts_auto_reasoning_for_an_explicit_model():
+    request = ChatRequest.model_validate(_chat_request(
+        model_override="mock:mock-pro",
+        reasoning_override="auto",
+    ))
+
+    assert request.reasoning_override == "auto"
+
+
 def test_chat_request_accepts_explicit_selected_file_text_with_bounds():
     object_id = "o" * 36
     request = ChatRequest.model_validate(_chat_request(

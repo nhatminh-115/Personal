@@ -33,14 +33,14 @@ describe('WorkspaceSearchView', () => {
   it('opens a persisted project object in its Board', () => {
     const result: WorkspaceSearchResult = {
       object_id: 'bridge-object-9', object_type: 'context_bridge', title: 'Experiment handoff',
-      excerpt: 'Carry forward only verified outcomes.', project_name: 'AURA Project', created_by: 'user',
+      excerpt: 'Carry forward only verified outcomes.', project_name: 'Kuractus Project', created_by: 'user',
       updated_at: '2026-10-01T12:00:00Z',
     };
     const onOpenProject = vi.fn();
     render(<WorkspaceSearchView query="experiment" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
-    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'bridge-object-9');
+    expect(onOpenProject).toHaveBeenCalledWith('Kuractus Project', 'bridge-object-9');
   });
 
   it('opens a personal note in Notes', () => {
@@ -58,28 +58,28 @@ describe('WorkspaceSearchView', () => {
   it('keeps a project Board note in its project graph', () => {
     const result: WorkspaceSearchResult = {
       object_id: 'board-note-3', object_type: 'manual_note', title: 'Board note',
-      excerpt: 'Project-specific finding.', project_name: 'AURA Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+      excerpt: 'Project-specific finding.', project_name: 'Kuractus Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
     };
     const onOpenProject = vi.fn();
     const onOpenNote = vi.fn();
     render(<WorkspaceSearchView query="finding" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={onOpenNote} onOpenLibraryItem={() => {}} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
-    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'board-note-3');
+    expect(onOpenProject).toHaveBeenCalledWith('Kuractus Project', 'board-note-3');
     expect(onOpenNote).not.toHaveBeenCalled();
   });
 
   it('keeps project-scoped file references in their project graph', () => {
     const result: WorkspaceSearchResult = {
       object_id: 'project-file-4', object_type: 'file_reference', title: 'Project attachment',
-      excerpt: 'Architecture sketch.', project_name: 'AURA Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
+      excerpt: 'Architecture sketch.', project_name: 'Kuractus Project', created_by: 'user', updated_at: '2026-10-02T12:00:00Z',
     };
     const onOpenProject = vi.fn();
     const onOpenLibraryItem = vi.fn();
     render(<WorkspaceSearchView query="architecture" results={[result]} loading={false} error={null} onOpenProject={onOpenProject} onOpenNote={() => {}} onOpenLibraryItem={onOpenLibraryItem} onOpenStudySession={() => {}} onOpenFile={() => {}} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Open in Board' }));
-    expect(onOpenProject).toHaveBeenCalledWith('AURA Project', 'project-file-4');
+    expect(onOpenProject).toHaveBeenCalledWith('Kuractus Project', 'project-file-4');
     expect(onOpenLibraryItem).not.toHaveBeenCalled();
   });
 

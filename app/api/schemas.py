@@ -42,7 +42,7 @@ class ChatRequest(BaseModel):
     project_name: Optional[str] = Field(default=None, max_length=128, description="Optional project context scope")
     metadata: Optional[Dict[str, Any]] = Field(default=None, description="Optional execution controls / metadata")
     model_override: Optional[str] = Field(default=None, description="Optional provider:model override (e.g. ollama:llama3.2)")
-    reasoning_override: Optional[Literal["instant", "low", "medium", "high", "max"]] = None
+    reasoning_override: Optional[Literal["auto", "instant", "low", "medium", "high", "max"]] = None
     task_type: Optional[Literal["research", "coding", "writing"]] = Field(
         default=None,
         description="Optional task route selected by the user; omitted for automatic routing.",
@@ -651,7 +651,7 @@ class WorkspaceGraphResponse(BaseModel):
 
 
 class CapabilityProviderResponse(CapabilityProviderMetadata):
-    capability_tools: Dict[str, List[str]] = Field(default_factory=dict, description="Bindings verified against available AURA tools")
+    capability_tools: Dict[str, List[str]] = Field(default_factory=dict, description="Bindings verified against available Kuractus tools")
     declared_capability_tools: Dict[str, List[str]] = Field(default_factory=dict, description="Configured bindings not necessarily discovered or usable")
 
 
