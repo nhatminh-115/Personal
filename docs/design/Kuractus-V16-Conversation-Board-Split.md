@@ -1,11 +1,11 @@
-# AURA V16 — React frontend migration
+# Kuractus V16 — React frontend migration
 
-This document records the V16 design integration across AURA's production React frontend. The standalone HTML is a visual reference only; it is not shipped, embedded, or used as the source of product data.
+This document records the V16 design integration across Kuractus's production React frontend. The standalone HTML is a visual reference only; it is not shipped, embedded, or used as the source of product data.
 
 ## Integration boundary
 
 - React remains authoritative for navigation, API calls, project and thread state, approvals, execution traces, workspace objects, and persistence.
-- The AURA tab remains permanent. Each project reuses one project tab for Overview, Conversation, Board, Split, and Files.
+- The Kuractus tab remains permanent. Each project reuses one project tab for Overview, Conversation, Board, Split, and Files.
 - The Board remains the persisted React Flow project graph. It is not replaced by the prototype's seeded graph.
 - Existing project, library, note, study, automation, and conversation records remain the only data sources. New Home empty states describe absent data and route to the real views.
 - No backend schema, persistence, session, credential, database, or Docker-volume behavior changes are part of this visual pass.
@@ -26,7 +26,7 @@ This document records the V16 design integration across AURA's production React 
 | Projects | Consistent card grid and forms | Create, archive, restore, include archived projects, and open the selected project |
 | Project Overview | Existing project brief, recent conversation list, object counts, and Board entry point in the V16 palette | Opens existing threads, creates a thread, and navigates to Conversation, Board, Files, and Notes |
 | Conversation | Compact thread rail, readable timeline, and larger composer | Live chat APIs, streaming, thread selection, branching, context, approvals, provenance, routing, and execution metadata |
-| Board | Dark dotted canvas, tuned real graph nodes, toolbar, Context Lens, and V16 object inspector | Persisted React Flow objects/edges/layout, object provenance and revision, relationship navigation, Ask AURA, undo/redo, and layer controls |
+| Board | Dark dotted canvas, tuned real graph nodes, toolbar, Context Lens, and V16 object inspector | Persisted React Flow objects/edges/layout, object provenance and revision, relationship navigation, Ask Kuractus, undo/redo, and layer controls |
 | Split | Equal-weight chat and Board panes with legible compact controls | Displays the active project conversation with the same live Board graph |
 | Project Files | V16 headings, file rows, search, and link picker | Import, link/unlink Library references, browse local artifacts, search, and pagination |
 | Library and connected folders | V16 collection, item, connection, folder, and Research Radar surfaces | Local imports, folder permissions and indexing, external source handling, project links, Research Radar, and paging |

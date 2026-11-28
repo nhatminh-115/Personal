@@ -65,7 +65,7 @@ from app.research.provenance import (
 
 async def run_phase4_verification():
     print("=" * 80, flush=True)
-    print("AURA PHASE 4 VERIFICATION: RESEARCH SPECIALIST & KNOWLEDGE-WORK PROVENANCE", flush=True)
+    print("KURACTUS PHASE 4 VERIFICATION: RESEARCH SPECIALIST & KNOWLEDGE-WORK PROVENANCE", flush=True)
     print("=" * 80, flush=True)
 
     app = create_app()

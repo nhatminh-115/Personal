@@ -130,7 +130,7 @@ pub struct OpenedDesktopDrop {
 }
 
 fn state_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    let path = DesktopRuntime::aura_config_dir(app)?.join("folder-access");
+    let path = DesktopRuntime::kuractus_config_dir(app)?.join("folder-access");
     fs::create_dir_all(&path)
         .map_err(|error| format!("Could not prepare folder connection settings: {error}"))?;
     Ok(path)

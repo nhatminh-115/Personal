@@ -34,7 +34,7 @@ comes from memory or compiled workspace objects so a paused run can resume
 without re-fetching a different source version.
 
 The current user request and system policy remain mandatory model messages.
-The router is called once. Before that call, AURA accounts for those mandatory
+The router is called once. Before that call, Kuractus accounts for those mandatory
 messages and explicitly selected/required workspace context so the router can
 reject a model that cannot fit it. After routing, the allocator uses the
 selected model's actual context-window metadata for optional candidates. The

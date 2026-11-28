@@ -22,7 +22,7 @@ PROJECT_ROOT = ensure_project_root(__file__)
 CODING_IMPACT_WORKLOAD = (
     "You are the root orchestrator. This request requires the Coding Specialist: call delegate_task now with "
     "specialist_name='coding'; do not answer this request directly. Ask the specialist for a read-only impact analysis "
-    "of AURA's optional code-graph capability path: determine how code_graph capabilities become available, how MCP "
+    "of Kuractus's optional code-graph capability path: determine how code_graph capabilities become available, how MCP "
     "discovery verifies tool bindings, and what happens when no code-graph provider is configured. It must read the "
     "relevant source and tests before concluding. Do not modify files, run write commands, install/download/configure a "
     "provider, or approve any action. "

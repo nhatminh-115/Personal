@@ -1,6 +1,6 @@
 # Docker Compose backup and restore
 
-AURA stores application data in PostgreSQL, LangGraph checkpoints in a
+Kuractus stores application data in PostgreSQL, LangGraph checkpoints in a
 separate SQLite database, and sandbox/workspace files in the `workspace_data`
 volume. A recoverable installation needs all three from the same point in time.
 The backup command stops `aura-app` while it captures them,
@@ -60,7 +60,7 @@ python scripts/restore_compose.py .\backups\aura-2026-10-03.tar.gz --replace-cur
 
 If restore fails after the API stops, the command leaves it stopped so it cannot
 write against partially restored state. Resolve the error and rerun the
-verified restore before starting AURA. The command preserves the API's original
+verified restore before starting Kuractus. The command preserves the API's original
 running/stopped state after a successful restore. Backups contain personal
 workspace data and should be stored with access controls and encryption
 appropriate for that data.

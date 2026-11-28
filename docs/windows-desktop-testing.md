@@ -1,11 +1,11 @@
-# AURA Windows Desktop testing
+# Kuractus Windows Desktop testing
 
 ## Policy
 
 Windows Desktop verification must not take control of a developer's primary
-desktop. Tests must not focus, move, resize, or close the AURA window, click the
+desktop. Tests must not focus, move, resize, or close the Kuractus window, click the
 tray, send notifications, or kill processes. They must not stop Docker, change
-ports, modify credentials, or reset AURA data on a daily-use machine.
+ports, modify credentials, or reset Kuractus data on a daily-use machine.
 
 Use existing tests and isolated CI first. Use the read-only PowerShell snapshot
 script for a local installed-runtime health report. Tests that need tray,
@@ -20,17 +20,17 @@ automation dependency unless a dedicated isolated runner is available.
    developer's desktop. Existing Vitest, pytest, Rust, frozen-sidecar, and
    packaging checks remain the default.
 2. **Read-only installed-runtime snapshot:** run
-   `desktop/scripts/Get-AuraDesktopSnapshot.ps1`. It checks the installed
-   executable/version, running process IDs, `/ready`, the exact AURA Postgres
+   `desktop/scripts/Get-KuractusDesktopSnapshot.ps1`. It checks the installed
+   executable/version, running process IDs, `/ready`, the exact Kuractus Postgres
    container, listeners on ports 17890/15432, an optional artifact hash, and an
    optional backup archive structure (manifest, required members, and member
    names). It never launches or stops an application or
    container, opens a window, accesses credentials, or reads backup contents
    beyond `manifest.json` and archive member names. It writes JSON and text logs
-   under `%TEMP%\aura-desktop-dogfood`.
+   under `%TEMP%\kuractus-desktop-dogfood`.
 3. **Isolated Windows VM:** use only for behavior that needs the actual shell or
    Windows UI. Provide a disposable profile, temporary workspace, and a Docker
-   context containing only AURA's test services. Keep this tier deferred when
+   context containing only Kuractus's test services. Keep this tier deferred when
    no VM is available.
 
 Do not infer a UI result from a build, a unit test, an API health response, or a
@@ -41,15 +41,15 @@ read-only host snapshot. Do not infer a runtime result from a static code test.
 Read-only snapshot for the installed app:
 
 ```powershell
-./desktop/scripts/Get-AuraDesktopSnapshot.ps1
+./desktop/scripts/Get-KuractusDesktopSnapshot.ps1
 ```
 
 Verify a downloaded CI artifact and a known safety backup without installing,
 restoring, or extracting either archive:
 
 ```powershell
-./desktop/scripts/Get-AuraDesktopSnapshot.ps1 `
-  -ArtifactZip .\aura-desktop-windows.zip `
+./desktop/scripts/Get-KuractusDesktopSnapshot.ps1 `
+  -ArtifactZip .\kuractus-desktop-windows.zip `
   -ExpectedArtifactSha256 <sha256-from-github> `
   -BackupPath "$env:TEMP\aura-safety-backup.aurabackup"
 ```
@@ -74,7 +74,7 @@ point-in-time report: the read-only host snapshot was captured on 2026-11-25 at
 
 | Item | Status | Test method | Evidence | Logs | Remaining blocker |
 | --- | --- | --- | --- | --- | --- |
-| D1 Install and ready runtime | **FAIL** | Exact-head CI, installer checksum, read-only PowerShell process/API/container snapshot | Windows CI passed for `be720547fb309b442e6ed68b3b1702587a24ef37`; installer hash matched its artifact. The latest snapshot found no AURA process, no listener on 17890/15432, `/ready` refused the connection, and the AURA Postgres container was stopped. | `%TEMP%\aura-desktop-dogfood\snapshot-*.log` and `.json` | Runtime was not running at snapshot time. Start/repair must be done in an isolated test environment before re-evaluating D1. |
+| D1 Install and ready runtime | **FAIL** | Exact-head CI, installer checksum, read-only PowerShell process/API/container snapshot | Windows CI passed for `be720547fb309b442e6ed68b3b1702587a24ef37`; installer hash matched its artifact. The latest snapshot found no Kuractus process, no listener on 17890/15432, `/ready` refused the connection, and the Kuractus Postgres container was stopped. | `%TEMP%\aura-desktop-dogfood\snapshot-*.log` and `.json` | Runtime was not running at snapshot time. Start/repair must be done in an isolated test environment before re-evaluating D1. |
 | D2 Tray, quit, relaunch, persistence | **BLOCKED** | Automated process-state observation only; no tray or window control | User reported close-to-tray and reopen kept the runtime Ready. Normal quit, relaunch, and persisted-object check were not confirmed in an isolated run. | Previous CI artifacts do not prove tray behavior. | Requires a disposable Windows VM/session. |
 | D3 Folder and selected-file flow | **BLOCKED** | Vitest folder/index/file-preview tests, Rust path-validation tests in CI | Unit coverage exists for metadata-only indexing, explicit file opening, and path validation. It does not verify selecting text and sending it to a project from the installed UI. | Windows Desktop run linked below; local snapshot logs if supplied | Requires a disposable folder and isolated UI session for the complete flow. |
 | D4 Notifications | **BLOCKED** | Frontend unit tests; no real toast test on the primary desktop | The app's notification handling is opt-in and generic; CI does not demonstrate Windows toast delivery for approval/success/failure events. | No native notification log was produced. | Requires an isolated Windows session with notifications enabled. |
@@ -90,8 +90,8 @@ the new workflow revision must pass CI on its own exact head before it is
 reported as verified.
 
 - Commit: `be720547fb309b442e6ed68b3b1702587a24ef37`
-- Main CI: [run 45166155565](https://github.com/nhatminh-115/Personal/actions/runs/45166155565) — passed.
-- Windows Desktop: [run 45166155568](https://github.com/nhatminh-115/Personal/actions/runs/45166155568) — passed; artifact ID `14815162371`.
+- Main CI: [run 45166155565](https://github.com/nhatminh-115/Kuractus/actions/runs/45166155565) — passed.
+- Windows Desktop: [run 45166155568](https://github.com/nhatminh-115/Kuractus/actions/runs/45166155568) — passed; artifact ID `14815162371`.
 - Artifact ZIP SHA-256: `4e656f870d6fd7885976b4cdfeda88193f86560b963543677a1ac0f6f517a090`.
 - NSIS installer SHA-256: `23c1f100799437f67344edd1811e8e5030772e3cf14bea101dc87bb91cf42adf`.
 

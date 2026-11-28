@@ -38,7 +38,7 @@ async def serve(host: str, port: int) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="aura-api")
+    parser = argparse.ArgumentParser(prog="kuractus-api")
     parser.add_argument("--desktop-migrate", action="store_true")
     parser.add_argument("--desktop-serve", action="store_true")
     parser.add_argument("--desktop-self-test", action="store_true")

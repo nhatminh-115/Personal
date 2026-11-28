@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "AURA",
+  "productName": "Kuractus",
   "version": "0.2.0",
   "identifier": "com.aura.personal.desktop",
   "build": {
@@ -35,7 +35,7 @@
     "shortDescription": "Kuractus Personal workspace",
     "longDescription": "A durable personal AI workspace that runs on your Windows PC.",
     "resources": {
-      "binaries/aura-api.exe": "aura-api.exe",
+      "binaries/kuractus-api.exe": "kuractus-api.exe",
       "../runtime/compose.yaml": "runtime/compose.yaml"
     },
     "windows": {

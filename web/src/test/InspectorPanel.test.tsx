@@ -237,7 +237,7 @@ describe('InspectorPanel Component', () => {
     />);
     fireEvent.click(screen.getByTestId('inspector-tab-context'));
     expect(screen.queryByTestId('inspector-tab-routing')).not.toBeInTheDocument();
-    expect(screen.getByText('Persisted context manifest')).toBeInTheDocument();
+    expect(screen.getByText('Included context')).toBeInTheDocument();
     expect(screen.getByText('source-note')).toBeInTheDocument();
     expect(screen.getByText('manual note')).toBeInTheDocument();
     expect(screen.queryByText(/Winning scope|System Balanced|Routing Profile/i)).not.toBeInTheDocument();

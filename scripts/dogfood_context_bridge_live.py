@@ -1,6 +1,6 @@
 """Live research-to-Context-Bridge-to-new-chat dogfood.
 
-Requires explicit OpenAI credentials and RESEARCH_PROVIDER_MODE=live. It uses only AURA's
+Requires explicit OpenAI credentials and RESEARCH_PROVIDER_MODE=live. It uses only Kuractus's
 Research Specialist and native workspace graph; optional code-graph providers are irrelevant.
 The JSON artifact records IDs, model decisions, tool names, and context manifest, never source text.
 """
@@ -21,7 +21,7 @@ else:
 PROJECT_ROOT = ensure_project_root(__file__)
 
 RESEARCH_PROMPT = (
-    "You are the AURA root orchestrator. Delegate this request now to the Research Specialist using "
+    "You are the Kuractus root orchestrator. Delegate this request now to the Research Specialist using "
     "delegate_task with specialist_name='research'; do not research or answer directly. Ask the "
     "specialist to investigate reliable prior work on retrieval-augmented generation evaluation and "
     "identify one narrow, source-supported finding about how retrieval quality is measured. It must "

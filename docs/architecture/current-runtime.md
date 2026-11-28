@@ -1,4 +1,4 @@
-# AURA Current Runtime Architecture
+# Kuractus Current Runtime Architecture
 
 This document describes the implementation in the current repository. The
 [Phase 0/1 system specification](system.md) remains useful as a historical
@@ -6,7 +6,7 @@ baseline, but it is not a complete description of the current product.
 
 ## Product shape
 
-AURA is a personal workspace with a root orchestrator, durable runs, memory,
+Kuractus is a personal workspace with a root orchestrator, durable runs, memory,
 model routing, capability-scoped tools, and approval-gated execution. The web
 workspace has permanent Home, Library, Notes, Study, Automations, and Projects
 surfaces. A project is one reusable tab with Overview, Chat, Board, Split, and
@@ -25,7 +25,7 @@ React/Vite workspace
     → LangGraph root orchestrator
     → context loading and compilation
     → provider-neutral model router
-    → scoped AURA tools or a controlled specialist child run
+    → scoped Kuractus tools or a controlled specialist child run
     → capability permission and approval checks
     → execution, trace events, and persisted workspace objects
 ```
@@ -97,7 +97,7 @@ Automation history can also request cooperative cancellation after an outbox
 worker claims the event and creates its active run. A claimed event whose run is
 still starting returns a retryable conflict; once active, the run records the
 same cancellation marker and stops at the next runtime boundary. The UI states
-that an in-flight model or tool operation may finish before AURA observes it.
+that an in-flight model or tool operation may finish before Kuractus observes it.
 Approval and routing-confirmation decisions serialize graph resumes by run. On
 PostgreSQL, a session advisory lock stays held across graph commits and prevents
 another API worker from resuming the same run concurrently. SQLite uses a
@@ -132,10 +132,10 @@ newer profile.
 Live research search combines Semantic Scholar and arXiv, then uses Crossref as
 a final metadata-only fallback when fewer than the requested number of sources
 were returned. Live search queries are sent to these providers unless the run
-is classified `confidential` or `local_only`, in which case AURA blocks
+is classified `confidential` or `local_only`, in which case Kuractus blocks
 external provider search before sending the query. The deterministic corpus
 remains available within those privacy boundaries. Crossref results include
-bibliographic metadata only; AURA does not request Crossref abstracts or full
+bibliographic metadata only; Kuractus does not request Crossref abstracts or full
 text. A failure from one provider does not discard sources returned by the
 others. When no provider completes the search, the tool reports a structured
 provider error instead of claiming that the query returned no matches; a
@@ -144,17 +144,17 @@ successful search with zero matches remains a normal empty result.
 ## Capability and execution boundaries
 
 Specialists request abstract capabilities. The capability registry maps those
-requests to canonical AURA tool names only when a provider explicitly declares
+requests to canonical Kuractus tool names only when a provider explicitly declares
 the mapping. Required capabilities fail closed. Optional capabilities are
 added only when an enabled provider currently supplies matching tools and do
 not block the specialist when unavailable.
 Pending approval reads use stable bounded pages (10 by default, 25 maximum)
 because approval records can carry sizeable tool inputs.
 
-MCP configuration is loaded from `MCP_CONFIG_PATH`. AURA discovers tools,
+MCP configuration is loaded from `MCP_CONFIG_PATH`. Kuractus discovers tools,
 applies its local MCP risk policy, validates arguments against the advertised
 JSON schema, and then dispatches calls through the configured server. Provider
-metadata is descriptive; AURA's scoped tool registry, permission policy, and
+metadata is descriptive; Kuractus's scoped tool registry, permission policy, and
 approval service govern invocation. External code graph providers remain
 optional and user-installed; see the [provider guide](../capabilities/code-graph-providers.md).
 
@@ -206,7 +206,7 @@ or starts a second schedule unexpectedly.
 Queued Automation runs can be cancelled atomically while their outbox event is
 pending and unclaimed. A running Automation accepts a persisted cooperative
 cancellation request that the runtime observes at a safe execution boundary.
-An in-flight model or tool operation may finish before AURA observes the
+An in-flight model or tool operation may finish before Kuractus observes the
 request; if the dispatcher has claimed the event but has not created its run
 yet, the API asks the caller to refresh and retry.
 Automations may also accept bearer-authenticated webhook signals. A newly enabled trigger
@@ -246,7 +246,7 @@ and only the structured sections the user enabled. Source links retain
 provenance and strengthen privacy routing without copying full source content
 into the handoff. Context Sets and branches expand their explicitly linked
 sources. The shared root/specialist policy remains in system
-messages, while retrieved AURA context is serialized as a separate user-role
+messages, while retrieved Kuractus context is serialized as a separate user-role
 reference message immediately before the current request. The policy directs
 the model to use that content as evidence; tools remain for missing
 information, current-state checks, and requested actions. Specialist project
@@ -254,14 +254,14 @@ scope and effective privacy/fallback boundaries come from trusted root runtime
 state; model-supplied delegation arguments cannot replace them. The shared
 policy also treats tool results, connected content, and external sources as
 untrusted data. Tool names, descriptions, and parameter schemas are interface metadata,
-not authority to change the task or override AURA policies. Embedded
-instructions cannot redefine the task, bypass AURA permission or privacy
+not authority to change the task or override Kuractus policies. Embedded
+instructions cannot redefine the task, bypass Kuractus permission or privacy
 boundaries, disclose hidden prompts or secrets, or trigger unrelated or
 unapproved side effects. Prior assistant messages and persisted plans are history,
 not current authorization. They may help interpret a new request, but a new tool
 action needs the current user request or its own applicable durable approval.
 Task-relevant source guidance may inform the requested work only within its scope
-and AURA policies.
+and Kuractus policies.
 
 Imported browser-local TXT, Markdown, CSV, JSON, and HTML files remain in the
 browser unless a live-chat user explicitly selects **Send text**. Plain text
@@ -324,7 +324,7 @@ text in telemetry.
 
 Embedding requests carry the effective privacy requirement too. Only providers
 declaring a local or air-gapped boundary may embed confidential or local-only
-content. If the configured provider cannot meet that boundary, AURA skips
+content. If the configured provider cannot meet that boundary, Kuractus skips
 semantic lookup or retains the memory without a vector; it does not silently
 send the text to a cloud embedding service or substitute another provider.
 Correcting an active project memory creates a superseding version with the same

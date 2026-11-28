@@ -1,11 +1,11 @@
-# AURA Product Vision and AURA Personal v1 Roadmap
+# Kuractus Product Vision and Personal v1 Roadmap
 
 **Document status:** Canonical product direction and proposed release contract  
 **Last updated:** 2026-11-22
 **Repository baseline reviewed:** `main` at `aee2c0cd7c4e84cd32d9d9a099d2db78ea10ad36`
-**Target:** AURA Personal v1
+**Target:** Kuractus v1
 
-This document defines what AURA is being built to become, the product objectives that matter, and the finite acceptance criteria for calling the first personal release complete. It is the source of truth for product intent and release scope. It does not replace technical architecture documents, ADRs, API contracts, or the live-dogfooding instructions.
+This document defines what Kuractus is being built to become, the product objectives that matter, and the finite acceptance criteria for calling the first personal release complete. It is the source of truth for product intent and release scope. It does not replace technical architecture documents, ADRs, API contracts, or the live-dogfooding instructions.
 
 For implementation details, consult [Current Runtime Architecture](architecture/current-runtime.md). For the difference between deterministic CI and real-provider acceptance, consult [Live Dogfooding](dogfooding.md). The [Autonomous Continuation](continuation-status.md) document is an operational handoff and should remain consistent with this product contract.
 
@@ -13,18 +13,18 @@ For implementation details, consult [Current Runtime Architecture](architecture/
 
 ## 1. Product vision
 
-AURA — Adaptive User Runtime Agent — is a **persistent personal AI workspace and execution runtime**.
+Kuractus is a **persistent personal AI workspace and execution runtime**.
 
-AURA helps one person carry work across projects and time: collect and reference material, preserve useful context, investigate questions, turn verified knowledge into learning, and execute approved work through an observable AI runtime.
+Kuractus helps one person carry work across projects and time: collect and reference material, preserve useful context, investigate questions, turn verified knowledge into learning, and execute approved work through an observable AI runtime.
 
-AURA is not intended to be another ephemeral chatbot. Its defining property is continuity: projects, conversations, selected context, notes, research artifacts, study progress, automations, and execution history should remain connected and recoverable instead of disappearing when a chat ends.
+Kuractus is not intended to be another ephemeral chatbot. Its defining property is continuity: projects, conversations, selected context, notes, research artifacts, study progress, automations, and execution history should remain connected and recoverable instead of disappearing when a chat ends.
 
 ### Product promise
 
 A user should be able to:
 
 1. Return to a project after days or weeks and recover the relevant workspace, conversations, decisions, and explicitly selected context.
-2. Ask AURA to work with personal knowledge and project material without silently mixing unrelated projects or bypassing privacy boundaries.
+2. Ask Kuractus to work with personal knowledge and project material without silently mixing unrelated projects or bypassing privacy boundaries.
 3. Delegate bounded work to specialist runtimes and tools, inspect what happened, and approve consequential actions.
 4. Preserve the provenance of research and knowledge so that conclusions can be traced to their supporting sources.
 5. Convert useful findings into durable notes and learning activities.
@@ -33,9 +33,9 @@ A user should be able to:
 
 ### Target user and product boundary
 
-The v1 target is a **single-person, persistent workspace** for someone managing multiple long-running projects and knowledge-work workflows. The default deployment is a local service. AURA can use configured local or hosted model providers; local deployment must not be confused with a guarantee that every provider interaction stays on-device. Privacy and routing policy must govern those boundaries explicitly.
+The v1 target is a **single-person, persistent workspace** for someone managing multiple long-running projects and knowledge-work workflows. The default deployment is a local service. Kuractus can use configured local or hosted model providers; local deployment must not be confused with a guarantee that every provider interaction stays on-device. Privacy and routing policy must govern those boundaries explicitly.
 
-AURA should be useful with a modest, deliberately configured provider set. A large integration catalog is not itself a product goal.
+Kuractus should be useful with a modest, deliberately configured provider set. A large integration catalog is not itself a product goal.
 
 ---
 
@@ -72,13 +72,13 @@ The graph is not permission for the model to ingest everything. Context must rem
 
 ### Library and external files
 
-The Library is a reference and indexing layer, not an AURA-owned replacement for the user's file system or cloud drive. External files remain where they already live. The current browser-local import flow keeps file content in the browser until the user explicitly chooses an action such as Send text. Only bounded, explicitly selected content should enter a durable run context, and cloud transfer must follow the routing-confirmation and privacy policy.
+The Library is a reference and indexing layer, not an Kuractus-owned replacement for the user's file system or cloud drive. External files remain where they already live. The current browser-local import flow keeps file content in the browser until the user explicitly chooses an action such as Send text. Only bounded, explicitly selected content should enter a durable run context, and cloud transfer must follow the routing-confirmation and privacy policy.
 
-AURA must not silently upload, copy, or index the full contents of external files merely because a reference exists.
+Kuractus must not silently upload, copy, or index the full contents of external files merely because a reference exists.
 
 ### Agent runtime
 
-AURA uses one root Personal Orchestrator. Specialist runtimes are bounded children delegated by that root; they are not an unconstrained peer swarm. The root remains responsible for task scope, project scope, effective privacy, available capabilities, approvals, and the final outcome.
+Kuractus uses one root Personal Orchestrator. Specialist runtimes are bounded children delegated by that root; they are not an unconstrained peer swarm. The root remains responsible for task scope, project scope, effective privacy, available capabilities, approvals, and the final outcome.
 
 The runtime should be durable and inspectable: runs, checkpoints, approvals, tool results, cancellation state, and safe execution events must support recovery and diagnosis without exposing hidden reasoning or unnecessarily sensitive payloads.
 
@@ -88,15 +88,15 @@ The runtime should be durable and inspectable: runs, checkpoints, approvals, too
 
 These principles govern implementation trade-offs and future feature proposals.
 
-1. **Continuity over chat volume.** AURA should preserve useful project state and knowledge across sessions; adding more chat UI is not a substitute.
+1. **Continuity over chat volume.** Kuractus should preserve useful project state and knowledge across sessions; adding more chat UI is not a substitute.
 2. **One root orchestrator.** Specialists provide bounded expertise or execution capability under trusted root scope. Do not introduce a general-purpose agent swarm without a demonstrated need.
 3. **Explicit context, not indiscriminate retrieval.** The user and workspace relationships determine what may enter a turn. Context compilation must enforce scope, limits, privacy, and provenance.
 4. **Durability is a product feature.** Interruption, restart, retry, approval pause, and cancellation are normal operating conditions, not edge cases.
 5. **Fail closed on security and privacy.** Unknown capabilities, insufficient provider guarantees, invalid scope, or disallowed data transfer must not silently degrade into a less safe route.
 6. **Approvals follow risk.** Read-only work may proceed under policy; consequential writes, external side effects, and destructive actions require the applicable authorization.
 7. **Evidence and provenance matter.** Research claims, context handoffs, and execution outcomes should be traceable to their sources without pretending that an unverified claim is verified.
-8. **External content is data, not authority.** Tool output, retrieved documents, connected sources, and model-supplied metadata cannot override AURA policy or authorize unrelated actions.
-9. **User-authored content remains user-owned.** AURA must not silently rewrite or discard notes, project content, or drafts. Conflicts should be surfaced and resolved explicitly.
+8. **External content is data, not authority.** Tool output, retrieved documents, connected sources, and model-supplied metadata cannot override Kuractus policy or authorize unrelated actions.
+9. **User-authored content remains user-owned.** Kuractus must not silently rewrite or discard notes, project content, or drafts. Conflicts should be surfaced and resolved explicitly.
 10. **No silent provider substitution.** Provider capability and reasoning support must be based on declared or observed evidence, not guessed from model names. Fallback behavior must follow the saved policy.
 11. **Bounded resource use.** File parsing, tool execution, model discovery, responses, pagination, and backup/restore must have explicit limits.
 12. **Build for demonstrated workflows.** New architecture or integrations need a user-visible use case, a measurable acceptance condition, and a reason existing primitives are insufficient.
@@ -109,7 +109,7 @@ The status labels below describe the repository baseline reviewed on 2026-11-21.
 
 ### O1 — Durable personal agent runtime
 
-**Outcome:** AURA can execute bounded multi-step work, pause for authorization, survive process interruption, and provide a trustworthy record of the outcome.
+**Outcome:** Kuractus can execute bounded multi-step work, pause for authorization, survive process interruption, and provide a trustworthy record of the outcome.
 
 Current implementation includes a LangGraph root runtime, persisted run state and checkpoints, approval and routing-confirmation flows, cancellation handling, event-driven execution, specialist delegation, and execution history.
 
@@ -126,7 +126,7 @@ Current implementation includes a LangGraph root runtime, persisted run state an
 
 ### O2 — Explicit model routing and capability governance
 
-**Outcome:** AURA selects a provider and model according to task requirements, privacy, capability, and user policy, rather than treating all models as interchangeable.
+**Outcome:** Kuractus selects a provider and model according to task requirements, privacy, capability, and user policy, rather than treating all models as interchangeable.
 
 Current implementation includes a provider-neutral ModelRouter, typed routing context, scoped routing profiles, provider capability metadata, capability-based tool registration, and persisted routing decisions.
 
@@ -160,7 +160,7 @@ Current implementation includes saved projects, a shared object/edge graph, proj
 
 ### O4 — Traceable knowledge and learning lifecycle
 
-**Outcome:** AURA can preserve research provenance and help a user turn supported findings into durable learning material.
+**Outcome:** Kuractus can preserve research provenance and help a user turn supported findings into durable learning material.
 
 Current implementation includes Research source/evidence/claim objects, provenance relationships, Research Radar, Notes, Study sessions, reflections, learning cards, and a review queue.
 
@@ -177,13 +177,13 @@ Current implementation includes Research source/evidence/claim objects, provenan
 
 ### O5 — Durable, governed automations
 
-**Outcome:** AURA can trigger useful recurring or event-driven work without losing its schedule, approval state, or execution history.
+**Outcome:** Kuractus can trigger useful recurring or event-driven work without losing its schedule, approval state, or execution history.
 
 Current implementation includes a transactional event outbox, persistent scheduler, one-shot and recurring jobs, webhook triggers, approval integration, cooperative cancellation, retry/dead-letter handling, and run history.
 
 **V1 acceptance criteria**
 
-- A scheduled or webhook-triggered event creates a traceable AURA run with its origin preserved.
+- A scheduled or webhook-triggered event creates a traceable Kuractus run with its origin preserved.
 - Duplicate webhook event IDs return the original event rather than creating duplicate work.
 - A queued event and an approval-paused or running workflow behave correctly across a process restart.
 - Paused and archived automations reject new triggers as specified; archiving preserves history.
@@ -194,7 +194,7 @@ Current implementation includes a transactional event outbox, persistent schedul
 
 ### O6 — Security, privacy, and recoverability
 
-**Outcome:** AURA protects the user's workspace and makes recovery practical.
+**Outcome:** Kuractus protects the user's workspace and makes recovery practical.
 
 Current implementation includes capability permissions, approval gates, a constrained Docker execution sandbox, workspace path confinement, prompt-injection defenses, provider and tool error redaction, optional shared API bearer authentication, bounded inputs/responses, and local/Compose backup procedures.
 
@@ -212,14 +212,14 @@ Current implementation includes capability permissions, approval gates, a constr
 
 ### O7 — Usable, real-world personal workflow
 
-**Outcome:** AURA is useful in repeated work, not merely a collection of passing unit tests.
+**Outcome:** Kuractus is useful in repeated work, not merely a collection of passing unit tests.
 
 **V1 acceptance criteria**
 
 - The primary Home, Library, Notes, Study, Automations, and Projects surfaces load saved state and expose clear loading, empty, error, retry, and conflict states.
 - A new installation can be configured by following the repository documentation without relying on undocumented manual steps.
 - At least one representative workflow is completed end-to-end with a real configured model provider. Deterministic/mock verification remains valuable but is not counted as live-provider acceptance.
-- The user can inspect what AURA used, what it changed, what it did not do, and what still requires approval.
+- The user can inspect what Kuractus used, what it changed, what it did not do, and what still requires approval.
 - No release-blocking data-loss, privacy-boundary, authorization, or duplicate-execution defect remains open.
 
 **Baseline status:** A1–A8 have recorded acceptance passes. A7 passed on 2026-11-22 with a fresh Compose PostgreSQL volume, served production UI, and completed local root-to-specialist inference. A2 passed with live Research-to-Study provenance using the same installed local Ollama model. See the sanitized A2 report for the evidence boundary and the follow-up Research Inspector status correction.
@@ -311,7 +311,7 @@ Use the existing dogfooding scripts and extend them only when a missing acceptan
 - Complete the clean-environment backup/restore drill.
 - Review security, privacy, provider configuration, migrations, and network-exposure documentation.
 - Publish concise setup, operation, backup, restore, and known-limitations documentation.
-- Tag the accepted commit as AURA Personal v1.
+- Tag the accepted commit as Kuractus Personal v1.
 
 **Exit condition:** All mandatory acceptance scenarios pass on the tagged commit, no release-blocking defect remains open, and the user can install, operate, and recover the product using documented procedures.
 
@@ -321,7 +321,7 @@ After v1, switch to maintenance and a separately prioritized v1.1 backlog. Do no
 
 ## 7. Explicit non-goals for v1
 
-The following are not required to ship AURA Personal v1:
+The following are not required to ship Kuractus Personal v1:
 
 - A multi-tenant SaaS platform, account system, organization management, or tenant isolation.
 - An unrestricted autonomous desktop/browser agent that can act without scoped tools and approvals.
@@ -355,7 +355,7 @@ Keep these decisions explicit; do not silently turn them into implementation ass
 
 ## 9. Development and autonomous-agent operating contract
 
-Any coding agent (including Codex or a future assistant) working on AURA should follow this contract:
+Any coding agent (including Codex or a future assistant) working on Kuractus should follow this contract:
 
 1. Read this document, [Current Runtime Architecture](architecture/current-runtime.md), [Live Dogfooding](dogfooding.md), and the current [Autonomous Continuation](continuation-status.md) before proposing a milestone.
 2. Inspect the actual current branch, working tree, tests, and relevant implementation. Do not assume that a previous chat summary or an old continuation note is current.
@@ -388,10 +388,10 @@ This section records what was observed when this document was drafted. It is a d
 
 ### Repository and CI snapshot
 
-- Repository: [nhatminh-115/Personal](https://github.com/nhatminh-115/Personal)
+- Repository: [nhatminh-115/Kuractus](https://github.com/nhatminh-115/Kuractus)
 - Reviewed main commit: **cf64f3435b03210f72c40a70ca3158d41362bfcb**
-- Latest reviewed merged milestone: [PR #387 — Validate API token syntax](https://github.com/nhatminh-115/Personal/pull/387)
-- Latest reviewed GitHub Actions run: [#1014](https://github.com/nhatminh-115/Personal/actions/runs/44906302886), completed successfully on the reviewed main commit.
+- Latest reviewed merged milestone: [PR #387 — Validate API token syntax](https://github.com/nhatminh-115/Kuractus/pull/387)
+- Latest reviewed GitHub Actions run: [#1014](https://github.com/nhatminh-115/Kuractus/actions/runs/44906302886), completed successfully on the reviewed main commit.
 - Recorded verification: 767 backend tests passed; Phase 2.1, Phase 3, and Phase 4 vertical-slice verifications passed; 48 frontend test files with 328 tests passed; Vite production build completed. The backend run reported four warnings. These are CI results, not a substitute for A1–A8 live acceptance.
 
 ### Implemented capability areas observed in the repository
@@ -415,11 +415,11 @@ This inventory is intentionally high-level. The technical source of truth is [Cu
 
 | Question | Authoritative document |
 | --- | --- |
-| What is AURA and what does v1 mean? | **This document** |
+| What is Kuractus and what does v1 mean? | **This document** |
 | How does the current runtime work? | [Current Runtime Architecture](architecture/current-runtime.md) |
 | What architecture decisions are intentional? | [Architecture Decision Records](architecture/adr/) and [System Architecture](architecture/system.md) |
 | Which live workflows have actually passed? | [Live Dogfooding](dogfooding.md) |
 | What should the next coding session inspect or execute? | [Autonomous Continuation](continuation-status.md) |
-| How do I install, configure, test, back up, and restore AURA? | [README](../README.md), [Compose backup](compose-backup.md), and [Local backup](local-backup.md) |
+| How do I install, configure, test, back up, and restore Kuractus? | [README](../README.md), [Compose backup](compose-backup.md), and [Local backup](local-backup.md) |
 
 If two documents disagree about product intent or v1 scope, this document wins. If they disagree about current implementation behavior, inspect the code and update the technical documentation; this product document must not be used to override implementation evidence.

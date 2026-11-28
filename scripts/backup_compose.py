@@ -218,7 +218,7 @@ def verify_backup(archive_path: Path) -> dict:
             raise ValueError("Backup manifest must be a JSON object")
         format_version = manifest.get("format_version")
         if format_version not in {1, 2}:
-            raise ValueError("Unsupported AURA backup format")
+            raise ValueError("Unsupported Kuractus backup format")
         required = {
             "manifest.json",
             "postgres.dump",
@@ -373,7 +373,7 @@ def create_backup(destination: Path) -> Path:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Back up AURA Compose database, checkpoints, and workspace into one checksummed archive."
+        description="Back up Kuractus Compose database, checkpoints, and workspace into one checksummed archive."
     )
     parser.add_argument(
         "destination",
@@ -401,7 +401,7 @@ def main() -> int:
                 parser.error("destination cannot be combined with --list")
             backups = list_backups(args.list)
             if not backups:
-                print(f"No AURA Compose backups found in {args.list.expanduser().resolve()}")
+                print(f"No Kuractus Compose backups found in {args.list.expanduser().resolve()}")
                 return 0
             for backup in backups:
                 size = backup["size_bytes"]
@@ -421,9 +421,9 @@ def main() -> int:
             parser.error("destination is required unless --verify or --list is used")
         result = create_backup(args.destination)
     except (OSError, RuntimeError, ValueError, KeyError, tarfile.TarError, subprocess.CalledProcessError) as exc:
-        print(f"AURA Compose backup operation failed: {exc}", file=sys.stderr)
+        print(f"Kuractus Compose backup operation failed: {exc}", file=sys.stderr)
         return 1
-    print(f"AURA Compose backup created: {result} ({result.stat().st_size} bytes)")
+    print(f"Kuractus Compose backup created: {result} ({result.stat().st_size} bytes)")
     return 0
 
 

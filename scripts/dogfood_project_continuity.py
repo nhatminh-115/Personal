@@ -1,4 +1,4 @@
-"""Exercise AURA project continuity through a real API process restart.
+"""Exercise Kuractus project continuity through a real API process restart.
 
 The scenario uses the deterministic mock model because A1 proves workspace,
 session, and context durability rather than live-provider quality. It starts an

@@ -1,10 +1,10 @@
-# AURA live dogfooding
+# Kuractus live dogfooding
 
-These scripts exercise AURA API/runtime workflows beyond ordinary unit tests. Some use an isolated in-process lifespan; the project-continuity scenario starts two separate API processes. That scenario uses a deterministic mock provider, while Research and Coding require live provider setup. A green CI workflow or mock-provider report is never evidence of live inference.
+These scripts exercise Kuractus API/runtime workflows beyond ordinary unit tests. Some use an isolated in-process lifespan; the project-continuity scenario starts two separate API processes. That scenario uses a deterministic mock provider, while Research and Coding require live provider setup. A green CI workflow or mock-provider report is never evidence of live inference.
 
 ## Prepare the environment
 
-Use Python 3.12 and the repository's installed dependencies. Live model scenarios can use an OpenAI-compatible AURA route configured with:
+Use Python 3.12 and the repository's installed dependencies. Live model scenarios can use an OpenAI-compatible Kuractus route configured with:
 
 - **MODEL_PROVIDER=openai**
 - **OPENAI_API_KEY** available in the process environment
@@ -23,7 +23,7 @@ keep the Ollama endpoint on loopback:
 The override is sent as an exact provider/model lock. Without a cloud key, the
 harness rejects non-Ollama overrides and non-loopback Ollama URLs. It requests
 `instant` reasoning for this local smoke run; when the model reports reasoning
-control as unknown, AURA keeps the decision unknown and does not claim a native
+control as unknown, Kuractus keeps the decision unknown and does not claim a native
 provider control.
 
 Research scenarios also require **RESEARCH_PROVIDER_MODE=live** and network access to the configured research sources. Keep credentials in environment variables or the local secret manager; do not commit them.
@@ -62,7 +62,7 @@ uses `MODEL_PROVIDER=mock` and makes no live-inference claim.
 | Project memory retrieval | **python scripts/dogfood_project_memory_live.py** | Hosted model credentials or an exact local Ollama override | Live run `140a579e-2e21-4709-8237-5621ebc54ec5` retrieved the target project's two-person-review/rollback rule, excluded the foreign-project decoy, printed its acceptance result, and exited 0 using the installed local Ollama model. |
 | Research Context Bridge merge | **python scripts/dogfood_context_bridge_live.py** | Hosted model credentials or an exact local Ollama override; `RESEARCH_PROVIDER_MODE=live` and network access | Live run `62c9e83c-4e54-48a5-bf3a-fb2c49712d76` delegated to the Research Specialist, persisted a verified claim from extracted evidence, created a durable Context Bridge, and compiled a fresh chat with that Bridge as its only selected object. It printed acceptance and exited 0 using local Ollama. |
 | Routing constraints preview | **python scripts/dogfood_routing_constraints_live.py** | Live model catalog with an available local model and a configured hosted catalog entry | Run `1e689c802120` selected `ollama:qwen2.5-coder:7b` and metadata-only `openai:gpt-4o-mini`; both adaptive draft previews preserved their exact local-only/cloud-allowed policy and made zero model calls. Local reasoning metadata stayed explicitly unknown. A catalog-only placeholder key marked the hosted entry configured; it was not sent to any provider. |
-| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Pending external setup: CodeGraph is not installed or configured in the current environment. Do not install or download it automatically. A complete run will also need a hosted model credential or exact local Ollama override capable of delegating and using tools. | Not run. The optional CodeGraph dogfood is pending external setup and does not block other AURA milestones. |
+| Coding impact / CodeGraph | **python scripts/dogfood_coding_impact_live.py** | Pending external setup: CodeGraph is not installed or configured in the current environment. Do not install or download it automatically. A complete run will also need a hosted model credential or exact local Ollama override capable of delegating and using tools. | Not run. The optional CodeGraph dogfood is pending external setup and does not block other Kuractus milestones. |
 
 The CodeGraph-specific coding impact scenario is pending external setup. The
 generic live Coding Specialist workflow passed under A7 and does not require
@@ -70,14 +70,14 @@ CodeGraph. Do not install or download CodeGraph automatically. The Coding
 Specialist, project-memory, and Context Bridge live dogfood scripts require **MODEL_PROVIDER=openai** and either
 **OPENAI_API_KEY** or **AURA_DOGFOOD_MODEL_OVERRIDE=ollama:model** with
 **OLLAMA_BASE_URL** on loopback. This scenario does not block other independent
-AURA milestones. CodeGraph remains optional, external, and absent from CI; AURA
+Kuractus milestones. CodeGraph remains optional, external, and absent from CI; Kuractus
 never installs it automatically.
 
 The routing constraints script calls GET /v1/models, which performs its normal provider-discovery snapshot and may make local model-list HTTP requests. It does not call the explicit refresh or capability-probe endpoints, install providers, or invoke a model. The zero-invocation preview itself does not need provider credentials; a catalog-only placeholder key is sufficient to expose the configured hosted entry, and the script never sends it to the provider. The catalog must list an available explicitly classified local and hosted model; otherwise the scenario reports that it did not run.
 
 ## Approvals and audit artifacts
 
-The research dogfood never submits a tool approval. If **/v1/chat** pauses for approval, it records the run and approval IDs in a pending JSON artifact and exits. Decide through AURA's normal approval UI, then start a new dogfood run if needed.
+The research dogfood never submits a tool approval. If **/v1/chat** pauses for approval, it records the run and approval IDs in a pending JSON artifact and exits. Decide through Kuractus's normal approval UI, then start a new dogfood run if needed.
 
 Reports include identifiers, route decisions, tool names, statuses, counts, and safe context manifests. They do not include prompts, source excerpts, memory text, or model responses. Treat the isolated database and checkpoint files as run evidence; a later run will not delete them.
 

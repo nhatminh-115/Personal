@@ -5,7 +5,7 @@ Accepted
 
 ## Context
 In Phase 1, memory concepts were separated into five distinct cognitive tiers (Working, Episodic, Semantic, Profile, Project), but vector embeddings for semantic and project memory were stored as unindexed JSON arrays without actual vector search capabilities.
-As AURA transitions into a persistent personal-agent platform in Phase 2:
+As Kuractus transitions into a persistent personal-agent platform in Phase 2:
 - Semantic and project memory require genuine nearest-neighbor vector similarity retrieval.
 - PostgreSQL production environments must leverage the native `pgvector` extension with vector indices (HNSW/IVFFlat) for performance and cosine similarity operations (`<=>`).
 - Lightweight local environments (SQLite) must be supported without requiring external Postgres daemons during unit tests.

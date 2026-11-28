@@ -101,7 +101,7 @@ def _wait_ready(api_base_url: str) -> None:
         except (OSError, urllib.error.URLError, json.JSONDecodeError):
             pass
         time.sleep(2)
-    raise RuntimeError("AURA Compose stack did not become ready")
+    raise RuntimeError("Kuractus Compose stack did not become ready")
 
 
 def _run_details(api_base_url: str, token: str, run_id: str) -> dict:
@@ -194,7 +194,7 @@ def run_acceptance(
     manifest = verify_backup(backup_path)
     required_payloads = {"postgres.dump", "checkpoint/aura_checkpoints.db", "workspace.tar.gz"}
     if manifest.get("format_version") != 2 or not required_payloads <= set(manifest.get("files", {})):
-        raise RuntimeError("The verified archive does not contain all three AURA data stores")
+        raise RuntimeError("The verified archive does not contain all three Kuractus data stores")
 
     recreated = False
     restored = False

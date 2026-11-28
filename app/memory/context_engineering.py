@@ -1,7 +1,7 @@
 """Deterministic context ranking, budgeting, transformation, and manifest models.
 
 The module deliberately has no model-provider dependency. It consumes source
-metadata already collected by AURA and never calls a model while compiling a
+metadata already collected by Kuractus and never calls a model while compiling a
 context package.
 """
 

@@ -1,4 +1,4 @@
-"""Shared startup helpers for scripts that import AURA from a source checkout."""
+"""Shared startup helpers for scripts that import Kuractus from a source checkout."""
 
 from pathlib import Path
 import sys

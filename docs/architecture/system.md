@@ -1,11 +1,11 @@
-# AURA System Architecture Specification (Phase 0/1 Baseline)
+# Kuractus System Architecture Specification (Phase 0/1 Baseline)
 
 > Historical baseline: this document captures the original Phase 0/1 design.
 > For the current runtime, persistence boundaries, routing, workspace graph,
 > and capability providers, see [Current Runtime Architecture](current-runtime.md).
 
 ## Document Overview
-- **Project Codename:** AURA (Adaptive User Runtime Agent)
+- **Project Name:** Kuractus Personal Intelligence Workspace
 - **Status:** Historical baseline; current implementation is documented in [current-runtime.md](current-runtime.md)
 - **Version:** 1.0.0 (Phase 0 & 1 Baseline)
 - **Author:** Lead Systems Architect & Implementation Engineer
@@ -14,7 +14,7 @@
 
 ## 1. System Overview & Boundaries
 
-AURA is a production-grade personal AI agent runtime designed for persistence, security, predictability, and extensibility. Unlike basic chatbots that merely stream completions over an unbounded chat history, AURA treats the agent as a long-running, stateful operating process with discrete memory subsystems, sandboxed execution boundaries, capability-based permission checks, and explicit human-in-the-loop approvals.
+Kuractus is a production-grade personal AI agent runtime designed for persistence, security, predictability, and extensibility. Unlike basic chatbots that merely stream completions over an unbounded chat history, Kuractus treats the agent as a long-running, stateful operating process with discrete memory subsystems, sandboxed execution boundaries, capability-based permission checks, and explicit human-in-the-loop approvals.
 
 ```mermaid
 flowchart TB
@@ -28,7 +28,7 @@ flowchart TB
         APIGateway["FastAPI Gateway (/v1)"]
     end
 
-    subgraph CoreRuntime["AURA Trusted Runtime"]
+    subgraph CoreRuntime["Kuractus Trusted Runtime"]
         Orchestrator["Personal Orchestrator (LangGraph)"]
         MemorySubsystem["Memory Service (Working, Episodic, Semantic, Profile, Project)"]
         ModelRouter["Model Router Abstraction"]
@@ -169,7 +169,7 @@ sequenceDiagram
 ## 4. Agent State & Lifecycle Model
 
 ### 4.1 `RunStatus` Lifecycle Enum
-Every run in AURA progresses through an explicit, auditable lifecycle:
+Every run in Kuractus progresses through an explicit, auditable lifecycle:
 - `created`: Initial state upon API ingestion.
 - `running`: Actively executing reasoning, context retrieval, or tool invocation.
 - `waiting_for_approval`: Suspended at an interruption checkpoint pending human authorization.
@@ -221,12 +221,12 @@ Multi-turn context preserves genuine role structures rather than squashing tool 
 ### 5.1 Trust Model
 - **Untrusted:** Raw user inputs, external network payloads, and unverified model outputs (which may hallucinate commands or attempt jailbreaks).
 - **Semi-Trusted:** The LLM reasoning outputs (treated as untrusted proposals until verified by the permission and sandbox layers).
-- **Trusted:** The core orchestrator, memory service, capability engine, and approval service running inside the AURA host environment.
+- **Trusted:** The core orchestrator, memory service, capability engine, and approval service running inside the Kuractus host environment.
 
 ### 5.2 Model-Provider Boundary
 - Orchestrator components interact exclusively with `ModelRouter`.
 - `ModelRouter` accepts typed `ModelRequest` with an explicit `RoutingContext` (`task_type`, `complexity`, `privacy_requirement`, `latency_preference`, `cost_preference`, `required_capabilities`) and returns typed `ModelResponse`.
-- Provider implementations (`OpenAIProvider`, `MockProvider`, etc.) adapt vendor APIs to AURA internal domain schemas.
+- Provider implementations (`OpenAIProvider`, `MockProvider`, etc.) adapt vendor APIs to Kuractus internal domain schemas.
 - Provider secrets are read strictly from application settings; they are never passed through conversation state or logged.
 
 ### 5.3 Memory Boundary
@@ -262,7 +262,7 @@ Memory is partitioned into five distinct cognitive tiers:
 
 ## 6. Future Event-Driven Architecture
 
-In future phases, AURA will support autonomous and proactive operations triggered by external events:
+In future phases, Kuractus will support autonomous and proactive operations triggered by external events:
 - **Event Ingestion:** Webhook receivers, file system watchers, and cron schedulers publish events to an internal event bus.
 - **Event Normalization:** Raw events are transformed into standard `AgentEvent` objects.
 - **Proactive Run Dispatch:** An Event Dispatcher identifies matching triggers, retrieves associated profile/project memory, and creates a background execution run with the Personal Orchestrator.

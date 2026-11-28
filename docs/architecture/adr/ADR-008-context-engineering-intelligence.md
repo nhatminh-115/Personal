@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-AURA v1 already had memory retrieval, workspace graph compilation, project and
+Kuractus v1 already had memory retrieval, workspace graph compilation, project and
 privacy filtering, capability checks, and safe context traces. It did not
 allocate retrieved context against the model selected by the existing router,
 rank mixed candidates consistently, or explain optional exclusions and
