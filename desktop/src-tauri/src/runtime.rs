@@ -1203,6 +1203,62 @@ pub async fn desktop_save_preferences(
 }
 
 #[tauri::command]
+pub async fn desktop_save_windows_preferences(
+    close_to_tray: bool,
+    autostart: bool,
+    notifications: bool,
+    global_shortcut: String,
+    runtime: State<'_, DesktopRuntime>,
+    app: AppHandle,
+) -> Result<RuntimeSnapshot, String> {
+    if !is_supported_global_shortcut(&global_shortcut) {
+        return Err("Choose one of the supported Kuractus shortcuts.".into());
+    }
+    let runtime = runtime.inner().clone();
+    let mut preferences = runtime.settings();
+    preferences.close_to_tray = close_to_tray;
+    preferences.autostart = autostart;
+    preferences.notifications = notifications;
+    preferences.global_shortcut = global_shortcut;
+    DesktopRuntime::save_preferences(&app, &preferences)?;
+    runtime.apply_preferences(preferences);
+    Ok(runtime.snapshot())
+}
+
+#[tauri::command]
+pub async fn desktop_set_provider_mode(
+    provider: String,
+    runtime: State<'_, DesktopRuntime>,
+    app: AppHandle,
+) -> Result<RuntimeSnapshot, String> {
+    if !matches!(provider.as_str(), "unconfigured" | "mock") {
+        return Err("Choose an available provider connection.".into());
+    }
+    let runtime = runtime.inner().clone();
+    let mut preferences = runtime.settings();
+    preferences.provider = provider.clone();
+    if provider == "mock" {
+        preferences.base_url.clear();
+        preferences.model = "mock-default".into();
+    } else {
+        preferences.base_url.clear();
+        preferences.model.clear();
+    }
+    DesktopRuntime::save_preferences(&app, &preferences)?;
+    runtime.apply_preferences(preferences);
+    if matches!(
+        runtime.snapshot().phase,
+        RuntimePhase::Ready | RuntimePhase::Degraded
+    ) {
+        tauri::async_runtime::spawn_blocking(move || runtime.restart(&app))
+            .await
+            .map_err(|error| error.to_string())?
+    } else {
+        Ok(runtime.snapshot())
+    }
+}
+
+#[tauri::command]
 pub async fn desktop_save_provider_connection(
     connection_id: String,
     name: String,

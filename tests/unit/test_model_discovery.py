@@ -174,6 +174,31 @@ def test_openai_catalog_is_unavailable_without_a_real_configured_value(monkeypat
     assert entry.models == []
 
 
+@pytest.mark.asyncio
+async def test_configured_cloud_provider_models_are_discovered_from_the_authenticated_catalog(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "test-secret")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://api.example.test/v1")
+    response = FakeStreamingResponse(200, {"data": [{"id": "model-alpha"}, {"id": "model-beta"}, {"name": "missing-id"}]})
+
+    with patch("httpx.AsyncClient.stream", return_value=response) as stream:
+        entry = await ModelDiscoveryService().discover_cloud_openai()
+
+    assert entry.available is True
+    assert [model.id for model in entry.models] == ["model-alpha", "model-beta"]
+    assert stream.call_args.kwargs["headers"] == {"Authorization": "Bearer test-secret"}
+
+
+@pytest.mark.asyncio
+async def test_configured_cloud_provider_is_unavailable_when_endpoint_rejects_credentials(monkeypatch):
+    monkeypatch.setattr(settings, "OPENAI_API_KEY", "invalid-secret")
+    monkeypatch.setattr(settings, "OPENAI_BASE_URL", "https://api.example.test/v1")
+    with patch("httpx.AsyncClient.stream", return_value=FakeStreamingResponse(401, {"error": "unauthorized"})):
+        entry = await ModelDiscoveryService().discover_cloud_openai()
+
+    assert entry.available is False
+    assert entry.models == []
+
+
 def test_openai_compatible_provider_names_do_not_collide():
     """Multiple OpenAICompatibleProvider instances with distinct names co-exist without collision."""
     prov_openai = OpenAICompatibleProvider(provider_name="openai")

@@ -340,7 +340,7 @@ describe('Session Hydration', () => {
     expect(await screen.findByTestId('inspector-execution')).toBeInTheDocument();
     expect(screen.getByText('Backend-hydrated response')).toBeInTheDocument();
     expect(screen.getByText(/Run ID: source-run-1/)).toBeInTheDocument();
-    expect(screen.getByText('model_selected')).toBeInTheDocument();
+    expect(screen.getByText('Model selected')).toBeInTheDocument();
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/runs/source-run-1?page_size=100'));
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/runs/source-run-1/routing'));
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/v1/sessions/source-session-1'));
@@ -441,8 +441,8 @@ describe('Session Hydration', () => {
     await act(async () => { fireEvent.click(chatsBtn); });
     await act(async () => { fireEvent.click(screen.getByText('Confirmation thread')); });
 
-    expect(await screen.findByRole('heading', { name: 'Cloud routing requires confirmation' })).toBeInTheDocument();
-    expect(screen.getByText('cloud-provider:private-model')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Use this cloud model?' })).toBeInTheDocument();
+    expect(screen.getByText((_, element) => element?.textContent === 'Selected model: private-model · cloud-provider')).toBeInTheDocument();
     expect((global.fetch as ReturnType<typeof vi.fn>).mock.calls.some(([url]) => String(url).includes('session_id=confirm-session'))).toBe(true);
   });
 

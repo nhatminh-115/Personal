@@ -97,7 +97,7 @@ export function AIContextPanel({ items, contextIsLive, hasMore = false, loading 
       <div className="ai-context-panel__foot">
         {loadError && onRetry ? <button type="button" onClick={onRetry}>Retry</button> : null}
         {hasMore && onLoadOlder ? <button type="button" onClick={() => void onLoadOlder()} disabled={loadingOlder}>{loadingOlder ? 'Loading older objects…' : 'Load older objects'}</button> : null}
-        <small>{contextIsLive ? 'File text stays in this browser until you choose Send text. Included text is copied into the durable Kuractus run; cloud routing pauses for confirmation. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
+        <small>{contextIsLive ? 'File text stays in this browser until you choose Send text. Before file text is sent to a cloud model, Kuractus asks you to approve. Hidden chain-of-thought is never exposed.' : 'Illustrative demo context is not sent to the backend.'}</small>
       </div>
     </div>
   );

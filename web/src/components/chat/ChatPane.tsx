@@ -13,9 +13,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AIContextItem,
   ApprovalDetail,
-  AuraWorkMode,
   ChatMessage,
   ExecutionStep,
+  ModelCatalog,
+  ReasoningSelection,
 } from '../../types';
 import { ApprovalCard } from '../approvals/ApprovalCard';
 import { AIContextPanel } from './AIContextPanel';
@@ -23,6 +24,7 @@ import { AIRunStrip } from './AIRunStrip';
 import { ExecutionSidecar } from './ExecutionSidecar';
 import { ResponseProvenance } from './ResponseProvenance';
 import { CustomSelect } from '../ui/CustomSelect';
+import { friendlyModelName } from '../../lib/modelName';
 
 export interface ChatPaneProps {
   compact?: boolean;
@@ -49,10 +51,16 @@ export interface ChatPaneProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => Promise<void>;
   onCancelRun?: () => Promise<boolean>;
   /** Called when user clicks "Start live chat" from a demo thread. */
-  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => Promise<void>;
+  modelCatalog?: ModelCatalog;
+  selectedModel?: string | null;
+  selectedReasoning?: ReasoningSelection | null;
+  onSelectModel?: (model: string | null) => void;
+  onSelectReasoning?: (reasoning: ReasoningSelection) => void;
+  onConnectProvider?: () => void;
   onContextObjectIdsChange?: (objectIds: string[]) => void;
   onContextFileContentIdsChange?: (objectIds: string[]) => void;
   onContextPanelOpenChange?: (open: boolean) => void;
@@ -72,50 +80,19 @@ interface OpenExecution {
   steps: ExecutionStep[];
 }
 
-type RunPhase = 'routing' | 'context' | 'synthesizing';
+type RunPhase = 'preparing' | 'context' | 'synthesizing';
 
-const workModes: { id: AuraWorkMode; label: string; description: string }[] = [
-  { id: 'auto', label: 'Auto', description: 'Use the active routing profile' },
-  { id: 'research', label: 'Research', description: 'Prioritize research and evidence' },
-  { id: 'code', label: 'Code', description: 'Prioritize coding tasks' },
-  { id: 'write', label: 'Write', description: 'Prioritize writing tasks' },
-];
-
-function routeForMode(mode: AuraWorkMode) {
-  if (mode === 'research') return { specialist: 'Research Specialist', reasoning: 'High', label: 'Research · High' };
-  if (mode === 'code') return { specialist: 'Coding Specialist', reasoning: 'High', label: 'Coding · High' };
-  if (mode === 'write') return { specialist: 'Writing task route', reasoning: 'Medium', label: 'Writing · Medium' };
-  return { specialist: 'Adaptive Router', reasoning: 'Adaptive', label: 'Auto · Adaptive' };
-}
-
-function taskTypeForMode(mode: AuraWorkMode): 'research' | 'coding' | 'writing' | undefined {
-  if (mode === 'research') return 'research';
-  if (mode === 'code') return 'coding';
-  if (mode === 'write') return 'writing';
-  return undefined;
-}
-
-function mockExecution(mode: AuraWorkMode): ExecutionStep[] {
-  const route = routeForMode(mode);
+function mockExecution(): ExecutionStep[] {
   return [
-    { id: 'route', label: 'Route request', detail: `${route.specialist} · ${route.reasoning}`, status: 'done' },
+    { id: 'model', label: 'Apply conversation choices', detail: 'Selected model and reasoning', status: 'done' },
     { id: 'context', label: 'Assemble context manifest', detail: 'Thread + linked project objects', status: 'done' },
-    { id: 'retrieve', label: mode === 'code' ? 'Inspect code evidence' : 'Retrieve supporting evidence', detail: mode === 'research' ? 'Retained workspace sources' : 'Workspace-local evidence', status: 'done' },
+    { id: 'retrieve', label: 'Retrieve supporting evidence', detail: 'Workspace-local evidence', status: 'done' },
     { id: 'synthesize', label: 'Synthesize response', detail: 'Operational trace only', status: 'done' },
   ];
 }
 
-function mockAnswer(mode: AuraWorkMode, prompt: string, includedCount: number) {
-  if (mode === 'code') {
-    return `Tôi sẽ ưu tiên kiểm chứng bằng artifact thay vì chỉ mô tả. Với ${includedCount} object context hiện tại, tôi sẽ tách implementation evidence khỏi assumption rồi ghi result thành object có thể link lại vào project. Prompt hiện tại là “${prompt}”.`;
-  }
-  if (mode === 'write') {
-    return `Tôi sẽ viết từ đúng context của thread này và giữ claim ở mức có thể truy ngược về note/file/source. ${includedCount} object đang được retain; phần nào không nằm trong manifest sẽ không được giả định là đã có trong context.`;
-  }
-  if (mode === 'research') {
-    return `Tôi sẽ coi đây là câu hỏi literature-boundary. ${includedCount} object đang được dùng làm evidence manifest; kết quả nên được lưu thành note/source object của project để các chat khác có thể reuse thay vì phụ thuộc vào lịch sử của riêng thread này.`;
-  }
-  return `Kuractus route prompt này theo context của chat hiện tại nhưng vẫn giữ project artifacts ở dạng explicit manifest. ${includedCount} object đang được retain, nên câu trả lời có thể branch, link hoặc reuse ở chat khác mà không cần biến một conversation thành lịch sử vô hạn.`;
+function mockAnswer(prompt: string, includedCount: number) {
+  return `Đây là phản hồi minh họa trong demo thread. ${includedCount} object context đang được giữ lại. Prompt hiện tại là “${prompt}”.`;
 }
 
 export function ChatPane({
@@ -153,11 +130,16 @@ export function ChatPane({
   runCancellationRequested = false,
   onApprovalDecision,
   isLiveThread = true,
+  modelCatalog = { providers: [] },
+  selectedModel = null,
+  selectedReasoning = 'auto',
+  onSelectModel,
+  onSelectReasoning,
+  onConnectProvider,
 }: ChatPaneProps) {
   const [openExecution, setOpenExecution] = useState<OpenExecution | null>(null);
   const [draft, setDraft] = useState('');
   const [composerExpanded, setComposerExpanded] = useState(false);
-  const [workMode, setWorkMode] = useState<AuraWorkMode>('auto');
   const [contextItems, setContextItems] = useState<AIContextItem[]>(() => (suppliedContext ?? []).map((item) => ({ ...item })));
   const [contextOpen, setContextOpen] = useState(false);
   const [runPhase, setRunPhase] = useState<RunPhase | null>(null);
@@ -188,7 +170,41 @@ export function ChatPane({
     ? initialSelectedContextIds.length
     : includedContext.length;
   const contextEstimateAvailable = selectedContextCount === includedContext.length;
-  const activeRoute = routeForMode(workMode);
+  const modelProviders = Array.isArray(modelCatalog?.providers) ? modelCatalog.providers : [];
+  const availableModels = modelProviders.filter((provider) => provider.available && Array.isArray(provider.models)).flatMap((provider) => provider.models.map((model) => ({
+    value: `${provider.id}:${model.id}`,
+    label: `${friendlyModelName(model.label || model.id)} · ${provider.label}`,
+    description: `${provider.kind === 'local' ? 'On this device' : 'Cloud model'}${model.context_window ? ` · ${Math.round(model.context_window / 1000)}k context` : ''}`,
+    disabled: false,
+  })));
+  const [selectedProviderId, selectedModelId] = selectedModel?.split(':') ?? [];
+  const selectedModelInfo = selectedProviderId && selectedModelId
+    ? modelProviders.find((provider) => provider.id === selectedProviderId)?.models?.find((model) => model.id === selectedModelId)
+    : undefined;
+  const modelOptions = [
+    { value: '', label: 'Automatic', description: 'Choose automatically for this conversation' },
+    ...availableModels,
+    ...(selectedModel && !availableModels.some((option) => option.value === selectedModel)
+      ? [{ value: selectedModel, label: `${friendlyModelName(selectedModelId ?? 'Saved model')} · unavailable`, description: 'This saved model is not currently available', disabled: true }]
+      : []),
+  ];
+  const reasoningUnavailable = selectedModelInfo?.reasoning_support === 'fixed_by_model'
+    || selectedModelInfo?.reasoning_support === 'unsupported'
+    || !selectedModelInfo
+    || selectedModelInfo.reasoning_support === 'unknown';
+  const reasoningCeiling = selectedModelInfo?.reasoning_support;
+  const reasoningEfforts = ['low', 'medium', 'high', 'max'] as const;
+  const supportedReasoning = reasoningCeiling && reasoningEfforts.includes(reasoningCeiling as typeof reasoningEfforts[number])
+    ? reasoningEfforts.slice(0, reasoningEfforts.indexOf(reasoningCeiling as typeof reasoningEfforts[number]) + 1)
+    : [];
+  const reasoningOptions = [
+    { value: 'auto', label: 'Auto', description: selectedModel ? 'Use the selected model’s default reasoning' : 'Use the default reasoning setting' },
+    ...supportedReasoning.map((value) => ({
+      value,
+      label: value[0].toUpperCase() + value.slice(1),
+      description: value === 'max' ? 'Use maximum reasoning effort' : `Use ${value} reasoning effort`,
+    })),
+  ];
 
   const clearRunTimers = useCallback(() => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -232,13 +248,15 @@ export function ChatPane({
       setComposerExpanded(false);
       setContextOpen(false);
       onContextPanelOpenChange?.(false);
-      setRunPhase('routing');
+      setRunPhase('preparing');
       try {
         await onSendMessage(
           prompt,
           includedContext.map((item) => item.nodeId).filter((id): id is string => Boolean(id)),
-          taskTypeForMode(workMode),
+          undefined,
           includedContext.filter((item) => item.fileContentIncluded).map((item) => item.nodeId).filter((id): id is string => Boolean(id)),
+          selectedModel,
+          selectedReasoning,
         );
       } finally {
         setRunPhase(null);
@@ -265,13 +283,12 @@ export function ChatPane({
     setComposerExpanded(false);
     setContextOpen(false);
     onContextPanelOpenChange?.(false);
-    setRunPhase('routing');
+    setRunPhase('preparing');
 
     timersRef.current = [
       window.setTimeout(() => setRunPhase('context'), 420),
       window.setTimeout(() => setRunPhase('synthesizing'), 900),
       window.setTimeout(() => {
-        const route = routeForMode(workMode);
         const provenance = includedContext.slice(0, 4).map((item) => ({
           id: `prov-${item.id}-${nonce}`,
           label: item.title,
@@ -284,14 +301,12 @@ export function ChatPane({
           role: 'assistant',
           branch: 'Root',
           nodeId: `runtime-aura-node-${nonce}`,
-          content: mockAnswer(workMode, prompt, includedContext.length),
-          executionLabel: `${route.specialist} · 4 steps`,
-          execution: mockExecution(workMode),
+          content: mockAnswer(prompt, includedContext.length),
+          executionLabel: 'Demo response · 4 steps',
+          execution: mockExecution(),
           timestamp: 'now',
-          specialist: route.specialist,
+          specialist: 'Demo assistant',
           status: `${includedContext.length} context objects retained`,
-          routeLabel: route.label,
-          reasoningLabel: route.reasoning,
           contextTokens,
           provenance,
         };
@@ -300,7 +315,7 @@ export function ChatPane({
         timersRef.current = [];
       }, 1550),
     ];
-  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runInProgress, runPhase, workMode]);
+  }, [contextTokens, draft, includedContext, isLiveThread, onContextPanelOpenChange, onMessagesChange, onSendMessage, runInProgress, runPhase, selectedModel, selectedReasoning]);
 
 
   return (
@@ -335,7 +350,7 @@ export function ChatPane({
               <button
                 className="demo-start-live-button"
                 type="button"
-                onClick={() => { void onStartLiveChat(draft.trim(), [], taskTypeForMode(workMode)); }}
+                onClick={() => { void onStartLiveChat(draft.trim(), [], undefined, undefined, selectedModel, selectedReasoning); }}
               >
                 Start live chat
               </button>
@@ -431,7 +446,7 @@ export function ChatPane({
       </div>
 
       <div className="chat-composer-wrap">
-        {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'routing'} specialist={isLiveThread ? 'Routing from profile' : activeRoute.specialist} onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} stopRequested={runCancellationRequested} /> : null}
+        {runPhase || runInProgress ? <AIRunStrip phase={runPhase ?? 'preparing'} specialist="Preparing response" onStop={isLiveThread ? onCancelRun ? stopRun : undefined : stopRun} stopping={stoppingRun} stopRequested={runCancellationRequested} /> : null}
         <div
           className={`chat-composer chat-composer--ai ${composerExpanded ? 'is-expanded' : 'is-collapsed'}`}
           onMouseDownCapture={() => setComposerExpanded(true)}
@@ -514,21 +529,26 @@ export function ChatPane({
               </button>
             </div>
             <div className="composer-actions">
-              <div className="composer-mode-controls">
+              {!availableModels.length && onConnectProvider ? <button className="composer-connect-provider" type="button" onClick={onConnectProvider}>Connect provider</button> : null}
+              <div className="composer-ai-controls">
                 <CustomSelect
-                  className="composer-mode-select"
-                  value={workMode}
-                  options={workModes.map(({ id, label, description }) => ({ value: id, label, description }))}
-                  onChange={(value) => setWorkMode(value as AuraWorkMode)}
-                  ariaLabel="Assistant work mode"
-                  label="Mode"
-                  title={isLiveThread
-                    ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
-                    : `${activeRoute.specialist} · ${activeRoute.reasoning}`}
+                  className="composer-model-select"
+                  value={selectedModel ?? ''}
+                  options={modelOptions}
+                  onChange={(value) => onSelectModel?.(value || null)}
+                  ariaLabel="Conversation model"
+                  label="Model"
+                  title="Choose a model for this conversation"
                 />
-                <span className="ai-route-preview"><Sparkles size={11} /> {isLiveThread
-                  ? workMode === 'auto' ? 'Profile routing · automatic' : `Task route · ${workModes.find((mode) => mode.id === workMode)?.label}`
-                  : `${activeRoute.specialist} · ${activeRoute.reasoning}`}</span>
+                <CustomSelect
+                  className="composer-reasoning-select"
+                  value={selectedReasoning ?? ''}
+                  options={reasoningOptions}
+                  onChange={(value) => onSelectReasoning?.(value as ReasoningSelection)}
+                  ariaLabel="Conversation reasoning"
+                  label="Reasoning"
+                  title={reasoningUnavailable ? 'Choose a model with reasoning controls to set an effort.' : 'Choose reasoning effort for this conversation'}
+                />
               </div>
               <button className="send-button" type="button" onClick={submit} aria-label="Send" disabled={!draft.trim() || Boolean(runPhase || runInProgress)}>
                 <ArrowUp size={17} />

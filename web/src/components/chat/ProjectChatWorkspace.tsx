@@ -1,7 +1,7 @@
 import { MessageSquarePlus, Pin, Search, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { projectArtifacts, type ChatThreadRecord, type LibraryItem, type ProjectRecord, type WorkspaceNote } from '../../data/workspaceData';
-import type { AIContextItem, ApprovalDetail, ChatMessage, WorkspaceObject } from '../../types';
+import type { AIContextItem, ApprovalDetail, ChatMessage, ModelCatalog, ReasoningSelection, WorkspaceObject } from '../../types';
 import { api } from '../../services/api';
 import { getLocalFile } from '../../lib/localFiles';
 import { MAX_LOCAL_DOCX_BYTES } from '../../lib/docxText';
@@ -91,9 +91,15 @@ export interface ProjectChatWorkspaceProps {
   onBranchFromMessage?: (message: ChatMessage) => void;
   onContextObjectFocus?: (nodeId: string) => void;
   onAttachRequest?: () => void;
-  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onSendMessage?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => Promise<void>;
   onCancelRun?: () => Promise<boolean>;
-  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[]) => Promise<void>;
+  onStartLiveChat?: (text: string, contextObjectIds?: string[], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds?: string[], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => Promise<void>;
+  modelCatalog?: ModelCatalog;
+  selectedModel?: string | null;
+  selectedReasoning?: ReasoningSelection | null;
+  onSelectModel?: (model: string | null) => void;
+  onSelectReasoning?: (reasoning: ReasoningSelection) => void;
+  onConnectProvider?: () => void;
   onContextObjectIdsChange?: (threadId: string, objectIds: string[]) => void;
   onContextFileContentIdsChange?: (threadId: string, objectIds: string[]) => void;
   onLoadOlderMessages?: (threadId: string) => Promise<void>;
@@ -143,6 +149,12 @@ export function ProjectChatWorkspace({
   runInProgress = false,
   runCancellationRequested = false,
   onApprovalDecision,
+  modelCatalog,
+  selectedModel,
+  selectedReasoning,
+  onSelectModel,
+  onSelectReasoning,
+  onConnectProvider,
 }: ProjectChatWorkspaceProps) {
   const [query, setQuery] = useState('');
   const [liveWorkspaceContext, setLiveWorkspaceContext] = useState<AIContextItem[]>([]);
@@ -366,6 +378,12 @@ export function ProjectChatWorkspace({
             onSendMessage={onSendMessage}
             onCancelRun={onCancelRun}
             onStartLiveChat={onStartLiveChat}
+            modelCatalog={modelCatalog}
+            selectedModel={selectedModel}
+            selectedReasoning={selectedReasoning}
+            onSelectModel={onSelectModel}
+            onSelectReasoning={onSelectReasoning}
+            onConnectProvider={onConnectProvider}
             onContextObjectIdsChange={onContextObjectIdsChange ? (ids) => onContextObjectIdsChange(activeThread.id, ids) : undefined}
             onContextFileContentIdsChange={onContextFileContentIdsChange ? (ids) => onContextFileContentIdsChange(activeThread.id, ids) : undefined}
             onContextPanelOpenChange={setContextPanelOpen}

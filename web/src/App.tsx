@@ -80,8 +80,7 @@ import type {
   WorkspaceSearchResult,
   AutomationRecordResponse,
   WorkspaceMode,
-  EffectiveRouting,
-  ReasoningEffort,
+  ReasoningSelection,
   RunRoutingDecision,
   SessionMessage,
 } from './types';
@@ -103,7 +102,6 @@ const ProjectFilesView = lazy(() => import('./components/home/ProjectFilesView')
 const ProjectHome = lazy(() => import('./components/home/ProjectHome').then((module) => ({ default: module.ProjectHome })));
 const ProjectNavigation = lazy(() => import('./components/home/ProjectNavigation').then((module) => ({ default: module.ProjectNavigation })));
 const InspectorPanel = lazy(() => import('./components/layout/InspectorPanel').then((module) => ({ default: module.InspectorPanel })));
-const RoutingStudio = lazy(() => import('./components/routing/RoutingStudio').then((module) => ({ default: module.RoutingStudio })));
 
 type WorkspaceSurface =
   | 'global-home'
@@ -126,6 +124,7 @@ const STORAGE = {
   notes: 'aura-v7-notes',
   automations: 'aura-v7-automations',
   chats: 'aura-v7-chats',
+  conversationModelSettings: 'kuractus-v16-conversation-model-settings',
 };
 
 async function buildContextAttachments(contextFileContentIds: string[], libraryItems: LibraryItem[]): Promise<ChatContextAttachment[]> {
@@ -358,6 +357,7 @@ export default function App() {
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [projectCreateRequest, setProjectCreateRequest] = useState(0);
   const [desktopSettingsRequest, setDesktopSettingsRequest] = useState(0);
+  const [providerSettingsRequest, setProviderSettingsRequest] = useState(0);
   const [pendingConversationAction, setPendingConversationAction] = useState<
     | { kind: 'start'; projectId: string; prompt: string; taskType?: 'research' | 'coding' | 'writing'; contextFileContentIds?: string[] }
     | { kind: 'open'; projectId: string; threadId: string }
@@ -365,9 +365,6 @@ export default function App() {
     | null
   >(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [routingOpen, setRoutingOpen] = useState(params.get('routing') === '1');
-  const [routingStudioOpen, setRoutingStudioOpen] = useState(false);
-  const [routingStudioLoaded, setRoutingStudioLoaded] = useState(false);
   const [apiAccessOpen, setApiAccessOpen] = useState(false);
   const [auraOpen, setAuraOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(params.get('inspector') === '1');
@@ -602,7 +599,6 @@ export default function App() {
 
   // Live Backend State
   const [catalog, setCatalog] = useState<ModelCatalog>({ providers: [] });
-  const [effectiveRouting, setEffectiveRouting] = useState<EffectiveRouting | null>(null);
   const [sessionNextCursor, setSessionNextCursor] = useState<string | null>(null);
   const [sessionPageLoading, setSessionPageLoading] = useState(false);
   const [sessionPageError, setSessionPageError] = useState<string | null>(null);
@@ -617,7 +613,10 @@ export default function App() {
   const [memoryPageError, setMemoryPageError] = useState<string | null>(null);
   const memoryPageRequestId = useRef(0);
   const profileMemoryRequestId = useRef(0);
-  const [threadRoutingOverrides, setThreadRoutingOverrides] = useState<Record<string, { model: string | null; reasoning: ReasoningEffort | null }>>({});
+  const [conversationModelSettings, setConversationModelSettings] = useState<Record<string, { model: string | null; reasoning: ReasoningSelection | null }>>(() => loadStored(STORAGE.conversationModelSettings, {}));
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE.conversationModelSettings, JSON.stringify(conversationModelSettings));
+  }, [conversationModelSettings]);
 
   const loadMemoryPage = useCallback(async (projectName: string, cursor?: string | null, append = false) => {
     const requestId = ++memoryPageRequestId.current;
@@ -697,11 +696,6 @@ export default function App() {
     await loadProjectSessionPage(activeProject, sessionNextCursor, Boolean(sessionNextCursor));
   }, [activeProject, loadProjectSessionPage, sessionNextCursor, sessionPageLoading]);
 
-  const openRoutingStudio = () => {
-    setRoutingOpen(false);
-    setRoutingStudioLoaded(true);
-    setRoutingStudioOpen(true);
-  };
   const [threadLiveStates, setThreadLiveStates] = useState<Record<string, ThreadLiveState>>({});
   /**
    * approvalOrigins — typed binding: approval.id → originatingThreadId.
@@ -742,27 +736,33 @@ export default function App() {
     ].filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index));
     return replacement;
   }, [activeProject?.name]);
-  const activeThreadOverrides = activeThreadId ? threadRoutingOverrides[activeThreadId] : undefined;
-  const sessionAvailable = Boolean(activeThread?.source === 'live' && (activeThread.messages.some((message) => message.role === 'assistant') || activeThreadLive.runId));
+  const activeConversationModelSettings = activeThreadId ? conversationModelSettings[activeThreadId] : undefined;
 
-  const setActiveModelLock = useCallback((model: string | null) => {
+  const setActiveConversationModel = useCallback((model: string | null) => {
     if (!activeThreadId) return;
     const [providerId, modelId] = model?.split(':') ?? [];
     const reasoningSupport = catalog.providers
       .find((provider) => provider.id === providerId)
       ?.models.find((item) => item.id === modelId)?.reasoning_support;
-    const clearsReasoning = reasoningSupport === 'fixed_by_model' || reasoningSupport === 'unsupported';
-    setThreadRoutingOverrides((current) => ({
+    const clearsReasoning = !reasoningSupport || reasoningSupport === 'fixed_by_model' || reasoningSupport === 'unsupported' || reasoningSupport === 'unknown';
+    const supportedEfforts = ['low', 'medium', 'high', 'max'];
+    setConversationModelSettings((current) => ({
       ...current,
       [activeThreadId]: {
         model,
-        reasoning: clearsReasoning ? null : current[activeThreadId]?.reasoning ?? null,
+        reasoning: (() => {
+          const previous = current[activeThreadId]?.reasoning ?? 'auto';
+          if (clearsReasoning || previous === 'auto') return 'auto';
+          const selectedIndex = supportedEfforts.indexOf(previous);
+          const ceilingIndex = reasoningSupport ? supportedEfforts.indexOf(reasoningSupport) : -1;
+          return selectedIndex < 0 || ceilingIndex < 0 || selectedIndex > ceilingIndex ? 'auto' : previous;
+        })(),
       },
     }));
   }, [activeThreadId, catalog.providers]);
-  const setActiveReasoningOverride = useCallback((reasoning: ReasoningEffort | null) => {
+  const setActiveConversationReasoning = useCallback((reasoning: ReasoningSelection) => {
     if (!activeThreadId) return;
-    setThreadRoutingOverrides((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning } }));
+    setConversationModelSettings((current) => ({ ...current, [activeThreadId]: { model: current[activeThreadId]?.model ?? null, reasoning: reasoning ?? 'auto' } }));
   }, [activeThreadId]);
 
   const patchThreadLive = useCallback((threadId: string, patch: Partial<ThreadLiveState>) => {
@@ -807,7 +807,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.fetchModels().then(setCatalog).catch(() => ({ providers: [] }));
+    api.fetchModels().then((value) => setCatalog(value && Array.isArray(value.providers) ? value : { providers: [] })).catch(() => setCatalog({ providers: [] }));
   }, []);
 
   useEffect(() => {
@@ -842,16 +842,6 @@ export default function App() {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [activeThread?.id, activeThread?.sessionId, activeThread?.source]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!activeProject?.name) { setEffectiveRouting(null); return; }
-    const sessionId = sessionAvailable ? activeThread?.sessionId : undefined;
-    void api.fetchEffectiveRouting(activeProject.name, sessionId).then((value) => {
-      if (!cancelled) setEffectiveRouting(value);
-    }).catch(() => { if (!cancelled) setEffectiveRouting(null); });
-    return () => { cancelled = true; };
-  }, [activeProject?.name, activeThread?.id, activeThread?.sessionId, sessionAvailable]);
 
   useEffect(() => {
     if (!activeProject?.name) {
@@ -980,7 +970,6 @@ export default function App() {
         return;
       }
       if (event.key !== 'Escape') return;
-      setRoutingOpen(false);
       setAuraOpen(false);
     };
     window.addEventListener('keydown', onKeyDown);
@@ -991,7 +980,6 @@ export default function App() {
     const project = projectCatalog.find((item) => item.id === projectId);
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({ id: `project-${projectId}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId });
   }, [openOrActivateTab, projectCatalog]);
 
@@ -1005,7 +993,6 @@ export default function App() {
     const project = projectCatalog.find((item) => item.name === projectName && item.source === 'user');
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({
       id: `project-${project.id}`,
       title: project.name,
@@ -1026,7 +1013,6 @@ export default function App() {
     const project = projectFromRecord(record, userProjects.length);
     setUserProjects((current) => [...current.filter((item) => item.id !== project.id), project]);
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Project Overview', kind: 'project', surface: 'project-overview', projectId: project.id });
   }, [openOrActivateTab, projectCatalog, userProjects.length]);
 
@@ -1123,7 +1109,6 @@ export default function App() {
       : firstThread?.projectId ?? (activeProjectCatalog.some((project) => project.id === activeProjectId) ? activeProjectId : activeProjectCatalog[0]?.id ?? null);
     const selectedThread = selectedProjectId ? chatThreads.find((thread) => thread.projectId === selectedProjectId) : null;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     if (selectedProjectId && selectedThread) {
       setActiveThreadByProject((current) => ({ ...current, [selectedProjectId]: selectedThread.id }));
     }
@@ -1132,7 +1117,6 @@ export default function App() {
 
   const handleSidebarNavigate = useCallback((destination: SidebarDestination) => {
     setInspectorOpen(false);
-    setRoutingOpen(false);
     if (destination === 'notes') setNotesProjectScopeId(null);
     if (destination === 'conversation') {
       openAllConversations();
@@ -1155,7 +1139,6 @@ export default function App() {
     const project = activeProjectCatalog.find((item) => item.id === projectId);
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     openOrActivateTab({ id: `conversation-${project.id}`, title: 'Conversation', subtitle: project.name, kind: 'project', surface: 'conversation', projectId: project.id, mode: 'chat' });
   }, [activeProjectCatalog, openOrActivateTab]);
 
@@ -1698,7 +1681,7 @@ export default function App() {
   }, []);
 
   const handleSendMessage = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = [], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => {
       if (!activeProjectId || !activeThreadId) return;
 
       const currentThread = chatThreads.find((t) => t.id === activeThreadId);
@@ -1757,8 +1740,8 @@ export default function App() {
           sessionId,
           text,
           activeProject?.name || undefined,
-          activeThreadOverrides?.model,
-          activeThreadOverrides?.reasoning,
+          modelOverride === undefined ? activeConversationModelSettings?.model : modelOverride,
+          reasoningOverride === undefined ? activeConversationModelSettings?.reasoning : reasoningOverride,
           selectedObjectIds,
           taskType,
           contextAttachments,
@@ -1847,7 +1830,7 @@ export default function App() {
       activeThreadId,
       chatThreads,
       activeProject?.name,
-      activeThreadOverrides,
+      activeConversationModelSettings,
       libraryItems,
       loadProjectSessionPage,
       updateThreadMessages,
@@ -1884,7 +1867,7 @@ export default function App() {
    * always created so the demo transcript is preserved exactly as-is.
    */
   const handleStartLiveChat = useCallback(
-    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = []) => {
+    async (text: string, contextObjectIds: string[] = [], taskType?: 'research' | 'coding' | 'writing', contextFileContentIds: string[] = [], modelOverride?: string | null, reasoningOverride?: ReasoningSelection | null) => {
       if (!activeProjectId || !activeProject) return;
       const promptText = text.trim();
       const uniqueContextFileIds = [...new Set(contextFileContentIds)];
@@ -1897,6 +1880,8 @@ export default function App() {
       }
       const selectedObjectIds = [...new Set([...contextObjectIds, ...uniqueContextFileIds])];
       const id = `${activeProjectId}-live-${Date.now()}`;
+      const initialModel = modelOverride === undefined ? null : modelOverride;
+      const initialReasoning = reasoningOverride === undefined ? null : reasoningOverride;
       const sessionId = `sess-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
       const count = chatThreads.filter((t) => t.projectId === activeProjectId).length + 1;
       // Title: use draft text if provided, otherwise a generic label
@@ -1917,6 +1902,12 @@ export default function App() {
       };
       setChatThreads((current) => [thread, ...current]);
       setActiveThreadByProject((current) => ({ ...current, [activeProjectId]: id }));
+      if (modelOverride !== undefined || reasoningOverride !== undefined) {
+        setConversationModelSettings((current) => ({
+          ...current,
+          [id]: { model: initialModel, reasoning: initialReasoning },
+        }));
+      }
       const allProjectsHub = surface === 'conversation' && activeTabId === 'conversations';
       openOrActivateTab({
         id: surface === 'conversation' ? allProjectsHub ? 'conversations' : `conversation-${activeProjectId}` : `project-${activeProjectId}`,
@@ -1943,9 +1934,7 @@ export default function App() {
         try {
           const clientTurnId = createClientTurnId();
           patchThreadLive(originatingThreadId, { runStatus: 'running', clientTurnId });
-          // A new live thread starts with profile routing; thread-local temporary
-          // overrides from the previous conversation are deliberately not copied.
-          const resp = await api.sendChat(sessionId, promptText, activeProject.name, null, null, selectedObjectIds, taskType, contextAttachments, clientTurnId);
+          const resp = await api.sendChat(sessionId, promptText, activeProject.name, initialModel, initialReasoning, selectedObjectIds, taskType, contextAttachments, clientTurnId);
           notifyWorkspaceGraphChanged(activeProject.name);
           patchThreadLive(originatingThreadId, { runId: resp.run_id, runStatus: resp.status, clientTurnId: null });
           if (resp.status === 'waiting_for_routing_confirmation' && resp.routing_confirmation_id) {
@@ -3161,7 +3150,6 @@ export default function App() {
     const project = projectCatalog.find((item) => item.name === projectName);
     if (!project) return;
     setInspectorOpen(false);
-    setRoutingOpen(false);
     setFocusNodeId(objectId);
     openOrActivateTab({ id: `project-${project.id}`, title: project.name, subtitle: 'Board', kind: 'project', surface: 'workspace', projectId: project.id, mode: 'board' });
   };
@@ -3263,17 +3251,6 @@ export default function App() {
           else if (activeProject && (surface === 'workspace' || surface === 'conversation')) newThread();
           else { handleSidebarNavigate('projects'); setProjectCreateRequest((current) => current + 1); }
         }}
-        routingOpen={routingOpen}
-        onRoutingOpenChange={setRoutingOpen}
-        effectiveRouting={effectiveRouting}
-        catalog={catalog}
-        sessionAvailable={sessionAvailable}
-        demoThread={activeThread?.source === 'demo'}
-        lockedModel={activeThreadOverrides?.model ?? null}
-        reasoningOverride={activeThreadOverrides?.reasoning ?? null}
-        onSetModelLock={setActiveModelLock}
-        onSetReasoningOverride={setActiveReasoningOverride}
-        onOpenRoutingStudio={openRoutingStudio}
         inspectorOpen={inspectorOpen}
         onToggleInspector={() => setInspectorOpen((value) => !value)}
         onOpenSearch={() => setAuraOpen(true)}
@@ -3300,23 +3277,6 @@ export default function App() {
           window.location.reload();
         }}
       />
-      {routingStudioLoaded ? <Suspense fallback={null}>
-        <RoutingStudio
-          open={routingStudioOpen}
-          projectName={activeProject?.name ?? ''}
-          sessionId={activeThread?.sessionId}
-          sessionAvailable={sessionAvailable}
-          demoThread={activeThread?.source === 'demo'}
-          effective={effectiveRouting}
-          catalog={catalog}
-          onClose={() => setRoutingStudioOpen(false)}
-          onSaved={() => {
-            if (activeProject?.name) void api.fetchEffectiveRouting(activeProject.name, sessionAvailable ? activeThread?.sessionId : undefined).then(setEffectiveRouting).catch(() => {});
-          }}
-          onSetModelLock={setActiveModelLock}
-          onRefreshModels={async () => { try { setCatalog(await api.refreshModels()); } catch (error) { pushToast('Model discovery failed', executionErrorText(error)); } }}
-        />
-      </Suspense> : null}
       {activeThreadLive.routingConfirmation ? <RoutingConfirmationNotice
         proposal={{ provider: activeThreadLive.routingConfirmation.provider, model: activeThreadLive.routingConfirmation.model }}
         busy={activeThreadLive.runStatus === 'resuming_routing'}
@@ -3361,9 +3321,10 @@ export default function App() {
         {surface === 'preferences' ? (
           <PreferencesView
             apiTokenConfigured={Boolean(getApiToken())}
+            desktop={isDesktopApp}
             onOpenApiAccess={() => setApiAccessOpen(true)}
+            onOpenAIProvider={() => setProviderSettingsRequest((current) => current + 1)}
             onOpenDesktopSettings={() => setDesktopSettingsRequest((current) => current + 1)}
-            onOpenRouting={openRoutingStudio}
           />
         ) : null}
 
@@ -3503,6 +3464,12 @@ export default function App() {
             onSendMessage={handleSendMessage}
             onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
             onStartLiveChat={handleStartLiveChat}
+            modelCatalog={catalog}
+            selectedModel={activeConversationModelSettings?.model ?? null}
+            selectedReasoning={activeConversationModelSettings?.reasoning ?? 'auto'}
+            onSelectModel={setActiveConversationModel}
+            onSelectReasoning={setActiveConversationReasoning}
+            onConnectProvider={() => { if (isDesktopApp) setProviderSettingsRequest((current) => current + 1); else handleSidebarNavigate('preferences'); }}
             onContextObjectIdsChange={handleContextObjectIdsChange}
             onContextFileContentIdsChange={handleContextFileContentIdsChange}
             currentApproval={activeThreadLive.approval}
@@ -3561,6 +3528,12 @@ export default function App() {
                 onSendMessage={handleSendMessage}
                 onCancelRun={activeThreadLive.clientTurnId ? handleCancelActiveRun : undefined}
                 onStartLiveChat={handleStartLiveChat}
+                modelCatalog={catalog}
+                selectedModel={activeConversationModelSettings?.model ?? null}
+                selectedReasoning={activeConversationModelSettings?.reasoning ?? 'auto'}
+                onSelectModel={setActiveConversationModel}
+                onSelectReasoning={setActiveConversationReasoning}
+                onConnectProvider={() => { if (isDesktopApp) setProviderSettingsRequest((current) => current + 1); else handleSidebarNavigate('preferences'); }}
                 onContextObjectIdsChange={handleContextObjectIdsChange}
                 onContextFileContentIdsChange={handleContextFileContentIdsChange}
                 currentApproval={activeThreadLive.approval}
@@ -3605,7 +3578,6 @@ export default function App() {
             projectName={activeProject?.name}
             runDetail={activeThreadLive.runDetail}
             focusRunId={inspectorFocusRunId}
-            effectiveRouting={effectiveRouting}
             routingData={activeThreadLive.routingData}
             researchData={activeThreadLive.researchData}
             memories={memories}
@@ -3641,6 +3613,8 @@ export default function App() {
         runEvents={desktopRunEvents}
         automationRuns={desktopAutomationRuns}
         settingsRequest={desktopSettingsRequest}
+        providerSettingsRequest={providerSettingsRequest}
+        onModelsChanged={setCatalog}
         onDroppedFiles={(files) => importFiles(files).then(() => undefined)}
         onDropError={(message) => pushToast('Could not import dropped files', message)}
       />

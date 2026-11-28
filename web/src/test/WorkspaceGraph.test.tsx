@@ -104,7 +104,7 @@ describe('Persistent workspace graph Board projection', () => {
 
     view.rerender(renderBoard(['session-1'], 1));
     expect(await screen.findByText('New live answer')).toBeInTheDocument();
-    expect(await screen.findByText('Root · live-test-model')).toBeInTheDocument();
+    expect(await screen.findByText('Root · Live Test Model')).toBeInTheDocument();
     fireEvent.click(await screen.findByRole('button', { name: 'Load older runs' }));
     await waitFor(() => expect(fetchOlderExecution).toHaveBeenCalledWith('Kuractus Project', 'older-execution-page'));
     expect(fetchPage).toHaveBeenCalledTimes(2);
@@ -247,8 +247,8 @@ describe('Persistent workspace graph Board projection', () => {
       </ReactFlowProvider>,
     );
 
-    expect((await screen.findAllByText('Root · test-model')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Provider: local').length).toBeGreaterThan(0);
+    expect((await screen.findAllByText('Root · Test Model')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Connected provider').length).toBeGreaterThan(0);
   });
 
   it('hydrates and persists user-authored Context Bridge sections', async () => {

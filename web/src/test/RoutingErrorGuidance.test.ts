@@ -2,14 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { executionErrorText } from '../lib/executionError';
 import { ApiError } from '../services/api';
 
-describe('routing error guidance', () => {
+describe('model error guidance', () => {
   it.each([
-    ['ModelProviderError', 'selected provider is running'],
-    ['PrivacyBoundaryViolation', 'select a route that meets its privacy boundary'],
+    ['ModelProviderError', 'Check the provider connection'],
+    ['PrivacyBoundaryViolation', 'remove sensitive context'],
     ['ModelCapabilityMismatch', 'compatible model'],
-    ['ReasoningControlUnsupported', 'Use Profile reasoning'],
-    ['ModelUnavailable', 'Kuractus did not substitute another model'],
-    ['NoEligibleRoute', 'Review the profile in Routing Studio'],
+    ['ReasoningControlUnsupported', 'Choose Auto'],
+    ['ModelUnavailable', 'Kuractus did not substitute a different model'],
+    ['NoEligibleRoute', 'Select a different model'],
   ])('gives actionable guidance for %s without exposing structured details', (code, guidance) => {
     const message = executionErrorText(new ApiError(
       422,

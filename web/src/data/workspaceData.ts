@@ -44,7 +44,7 @@ export const projects: ProjectRecord[] = [
   {
     id: 'aura',
     name: 'Kuractus',
-    subtitle: 'Personal AI workspace and routing studio',
+    subtitle: 'A personal workspace for conversations and projects',
     status: 'active',
     accent: 'purple',
     updated: 'today',
@@ -401,7 +401,7 @@ export const initialChatThreads: ChatThreadRecord[] = [
   { id: 'stateful-paper', projectId: 'stateful', title: 'Paper framing', summary: 'Turn evidence into a conservative novelty claim.', updated: 'yesterday', source: 'demo', messages: emptySeed('stateful-paper', 'Help me frame the novelty claim conservatively for a paper.') },
   { id: 'aura-main', projectId: 'aura', title: 'Workspace architecture', summary: 'Global workspace vs project-scoped AI interactions.', updated: 'today', pinned: true, source: 'demo', messages: emptySeed('aura-main', 'Design Kuractus as a personal AI workspace, not just a chatbot frontend.') },
   { id: 'aura-board', projectId: 'aura', title: 'Conversation Board UX', summary: 'Branching, context bridges, merge and smart edges.', updated: 'today', source: 'demo', messages: emptySeed('aura-board', 'Pressure-test the Conversation Board UX and interaction model.') },
-  { id: 'aura-routing', projectId: 'aura', title: 'Routing studio', summary: 'Profiles, model locks, reasoning and inspectability.', updated: 'yesterday', source: 'demo', messages: emptySeed('aura-routing', 'What should a routing studio expose without becoming an admin dashboard?') },
+  { id: 'aura-routing', projectId: 'aura', title: 'Choosing a model', summary: 'Selecting a model and reasoning level for each conversation.', updated: 'yesterday', source: 'demo', messages: emptySeed('aura-routing', 'How should model and reasoning choices work across conversations?') },
   { id: 'transport-main', projectId: 'transportability', title: 'Discussion rewrite', summary: 'Connect observed failures back to transportability preconditions.', updated: 'yesterday', pinned: true, source: 'demo', messages: emptySeed('transport-main', 'Help tighten the Discussion around P1–P3 and deployment failures.') },
   { id: 'transport-gas', projectId: 'transportability', title: 'Derived gas outputs', summary: 'eCO₂/TVOC misuse and literature screening.', updated: '2 days ago', source: 'demo', messages: emptySeed('transport-gas', 'Explain the derived gas output problem and how to present it carefully.') },
   { id: 'agent-main', projectId: 'personal-agent', title: 'Durable context design', summary: 'Explicit manifests, compaction and tool traces.', updated: '3 days ago', pinned: true, source: 'demo', messages: emptySeed('agent-main', 'Design durable context for a personal agent without hiding what was retained.') },

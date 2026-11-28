@@ -56,6 +56,8 @@ fn main() {
             runtime::desktop_restart,
             runtime::desktop_stop,
             runtime::desktop_save_preferences,
+            runtime::desktop_save_windows_preferences,
+            runtime::desktop_set_provider_mode,
             runtime::desktop_save_provider_connection,
             runtime::desktop_forget_provider_key,
             runtime::desktop_set_close_to_tray,

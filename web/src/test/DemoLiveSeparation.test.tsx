@@ -29,7 +29,7 @@ describe('Demo / Live Separation', () => {
           json: () => Promise.resolve({ run_id: 'run-1', session_id: 'sess-1', status: 'completed', response: 'Reply', tool_results: [] }),
         });
       }
-      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+      if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [{ id: 'test-provider', label: 'Test Provider', kind: 'cloud', available: true, base_url: '', privacy_status: 'cloud', models: [{ id: 'test-model', label: 'Test Model', capabilities: ['general'], tool_support: 'supported', reasoning_support: 'high' }] }] }) });
       if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       if (url.includes('/v1/memory')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
@@ -143,10 +143,14 @@ describe('Demo / Live Separation', () => {
     await act(async () => {
       fireEvent.change(textarea, { target: { value: draftText } });
     });
-    const workMode = screen.getByRole('button', { name: 'Assistant work mode' });
-    fireEvent.click(workMode);
-    fireEvent.click(screen.getByRole('option', { name: 'Code' }));
-    expect(workMode).toHaveTextContent('Code');
+    const modelControl = screen.getByRole('button', { name: 'Conversation model' });
+    fireEvent.click(modelControl);
+    fireEvent.click(screen.getByRole('option', { name: /Test Model · Test Provider/ }));
+    expect(modelControl).toHaveTextContent('Test Model · Test Provider');
+    const reasoningControl = screen.getByRole('button', { name: 'Conversation reasoning' });
+    fireEvent.click(reasoningControl);
+    fireEvent.click(screen.getByRole('option', { name: 'High' }));
+    expect(reasoningControl).toHaveTextContent('High');
 
     // Click "Start live chat" CTA button
     const ctaBtn = screen.getByText('Start live chat');
@@ -166,7 +170,9 @@ describe('Demo / Live Separation', () => {
     expect(payload.message).not.toBe('Start live chat');
     expect(payload.session_id).toMatch(/^sess-/);
     expect(payload.client_turn_id).toEqual(expect.any(String));
-    expect(payload.task_type).toBe('coding');
+    expect(payload.model_override).toBe('test-provider:test-model');
+    expect(payload.reasoning_override).toBe('high');
+    expect(payload).not.toHaveProperty('task_type');
     expect(payload.context_object_ids).toBeUndefined();
     expect(await screen.findByText('Reply')).toBeInTheDocument();
   });

@@ -1,6 +1,6 @@
-import { Check, LoaderCircle, Route, Search, Sparkles, Square } from 'lucide-react';
+import { Check, CircleDot, LoaderCircle, Search, Sparkles, Square } from 'lucide-react';
 
-type RunPhase = 'routing' | 'context' | 'synthesizing';
+type RunPhase = 'preparing' | 'context' | 'synthesizing';
 
 interface AIRunStripProps {
   phase: RunPhase;
@@ -10,13 +10,13 @@ interface AIRunStripProps {
   stopRequested?: boolean;
 }
 
-const steps: { id: RunPhase; label: string; icon: typeof Route }[] = [
-  { id: 'routing', label: 'Route task', icon: Route },
+const steps: { id: RunPhase; label: string; icon: typeof CircleDot }[] = [
+  { id: 'preparing', label: 'Prepare request', icon: CircleDot },
   { id: 'context', label: 'Gather context', icon: Search },
   { id: 'synthesizing', label: 'Synthesize answer', icon: Sparkles },
 ];
 
-const order: RunPhase[] = ['routing', 'context', 'synthesizing'];
+const order: RunPhase[] = ['preparing', 'context', 'synthesizing'];
 
 export function AIRunStrip({ phase, specialist, onStop, stopping = false, stopRequested = false }: AIRunStripProps) {
   const activeIndex = order.indexOf(phase);

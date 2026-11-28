@@ -368,17 +368,16 @@ describe('Navigation and Workspace Shell Invariants', () => {
     fireEvent.click(within(screen.getByRole('navigation', { name: 'Personal workspace navigation' })).getByTitle('Preferences'));
     expect(await screen.findByRole('heading', { name: 'Preferences' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Server API token' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Routing' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Models and API keys' })).toBeInTheDocument();
+    expect(screen.queryByText(/Routing Studio/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Set up server access|Manage server token/i }));
     expect(await screen.findByRole('dialog', { name: 'API access' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close API access' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Open routing studio' }));
-    expect(await screen.findByRole('heading', { name: 'Model routing' })).toBeInTheDocument();
     expect(screen.queryByTitle('Back')).not.toBeInTheDocument();
     expect(screen.queryByTitle('Forward')).not.toBeInTheDocument();
   });
 
-  it('preserves routing control in topbar and confirms old sidebar model picker is absent', async () => {
+  it('keeps model and reasoning controls inside the composer without exposing routing UI', async () => {
     await act(async () => {
       render(<App />);
     });
@@ -390,12 +389,13 @@ describe('Navigation and Workspace Shell Invariants', () => {
     });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Conversations' })); });
 
-    // Routing badge present in topbar
-    expect(screen.getByText(/Routing…/i)).toBeInTheDocument();
-    const reasoningControl = screen.getByRole('button', { name: 'Temporary reasoning override' });
-    expect(reasoningControl).toHaveTextContent('Reasoning');
-    expect(reasoningControl).toHaveTextContent('Profile');
-    expect(screen.queryByText(/Model C/i)).not.toBeInTheDocument();
+    const composer = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
+    fireEvent.focus(composer);
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Automatic');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('Auto');
+    expect(document.querySelector('.routing-trigger-wrap')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Routing…|System Balanced|Winning scope|Routing Studio/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Assistant work mode/i })).not.toBeInTheDocument();
 
     // Old sidebar model picker is absent
     expect(screen.queryByTestId('model-picker')).not.toBeInTheDocument();

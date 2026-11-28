@@ -19,6 +19,7 @@ import {
   RoutingProfileValidation,
   RunRoutingDecision,
   ReasoningEffort,
+  ReasoningSelection,
   WorkspaceEdge,
   WorkspaceGraph,
   WorkspaceExecutionHistory,
@@ -789,7 +790,7 @@ export const api = {
     message: string,
     projectName?: string,
     modelOverride?: string | null,
-    reasoningOverride?: ReasoningEffort | null,
+    reasoningOverride?: ReasoningSelection | null,
     contextObjectIds: string[] = [],
     taskType?: 'research' | 'coding' | 'writing' | null,
     contextAttachments: ChatContextAttachment[] = [],
@@ -808,7 +809,7 @@ export const api = {
     if (modelOverride) {
       payload.model_override = modelOverride;
     }
-    if (reasoningOverride) payload.reasoning_override = reasoningOverride;
+    if (reasoningOverride && (reasoningOverride !== 'auto' || modelOverride)) payload.reasoning_override = reasoningOverride;
     if (contextObjectIds.length > 0) payload.context_object_ids = [...new Set(contextObjectIds)];
     if (contextAttachments.length > 0) payload.context_attachments = contextAttachments;
     if (taskType) payload.task_type = taskType;

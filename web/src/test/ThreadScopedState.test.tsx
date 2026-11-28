@@ -287,27 +287,43 @@ describe('Thread-Scoped Live State', () => {
     expect(screen.queryByText(/run-A-unique-9999/i)).not.toBeInTheDocument();
   });
 
-  it('keeps temporary reasoning overrides isolated when switching live threads', async () => {
-    global.fetch = makeFetch();
+  it('keeps model reasoning selections isolated and persisted per live conversation', async () => {
+    global.fetch = makeFetch({
+      onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, models: [{ id: 'model-a', label: 'Model A', reasoning_support: 'high', tool_support: 'supported' }] }] }),
+    });
     await setupTwoLiveThreads();
-    await act(async () => { render(<App />); });
+    const view = render(<App />);
     await openStatefulChats();
     await selectThread('Thread A');
-    const reasoning = screen.getByRole('button', { name: 'Temporary reasoning override' });
+    const model = screen.getByRole('button', { name: 'Conversation model' });
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: /Model A · Local/ }));
+    const reasoning = screen.getByRole('button', { name: 'Conversation reasoning' });
     fireEvent.click(reasoning);
     fireEvent.click(screen.getByRole('option', { name: 'High' }));
     expect(reasoning).toHaveTextContent('High');
+    const saved = JSON.parse(window.localStorage.getItem('kuractus-v16-conversation-model-settings') ?? '{}');
+    expect(saved['stateful-live-threadA']).toEqual({ model: 'local:model-a', reasoning: 'high' });
 
     await selectThread('Thread B');
-    expect(screen.getByRole('button', { name: 'Temporary reasoning override' })).toHaveTextContent('Profile');
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Automatic');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('Auto');
     await selectThread('Thread A');
-    expect(screen.getByRole('button', { name: 'Temporary reasoning override' })).toHaveTextContent('High');
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Model A · Local');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('High');
+
+    view.unmount();
+    await act(async () => { render(<App />); });
+    await openStatefulChats();
+    await selectThread('Thread A');
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Model A · Local');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('High');
   });
 
-  it('keeps exact model locks per thread and only sends the originating thread override', async () => {
+  it('sends only the originating conversation model and reasoning selections', async () => {
     const sentBodies: Record<string, unknown>[] = [];
     global.fetch = makeFetch({
-      onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'model-a', label: 'Model A', reasoning_support: 'supported', tool_support: 'supported' }] }] }),
+      onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'model-a', label: 'Model A', reasoning_support: 'high', tool_support: 'supported' }] }] }),
       onChat: (options) => {
         sentBodies.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
         return { run_id: `run-${sentBodies.length}`, session_id: 'sess-A', status: 'completed', response: 'Done', tool_results: [] };
@@ -318,11 +334,12 @@ describe('Thread-Scoped Live State', () => {
     await openStatefulChats();
     await selectThread('Thread A');
 
-    fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
-    const modelLock = screen.getByRole('button', { name: 'Temporary exact model lock' });
-    fireEvent.click(modelLock);
-    fireEvent.click(screen.getByRole('option', { name: /Local · Model A/ }));
-    expect(modelLock).toHaveTextContent('Local · Model A');
+    const model = screen.getByRole('button', { name: 'Conversation model' });
+    fireEvent.click(model);
+    fireEvent.click(screen.getByRole('option', { name: /Model A · Local/ }));
+    const reasoning = screen.getByRole('button', { name: 'Conversation reasoning' });
+    fireEvent.click(reasoning);
+    fireEvent.click(screen.getByRole('option', { name: 'Medium' }));
 
     const send = async (message: string) => {
       const input = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
@@ -334,23 +351,30 @@ describe('Thread-Scoped Live State', () => {
     await send('Locked in A');
     await waitFor(() => expect(sentBodies).toHaveLength(1));
     expect(sentBodies[0].model_override).toBe('local:model-a');
+    expect(sentBodies[0].reasoning_override).toBe('medium');
 
     await selectThread('Thread B');
-    expect(screen.getByRole('button', { name: 'Temporary exact model lock' })).toHaveTextContent('Unlocked · follow profile');
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Automatic');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('Auto');
     await send('Unlocked in B');
     await waitFor(() => expect(sentBodies).toHaveLength(2));
     expect(sentBodies[1]).not.toHaveProperty('model_override');
+    expect(sentBodies[1]).not.toHaveProperty('reasoning_override');
 
     await selectThread('Thread A');
-    expect(screen.getByRole('button', { name: 'Temporary exact model lock' })).toHaveTextContent('Local · Model A');
+    expect(screen.getByRole('button', { name: 'Conversation model' })).toHaveTextContent('Model A · Local');
+    expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('Medium');
   });
 
-  it.each(['fixed_by_model', 'unsupported'] as const)(
-    'clears a stale reasoning override when locking a model whose reasoning control is %s',
+  it.each(['fixed_by_model', 'unsupported', 'low'] as const)(
+    'resets reasoning to the selected model default when the model reports %s support',
     async (reasoningSupport) => {
       const sentBodies: Record<string, unknown>[] = [];
       global.fetch = makeFetch({
-        onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [{ id: 'model-a', label: 'Model A', reasoning_support: reasoningSupport, tool_support: 'supported' }] }] }),
+        onModels: () => ({ providers: [{ id: 'local', label: 'Local', available: true, privacy_status: 'local', models: [
+          { id: 'reason-model', label: 'Reasoning Model', reasoning_support: 'high', tool_support: 'supported' },
+          { id: 'model-a', label: 'Model A', reasoning_support: reasoningSupport, tool_support: 'supported' },
+        ] }] }),
         onChat: (options) => {
           sentBodies.push(JSON.parse(String(options?.body)) as Record<string, unknown>);
           return { run_id: 'run-A', session_id: 'sess-A', status: 'completed', response: 'Done', tool_results: [] };
@@ -361,19 +385,21 @@ describe('Thread-Scoped Live State', () => {
       await openStatefulChats();
       await selectThread('Thread A');
 
-      const reasoning = screen.getByRole('button', { name: 'Temporary reasoning override' });
+      const model = screen.getByRole('button', { name: 'Conversation model' });
+      fireEvent.click(model);
+      fireEvent.click(screen.getByRole('option', { name: /Reasoning Model · Local/ }));
+      const reasoning = screen.getByRole('button', { name: 'Conversation reasoning' });
       fireEvent.click(reasoning);
       fireEvent.click(screen.getByRole('option', { name: 'High' }));
       expect(reasoning).toHaveTextContent('High');
 
-      fireEvent.click(screen.getByRole('button', { name: /Routing/i }));
-      const modelLock = screen.getByRole('button', { name: 'Temporary exact model lock' });
-      fireEvent.click(modelLock);
-      fireEvent.click(screen.getByRole('option', { name: /Local · Model A/ }));
+      fireEvent.click(model);
+      fireEvent.click(screen.getByRole('option', { name: /Model A · Local/ }));
 
-      await waitFor(() => expect(screen.getByRole('button', { name: 'Temporary reasoning override' }))
-        .toHaveTextContent(reasoningSupport === 'fixed_by_model' ? 'Fixed by model' : 'Unsupported'));
-      expect(screen.getByRole('button', { name: 'Temporary reasoning' })).toBeDisabled();
+      await waitFor(() => expect(screen.getByRole('button', { name: 'Conversation reasoning' })).toHaveTextContent('Auto'));
+      fireEvent.click(screen.getByRole('button', { name: 'Conversation reasoning' }));
+      expect(screen.queryByRole('option', { name: 'High' })).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('option', { name: 'Auto' }));
 
       const input = screen.getByPlaceholderText(/Ask Kuractus in this chat/i);
       await act(async () => {
@@ -382,7 +408,7 @@ describe('Thread-Scoped Live State', () => {
       });
       await waitFor(() => expect(sentBodies).toHaveLength(1));
       expect(sentBodies[0].model_override).toBe('local:model-a');
-      expect(sentBodies[0]).not.toHaveProperty('reasoning_override');
+      expect(sentBodies[0].reasoning_override).toBe('auto');
     },
   );
 });

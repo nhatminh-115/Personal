@@ -19,7 +19,7 @@ describe('AI context object pagination', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Send Research notes.md text to Kuractus' }));
     expect(onToggleFileContent).toHaveBeenCalledWith('file-1', true);
-    expect(screen.getByText(/copied into the durable Kuractus run/)).toBeInTheDocument();
+    expect(screen.getByText(/Before file text is sent to a cloud model, Kuractus asks you to approve/)).toBeInTheDocument();
   });
 
   it('loads older saved objects on demand and exposes retry after an error', () => {

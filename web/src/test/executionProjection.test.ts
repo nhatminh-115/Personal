@@ -47,7 +47,7 @@ describe('execution trace projection', () => {
     expect(projection.nodes.map((node) => node.data.body).join(' ')).not.toContain('prompt');
   });
 
-  it('renders persisted model, reasoning, and fallback routing provenance', () => {
+  it('renders model and reasoning choices without exposing internal routing policy', () => {
     const trace: WorkspaceExecutionTrace = {
       run_id: 'provenance-run',
       session_id: 'session',
@@ -96,12 +96,15 @@ describe('execution trace projection', () => {
 
     const nodes = projectExecutionGraph([trace], workspaceNodes).nodes;
     const byId = new Map(nodes.map((node) => [node.id, node.data]));
-    expect(byId.get('execution-route')?.body).toContain('Profile balanced v3');
-    expect(byId.get('execution-route')?.body).toContain('Scope project');
+    expect(byId.get('execution-route')?.title).toContain('Root · Local Model');
+    expect(byId.get('execution-route')?.body).toBe('Ollama');
+    expect(byId.get('execution-route')?.body).not.toMatch(/Profile|Scope|Fallback|Privacy|balanced/i);
     expect(byId.get('execution-reasoning')?.title).toContain('medium');
-    expect(byId.get('execution-reasoning')?.body).toContain('Bounds low–high');
-    expect(byId.get('execution-fallback')?.body).toContain('cloud → ollama');
-    expect(byId.get('execution-blocked')?.body).toContain('Proposed cloud-provider:exact-model');
+    expect(byId.get('execution-reasoning')?.body).toBe('Conversation preference applied');
+    expect(byId.get('execution-fallback')?.title).toBe('Checking another available model');
+    expect(byId.get('execution-blocked')?.title).toBe('Cloud model needs your approval');
+    expect(byId.get('execution-blocked')?.body).toContain('Your message has not been sent');
+    expect(Object.values(byId).map((node) => `${node.title} ${node.body}`).join(' ')).not.toMatch(/balanced|scope|local_only|fallback policy|exact-model/i);
   });
 
   it('shows safe research provider failure details on the execution result', () => {

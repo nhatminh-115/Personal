@@ -149,15 +149,17 @@
 .chat-composer__footer { gap: 12px; }
 .composer-tools { min-width: 0; flex: 1 1 auto; }
 .composer-actions { min-width: 0; display: flex; flex: 0 1 auto; align-items: center; gap: 11px; }
-.composer-mode-controls { min-width: 0; display: flex; align-items: center; gap: 9px; }
-.composer-mode-select { width: 148px; flex: 0 1 148px; }
-.composer-mode-select .aura-menu-select__trigger { height: 32px; border-color: rgba(213,219,238,.11); border-radius: 9px; background: rgba(255,255,255,.035); }
-.composer-mode-select .aura-menu-select__trigger:hover,
-.composer-mode-select.is-open .aura-menu-select__trigger { border-color: rgba(184,171,245,.25); background: rgba(184,171,245,.07); }
-.composer-mode-select .aura-menu-select__menu { top: auto; bottom: calc(100% + 7px); left: auto; right: 0; width: 238px; }
-.composer-mode-select .aura-menu-select__option.is-selected { border-color: rgba(184,171,245,.16); background: rgba(184,171,245,.09); }
-.composer-mode-select .aura-menu-select__check { color: #c4baf1; }
-.composer-mode-controls .ai-route-preview { max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.composer-ai-controls { min-width: 0; display: flex; align-items: center; gap: 7px; }
+.composer-model-select { width: 190px; flex: 0 1 190px; }
+.composer-reasoning-select { width: 136px; flex: 0 1 136px; }
+.composer-ai-controls .aura-menu-select__trigger { height: 32px; border-color: rgba(213,219,238,.11); border-radius: 9px; background: rgba(255,255,255,.035); }
+.composer-ai-controls .aura-menu-select__trigger:hover,
+.composer-ai-controls .aura-menu-select.is-open .aura-menu-select__trigger { border-color: rgba(184,171,245,.25); background: rgba(184,171,245,.07); }
+.composer-ai-controls .aura-menu-select__menu { top: auto; bottom: calc(100% + 7px); left: auto; right: 0; width: 290px; }
+.composer-ai-controls .aura-menu-select__option.is-selected { border-color: rgba(184,171,245,.16); background: rgba(184,171,245,.09); }
+.composer-ai-controls .aura-menu-select__check { color: #c4baf1; }
+.composer-connect-provider { flex: 0 0 auto; min-height: 32px; padding: 0 10px; border: 1px solid rgba(184,171,245,.2); border-radius: 9px; color: #c9c0ef; background: rgba(184,171,245,.07); cursor: pointer; font: inherit; font-size: 11px; }
+.composer-connect-provider:hover { background: rgba(184,171,245,.12); }
 
 .toast { grid-template-columns: 20px minmax(0,1fr) 20px; pointer-events: auto; }
 .toast--error { color: #e39a88; }
@@ -191,14 +193,26 @@ select:focus-visible,
 .pin-note.is-active { color: #c9bffa; background: rgba(184,171,245,.08); }
 
 @media (max-width: 920px) {
-  .composer-mode-controls .ai-route-preview { display: none; }
+  .composer-model-select { width: 150px; flex-basis: 150px; }
+  .composer-reasoning-select { width: 118px; flex-basis: 118px; }
 }
 
 @media (max-width: 620px) {
   .chat-composer__footer { align-items: flex-end; }
   .composer-context__stats { display: none; }
-  .composer-mode-select { width: 122px; flex-basis: 122px; }
+  .composer-ai-controls { gap: 5px; }
+  .composer-model-select { width: 128px; flex-basis: 128px; }
+  .composer-reasoning-select { width: 104px; flex-basis: 104px; }
 }
+
+.desktop-settings-tabs { display:flex; gap:6px; padding:4px; margin:0 0 14px; border:1px solid rgba(213,219,238,.09); border-radius:11px; background:rgba(255,255,255,.025); }
+.desktop-settings-tabs button { flex:1; padding:8px 12px; border:0; border-radius:8px; color:#969aa7; background:transparent; cursor:pointer; font:inherit; font-size:12px; }
+.desktop-settings-tabs button.is-active { color:#f0eef1; background:rgba(184,171,245,.12); box-shadow:inset 0 0 0 1px rgba(184,171,245,.16); }
+.desktop-provider-status { margin:0; color:#c9c0ef; font-size:12px; }
+.desktop-advanced-provider { padding-top:12px; border-top:1px solid rgba(213,219,238,.08); }
+.desktop-advanced-provider > summary { color:#aaa8b4; cursor:pointer; font-size:12px; }
+.desktop-advanced-provider[open] > summary { margin-bottom:12px; }
+.desktop-provider-setup { gap:14px; }
 @media (max-width: 840px) {
   .app-shell.with-inspector,.app-shell.sidebar-is-collapsed.with-inspector { grid-template-columns: 216px minmax(0,1fr); }
   .app-shell.sidebar-is-collapsed.with-inspector { grid-template-columns: 76px minmax(0,1fr); }

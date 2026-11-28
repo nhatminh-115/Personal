@@ -599,6 +599,30 @@ def test_temporary_model_and_reasoning_overrides_preserve_profile_policy():
     assert child.reasoning_effort == ReasoningEffort.MEDIUM
 
 
+def test_auto_reasoning_with_a_selected_model_uses_model_default_not_profile_bounds():
+    profile = RoutingProfile(
+        id="adaptive-profile",
+        name="Adaptive profile",
+        routes={"root": RouteConfig(
+            reasoning=ReasoningConfig(policy=ReasoningPolicy.ADAPTIVE, min_effort=ReasoningEffort.LOW, max_effort=ReasoningEffort.HIGH),
+        )},
+    )
+    context = apply_routing_profile_to_context(
+        profile,
+        role="root",
+        context=RoutingContext(),
+        winning_scope="project",
+        message_override="mock:mock-pro",
+        reasoning_override="auto",
+    )
+
+    assert context.explicit_model_override == "mock:mock-pro"
+    assert context.reasoning_policy is None
+    assert context.reasoning_effort is None
+    assert context.reasoning_effort_min is None
+    assert context.reasoning_effort_max is None
+
+
 def test_temporary_model_lock_cannot_bypass_hard_privacy_boundary():
     profile = RoutingProfile(
         id="confidential-profile", name="Confidential",

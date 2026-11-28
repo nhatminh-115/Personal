@@ -90,7 +90,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
         }], edges: [], layout: { project_name: 'Kuractus', layout: {}, revision: 0 }, execution_traces: [] }) });
       }
       if (url.includes('/v1/models')) {
-        return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [{ id: 'mock', label: 'Demo', kind: 'local', available: true, base_url: 'mock://localhost', privacy_status: 'local', models: [{ id: 'model-c', label: 'Model C', capabilities: ['general', 'reasoning'], tool_support: 'supported', reasoning_support: 'high', context_window: 8192 }] }] }) });
       }
       if (url.includes('/v1/sessions')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
@@ -206,10 +206,14 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     // Type prompt into textarea and send
     const textarea = screen.getByPlaceholderText(/Ask Kuractus in this chat…/i);
     fireEvent.change(textarea, { target: { value: 'Explain state persistence in Kuractus' } });
-    const workMode = screen.getByRole('button', { name: 'Assistant work mode' });
-    fireEvent.click(workMode);
-    fireEvent.click(screen.getByRole('option', { name: 'Code' }));
-    expect(workMode).toHaveTextContent('Code');
+    const modelControl = screen.getByRole('button', { name: 'Conversation model' });
+    fireEvent.click(modelControl);
+    fireEvent.click(screen.getByRole('option', { name: /Model C · Demo/ }));
+    expect(modelControl).toHaveTextContent('Model C · Demo');
+    const reasoningControl = screen.getByRole('button', { name: 'Conversation reasoning' });
+    fireEvent.click(reasoningControl);
+    fireEvent.click(screen.getByRole('option', { name: 'Medium' }));
+    expect(reasoningControl).toHaveTextContent('Medium');
 
     const sendBtn = screen.getByRole('button', { name: /Send/i });
     await act(async () => {
@@ -222,7 +226,9 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(chatPayload.session_id).toBeDefined();
     expect(chatPayload.client_turn_id).toEqual(expect.any(String));
     expect(chatPayload.context_object_ids).toEqual(['workspace-note-1', 'research-claim-1']);
-    expect(chatPayload.task_type).toBe('coding');
+    expect(chatPayload.model_override).toBe('mock:model-c');
+    expect(chatPayload.reasoning_override).toBe('medium');
+    expect(chatPayload).not.toHaveProperty('task_type');
 
     // Verify response rendered in v9.1 UI
     expect(await screen.findByText(/Live backend synthesis response for project architecture/i)).toBeInTheDocument();
@@ -374,7 +380,7 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     expect(await screen.findByText(/Resumed and finished after approval/i)).toBeInTheDocument();
   });
 
-  it('shows concise routing guidance for a structured privacy boundary error', async () => {
+  it('shows concise model guidance for a structured privacy boundary error', async () => {
     global.fetch = vi.fn().mockImplementation((url: string) => {
       if (url.includes('/v1/models')) return Promise.resolve({ ok: true, json: () => Promise.resolve({ providers: [] }) });
       if (url.includes('/v1/sessions')) return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
@@ -388,8 +394,8 @@ describe('Live Chat and Backend Integration in v9.1 Shell', () => {
     fireEvent.click(screen.getByTitle('New chat'));
     fireEvent.change(screen.getByPlaceholderText(/Ask Kuractus in this chat…/i), { target: { value: 'Keep this local' } });
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Send/i })); });
-    expect(await screen.findByText(/No local model is eligible\. Privacy policy blocked this route/i)).toBeInTheDocument();
-    expect(screen.getByText(/Review the profile scope and select a route that meets its privacy boundary/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No local model is eligible\. This conversation cannot send its current context/i)).toBeInTheDocument();
+    expect(screen.getByText(/Choose an eligible model or remove sensitive context/i)).toBeInTheDocument();
   });
 
   it('sends a saved branch source with the first prompt without opening Context', async () => {

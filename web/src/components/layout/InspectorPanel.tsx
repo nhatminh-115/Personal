@@ -5,7 +5,6 @@ import {
   Network,
   NotebookPen,
   RefreshCw,
-  Route,
   Search,
   X,
 } from 'lucide-react';
@@ -15,7 +14,6 @@ import type {
   MemoryItem,
   ResearchInspectorData,
   RunDetail,
-  EffectiveRouting,
   RunRoutingDecision,
   CompiledContextManifest,
   CapabilityProviderMetadata,
@@ -27,7 +25,6 @@ export interface InspectorPanelProps {
   projectName?: string | null;
   runDetail?: RunDetail | null;
   focusRunId?: string | null;
-  effectiveRouting?: EffectiveRouting | null;
   routingData?: RunRoutingDecision[] | null;
   researchData?: ResearchInspectorData | null;
   memories?: MemoryItem[];
@@ -49,10 +46,9 @@ export interface InspectorPanelProps {
   onContextSelect?: (nodeId: string) => void;
 }
 
-export type InspectorTab = 'routing' | 'execution' | 'research' | 'memory' | 'context' | 'capabilities' | 'object';
+export type InspectorTab = 'execution' | 'research' | 'memory' | 'context' | 'capabilities' | 'object';
 
 const tabs: { id: InspectorTab; label: string; icon: any }[] = [
-  { id: 'routing', label: 'Routing', icon: Route },
   { id: 'execution', label: 'Execution', icon: Braces },
   { id: 'research', label: 'Research', icon: Search },
   { id: 'memory', label: 'Memory', icon: Database },
@@ -64,6 +60,16 @@ const tabs: { id: InspectorTab; label: string; icon: any }[] = [
 const memoryMetadataStringList = (value: unknown): string[] => (
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.length > 0) : []
 );
+
+const executionEventLabels: Record<string, string> = {
+  routing_profile_resolved: 'Model settings applied',
+  model_selected: 'Model selected',
+  reasoning_effort_selected: 'Reasoning selected',
+  fallback_considered: 'Checking another available model',
+  fallback_blocked: 'Model needs your approval',
+  model_called: 'Model response requested',
+};
+const modelDecisionEvents = new Set(Object.keys(executionEventLabels));
 
 type MemoryTier = 'profile' | 'project' | 'semantic' | 'episode';
 
@@ -125,7 +131,6 @@ export function InspectorPanel({
   projectName,
   runDetail,
   focusRunId,
-  effectiveRouting,
   routingData,
   researchData,
   memories = [],
@@ -351,56 +356,6 @@ export function InspectorPanel({
       </div>
 
       <div className="inspector-content">
-        {tab === 'routing' ? (
-          <div data-testid="inspector-routing">
-            <div className="inspector-kpi">
-              <span>Routing Profile</span>
-              <strong>{effectiveRouting?.profile.name ?? 'Routing unavailable'} · {effectiveRouting?.winning_scope ?? '—'}</strong>
-              <small>{runDetail || routingData?.length ? 'Persisted routing decisions · No model invocation' : 'Effective profile before the next run'}</small>
-            </div>
-            {routingData?.length ? routingData.map((decision) => <section className="inspector-group" key={decision.run_id}>
-              <h4>{decision.snapshot.role ?? decision.model_selection?.agent_role ?? 'Run'} routing</h4>
-              <div className="inspector-row"><span>Profile</span><strong>{decision.snapshot.profile_id ?? '—'} · v{decision.snapshot.profile_version ?? '?'}</strong></div>
-              <div className="inspector-row"><span>Scope</span><strong>{decision.snapshot.winning_scope ?? '—'}</strong></div>
-              <div className="inspector-row"><span>Privacy / fallback</span><strong>{decision.snapshot.privacy_policy ?? decision.model_selection?.privacy ?? '—'} / {decision.snapshot.fallback_policy ?? decision.model_selection?.fallback_policy ?? '—'}</strong></div>
-              {decision.memory_privacy_sources?.length ? <div className="inspector-row"><span>Memory privacy sources</span><strong>{decision.memory_privacy_sources.map((source) => `${source.memory_id} · ${source.privacy_policy}`).join(' | ')}</strong></div> : null}
-              <div className="inspector-row"><span>Selected model</span><strong>{decision.model_selection ? `${decision.model_selection.provider}:${decision.model_selection.model}` : decision.snapshot.explicit_model_override ?? 'Pending'}</strong></div>
-              <div className="inspector-row"><span>Reasoning</span><strong>{decision.reasoning_selection?.selected_effort ?? decision.snapshot.reasoning_effort ?? 'Unknown'}</strong></div>
-              {decision.context_manifest?.required_tool_capabilities?.length ? <div className="inspector-row"><span>Provider capabilities</span><strong>{decision.context_manifest.required_tool_capabilities.join(' · ')}</strong></div> : null}
-              {decision.context_manifest?.resolved_tool_names?.length ? <div className="inspector-row"><span>Resolved tools</span><strong>{decision.context_manifest.resolved_tool_names.join(' · ')}</strong></div> : null}
-              {decision.model_selection ? <>
-                {(() => {
-                  const selection = decision.model_selection;
-                  const requirements = [
-                    ...(Array.isArray(selection.required_capabilities) ? selection.required_capabilities : []),
-                    ...(selection.requires_tools ? ['tools'] : []),
-                    ...(selection.requires_vision ? ['vision'] : []),
-                    ...(selection.requires_structured_output ? ['structured output'] : []),
-                    ...(selection.requires_long_context ? ['long context'] : []),
-                  ];
-                  const uniqueRequirements = [...new Set(requirements)];
-                  const contextWindow = typeof selection.context_window === 'number' ? selection.context_window : null;
-                  const estimatedTokens = typeof selection.estimated_input_tokens === 'number' ? selection.estimated_input_tokens : null;
-                  const reservedOutputTokens = typeof selection.reserved_output_tokens === 'number' ? selection.reserved_output_tokens : null;
-                  const contextEstimate = estimatedTokens === null ? null : [
-                    `${estimatedTokens.toLocaleString()} input`,
-                    ...(reservedOutputTokens === null ? [] : [`${reservedOutputTokens.toLocaleString()} reserved`]),
-                  ].join(' + ');
-                  return <>
-                    {uniqueRequirements.length ? <div className="inspector-row"><span>Requirements</span><strong>{uniqueRequirements.join(' · ')}</strong></div> : null}
-                    {contextEstimate !== null ? <div className="inspector-row"><span>Context budget</span><strong>{contextWindow !== null ? `${contextEstimate} / ${contextWindow.toLocaleString()} tokens` : `${contextEstimate} tokens · model limit unknown`}</strong></div> : null}
-                  </>;
-                })()}
-              </> : null}
-              {decision.fallback_events.map((event, index) => <div className="inspector-event-item" key={`${event.event_type}-${index}`}><strong>{event.event_type}</strong><small>{event.payload.reason ?? event.payload.fallback_policy ?? ''}</small></div>)}
-            </section>) : effectiveRouting ? <InspectorGroup title="Effective policy" rows={[
-              ['Privacy', effectiveRouting.profile.global_privacy_policy],
-              ['Fallback', effectiveRouting.profile.global_fallback_policy],
-              ['Cost / latency', `${effectiveRouting.profile.cost_preference} / ${effectiveRouting.profile.latency_preference}`],
-            ]} /> : <div style={{ color: '#68808e', fontSize: 11 }}>Effective routing profile is unavailable.</div>}
-          </div>
-        ) : null}
-
         {tab === 'execution' ? (
           <div data-testid="inspector-execution">
             {runDetail ? (
@@ -418,15 +373,16 @@ export function InspectorPanel({
                     runDetail.events.map((ev, idx) => {
                       const evKey = ev.id || `event-${idx}`;
                       const isExpanded = Boolean(expandedEvents[evKey]);
+                      const sanitizedModelDecision = modelDecisionEvents.has(ev.event_type);
                       return (
                         <div key={evKey} className="inspector-event-item" data-testid="run-event-item">
                           <div className="inspector-event-header">
-                            <span className="inspector-event-type">{ev.event_type}</span>
+                            <span className="inspector-event-type">{executionEventLabels[ev.event_type] ?? ev.event_type.replace(/_/g, ' ')}</span>
                             <span className="inspector-event-time">
                               {ev.created_at ? new Date(ev.created_at).toLocaleTimeString() : ''}
                             </span>
                           </div>
-                          {ev.payload && Object.keys(ev.payload).length > 0 ? (
+                          {ev.payload && Object.keys(ev.payload).length > 0 && !sanitizedModelDecision ? (
                             <>
                               <button
                                 type="button"
