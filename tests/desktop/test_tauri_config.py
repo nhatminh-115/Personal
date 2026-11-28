@@ -29,9 +29,9 @@ def test_windows_branding_uses_kuractus_install_identity_and_preserves_legacy_da
     assert config["productName"] == "Kuractus"
     assert config["identifier"] == "com.aura.personal.desktop"
     assert nsis["installMode"] == "currentUser"
-    assert 'FindProcessCurrentUser "$R1"' in hooks
-    assert 'StrCpy $R1 "aura-desktop.exe"' in hooks
-    assert 'StrCpy $R1 "kuractus-desktop.exe"' in hooks
+    assert "Get-Process -Name aura-desktop,kuractus-desktop" in hooks
+    assert "ExecWait" in hooks
+    assert "nsis_tauri_utils" not in hooks
     assert 'Delete "$SMPROGRAMS\\AURA.lnk"' in hooks
     assert 'Delete "$DESKTOP\\AURA.lnk"' in hooks
     assert "RmDir /r" not in hooks

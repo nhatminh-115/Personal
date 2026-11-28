@@ -1,23 +1,20 @@
 Function KuractusRequireProcessClosed
-  nsis_tauri_utils::FindProcessCurrentUser "$R1"
-  Pop $R0
-  ${If} $R0 = 0
-    IfSilent kuractus_process_running_silent
-    MessageBox MB_OK|MB_ICONSTOP "Kuractus is running. Close it, then run this installer again."
+  ; PowerShell is used as a read-only process check because Tauri's NSIS
+  ; process plugin is loaded after custom preinstall hooks are included.
+  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -WindowStyle Hidden -Command "if (Get-Process -Name aura-desktop,kuractus-desktop -ErrorAction SilentlyContinue) { exit 23 }"' $R0
+  ${If} $R0 != 0
+    IfSilent kuractus_process_check_silent
+    MessageBox MB_OK|MB_ICONSTOP "Kuractus may be running or its process state could not be verified. Close Kuractus yourself, then run this installer again."
     Abort
-    kuractus_process_running_silent:
+    kuractus_process_check_silent:
       SetErrorLevel 2
       Abort
   ${EndIf}
 FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
-  ; Tauri's default install check terminates the current executable in silent
-  ; mode. Guard both this release and the previous AURA binary so upgrades
-  ; stop safely instead of interrupting a running desktop session.
-  StrCpy $R1 "aura-desktop.exe"
-  Call KuractusRequireProcessClosed
-  StrCpy $R1 "kuractus-desktop.exe"
+  ; Stop safely before Tauri's default install check can terminate the current
+  ; executable in silent mode. The check covers the previous AURA binary too.
   Call KuractusRequireProcessClosed
 !macroend
 
