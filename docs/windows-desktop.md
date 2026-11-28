@@ -67,8 +67,8 @@ Pop-Location
 
 The Windows package keeps Tauri's internal `AURA` product key so upgrades stay
 in `%LOCALAPPDATA%\AURA`. The installer hook labels the Start Menu/Search
-shortcut and Installed Apps entry `Kuractus`; the icon generator renders the
-prototype's Kuractus mark for the native Windows icon.
+shortcut and Installed Apps entry `Kuractus`; the icon generator derives the
+native Windows icon from `desktop/src-tauri/icons/kuractus-icon.png`.
 
 The reproducible CI job builds an unsigned per-user NSIS installer and writes a
 SHA-256 checksum alongside it. Installers are workflow artifacts, not public

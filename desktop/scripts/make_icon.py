@@ -1,4 +1,4 @@
-"""Generate the Windows app icon from the Kuractus prototype mark."""
+"""Generate the Windows app icon from the approved Kuractus artwork."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 
 def main() -> None:
     repository = Path(__file__).resolve().parents[2]
-    icon_source = repository / "desktop" / "src-tauri" / "icons" / "kuractus-icon.svg"
+    icon_source = repository / "desktop" / "src-tauri" / "icons" / "kuractus-icon.png"
     icon_directory = repository / "desktop" / "src-tauri" / "icons"
     tauri_cli = repository / "web" / "node_modules" / "@tauri-apps" / "cli" / "tauri.js"
     node = shutil.which("node")
